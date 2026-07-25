@@ -45,7 +45,13 @@ from .ast_nodes import (
     UnaryExpression,
     WhileStatement,
 )
-from .semantic import CAPABILITY_TYPES, GUARDED_METHODS
+from .semantic import (
+    CAPABILITY_TYPES,
+    GUARDED_METHODS,
+    INT_MAX,
+    INT_MIN,
+    INT_MIN_MAGNITUDE,
+)
 
 MAX_CALL_DEPTH = 512
 
@@ -90,6 +96,8 @@ type ksUnitType struct{}
 var ksUnit any = ksUnitType{}
 
 const ksMaxDepth = 512
+const ksIntMin int64 = -9223372036854775808
+const ksIntMax int64 = 9223372036854775807
 
 var ksDepth int
 
@@ -153,9 +161,16 @@ func ksNot(value any) any {
 	return !ksTruthy(value)
 }
 
+func ksIntOverflow(operation string) any {
+	return ksErrorf("KS3501: Int taşması: '" + operation + "' işlemi işaretli 64-bit aralığın dışına çıktı.")
+}
+
 func ksNegate(value any) any {
 	switch item := value.(type) {
 	case int64:
+		if item == ksIntMin {
+			return ksIntOverflow("unary -")
+		}
 		return -item
 	case float64:
 		return -item
@@ -167,6 +182,9 @@ func ksAdd(left any, right any) any {
 	switch a := left.(type) {
 	case int64:
 		if b, ok := right.(int64); ok {
+			if (b > 0 && a > ksIntMax-b) || (b < 0 && a < ksIntMin-b) {
+				return ksIntOverflow("+")
+			}
 			return a + b
 		}
 	case float64:
@@ -185,6 +203,9 @@ func ksSub(left any, right any) any {
 	switch a := left.(type) {
 	case int64:
 		if b, ok := right.(int64); ok {
+			if (b > 0 && a < ksIntMin+b) || (b < 0 && a > ksIntMax+b) {
+				return ksIntOverflow("-")
+			}
 			return a - b
 		}
 	case float64:
@@ -199,7 +220,17 @@ func ksMul(left any, right any) any {
 	switch a := left.(type) {
 	case int64:
 		if b, ok := right.(int64); ok {
-			return a * b
+			if a == 0 || b == 0 {
+				return int64(0)
+			}
+			if (a == ksIntMin && b == -1) || (b == ksIntMin && a == -1) {
+				return ksIntOverflow("*")
+			}
+			result := a * b
+			if result/b != a {
+				return ksIntOverflow("*")
+			}
+			return result
 		}
 	case float64:
 		if b, ok := right.(float64); ok {
@@ -588,6 +619,14 @@ class GoCodegen:
             return self._interpolation(expression, depth)
 
         if isinstance(expression, UnaryExpression):
+            if (
+                expression.operator == "-"
+                and isinstance(expression.operand, Literal)
+                and isinstance(expression.operand.value, int)
+                and not isinstance(expression.operand.value, bool)
+                and expression.operand.value == INT_MIN_MAGNITUDE
+            ):
+                return f"int64({INT_MIN})", []
             operand, prelude = self._expression(expression.operand, depth)
             helper = "ksNot" if expression.operator == "!" else "ksNegate"
             return f"{helper}({operand})", prelude
@@ -899,6 +938,12 @@ def _literal(value: object) -> str:
     if isinstance(value, bool):
         return "true" if value else "false"
     if isinstance(value, int):
+        if not INT_MIN <= value <= INT_MAX:
+            raise CodegenError(
+                "KS4002",
+                f"Int literal native 64-bit aralığın dışında: {value}",
+                SourceLocation(1, 1),
+            )
         return f"int64({value})"
     if isinstance(value, float):
         return f"float64({value!r})"

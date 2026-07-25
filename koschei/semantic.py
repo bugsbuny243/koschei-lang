@@ -5,6 +5,7 @@ Hata kodları:
     KS1102  Aynı scope içinde tekrar tanım
     KS1201  Immutable değere atama
     KS1301  Tip uyuşmazlığı
+    KS1302  Int literal işaretli 64-bit aralığın dışında
     KS1401  Ele alınmayan hata değeri
     KS1501  Struct literalinde alan hatası (eksik, bilinmeyen veya yinelenen)
     KS1502  Struct'ta böyle bir alan yok
@@ -110,6 +111,9 @@ COMPARISON_OPERATORS = {"==", "!=", "<", "<=", ">", ">="}
 LOGICAL_OPERATORS = {"&&", "||"}
 ARITHMETIC_OPERATORS = {"+", "-", "*", "/"}
 NUMERIC_TYPES = {"Int", "Float"}
+INT_MIN = -(1 << 63)
+INT_MAX = (1 << 63) - 1
+INT_MIN_MAGNITUDE = 1 << 63
 
 
 @dataclass(frozen=True, slots=True)
@@ -382,6 +386,13 @@ class SemanticChecker:
             if isinstance(expression.value, str):
                 return "String"
             if isinstance(expression.value, int):
+                if not INT_MIN <= expression.value <= INT_MAX:
+                    raise SemanticError(
+                        "KS1302",
+                        "Int literal işaretli 64-bit aralığın dışında: "
+                        f"{expression.value}. Geçerli aralık {INT_MIN}..{INT_MAX}.",
+                        expression.location,
+                    )
                 return "Int"
             if isinstance(expression.value, float):
                 return "Float"
@@ -492,6 +503,22 @@ class SemanticChecker:
             return self._check_binary(expression)
 
         if isinstance(expression, UnaryExpression):
+            if (
+                expression.operator == "-"
+                and isinstance(expression.operand, Literal)
+                and isinstance(expression.operand.value, int)
+                and not isinstance(expression.operand.value, bool)
+            ):
+                magnitude = expression.operand.value
+                if magnitude == INT_MIN_MAGNITUDE:
+                    return "Int"
+                if magnitude > INT_MAX:
+                    raise SemanticError(
+                        "KS1302",
+                        "Negatif Int literal işaretli 64-bit aralığın dışında: "
+                        f"-{magnitude}. Geçerli alt sınır {INT_MIN}.",
+                        expression.location,
+                    )
             operand_type = self._check_expression(expression.operand)
             if expression.operator == "!":
                 self._require_bool(operand_type, "'!' işleci", expression.location)

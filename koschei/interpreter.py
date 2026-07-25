@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import errno
 import os
+import stat
 import sys
 import urllib.error
 import urllib.request
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -38,7 +42,12 @@ from .ast_nodes import (
     UnaryExpression,
     WhileStatement,
 )
-from .semantic import check as semantic_check
+from .semantic import (
+    INT_MAX,
+    INT_MIN,
+    INT_MIN_MAGNITUDE,
+    check as semantic_check,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -243,43 +252,252 @@ class _NarrowedCapability:
     __slots__ = ()
 
 
+def _is_symlink_at(name: str, dir_fd: int) -> bool:
+    """`name` bileşeni `dir_fd` içinde sembolik bağ mı?
+
+    Yalnızca hata İLETİSİNİ netleştirmek için kullanılır; erişim kararı
+    zaten O_NOFOLLOW tarafından verilmiştir, dolayısıyla buradaki ikinci
+    bakış yeni bir TOCTOU penceresi açmaz.
+    """
+    try:
+        return stat.S_ISLNK(os.lstat(name, dir_fd=dir_fd).st_mode)
+    except OSError:
+        return False
+
+
+class _SymlinkDenied(Exception):
+    """Kapsam içinde bir yol bileşeni sembolik bağ çıktı.
+
+    Ara bileşenlerde O_NOFOLLOW ELOOP verir; bu istisna hangi bileşenin
+    reddedildiğini taşıyarak hata iletisini anlamlı kılar.
+    """
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+        super().__init__(name)
+
+
+_DIR_FD_SUPPORTED = (
+    os.open in os.supports_dir_fd
+    and os.stat in os.supports_dir_fd
+    and os.unlink in os.supports_dir_fd
+    and os.rmdir in os.supports_dir_fd
+    and os.listdir in os.supports_fd
+    and hasattr(os, "O_NOFOLLOW")
+    and hasattr(os, "O_DIRECTORY")
+)
+"""Disk yetkisi openat tarzı geçiş gerektirir.
+
+Desteklenmeyen platformlarda disk işlemleri KS3406 ile reddedilir. Sessizce
+yarışa açık eski davranışa DÜŞÜLMEZ: bir yetki jetonunun anlamı platforma
+göre zayıflayamaz.
+"""
+
+
 class _DiskCapability(_NarrowedCapability):
-    __slots__ = ("prefix",)
+    """Kapsam sınırı, yol metniyle değil dosya tanıtıcısıyla korunur.
+
+    Eski uygulama `realpath` ile doğrulayıp AYRI bir çağrıda açıyordu. Bu
+    iki adım arasındaki pencerede sandbox'a yazabilen bir saldırgan, normal
+    bir dosyayı symlink'e çevirerek açmayı kapsam dışına yönlendirebiliyordu
+    (TOCTOU). Doğrulanan nesne ile açılan nesnenin aynı olduğu garanti
+    edilmiyordu.
+
+    Yeni uygulama kapsam kökünden başlayarak her yol bileşenini
+    `O_NOFOLLOW` ile, bir önceki bileşenin dosya tanıtıcısına bağlı olarak
+    açar. Böylece:
+
+    - Kapsam içinde HİÇBİR sembolik bağ takip edilmez (KS3405).
+    - Doğrulama ile kullanım arasında pencere kalmaz: doğrulanan şey zaten
+      açılmış tanıtıcının kendisidir.
+    - '..' bileşenleri sözlüksel olarak reddedilir; kapsam kökünün üstüne
+      çıkılamaz.
+
+    Kapsam kökü jeton üretilirken bir kez çözülür; bu, güvenilmeyen kod
+    çalışmadan önce belirlenen güven çıpasıdır.
+    """
+
+    __slots__ = ("prefix", "_root_fd", "_root_open_error")
 
     def __init__(self, prefix: str) -> None:
         self.prefix = os.path.realpath(os.fspath(prefix))
-
-    def _checked_path(self, path: str) -> str | KsError:
-        target = os.path.realpath(os.fspath(path))
+        self._root_fd: int | None = None
+        self._root_open_error: OSError | None = None
+        if not _DIR_FD_SUPPORTED:
+            return
         try:
-            inside = os.path.commonpath((self.prefix, target)) == self.prefix
-        except ValueError:
-            inside = False
-        if not inside:
-            return KsError(
-                f"KS3402: Disk kapsamı dışında erişim reddedildi: {path}"
+            # Güven çıpasını jeton oluşturulurken açıp sabitleriz. Sonraki
+            # işlemler yol adını yeniden çözmez; bu dizin yeniden adlandırılıp
+            # yerine kapsam dışına giden bir symlink konsa bile aynı inode'a
+            # bağlı kalır. O_NOFOLLOW son bileşenin yaratılış anında da bağ
+            # olmasını reddeder.
+            self._root_fd = os.open(
+                self.prefix,
+                os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
             )
-        return target
+        except OSError as error:
+            self._root_open_error = error
+
+    def __del__(self) -> None:
+        handle = getattr(self, "_root_fd", None)
+        if handle is None:
+            return
+        try:
+            os.close(handle)
+        except OSError:
+            pass
+        self._root_fd = None
+
+    # ------------------------------------------------------------------
+    # Yol çözümleme
+    # ------------------------------------------------------------------
+
+    def _relative_parts(self, path: str) -> list[str] | None:
+        """Kapsam köküne göre bileşen listesi; kapsam dışıysa None.
+
+        Sözlüksel çalışır: `realpath` KULLANILMAZ, çünkü o da yarışa açık
+        bir dosya sistemi okumasıdır. Sembolik bağlar zaten geçiş sırasında
+        reddedildiği için sözlüksel normalleştirme burada güvenlidir.
+        """
+        target = os.path.abspath(os.fspath(path))
+        try:
+            relative = os.path.relpath(target, self.prefix)
+        except ValueError:
+            return None
+        if relative == os.curdir:
+            return []
+        parts = relative.split(os.sep)
+        if any(part == os.pardir for part in parts):
+            return None
+        return [part for part in parts if part and part != os.curdir]
+
+    @contextmanager
+    def _scope_root_fd(self) -> "Iterator[int]":
+        if self._root_fd is None:
+            error = self._root_open_error
+            if error is not None:
+                raise OSError(error.errno, error.strerror, error.filename)
+            raise OSError(errno.EBADF, "Disk kapsam kökü açık değil", self.prefix)
+        # Her işlem kendi kopyasını kullanır; iç içe çağrılar veya fdopen kapanışı
+        # jetonun ömür boyu tuttuğu güven çıpasını kapatamaz.
+        handle = os.dup(self._root_fd)
+        try:
+            yield handle
+        finally:
+            os.close(handle)
+
+    @contextmanager
+    def _parent_fd(self, parts: list[str]) -> "Iterator[int]":
+        """Son bileşenin ANA dizinine ait tanıtıcıyı verir.
+
+        Her ara bileşen O_NOFOLLOW ile açılır; biri sembolik bağsa
+        ELOOP alınır ve _SymlinkDenied yükseltilir.
+        """
+        with self._scope_root_fd() as root:
+            current = root
+            opened: list[int] = []
+            try:
+                for component in parts[:-1]:
+                    try:
+                        nxt = os.open(
+                            component,
+                            os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                            dir_fd=current,
+                        )
+                    except OSError as error:
+                        # O_NOFOLLOW + O_DIRECTORY bir sembolik bağda ELOOP
+                        # DEĞİL ENOTDIR üretir (bağ dizin değildir). İkisini
+                        # de yakalayıp gerçekten bağ mı diye lstat ile
+                        # bakıyoruz; öyleyse hata iletisi net olsun.
+                        if error.errno in (errno.ELOOP, errno.ENOTDIR):
+                            if _is_symlink_at(component, current):
+                                raise _SymlinkDenied(component) from error
+                        raise
+                    opened.append(nxt)
+                    current = nxt
+                yield current
+            finally:
+                for handle in reversed(opened):
+                    os.close(handle)
+
+    def _reject(self, path: str) -> KsError:
+        return KsError(
+            f"KS3402: Disk kapsamı dışında erişim reddedildi: {path}"
+        )
+
+    @staticmethod
+    def _unsupported() -> KsError:
+        return KsError(
+            "KS3406: Disk yetkisi bu platformda desteklenmiyor: openat "
+            "(dir_fd) ve O_NOFOLLOW gerekli. Yarışa açık bir uygulamaya "
+            "geri düşülmez."
+        )
+
+    @staticmethod
+    def _symlink_denied(name: str) -> KsError:
+        # KS3402 geriye dönük kapsam-ihlali sözleşmesini korur; KS3405
+        # reddin özel sebebini (symlink) makine-okunur biçimde açıklar.
+        return KsError(
+            "KS3402: Disk kapsamı sembolik bağ üzerinden aşılamaz; "
+            f"KS3405: Kapsam içinde sembolik bağ takip edilmez: {name}"
+        )
+
+    # ------------------------------------------------------------------
+    # Okuma işlemleri
+    # ------------------------------------------------------------------
 
     def read(self, path: str) -> str | KsError:
         return self.read_file(path)
 
     def read_file(self, path: str) -> str | KsError:
-        checked = self._checked_path(path)
-        if isinstance(checked, KsError):
-            return checked
+        if not _DIR_FD_SUPPORTED:
+            return self._unsupported()
+        parts = self._relative_parts(path)
+        if parts is None:
+            return self._reject(path)
+        if not parts:
+            return KsError(f"Dosya okunamadı: kapsam kökü bir dizindir: {path}")
         try:
-            return Path(checked).read_text(encoding="utf-8")
+            with self._parent_fd(parts) as parent:
+                handle = os.open(
+                    parts[-1],
+                    os.O_RDONLY | os.O_NOFOLLOW,
+                    dir_fd=parent,
+                )
+                with os.fdopen(handle, "r", encoding="utf-8") as stream:
+                    return stream.read()
+        except _SymlinkDenied as denied:
+            return self._symlink_denied(denied.name)
         except OSError as error:
+            if error.errno in (errno.ELOOP, errno.EMLINK):
+                return self._symlink_denied(parts[-1])
             return KsError(f"Dosya okunamadı: {error}")
 
     def list(self, path: str) -> list[str] | KsError:
-        checked = self._checked_path(path)
-        if isinstance(checked, KsError):
-            return checked
+        if not _DIR_FD_SUPPORTED:
+            return self._unsupported()
+        parts = self._relative_parts(path)
+        if parts is None:
+            return self._reject(path)
         try:
-            return sorted(os.listdir(checked))
+            if not parts:
+                with self._scope_root_fd() as root:
+                    return sorted(os.listdir(root))
+            with self._parent_fd(parts) as parent:
+                handle = os.open(
+                    parts[-1],
+                    os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                    dir_fd=parent,
+                )
+                try:
+                    return sorted(os.listdir(handle))
+                finally:
+                    os.close(handle)
+        except _SymlinkDenied as denied:
+            return self._symlink_denied(denied.name)
         except OSError as error:
+            if error.errno in (errno.ELOOP, errno.EMLINK):
+                return self._symlink_denied(parts[-1])
             return KsError(f"Dizin listelenemedi: {error}")
 
 
@@ -292,17 +510,25 @@ class DiskReadCaps(_DiskCapability):
             f"KS3404: DiskReadCaps '{operation}' işlemine izin vermez."
         )
 
+    def _scope_then_deny(self, path: str, operation: str) -> KsError:
+        """Kapsam ihlali, yetki ihlalinden ÖNCE bildirilir.
+
+        Kapsam dışı bir yol için 'bu jeton yazamaz' demek, saldırgana
+        kapsamın nerede bittiğini değil jetonun türünü sızdırır. Eski
+        davranış da böyleydi; korunuyor.
+        """
+        if self._relative_parts(path) is None:
+            return self._reject(path)
+        return self._denied(operation)
+
     def write(self, path: str, value: str) -> KsError:
-        checked = self._checked_path(path)
-        return checked if isinstance(checked, KsError) else self._denied("write")
+        return self._scope_then_deny(path, "write")
 
     def write_file(self, path: str, value: str) -> KsError:
-        checked = self._checked_path(path)
-        return checked if isinstance(checked, KsError) else self._denied("write_file")
+        return self._scope_then_deny(path, "write_file")
 
     def delete(self, path: str) -> KsError:
-        checked = self._checked_path(path)
-        return checked if isinstance(checked, KsError) else self._denied("delete")
+        return self._scope_then_deny(path, "delete")
 
 
 class DiskCaps(_DiskCapability):
@@ -312,25 +538,57 @@ class DiskCaps(_DiskCapability):
         return self.write_file(path, value)
 
     def write_file(self, path: str, value: str) -> _KsUnit | KsError:
-        checked = self._checked_path(path)
-        if isinstance(checked, KsError):
-            return checked
+        if not _DIR_FD_SUPPORTED:
+            return self._unsupported()
+        parts = self._relative_parts(path)
+        if parts is None:
+            return self._reject(path)
+        if not parts:
+            return KsError(f"Dosya yazılamadı: kapsam kökü bir dizindir: {path}")
         try:
-            Path(checked).write_text(str(value), encoding="utf-8")
+            with self._parent_fd(parts) as parent:
+                handle = os.open(
+                    parts[-1],
+                    os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW,
+                    0o600,
+                    dir_fd=parent,
+                )
+                with os.fdopen(handle, "w", encoding="utf-8") as stream:
+                    stream.write(str(value))
+        except _SymlinkDenied as denied:
+            return self._symlink_denied(denied.name)
         except OSError as error:
+            if error.errno in (errno.ELOOP, errno.EMLINK):
+                return self._symlink_denied(parts[-1])
             return KsError(f"Dosya yazılamadı: {error}")
         return KsUnit
 
     def delete(self, path: str) -> _KsUnit | KsError:
-        checked = self._checked_path(path)
-        if isinstance(checked, KsError):
-            return checked
+        if not _DIR_FD_SUPPORTED:
+            return self._unsupported()
+        parts = self._relative_parts(path)
+        if parts is None:
+            return self._reject(path)
+        if not parts:
+            return KsError(f"Dosya silinemedi: kapsam kökü silinemez: {path}")
         try:
-            if os.path.isdir(checked):
-                os.rmdir(checked)
-            else:
-                os.remove(checked)
+            with self._parent_fd(parts) as parent:
+                name = parts[-1]
+                info = os.stat(name, dir_fd=parent, follow_symlinks=False)
+                if stat.S_ISLNK(info.st_mode):
+                    # Bağın kendisi silinebilir (kapsam dışına çıkmaz), ama
+                    # sessizce yapmak yerine açıkça reddediyoruz: kapsam
+                    # içinde sembolik bağ hiç bulunmamalı.
+                    return self._symlink_denied(name)
+                if stat.S_ISDIR(info.st_mode):
+                    os.rmdir(name, dir_fd=parent)
+                else:
+                    os.unlink(name, dir_fd=parent)
+        except _SymlinkDenied as denied:
+            return self._symlink_denied(denied.name)
         except OSError as error:
+            if error.errno in (errno.ELOOP, errno.EMLINK):
+                return self._symlink_denied(parts[-1])
             return KsError(f"Dosya silinemedi: {error}")
         return KsUnit
 
@@ -688,7 +946,17 @@ class Interpreter:
 
     def _evaluate(self, expression: Expression) -> Any:
         if isinstance(expression, Literal):
-            return expression.value
+            value = expression.value
+            if (
+                isinstance(value, int)
+                and not isinstance(value, bool)
+                and not INT_MIN <= value <= INT_MAX
+            ):
+                return KsError(
+                    "KS3501: Int literal çalışma anında 64-bit aralığı aştı: "
+                    f"{value}"
+                )
+            return value
 
         if isinstance(expression, Identifier):
             if expression.name in self.functions:
@@ -763,12 +1031,27 @@ class Interpreter:
             return self._binary(expression)
 
         if isinstance(expression, UnaryExpression):
+            if (
+                expression.operator == "-"
+                and isinstance(expression.operand, Literal)
+                and isinstance(expression.operand.value, int)
+                and not isinstance(expression.operand.value, bool)
+            ):
+                magnitude = expression.operand.value
+                if magnitude == INT_MIN_MAGNITUDE:
+                    return INT_MIN
+                if magnitude > INT_MAX:
+                    return self._int_overflow("unary -")
             operand = self._evaluate(expression.operand)
             if isinstance(operand, KsError):
                 return operand
             if expression.operator == "!":
                 return not bool(operand)
             if expression.operator == "-":
+                if type(operand) is int:
+                    if operand == INT_MIN:
+                        return self._int_overflow("unary -")
+                    return -operand
                 return -operand
             raise AssertionError(expression.operator)
 
@@ -812,6 +1095,16 @@ class Interpreter:
         if isinstance(right, KsError):
             return right
         operator = expression.operator
+        if operator in {"+", "-", "*"} and type(left) is int and type(right) is int:
+            if operator == "+":
+                result = left + right
+            elif operator == "-":
+                result = left - right
+            else:
+                result = left * right
+            if not INT_MIN <= result <= INT_MAX:
+                return self._int_overflow(operator)
+            return result
         if operator == "+":
             return left + right
         if operator == "-":
@@ -835,6 +1128,13 @@ class Interpreter:
         if operator == ">=":
             return left >= right
         raise AssertionError(operator)
+
+    @staticmethod
+    def _int_overflow(operation: str) -> KsError:
+        return KsError(
+            f"KS3501: Int taşması: '{operation}' işlemi işaretli 64-bit "
+            "aralığın dışına çıktı."
+        )
 
     def _member(self, receiver: Any, name: str, location: SourceLocation) -> Any:
         if isinstance(receiver, SystemCaps):

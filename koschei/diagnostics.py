@@ -89,6 +89,21 @@ CATALOG: dict[str, Diagnostic] = {
         ),
         example="let count = 5\nprintln(\"Toplam: {count}\")\nlet parsed = \"42\".to_int() or 0",
     ),
+    "KS1302": Diagnostic(
+        code="KS1302",
+        title="Int literal 64-bit aralığın dışında",
+        summary="Kaynak koddaki tamsayı, Koschei Int tipinin sınırlarını aşıyor.",
+        why=(
+            "Koschei Int, yorumlayıcı ve native backend arasında aynı sonucu vermek "
+            "için işaretli 64-bit olarak tanımlıdır. Daha büyük bir literal Python'da "
+            "çalışıp Go'da taşamayacağı için derleme anında reddedilir."
+        ),
+        fix=(
+            "Değeri -9223372036854775808 ile 9223372036854775807 aralığında tutun "
+            "veya ileride eklenecek keyfi hassasiyetli sayı tipini kullanın."
+        ),
+        example="let en_buyuk = 9223372036854775807",
+    ),
     "KS1401": Diagnostic(
         code="KS1401",
         title="Ele alınmayan hata değeri",
@@ -367,6 +382,24 @@ CATALOG: dict[str, Diagnostic] = {
             "}"
         ),
     ),
+    "KS3501": Diagnostic(
+        code="KS3501",
+        title="Int taşması",
+        summary="Bir tamsayı işlemi işaretli 64-bit Int aralığının dışına çıktı.",
+        why=(
+            "Sessiz sarma aynı programın yorumlayıcıda ve native binary'de farklı "
+            "sonuç vermesine yol açardı. Koschei taşmayı hata DEĞERİNE çevirerek "
+            "iki backend'i eşit ve fail-closed tutar."
+        ),
+        fix=(
+            "İşlemden önce sınırı kontrol edin, daha küçük değerler kullanın veya "
+            "sonucu 'or' ile açıkça ele alın."
+        ),
+        example=(
+            "let sonuc = 9223372036854775807 + 1 or "
+            "Error(\"Int sınırı aşıldı\")"
+        ),
+    ),
     "KS3402": Diagnostic(
         code="KS3402",
         title="Kapsam dışı erişim",
@@ -397,6 +430,40 @@ CATALOG: dict[str, Diagnostic] = {
         why="KS2403'ün çalışma anı savunma katmanıdır; derleme denetimi atlansa bile reddedilir.",
         fix="Gerekli kapsamı kök yetkiden yeniden türetin.",
         example="let wide = caps.disk.allow(\"/var/data/\")",
+    ),
+    "KS3405": Diagnostic(
+        code="KS3405",
+        title="Kapsam içinde sembolik bağ takip edilmez",
+        summary="Disk yetkisi, kapsam içindeki bir yol bileşeni sembolik bağ olduğunda erişimi reddeder.",
+        why=(
+            "Kapsam sınırı yol METNİYLE değil dosya tanıtıcısıyla korunur. Bir yol "
+            "doğrulanıp ardından ayrı bir çağrıda açılsaydı, sandbox'a yazabilen bir "
+            "saldırgan aradaki pencerede dosyayı sembolik bağa çevirip açmayı kapsam "
+            "dışına yönlendirebilirdi (TOCTOU). Bu yüzden her bileşen O_NOFOLLOW ile "
+            "açılır ve hiçbir bağ takip edilmez — bağ kapsam içini gösterse bile."
+        ),
+        fix=(
+            "Gerçek dosya yolunu kullanın. Başka bir dizine erişmeniz gerekiyorsa bu "
+            "ayrı bir kapsamdır: kök yetkiden o dizin için ayrı bir jeton türetin, "
+            "böylece manifestoda da görünür."
+        ),
+        example="let veri = caps.disk.allow_read_only(\"/var/data/\")\nlet gunluk = caps.disk.allow(\"/var/log/app/\")",
+    ),
+    "KS3406": Diagnostic(
+        code="KS3406",
+        title="Disk yetkisi bu platformda desteklenmiyor",
+        summary="Disk işlemleri openat (dir_fd) ve O_NOFOLLOW gerektirir.",
+        why=(
+            "Kapsam sınırı yalnızca dosya tanıtıcısına bağlı geçişle yarışsız biçimde "
+            "korunabilir. Bu çağrıların bulunmadığı bir platformda eski, yarışa açık "
+            "uygulamaya geri düşmek jetonun anlamını platforma göre zayıflatırdı; "
+            "bunun yerine işlem açıkça reddedilir."
+        ),
+        fix=(
+            "Programı openat destekleyen bir platformda çalıştırın (Linux, macOS, "
+            "BSD). Disk yetkisi gerektirmeyen bölümler etkilenmez."
+        ),
+        example="// Linux/macOS üzerinde:\nlet veri = caps.disk.allow_read_only(\"/var/data/\")",
     ),
     "KS4001": Diagnostic(
         code="KS4001",
