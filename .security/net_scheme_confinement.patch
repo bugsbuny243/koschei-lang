@@ -1,0 +1,342 @@
+--- a/koschei/semantic.py
++++ b/koschei/semantic.py
+@@ -12,6 +12,7 @@
+     KS1605  Modülde böyle bir fonksiyon veya struct yok
+     KS2401  Gerekli yetki bu scope içinde mevcut değil
+     KS2402  Kök yetki doğrudan kullanılamaz (önce allow ile daraltılmalı)
++    KS2405  Ağ origin'inde izin verilmeyen şema (yalnızca http/https)
+     KS2403  Daraltılmış yetki yeniden genişletilemez
+     KS2404  Bu yetki türü ilgili işleme izin vermez
+ 
+@@ -80,6 +81,13 @@
+ 
+ NARROWING_METHODS = {"allow", "allow_read_only"}
+ 
++NET_ORIGIN_SCHEMES = frozenset({"http", "https"})
++"""Ağ yetkisinin kullanabileceği şemalar.
++
++koschei.interpreter.ALLOWED_NET_SCHEMES ile aynı olmalıdır; ikisi de aynı
++sınırı korur, biri derleme diğeri çalışma anında.
++"""
++
+ GUARDED_METHODS: set[str] = set()
+ for _methods in NARROWED_METHODS.values():
+     GUARDED_METHODS.update(_methods)
+@@ -466,6 +474,7 @@
+                     expression.callee.member,
+                     expression.location,
+                     argument_types,
++                    expression.arguments,
+                 )
+ 
+             if isinstance(expression.callee, Identifier):
+@@ -757,6 +766,7 @@
+         method_name: str,
+         location: SourceLocation,
+         argument_types: list[str | None] | None = None,
++        arguments: list[Expression] | None = None,
+     ) -> str | None:
+         # List metotları yetki denetiminden ÖNCE ele alınır: 'get' aynı zamanda
+         # bir yetki metodu adıdır ve liste erişimi yanlışlıkla yetki ihlali
+@@ -796,6 +806,8 @@
+         if receiver_type in ROOT_METHODS:
+             mapping = ROOT_METHODS[receiver_type]
+             if method_name in mapping:
++                if receiver_type == "NetRoot":
++                    self._check_net_origin(arguments, location)
+                 self.capability_count += 1
+                 return mapping[method_name]
+             raise SemanticError(
+@@ -837,6 +849,42 @@
+             )
+ 
+         return None
++
++    def _check_net_origin(
++        self,
++        arguments: list[Expression] | None,
++        location: SourceLocation,
++    ) -> None:
++        """NetRoot.allow(...) origin'inin şemasını denetler.
++
++        Sabit metin verilmişse şema burada, DERLEME ZAMANINDA reddedilir; böylece
++        'file://' gibi bir origin hiçbir zaman yetki manifestosuna girip
++        "AĞ" başlığı altında listelenemez. Dinamik ifadeler burada
++        görülemez; onları çalışma anında NetCaps'in şema allowlist'i yakalar.
++        """
++        if not arguments:
++            return
++        first = arguments[0]
++        if not (isinstance(first, Literal) and isinstance(first.value, str)):
++            return
++
++        scheme, separator, _ = first.value.partition("://")
++        if not separator:
++            raise SemanticError(
++                "KS2405",
++                f"Ağ origin'i bir şema içermelidir: '{first.value}'. "
++                "Beklenen biçim: https://host[:port].",
++                location,
++            )
++        if scheme.lower() not in NET_ORIGIN_SCHEMES:
++            raise SemanticError(
++                "KS2405",
++                f"'{scheme}' şeması ağ yetkisinde kullanılamaz "
++                f"(izin verilen: {', '.join(sorted(NET_ORIGIN_SCHEMES))}). "
++                "Ağ yetkisi başka bir yetki alanına köprü kuramaz; diske "
++                "erişim için DiskRoot kullanın.",
++                location,
++            )
+ 
+     def _is_fallible_call(self, expression: Expression) -> bool:
+         if not isinstance(expression, CallExpression):
+--- a/koschei/interpreter.py
++++ b/koschei/interpreter.py
+@@ -360,15 +360,35 @@
+         super().__init__(target)
+ 
+ 
++def _build_http_only_opener(
++    origin_key: tuple[str, str, int | None] | None,
++) -> urllib.request.OpenerDirector:
++    """Yalnızca HTTP(S) konuşabilen bir opener kurar.
++
++    `urllib.request.build_opener()` KULLANILMAZ: o fonksiyon, açıkça handler
++    verilse bile FileHandler / FTPHandler / DataHandler'ı listeye ekler.
++    OpenerDirector elle kurularak bu şemalar opener'a hiç girmez; böylece
++    şema allowlist'i bir şekilde atlatılsa dahi file:// açılamaz.
++    """
++    opener = urllib.request.OpenerDirector()
++    for handler in (
++        urllib.request.HTTPHandler(),
++        urllib.request.HTTPSHandler(),
++        urllib.request.HTTPDefaultErrorHandler(),
++        urllib.request.HTTPErrorProcessor(),
++        _ScopedRedirectHandler(origin_key),
++    ):
++        opener.add_handler(handler)
++    return opener
++
++
+ class NetCaps(_NarrowedCapability):
+     __slots__ = ("origin", "origin_key", "_opener")
+ 
+     def __init__(self, origin: str) -> None:
+         self.origin = origin
+         self.origin_key = _origin_key(origin)
+-        self._opener = urllib.request.build_opener(
+-            _ScopedRedirectHandler(self.origin_key)
+-        )
++        self._opener = _build_http_only_opener(self.origin_key)
+ 
+     def _allows(self, url: str) -> bool:
+         return self.origin_key is not None and _origin_key(url) == self.origin_key
+@@ -441,12 +461,25 @@
+         return KsError("process yetkisi v0.1'de kapalı")
+ 
+ 
++ALLOWED_NET_SCHEMES = frozenset({"http", "https"})
++"""NetCaps YALNIZCA bu şemalara izin verir.
++
++Bu bir sağlamlaştırma değil, yetki modelinin bir parçasıdır. urllib'in
++varsayılan opener'ı file/ftp/data handler'ları da taşır; şema serbest
++bırakılırsa `net.allow("file://localhost/...")` ağ yetkisini disk okuma
++yetkisine dönüştürür ve manifesto "DİSK: yok" demeye devam eder. Yetki
++alanları arasındaki sınır burada korunur.
++"""
++
++
+ def _origin_key(url: str) -> tuple[str, str, int | None] | None:
+     try:
+         parsed = urlsplit(url)
+         if not parsed.scheme or not parsed.hostname:
+             return None
+         scheme = parsed.scheme.lower()
++        if scheme not in ALLOWED_NET_SCHEMES:
++            return None
+         host = parsed.hostname.lower()
+         port = parsed.port
+         if port is None:
+--- a/koschei/diagnostics.py
++++ b/koschei/diagnostics.py
+@@ -284,6 +284,24 @@
+         ),
+         example="let cache = caps.disk.allow(\"/var/cache/app/\")\nlet written = cache.write(\"/var/cache/app/x\", \"veri\") or return",
+     ),
++    "KS2405": Diagnostic(
++        code="KS2405",
++        title="Ağ origin'inde izin verilmeyen şema",
++        summary="NetRoot.allow(...) yalnızca http ve https şemalarını kabul eder.",
++        why=(
++            "Yetki alanları birbirine köprü kuramaz. Ağ yetkisi 'file://' gibi bir "
++            "origin ile daraltılabilseydi, altta yatan HTTP istemcisi yerel dosyaları "
++            "açabilir ve program 'DİSK: yok' diyen bir yetki manifestosu taşırken "
++            "diskten okuyabilirdi. Manifestonun doğruluğu dilin merkezi iddiasıdır; "
++            "bu yüzden şema derleme zamanında kısıtlanır."
++        ),
++        fix=(
++            "Ağ için http veya https kullanın. Dosya okumanız gerekiyorsa bu ayrı bir "
++            "yetki alanıdır: 'caps.disk.allow_read_only(...)' ile açıkça talep edin — "
++            "böylece manifestoda da görünür."
++        ),
++        example="let api = caps.net.allow(\"https://api.example.com\")\nlet files = caps.disk.allow_read_only(\"/var/data/\")",
++    ),
+     "KS3101": Diagnostic(
+         code="KS3101",
+         title="Çalışma anı: tanımsız isim veya geçersiz çağrı",
+--- a/tests/test_security_regressions.py
++++ b/tests/test_security_regressions.py
+@@ -8,6 +8,13 @@
+ 
+ from koschei.capabilities import analyze, render, to_dict
+ from koschei.cli import main
++from koschei.interpreter import (
++    KsError,
++    NetCaps,
++    _build_http_only_opener,
++    _origin_key,
++    run,
++)
+ from koschei.parser import parse
+ from koschei.semantic import ImportedModule, SemanticError, check
+ 
+@@ -75,5 +82,139 @@
+         self.assertNotIn("saf hesaplama", output.getvalue())
+ 
+ 
++class NetSchemeConfinementTests(unittest.TestCase):
++    """Ağ yetkisi başka bir yetki alanına köprü kuramaz.
++
++    urllib'in varsayılan opener'ı file/ftp/data handler'ları taşır. Şema
++    kısıtlanmazsa `caps.net.allow("file://localhost/...")` ağ jetonunu yerel
++    dosya okuma aracına çevirir ve manifesto "DİSK: yok" demeye devam eder.
++    Aşağıdaki testler bu köprüyü üç katmanda da kapalı tutar.
++    """
++
++    def test_file_scheme_origin_is_rejected_at_compile_time(self) -> None:
++        program = parse(
++            'fn main(caps: SystemCaps) {\n'
++            '    let n = caps.net.allow("file://localhost/etc/passwd")\n'
++            '}'
++        )
++        with self.assertRaisesRegex(SemanticError, "KS2405"):
++            check(program)
++
++    def test_ftp_scheme_origin_is_rejected_at_compile_time(self) -> None:
++        program = parse(
++            'fn main(caps: SystemCaps) {\n'
++            '    let n = caps.net.allow("ftp://example.com/x")\n'
++            '}'
++        )
++        with self.assertRaisesRegex(SemanticError, "KS2405"):
++            check(program)
++
++    def test_origin_without_scheme_is_rejected(self) -> None:
++        program = parse(
++            'fn main(caps: SystemCaps) {\n'
++            '    let n = caps.net.allow("example.com")\n'
++            '}'
++        )
++        with self.assertRaisesRegex(SemanticError, "KS2405"):
++            check(program)
++
++    def test_http_and_https_origins_remain_allowed(self) -> None:
++        for origin in ("https://api.example.com", "http://localhost:8080"):
++            with self.subTest(origin=origin):
++                program = parse(
++                    'fn main(caps: SystemCaps) {\n'
++                    f'    let n = caps.net.allow("{origin}")\n'
++                    '}'
++                )
++                check(program)
++
++    def test_non_http_scheme_never_yields_an_origin_key(self) -> None:
++        """Dinamik origin'ler derleyiciden kaçar; runtime allowlist son settir."""
++        for url in (
++            "file://localhost/etc/passwd",
++            "ftp://example.com/x",
++            "data://x/y",
++            "gopher://example.com/1",
++        ):
++            with self.subTest(url=url):
++                self.assertIsNone(_origin_key(url))
++
++    def test_opener_carries_no_file_or_ftp_handlers(self) -> None:
++        """build_opener() açıkça handler verilse bile FileHandler ekler.
++
++        Bu test, OpenerDirector'ın elle kurulduğunu ve birinin ileride
++        kolaylık olsun diye build_opener()'a geri dönmediğini garanti eder.
++        """
++        opener = _build_http_only_opener(("https", "api.example.com", 443))
++        names = {type(handler).__name__ for handler in opener.handlers}
++        self.assertNotIn("FileHandler", names)
++        self.assertNotIn("FTPHandler", names)
++        self.assertNotIn("DataHandler", names)
++        self.assertNotIn("UnknownHandler", names)
++        self.assertIn("HTTPSHandler", names)
++
++    def test_net_capability_cannot_read_a_local_file(self) -> None:
++        """Uçtan uca: NetCaps ile yerel dosya okunamaz."""
++        with tempfile.TemporaryDirectory() as directory:
++            secret = pathlib.Path(directory) / "secret.txt"
++            secret.write_text("SIZINTI", encoding="utf-8")
++            url = f"file://localhost{secret}"
++
++            capability = NetCaps(url)
++            result = capability.get(url)
++
++        self.assertIsInstance(result, KsError)
++        self.assertIn("KS3402", str(result.message))
++        self.assertNotIn("SIZINTI", str(result.message))
++
++    def test_dynamic_file_origin_is_blocked_by_the_language_runtime(self) -> None:
++        """Literal olmayan origin semantic katmandan geçse bile dosya okunamaz."""
++        with tempfile.TemporaryDirectory() as directory:
++            secret = pathlib.Path(directory) / "secret.txt"
++            secret.write_text("DINAMIK-SIZINTI", encoding="utf-8")
++            url = f"file://localhost{secret}"
++            source = (
++                "fn main(caps: SystemCaps) {\n"
++                f'    let origin = "{url}"\n'
++                "    let net = caps.net.allow(origin)\n"
++                '    let result = net.get(origin) or "DINAMIK-ENGELLENDI"\n'
++                "    println(result)\n"
++                "}\n"
++            )
++            output = io.StringIO()
++            error = io.StringIO()
++            with redirect_stdout(output), redirect_stderr(error):
++                exit_code = run(parse(source), [])
++
++        self.assertEqual(exit_code, 0)
++        self.assertEqual(error.getvalue(), "")
++        self.assertEqual(output.getvalue(), "DINAMIK-ENGELLENDI\n")
++        self.assertNotIn("DINAMIK-SIZINTI", output.getvalue())
++
++    def test_disk_free_manifest_is_never_printed_for_a_file_origin(self) -> None:
++        """Asıl regresyon: manifesto 'DİSK: yok' derken diske erişilemez."""
++        source = (
++            'fn leak(net: NetCaps) -> String {\n'
++            '    let response = net.get("file://localhost/etc/passwd") or return "x"\n'
++            '    return response.text()\n'
++            '}\n'
++            'fn main(caps: SystemCaps) {\n'
++            '    let n = caps.net.allow("file://localhost/etc/passwd")\n'
++            '    println(leak(n))\n'
++            '}'
++        )
++        with tempfile.TemporaryDirectory() as directory:
++            path = pathlib.Path(directory) / "bridge.ks"
++            path.write_text(source, encoding="utf-8")
++            output = io.StringIO()
++            error = io.StringIO()
++            with redirect_stdout(output), redirect_stderr(error):
++                exit_code = main(["caps", str(path)])
++
++        self.assertNotEqual(exit_code, 0)
++        self.assertIn("KS2405", output.getvalue() + error.getvalue())
++        self.assertNotIn("DİSK: yok", output.getvalue())
++
++
+ if __name__ == "__main__":
+     unittest.main()
