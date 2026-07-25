@@ -1,0 +1,152 @@
+name: Net Scheme Confinement Bootstrap
+
+on:
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  harden:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout bootstrap branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.21"
+
+      - name: Prove exploit, patch, and re-attack
+        shell: bash
+        run: |
+          set -euo pipefail
+          exec > >(tee /tmp/net-scheme-security.log) 2>&1
+
+          cp .security/net_scheme_confinement.patch /tmp/net_scheme_confinement.patch
+          git fetch origin main
+          git reset --hard origin/main
+          python -m pip install -e .
+
+          echo "=== BASELINE: prove file:// network-to-disk bridge ==="
+          python - <<'PY'
+          import pathlib
+          import tempfile
+          import urllib.request
+
+          from koschei.capabilities import analyze, render
+          from koschei.interpreter import NetCaps, _origin_key
+          from koschei.parser import parse
+          from koschei.semantic import check
+
+          with tempfile.TemporaryDirectory() as directory:
+              secret = pathlib.Path(directory) / "secret.txt"
+              secret.write_text("BASELINE-FILE-BRIDGE", encoding="utf-8")
+              url = f"file://localhost{secret}"
+              source = (
+                  "fn main(caps: SystemCaps) {\n"
+                  f'    let net = caps.net.allow("{url}")\n'
+                  "}\n"
+              )
+              program = parse(source)
+              check(program)
+              manifest = render(analyze(program), "bridge.ks")
+              assert "DİSK: yok" in manifest
+              assert _origin_key(url) is not None
+
+              capability = NetCaps(url)
+              names = {type(handler).__name__ for handler in capability._opener.handlers}
+              assert "FileHandler" in names, names
+              request = urllib.request.Request(url, method="GET")
+              with capability._opener.open(request) as response:
+                  body = response.read().decode("utf-8")
+              assert body == "BASELINE-FILE-BRIDGE", body
+
+          print("BASELINE EXPLOIT CONFIRMED: check PASS, DİSK yok, local file read")
+          PY
+
+          echo "=== APPLY THREE-LAYER SCHEME CONFINEMENT ==="
+          git apply /tmp/net_scheme_confinement.patch
+          python -m py_compile koschei/semantic.py koschei/interpreter.py koschei/diagnostics.py tests/test_security_regressions.py
+          python -m pip install -e .
+
+          echo "=== FULL UNIT AND ATTACK REGRESSION SUITE ==="
+          python -m unittest discover -s tests -v
+
+          echo "=== EXACT STATIC EXPLOIT MUST FAIL WITH KS2405 ==="
+          cat >/tmp/file-bridge.ks <<'KS'
+          fn main(caps: SystemCaps) {
+              let net = caps.net.allow("file://localhost/tmp/secret.txt")
+              let response = net.get("file://localhost/tmp/secret.txt") or "blocked"
+              println(response)
+          }
+          KS
+          if python -m koschei check /tmp/file-bridge.ks; then
+            echo "HATA: file:// origin hâlâ derleniyor" >&2
+            exit 1
+          fi
+          python -m koschei check /tmp/file-bridge.ks > /tmp/static.out 2>&1 || true
+          grep -q KS2405 /tmp/static.out
+
+          echo "=== RUNTIME OPENER MUST BE HTTP-ONLY ==="
+          python - <<'PY'
+          from koschei.interpreter import KsError, NetCaps, _build_http_only_opener, _origin_key
+
+          url = "file://localhost/tmp/secret.txt"
+          assert _origin_key(url) is None
+          result = NetCaps(url).get(url)
+          assert isinstance(result, KsError), result
+          handlers = {type(item).__name__ for item in _build_http_only_opener(("https", "api.example.com", 443)).handlers}
+          assert "FileHandler" not in handlers, handlers
+          assert "FTPHandler" not in handlers, handlers
+          assert "DataHandler" not in handlers, handlers
+          print("RUNTIME FILE/FTP/DATA HANDLERS ABSENT")
+          PY
+
+          echo "=== NORMAL COMPILER CI GATES ==="
+          python -m koschei check examples/capability.ks
+          python -m koschei check examples/runtime_demo.ks
+          python -m koschei run examples/runtime_demo.ks
+          python -m koschei check examples/control_flow.ks
+          output="$(python -m koschei run examples/control_flow.ks)"
+          test "$output" = $'3\n2\n1\nKoschei control flow: PASS'
+          python -m koschei build examples/hello.ks -o /tmp/koschei-hello
+          native="$(/tmp/koschei-hello)"
+          interpreted="$(python -m koschei run examples/hello.ks)"
+          test "$native" = "$interpreted"
+          if python -m koschei emit-go examples/showcase.ks; then exit 1; fi
+          python -m koschei caps examples/showcase.ks
+          python -m koschei caps examples/hello.ks --deny disk --deny net --deny env --deny process
+          if python -m koschei caps examples/showcase.ks --deny net; then exit 1; fi
+          for file in examples/*.ks; do python -m koschei fmt --check "$file"; done
+          python -m koschei run examples/holders.ks | grep -q KRITIK
+          python -m koschei run examples/app.ks | grep -q KRITIK
+          if python -m koschei check examples/supply_chain/main.ks; then exit 1; fi
+          python -m koschei fmt --check examples/supply_chain/main.ks
+          python -m koschei fmt --check examples/supply_chain/analytics.ks
+
+          rm -rf koschei_lang.egg-info koschei/__pycache__ tests/__pycache__
+          git add koschei/semantic.py koschei/interpreter.py koschei/diagnostics.py tests/test_security_regressions.py
+          test "$(git diff --cached --name-only | wc -l)" -eq 4
+          git diff --cached --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "security: confine network capabilities to HTTP schemes"
+          git push --force origin HEAD:refs/heads/agent/security-net-scheme-confinement-final
+
+      - name: Upload net-scheme diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: net-scheme-security-log
+          path: /tmp/net-scheme-security.log
+          retention-days: 1
