@@ -77,6 +77,7 @@ class StructValue:
 
 
 LIST_METHODS = {"length", "get", "push", "contains"}
+ALLOWED_NET_SCHEMES = frozenset({"http", "https"})
 
 
 class _KsUnit:
@@ -360,15 +361,36 @@ class _ScopedRedirectDenied(Exception):
         super().__init__(target)
 
 
+def _build_http_only_opener(
+    origin_key: tuple[str, str, int | None] | None,
+) -> urllib.request.OpenerDirector:
+    """Yalnızca HTTP(S) handler'ları olan bir opener oluşturur.
+
+    urllib.request.build_opener() açık handler verilse bile varsayılan FileHandler,
+    FTPHandler ve DataHandler ekler. Ağ capability'sinin disk/veri şemalarına
+    dönüşmemesi için OpenerDirector elle ve allowlist ile kurulur.
+    """
+    opener = urllib.request.OpenerDirector()
+    for handler in (
+        urllib.request.ProxyHandler(),
+        urllib.request.UnknownHandler(),
+        urllib.request.HTTPHandler(),
+        urllib.request.HTTPDefaultErrorHandler(),
+        _ScopedRedirectHandler(origin_key),
+        urllib.request.HTTPSHandler(),
+        urllib.request.HTTPErrorProcessor(),
+    ):
+        opener.add_handler(handler)
+    return opener
+
+
 class NetCaps(_NarrowedCapability):
     __slots__ = ("origin", "origin_key", "_opener")
 
     def __init__(self, origin: str) -> None:
         self.origin = origin
         self.origin_key = _origin_key(origin)
-        self._opener = urllib.request.build_opener(
-            _ScopedRedirectHandler(self.origin_key)
-        )
+        self._opener = _build_http_only_opener(self.origin_key)
 
     def _allows(self, url: str) -> bool:
         return self.origin_key is not None and _origin_key(url) == self.origin_key
@@ -447,6 +469,8 @@ def _origin_key(url: str) -> tuple[str, str, int | None] | None:
         if not parsed.scheme or not parsed.hostname:
             return None
         scheme = parsed.scheme.lower()
+        if scheme not in ALLOWED_NET_SCHEMES:
+            return None
         host = parsed.hostname.lower()
         port = parsed.port
         if port is None:

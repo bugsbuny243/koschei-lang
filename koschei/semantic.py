@@ -14,6 +14,7 @@ Hata kodları:
     KS2402  Kök yetki doğrudan kullanılamaz (önce allow ile daraltılmalı)
     KS2403  Daraltılmış yetki yeniden genişletilemez
     KS2404  Bu yetki türü ilgili işleme izin vermez
+    KS2405  Ağ origin şeması HTTP/HTTPS değil
 
 Yetki modeli:
     caps.disk           -> DiskRoot   (yalnızca allow / allow_read_only)
@@ -26,6 +27,7 @@ Böylece daraltma tek yönlüdür ve derleme zamanında zorlanır.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from urllib.parse import urlsplit
 
 from .ast_nodes import (
     AssignmentExpression,
@@ -86,6 +88,7 @@ for _methods in NARROWED_METHODS.values():
 
 CAPABILITY_TYPES = set(ROOT_METHODS) | set(NARROWED_METHODS) | {"SystemCaps"}
 ROOT_CAPABILITY_TYPES = set(ROOT_METHODS) | {"SystemCaps"}
+NET_ORIGIN_SCHEMES = frozenset({"http", "https"})
 
 BUILTIN_CALLS = {
     "print",
@@ -466,6 +469,7 @@ class SemanticChecker:
                     expression.callee.member,
                     expression.location,
                     argument_types,
+                    expression.arguments,
                 )
 
             if isinstance(expression.callee, Identifier):
@@ -751,12 +755,43 @@ class SemanticChecker:
                 location,
             )
 
+    def _check_net_origin(
+        self,
+        arguments: list[Expression],
+        location: SourceLocation,
+    ) -> None:
+        """Sabit ağ origin'lerini derleme anında HTTP(S) ile sınırlar.
+
+        Dinamik origin ifadeleri burada tahmin edilmez; runtime aynı kuralı
+        _origin_key içinde fail-closed olarak yeniden uygular.
+        """
+        if not arguments:
+            return
+        origin = arguments[0]
+        if not isinstance(origin, Literal) or not isinstance(origin.value, str):
+            return
+        try:
+            parsed = urlsplit(origin.value)
+            scheme = parsed.scheme.lower()
+            hostname = parsed.hostname
+        except ValueError:
+            scheme = ""
+            hostname = None
+        if scheme not in NET_ORIGIN_SCHEMES or hostname is None:
+            raise SemanticError(
+                "KS2405",
+                "NetRoot.allow origin'i yalnızca mutlak http:// veya https:// "
+                f"olabilir; {origin.value!r} reddedildi.",
+                location,
+            )
+
     def _check_method_call(
         self,
         receiver_type: str | None,
         method_name: str,
         location: SourceLocation,
         argument_types: list[str | None] | None = None,
+        arguments: list[Expression] | None = None,
     ) -> str | None:
         # List metotları yetki denetiminden ÖNCE ele alınır: 'get' aynı zamanda
         # bir yetki metodu adıdır ve liste erişimi yanlışlıkla yetki ihlali
@@ -796,6 +831,8 @@ class SemanticChecker:
         if receiver_type in ROOT_METHODS:
             mapping = ROOT_METHODS[receiver_type]
             if method_name in mapping:
+                if receiver_type == "NetRoot" and method_name == "allow":
+                    self._check_net_origin(arguments or [], location)
                 self.capability_count += 1
                 return mapping[method_name]
             raise SemanticError(

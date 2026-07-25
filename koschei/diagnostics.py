@@ -284,6 +284,27 @@ CATALOG: dict[str, Diagnostic] = {
         ),
         example="let cache = caps.disk.allow(\"/var/cache/app/\")\nlet written = cache.write(\"/var/cache/app/x\", \"veri\") or return",
     ),
+    "KS2405": Diagnostic(
+        code="KS2405",
+        title="Ağ origin şeması reddedildi",
+        summary=(
+            "NetRoot.allow için HTTP/HTTPS dışında bir origin verildi veya "
+            "mutlak bir ağ origin'i oluşturulamadı."
+        ),
+        why=(
+            "urllib gibi genel amaçlı istemciler file:, ftp: veya data: şemalarını "
+            "açabilir. Ağ yetkisi bu şemaları kabul ederse disk ve veri erişimine "
+            "dönüşerek capability sınırını aşar."
+        ),
+        fix=(
+            "Origin'i mutlak bir http:// veya https:// adresi yapın. Yerel dosya "
+            "erişimi gerekiyorsa ayrı DiskCaps/DiskReadCaps jetonu kullanın."
+        ),
+        example=(
+            'let net = caps.net.allow("https://api.example.com")\n'
+            'let response = net.get("https://api.example.com/data") or return'
+        ),
+    ),
     "KS3101": Diagnostic(
         code="KS3101",
         title="Çalışma anı: tanımsız isim veya geçersiz çağrı",
