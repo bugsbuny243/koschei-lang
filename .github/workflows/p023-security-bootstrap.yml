@@ -1,0 +1,200 @@
+name: Disk TOCTOU and Int64 Security Bootstrap
+
+on:
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  harden:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout bootstrap branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.21"
+
+      - name: Prove vulnerabilities, patch, and re-attack
+        shell: bash
+        run: |
+          set -euo pipefail
+          exec > >(tee /tmp/p023-security.log) 2>&1
+
+          cp -a .security/p023 /tmp/p023
+          git fetch origin main
+          git reset --hard origin/main
+          test "$(git rev-parse HEAD)" = "4d19495eb34da9a4b36935232a90b56eb9ecca49"
+          python -m pip install -e .
+
+          echo "=== BASELINE: deterministic disk check/use swap leaks ==="
+          python - <<'PY'
+          import pathlib
+          import tempfile
+          from unittest.mock import patch
+          from koschei.interpreter import DiskCaps
+
+          with tempfile.TemporaryDirectory() as directory:
+              root = pathlib.Path(directory)
+              scope = root / "scope"
+              scope.mkdir()
+              victim = scope / "victim.txt"
+              victim.write_text("SAFE", encoding="utf-8")
+              outside = root / "outside.txt"
+              outside.write_text("TOCTOU-LEAK", encoding="utf-8")
+              original = pathlib.Path.read_text
+
+              def swap_then_read(path, *args, **kwargs):
+                  victim.unlink(missing_ok=True)
+                  victim.symlink_to(outside)
+                  return original(path, *args, **kwargs)
+
+              with patch.object(pathlib.Path, "read_text", swap_then_read):
+                  result = DiskCaps(str(scope)).read_file(str(victim))
+              assert result == "TOCTOU-LEAK", result
+          print("BASELINE DISK TOCTOU CONFIRMED")
+          PY
+
+          echo "=== BASELINE: interpreter/native integer mismatch ==="
+          cat >/tmp/int-overflow.ks <<'KS'
+          fn main() {
+              println(9223372036854775807 + 1)
+          }
+          KS
+          interpreted="$(python -m koschei run /tmp/int-overflow.ks)"
+          python -m koschei build /tmp/int-overflow.ks -o /tmp/int-overflow-old
+          native="$(/tmp/int-overflow-old)"
+          test "$interpreted" = "9223372036854775808"
+          test "$native" = "-9223372036854775808"
+          test "$interpreted" != "$native"
+          echo "BASELINE INT PARITY FAILURE CONFIRMED"
+
+          echo "=== APPLY PINNED-DIRFD + CHECKED-INT64 PATCH ==="
+          mkdir -p .security
+          cp -a /tmp/p023 .security/p023
+          python .security/p023/apply_patch.py
+          python -m py_compile \
+            koschei/interpreter.py koschei/semantic.py koschei/codegen_go.py \
+            koschei/diagnostics.py tests/test_security_regressions.py \
+            tests/test_integer_semantics.py
+          python -m pip install -e .
+
+          echo "=== FULL UNIT AND ADVERSARIAL SUITE ==="
+          python -m unittest discover -s tests -v
+
+          echo "=== EXACT DISK RE-ATTACKS ==="
+          python - <<'PY'
+          import pathlib
+          import tempfile
+          from unittest.mock import patch
+          from koschei.interpreter import DiskCaps, KsError
+
+          # The old Path.read_text check/use hook is no longer on the I/O path.
+          with tempfile.TemporaryDirectory() as directory:
+              root = pathlib.Path(directory)
+              scope = root / "scope"
+              scope.mkdir()
+              victim = scope / "victim.txt"
+              victim.write_text("SAFE", encoding="utf-8")
+              outside = root / "outside.txt"
+              outside.write_text("TOCTOU-LEAK", encoding="utf-8")
+              with patch.object(pathlib.Path, "read_text", side_effect=AssertionError("path I/O used")):
+                  result = DiskCaps(str(scope)).read_file(str(victim))
+              assert result == "SAFE", result
+
+          # Replacing the scope path after token creation cannot redirect read/write/delete.
+          with tempfile.TemporaryDirectory() as parent, tempfile.TemporaryDirectory() as outside:
+              scope = pathlib.Path(parent) / "scope"
+              scope.mkdir()
+              (scope / "read.txt").write_text("PINNED", encoding="utf-8")
+              (scope / "write.txt").write_text("OLD", encoding="utf-8")
+              (scope / "delete.txt").write_text("DELETE-ME", encoding="utf-8")
+              outside_path = pathlib.Path(outside)
+              for name in ("read.txt", "write.txt", "delete.txt"):
+                  (outside_path / name).write_text("OUTSIDE", encoding="utf-8")
+              cap = DiskCaps(str(scope))
+              anchored = pathlib.Path(parent) / "anchored"
+              scope.rename(anchored)
+              scope.symlink_to(outside_path, target_is_directory=True)
+
+              assert cap.read_file(str(scope / "read.txt")) == "PINNED"
+              assert not isinstance(cap.write_file(str(scope / "write.txt"), "NEW"), KsError)
+              assert not isinstance(cap.delete(str(scope / "delete.txt")), KsError)
+              assert (anchored / "write.txt").read_text(encoding="utf-8") == "NEW"
+              assert not (anchored / "delete.txt").exists()
+              for name in ("read.txt", "write.txt", "delete.txt"):
+                  assert (outside_path / name).read_text(encoding="utf-8") == "OUTSIDE"
+          print("DISK RE-ATTACKS BLOCKED")
+          PY
+
+          echo "=== EXACT INT64 PARITY RE-ATTACK ==="
+          cat >/tmp/int64-parity.ks <<'KS'
+          fn main() {
+              println(9223372036854775807)
+              println(-9223372036854775808)
+              let add = 9223372036854775807 + 1 or "ADD-OVERFLOW"
+              let sub = -9223372036854775808 - 1 or "SUB-OVERFLOW"
+              let mul = 9223372036854775807 * 2 or "MUL-OVERFLOW"
+              let neg = -(-9223372036854775808) or "NEG-OVERFLOW"
+              println("{add} {sub} {mul} {neg}")
+          }
+          KS
+          interpreted="$(python -m koschei run /tmp/int64-parity.ks)"
+          python -m koschei build /tmp/int64-parity.ks -o /tmp/int64-parity
+          native="$(/tmp/int64-parity)"
+          test "$native" = "$interpreted"
+          case "$interpreted" in
+            *"ADD-OVERFLOW SUB-OVERFLOW MUL-OVERFLOW NEG-OVERFLOW"*) ;;
+            *) echo "HATA: checked overflow output missing" >&2; exit 1 ;;
+          esac
+
+          echo "=== NORMAL COMPILER CI GATES ==="
+          python -m koschei check examples/capability.ks
+          python -m koschei check examples/runtime_demo.ks
+          python -m koschei run examples/runtime_demo.ks
+          python -m koschei check examples/control_flow.ks
+          output="$(python -m koschei run examples/control_flow.ks)"
+          test "$output" = $'3\n2\n1\nKoschei control flow: PASS'
+          python -m koschei build examples/hello.ks -o /tmp/koschei-hello
+          test "$(/tmp/koschei-hello)" = "$(python -m koschei run examples/hello.ks)"
+          if python -m koschei emit-go examples/showcase.ks; then exit 1; fi
+          python -m koschei caps examples/showcase.ks
+          python -m koschei caps examples/hello.ks --deny disk --deny net --deny env --deny process
+          if python -m koschei caps examples/showcase.ks --deny net; then exit 1; fi
+          for file in examples/*.ks; do python -m koschei fmt --check "$file"; done
+          case "$(python -m koschei run examples/holders.ks)" in *KRITIK*) ;; *) exit 1;; esac
+          case "$(python -m koschei run examples/app.ks)" in *KRITIK*) ;; *) exit 1;; esac
+          if python -m koschei check examples/supply_chain/main.ks; then exit 1; fi
+          python -m koschei fmt --check examples/app.ks
+          python -m koschei fmt --check examples/risk.ks
+          python -m koschei fmt --check examples/supply_chain/main.ks
+          python -m koschei fmt --check examples/supply_chain/analytics.ks
+
+          rm -rf koschei_lang.egg-info
+          expected=$'koschei/codegen_go.py\nkoschei/diagnostics.py\nkoschei/interpreter.py\nkoschei/semantic.py\ntests/test_integer_semantics.py\ntests/test_security_regressions.py'
+          actual="$(git diff --cached --name-only | sort)"
+          test "$actual" = "$expected"
+          git diff --cached --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "security: pin disk scopes and enforce checked int64"
+          git push --force origin HEAD:refs/heads/agent/security-disk-toctou-int64-final
+
+      - name: Upload security diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p023-security-log
+          path: /tmp/p023-security.log
+          retention-days: 1
