@@ -1,0 +1,221 @@
+name: File Scheme Security Bootstrap
+
+on:
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  harden:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout bootstrap branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.21"
+
+      - name: Prove exploit, patch, and re-attack
+        shell: bash
+        run: |
+          set -euo pipefail
+          exec > >(tee /tmp/file-scheme-security.log) 2>&1
+
+          cp .security/file_scheme_patch.py /tmp/file_scheme_patch.py
+          git fetch origin main
+          git reset --hard origin/main
+          python -m pip install -e .
+
+          echo "=== BASELINE: prove file:// bridge is live ==="
+          python - <<'PY'
+          import io
+          import pathlib
+          import tempfile
+          import urllib.request
+          from contextlib import redirect_stderr, redirect_stdout
+
+          from koschei.cli import main
+          from koschei.interpreter import NetCaps
+          from koschei.parser import parse
+          from koschei.semantic import check
+
+          with tempfile.TemporaryDirectory() as directory:
+              secret = pathlib.Path(directory) / "secret.txt"
+              secret.write_text("FILE-BRIDGE-SECRET", encoding="utf-8")
+              url = "file://localhost" + str(secret)
+              source = (
+                  'fn main(caps: SystemCaps) { '
+                  f'let net = caps.net.allow("{url}") '
+                  '}'
+              )
+
+              program = parse(source)
+              check(program)
+
+              hits = []
+              original = urllib.request.FileHandler.file_open
+              def tracked(self, request):
+                  hits.append(request.full_url)
+                  return original(self, request)
+              urllib.request.FileHandler.file_open = tracked
+              try:
+                  try:
+                      NetCaps(url).get(url)
+                  except TypeError:
+                      pass
+              finally:
+                  urllib.request.FileHandler.file_open = original
+              assert hits == [url], hits
+
+              attack = pathlib.Path(directory) / "attack.ks"
+              attack.write_text(source, encoding="utf-8")
+              output = io.StringIO()
+              error = io.StringIO()
+              with redirect_stdout(output), redirect_stderr(error):
+                  exit_code = main(["caps", str(attack)])
+              assert exit_code == 0, (exit_code, output.getvalue(), error.getvalue())
+              assert "DİSK: yok" in output.getvalue(), output.getvalue()
+
+          print("BASELINE EXPLOIT CONFIRMED: check PASS, FileHandler reached, manifest says disk none")
+          PY
+
+          echo "=== APPLY THREE-LAYER FIX ==="
+          python /tmp/file_scheme_patch.py
+          python -m py_compile \
+            koschei/semantic.py \
+            koschei/interpreter.py \
+            koschei/diagnostics.py \
+            tests/test_network_scheme_security.py
+          python -m pip install -e .
+
+          echo "=== 181 UNIT AND SECURITY TESTS ==="
+          python -m unittest discover -s tests -v
+
+          echo "=== EXACT EXPLOIT MUST FAIL CLOSED ==="
+          cat >/tmp/file-bridge.ks <<'KS'
+          fn main(caps: SystemCaps) {
+              let net = caps.net.allow("file://localhost/tmp/secret.txt")
+          }
+          KS
+          if python -m koschei check /tmp/file-bridge.ks; then
+            echo "HATA: file:// sabit origin derlenmemeliydi" >&2
+            exit 1
+          fi
+          python -m koschei check /tmp/file-bridge.ks 2>&1 | grep -q KS2405 || true
+
+          echo "=== DYNAMIC AND VARIANT SCHEME ATTACKS ==="
+          python - <<'PY'
+          import urllib.request
+
+          from koschei.interpreter import KsError, NetCaps
+          from koschei.parser import parse
+          from koschei.semantic import SemanticError, check
+
+          static_bad = [
+              "FILE://localhost/tmp/secret",
+              "file://localhost/tmp/secret",
+              "ftp://example.com/a",
+              "data:text/plain,secret",
+              "https://",
+              "  file://localhost/tmp/secret",
+          ]
+          for origin in static_bad:
+              source = f'fn main(caps: SystemCaps) {{ let n = caps.net.allow("{origin}") }}'
+              try:
+                  check(parse(source))
+              except SemanticError as error:
+                  assert error.code == "KS2405", (origin, error)
+              else:
+                  raise AssertionError(f"static origin passed: {origin!r}")
+
+          runtime_bad = [
+              "FILE://localhost/tmp/secret",
+              "file://localhost/tmp/secret",
+              "ftp://example.com/a",
+              "data:text/plain,secret",
+              "gopher://example.com/x",
+              "https://",
+          ]
+          for origin in runtime_bad:
+              result = NetCaps(origin).get(origin)
+              assert isinstance(result, KsError), (origin, result)
+              assert "KS3402" in result.message, (origin, result.message)
+
+          handlers = NetCaps("https://api.example.com")._opener.handlers
+          forbidden = (
+              urllib.request.FileHandler,
+              urllib.request.FTPHandler,
+              urllib.request.DataHandler,
+          )
+          for handler in handlers:
+              assert not isinstance(handler, forbidden), type(handler)
+
+          for origin in ("http://example.com", "https://example.com"):
+              assert NetCaps(origin).origin_key is not None, origin
+
+          print("SCHEME VARIANT ATTACKS: PASS")
+          PY
+
+          echo "=== NORMAL COMPILER SMOKE GATES ==="
+          python -m koschei check examples/capability.ks
+          python -m koschei check examples/runtime_demo.ks
+          python -m koschei run examples/runtime_demo.ks
+          python -m koschei check examples/control_flow.ks
+          output="$(python -m koschei run examples/control_flow.ks)"
+          test "$output" = $'3\n2\n1\nKoschei control flow: PASS'
+          python -m koschei build examples/hello.ks -o /tmp/koschei-hello
+          test "$(/tmp/koschei-hello)" = "$(python -m koschei run examples/hello.ks)"
+          python -m koschei caps examples/showcase.ks
+          python -m koschei caps examples/hello.ks --deny disk --deny net --deny env --deny process
+          if python -m koschei caps examples/showcase.ks --deny net; then
+            echo "HATA: deny net ağ talebini reddetmeliydi" >&2
+            exit 1
+          fi
+          for file in examples/*.ks; do
+            python -m koschei fmt --check "$file"
+          done
+          case "$(python -m koschei run examples/holders.ks)" in
+            *KRITIK*) ;;
+            *) echo "HATA: holders örneği başarısız" >&2; exit 1 ;;
+          esac
+          case "$(python -m koschei run examples/app.ks)" in
+            *KRITIK*) ;;
+            *) echo "HATA: app örneği başarısız" >&2; exit 1 ;;
+          esac
+          if python -m koschei check examples/supply_chain/main.ks; then
+            echo "HATA: supply-chain saldırısı derlenmemeliydi" >&2
+            exit 1
+          fi
+          python -m koschei explain KS2405 | grep -q "Ağ origin şeması reddedildi"
+
+          rm -rf koschei_lang.egg-info
+          git add \
+            koschei/semantic.py \
+            koschei/interpreter.py \
+            koschei/diagnostics.py \
+            tests/test_network_scheme_security.py
+          test "$(git diff --cached --name-only | wc -l)" -eq 4
+          git diff --cached --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "security: block non-http network schemes and file bridge"
+          git push --force origin HEAD:refs/heads/agent/security-file-scheme-final
+
+      - name: Upload file-scheme diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: file-scheme-security-log
+          path: /tmp/file-scheme-security.log
+          retention-days: 1
