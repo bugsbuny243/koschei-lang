@@ -143,8 +143,10 @@ def load_graph(root_path: str | Path) -> ModuleGraph:
     return ModuleGraph(root=root_key, modules=modules)
 
 
-def public_api(module: Module) -> tuple[dict[str, object], dict[str, object]]:
-    """Modülün dışarıya açık fonksiyon ve struct tabloları.
+def public_api(
+    module: Module,
+) -> tuple[dict[str, object], dict[str, object], dict[str, object]]:
+    """Modülün dışarıya açık fonksiyon, struct ve enum tabloları.
 
     v1'de bir modülün tüm üst düzey tanımları içe aktarılabilir; ayrı bir
     'pub' işareti yoktur. Bu bilinçli bir sadeleştirmedir ve ileride
@@ -156,7 +158,10 @@ def public_api(module: Module) -> tuple[dict[str, object], dict[str, object]]:
     structs = {
         declaration.name: declaration for declaration in module.program.structs
     }
-    return functions, structs
+    enums = {
+        declaration.name: declaration for declaration in module.program.enums
+    }
+    return functions, structs, enums
 
 
 def imported_modules(graph: ModuleGraph, module: Module) -> dict[str, ImportedModule]:
@@ -164,8 +169,10 @@ def imported_modules(graph: ModuleGraph, module: Module) -> dict[str, ImportedMo
     result: dict[str, ImportedModule] = {}
     for local_name, key in module.imports.items():
         target = graph.module_of(key)
-        functions, structs = public_api(target)
-        result[local_name] = ImportedModule(local_name, functions, structs)
+        functions, structs, enums = public_api(target)
+        result[local_name] = ImportedModule(
+            local_name, functions, structs, enums
+        )
     return result
 
 
@@ -194,3 +201,12 @@ def namespaces(graph: ModuleGraph) -> dict[str, dict]:
         }
         for key, module in graph.modules.items()
     }
+
+
+def enum_declarations(graph: ModuleGraph) -> dict[str, object]:
+    """Tüm modül grafiğindeki enum tanımları (yorumlayıcı constructor tablosu)."""
+    result: dict[str, object] = {}
+    for module in graph.in_dependency_order():
+        for declaration in module.program.enums:
+            result[declaration.name] = declaration
+    return result

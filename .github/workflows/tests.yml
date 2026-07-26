@@ -96,6 +96,11 @@ jobs:
           esac
 
 
+      - name: Run v0.8 algebraic-type example
+        run: |
+          output="$(python -m koschei run examples/v08_types.ks)"
+          test "$output" = $'Gönderildi: Onur\nişlem başarısız'
+
       - name: Run data-structure example
         run: |
           output="$(python -m koschei run examples/holders.ks)"

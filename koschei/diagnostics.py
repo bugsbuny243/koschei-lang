@@ -237,6 +237,38 @@ CATALOG: dict[str, Diagnostic] = {
         ),
         example="import risk\nlet etiket = risk.label(62)",
     ),
+    "KS1701": Diagnostic(
+        code="KS1701",
+        title="Enum veya varyant sözleşmesi hatası",
+        summary="Enum tanımı ya da varyant constructor çağrısı bildirilen sözleşmeyle uyuşmuyor.",
+        why=(
+            "Varyant adları program genelinde benzersizdir ve payload taşıyan bir "
+            "varyant tam olarak bir değer alır. Bu sözleşme gevşerse match kolları "
+            "hangi veriyle çalıştığını güvenli biçimde bilemez."
+        ),
+        fix="Enum varyant adlarını benzersiz tutun ve constructor'a bildirilen payload tipini verin.",
+        example=(
+            "enum State { Idle, Ready(String) }\n"
+            "let state = Ready(\"hazır\")"
+        ),
+    ),
+    "KS1702": Diagnostic(
+        code="KS1702",
+        title="match sözleşmesi tamamlanmadı",
+        summary="match ifadesi bir varyantı atladı, aynı kolu tekrarladı veya uyumsuz sonuç tipleri üretti.",
+        why=(
+            "Koschei match ifadeleri exhaustive olmak zorundadır. Enum'a yeni bir "
+            "varyant eklendiğinde işlenmeyen durum sessizce runtime'a taşınmaz; "
+            "derleme anında görünür olur."
+        ),
+        fix="Enumun tüm varyantlarını tam birer kez ele alın ve kolları uyumlu tipte değer döndürecek şekilde düzenleyin.",
+        example=(
+            "match state {\n"
+            "    Idle => \"bekliyor\",\n"
+            "    Ready(message) => message,\n"
+            "}"
+        ),
+    ),
     "KS2401": Diagnostic(
         code="KS2401",
         title="Gerekli yetki bu scope içinde mevcut değil",

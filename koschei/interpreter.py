@@ -17,6 +17,7 @@ from urllib.parse import urlsplit
 
 from .ast_nodes import (
     AssignmentExpression,
+    EnumVariant,
     ForStatement,
     ListLiteral,
     MapLiteral,
@@ -32,6 +33,7 @@ from .ast_nodes import (
     InterpolatedString,
     LetStatement,
     Literal,
+    MatchExpression,
     MemberExpression,
     OrBlockExpression,
     OrElseExpression,
@@ -86,6 +88,25 @@ class StructValue:
     fields: dict[str, Any]
 
 
+_NO_PAYLOAD = object()
+
+
+@dataclass(frozen=True, slots=True)
+class EnumValue:
+    """Kullanıcı enum'u, Option veya Result varyantı."""
+
+    enum_name: str
+    variant: str
+    payload: Any = _NO_PAYLOAD
+
+
+@dataclass(frozen=True, slots=True)
+class _EnumConstructor:
+    enum_name: str
+    variant: str
+    payload_type: tuple[str, ...] | None
+
+
 LIST_METHODS = {"length", "get", "push", "contains", "sort", "filter"}
 ALLOWED_NET_SCHEMES = frozenset({"http", "https"})
 MAP_METHODS = {"get", "set", "keys", "contains"}
@@ -130,6 +151,10 @@ def ks_to_string(value: Any) -> str:
             f"{name}: {_ks_repr(item)}" for name, item in value.fields.items()
         )
         return f"{value.type_name} {{ {inner} }}"
+    if isinstance(value, EnumValue):
+        if value.payload is _NO_PAYLOAD:
+            return value.variant
+        return f"{value.variant}({_ks_repr(value.payload)})"
     return str(value)
 
 
@@ -754,6 +779,11 @@ def _contains_capability(value: Any, seen: set[int] | None = None) -> bool:
             _contains_capability(item, visited)
             for item in value.fields.values()
         )
+    if isinstance(value, EnumValue):
+        if value.payload is _NO_PAYLOAD:
+            return False
+        visited.add(identity)
+        return _contains_capability(value.payload, visited)
     if isinstance(value, list):
         visited.add(identity)
         return any(_contains_capability(item, visited) for item in value)
@@ -790,6 +820,7 @@ class Interpreter:
         argv: list[str] | None = None,
         namespaces: dict[str, dict[str, FunctionDeclaration]] | None = None,
         imports: dict[str, str] | None = None,
+        enums: dict[str, Any] | None = None,
     ) -> None:
         self.program = program
         self.argv = list(argv or [])
@@ -799,6 +830,26 @@ class Interpreter:
         self.structs = {
             declaration.name: declaration for declaration in program.structs
         }
+        self.constructors: dict[str, _EnumConstructor] = {
+            "Some": _EnumConstructor("Option", "Some", ("_",)),
+            "None": _EnumConstructor("Option", "None", None),
+            "Ok": _EnumConstructor("Result", "Ok", ("_",)),
+            "Err": _EnumConstructor("Result", "Err", ("_",)),
+        }
+        all_enums = dict(enums or {})
+        for declaration in program.enums:
+            all_enums[declaration.name] = declaration
+        for declaration in all_enums.values():
+            for variant in declaration.variants:
+                self.constructors[variant.name] = _EnumConstructor(
+                    declaration.name,
+                    variant.name,
+                    (
+                        variant.payload_type.names
+                        if variant.payload_type is not None
+                        else None
+                    ),
+                )
         # Modül anahtarı -> o modülün fonksiyon tablosu
         self.namespaces = namespaces or {}
         # Yerel import adı -> modül anahtarı
@@ -1006,6 +1057,9 @@ class Interpreter:
         if isinstance(expression, Identifier):
             if expression.name in self.functions:
                 return self.functions[expression.name]
+            constructor = self.constructors.get(expression.name)
+            if constructor is not None:
+                return constructor
             if expression.name in {"print", "println", "Error"}:
                 return expression.name
             if expression.name in self.imports:
@@ -1101,6 +1155,36 @@ class Interpreter:
             arguments = [self._evaluate(item) for item in expression.arguments]
             return self._invoke(callee, arguments, expression.location)
 
+        if isinstance(expression, MatchExpression):
+            value = self._evaluate(expression.value)
+            if not isinstance(value, EnumValue):
+                raise KoscheiRuntimeError(
+                    "KS3101",
+                    "match çalışma anında bir enum, Option veya Result değeri bekler.",
+                    expression.location,
+                )
+            for arm in expression.arms:
+                if arm.variant != value.variant:
+                    continue
+                self.environment.push()
+                try:
+                    if arm.binding is not None:
+                        if value.payload is _NO_PAYLOAD:
+                            raise KoscheiRuntimeError(
+                                "KS3101",
+                                f"'{value.variant}' payload taşımıyor.",
+                                arm.location,
+                            )
+                        self.environment.define(arm.binding, value.payload, False)
+                    return self._evaluate(arm.body)
+                finally:
+                    self.environment.pop()
+            raise KoscheiRuntimeError(
+                "KS3101",
+                f"match içinde '{value.variant}' varyantı için kol yok.",
+                expression.location,
+            )
+
         if isinstance(expression, AssignmentExpression):
             value = self._evaluate(expression.value)
             if isinstance(expression.target, Identifier):
@@ -1141,22 +1225,25 @@ class Interpreter:
 
         if isinstance(expression, OrReturnExpression):
             value = self._evaluate(expression.value)
-            if isinstance(value, KsError):
+            success, payload = self._unwrap_fallible(value)
+            if not success:
                 replacement = (
                     value
                     if expression.error is None
                     else self._evaluate(expression.error)
                 )
                 raise _ReturnSignal(replacement)
-            return value
+            return payload
 
         if isinstance(expression, OrElseExpression):
             value = self._evaluate(expression.value)
-            return self._evaluate(expression.fallback) if isinstance(value, KsError) else value
+            success, payload = self._unwrap_fallible(value)
+            return payload if success else self._evaluate(expression.fallback)
 
         if isinstance(expression, OrBlockExpression):
             value = self._evaluate(expression.value)
-            return self._execute_block(expression.handler) if isinstance(value, KsError) else value
+            success, payload = self._unwrap_fallible(value)
+            return payload if success else self._execute_block(expression.handler)
 
         raise AssertionError(f"Desteklenmeyen expression: {type(expression).__name__}")
 
@@ -1308,6 +1395,27 @@ class Interpreter:
                 arguments,
                 namespace=self.namespaces.get(callee.module_name, {}),
             )
+        if isinstance(callee, _EnumConstructor):
+            expected = 0 if callee.payload_type is None else 1
+            self._require_arity(callee.variant, arguments, expected, location)
+            if callee.payload_type is None:
+                return EnumValue(callee.enum_name, callee.variant)
+            payload = arguments[0]
+            if _contains_capability(payload):
+                raise KoscheiRuntimeError(
+                    "KS3401",
+                    "Capability taşıyan değerler enum/Option/Result payload'ına konamaz.",
+                    location,
+                )
+            if not self._runtime_matches_type(payload, callee.payload_type):
+                raise KoscheiRuntimeError(
+                    "KS3401",
+                    f"'{callee.variant}' payload sözleşmesi "
+                    f"{' or '.join(callee.payload_type)} beklerken "
+                    f"{self._runtime_type_name(payload)} aldı.",
+                    location,
+                )
+            return EnumValue(callee.enum_name, callee.variant, payload)
         if callee == "println":
             self._require_arity("println", arguments, 1, location)
             print(ks_to_string(arguments[0]))
@@ -1474,12 +1582,67 @@ class Interpreter:
                 "KS3101", f"'{name}' çağrısı geçersiz: {error}", member.location
             ) from error
 
+    @staticmethod
+    def _split_generic_arguments(text: str) -> tuple[str, ...]:
+        arguments: list[str] = []
+        depth = 0
+        start = 0
+        for index, char in enumerate(text):
+            if char == "<":
+                depth += 1
+            elif char == ">":
+                depth -= 1
+            elif char == "," and depth == 0:
+                arguments.append(text[start:index].strip())
+                start = index + 1
+        arguments.append(text[start:].strip())
+        return tuple(argument for argument in arguments if argument)
+
+    @classmethod
+    def _generic_type(cls, name: str) -> tuple[str, tuple[str, ...]]:
+        if "<" not in name or not name.endswith(">"):
+            return name, ()
+        base, rest = name.split("<", 1)
+        return base.strip(), cls._split_generic_arguments(rest[:-1])
+
+    @staticmethod
+    def _unwrap_fallible(value: Any) -> tuple[bool, Any]:
+        if isinstance(value, KsError):
+            return False, value
+        if isinstance(value, EnumValue):
+            if value.enum_name == "Option":
+                if value.variant == "Some":
+                    return True, value.payload
+                if value.variant == "None":
+                    return False, value
+            if value.enum_name == "Result":
+                if value.variant == "Ok":
+                    return True, value.payload
+                if value.variant == "Err":
+                    return False, value
+        return True, value
+
     def _runtime_matches_type(
         self,
         value: Any,
         expected_names,
     ) -> bool:
         for name in expected_names:
+            if name == "_":
+                return True
+            base, arguments = self._generic_type(name)
+            if base == "Option" and len(arguments) == 1 and isinstance(value, EnumValue) and value.enum_name == "Option":
+                if value.variant == "None":
+                    return True
+                if value.variant == "Some" and value.payload is not _NO_PAYLOAD:
+                    return self._runtime_matches_type(value.payload, (arguments[0],))
+            if base == "Result" and len(arguments) == 2 and isinstance(value, EnumValue) and value.enum_name == "Result":
+                if value.variant == "Ok" and value.payload is not _NO_PAYLOAD:
+                    return self._runtime_matches_type(value.payload, (arguments[0],))
+                if value.variant == "Err" and value.payload is not _NO_PAYLOAD:
+                    return self._runtime_matches_type(value.payload, (arguments[1],))
+            if isinstance(value, EnumValue) and value.enum_name == name:
+                return True
             if name == "SystemCaps" and isinstance(value, SystemCaps):
                 return True
             if name == "NetRoot" and isinstance(value, NetRoot):
@@ -1528,6 +1691,14 @@ class Interpreter:
             return "Void"
         if isinstance(value, StructValue):
             return value.type_name
+        if isinstance(value, EnumValue):
+            if value.enum_name == "Option":
+                inner = "_" if value.payload is _NO_PAYLOAD else Interpreter._runtime_type_name(value.payload)
+                return f"Option<{inner}>"
+            if value.enum_name == "Result":
+                inner = "_" if value.payload is _NO_PAYLOAD else Interpreter._runtime_type_name(value.payload)
+                return f"Result<{inner}>"
+            return value.enum_name
         if isinstance(value, KsError):
             return "Error"
         mapping = (
@@ -1571,6 +1742,7 @@ def run(
     argv: list[str],
     namespaces: dict[str, dict[str, FunctionDeclaration]] | None = None,
     imports: dict[str, str] | None = None,
+    enums: dict[str, Any] | None = None,
 ) -> int:
     """Programı çalıştırır.
 
@@ -1579,7 +1751,7 @@ def run(
     """
     if namespaces is None:
         semantic_check(program)
-    result = Interpreter(program, argv, namespaces, imports).execute_main()
+    result = Interpreter(program, argv, namespaces, imports, enums).execute_main()
     if isinstance(result, KsError):
         print(f"KOSCHEI RUNTIME ERROR: {result.message}", file=sys.stderr)
         return 1

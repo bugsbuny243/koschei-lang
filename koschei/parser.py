@@ -15,6 +15,8 @@ from __future__ import annotations
 
 from .ast_nodes import (
     AssignmentExpression,
+    EnumDeclaration,
+    EnumVariant,
     ImportDeclaration,
     ForStatement,
     ListLiteral,
@@ -33,6 +35,8 @@ from .ast_nodes import (
     InterpolatedString,
     LetStatement,
     Literal,
+    MatchArm,
+    MatchExpression,
     MemberExpression,
     OrBlockExpression,
     OrElseExpression,
@@ -62,7 +66,9 @@ _OR_RETURN_STOP = {
     TokenType.RETURN,
     TokenType.IF,
     TokenType.WHILE,
+    TokenType.FOR,
     TokenType.FN,
+    TokenType.ENUM,
     TokenType.EOF,
 }
 
@@ -79,6 +85,7 @@ class Parser:
     def parse(self) -> Program:
         declarations: list[FunctionDeclaration] = []
         structs: list[StructDeclaration] = []
+        enums: list[EnumDeclaration] = []
         imports: list[ImportDeclaration] = []
 
         while not self._is_at_end():
@@ -86,10 +93,14 @@ class Parser:
                 imports.append(self._import_declaration())
             elif self._check(TokenType.STRUCT):
                 structs.append(self._struct_declaration())
+            elif self._check(TokenType.ENUM):
+                enums.append(self._enum_declaration())
             else:
                 declarations.append(self._function_declaration())
 
-        return Program(tuple(declarations), tuple(structs), tuple(imports))
+        return Program(
+            tuple(declarations), tuple(structs), tuple(imports), tuple(enums)
+        )
 
     def _import_declaration(self) -> ImportDeclaration:
         import_token = self._consume(TokenType.IMPORT, "'import' bekleniyordu.")
@@ -118,6 +129,34 @@ class Parser:
         return StructDeclaration(
             name.value, tuple(fields), self._location(struct_token)
         )
+
+    def _enum_declaration(self) -> EnumDeclaration:
+        enum_token = self._consume(TokenType.ENUM, "'enum' bekleniyordu.")
+        name = self._consume(TokenType.TYPE, "Enum adı büyük harfle başlamalıdır.")
+        self._consume(TokenType.LEFT_BRACE, "Enum adından sonra '{' bekleniyordu.")
+
+        variants: list[EnumVariant] = []
+        while not self._check(TokenType.RIGHT_BRACE) and not self._is_at_end():
+            variant = self._consume(
+                TokenType.TYPE, "Enum varyantı büyük harfle başlamalıdır."
+            )
+            payload_type: TypeRef | None = None
+            if self._match(TokenType.LEFT_PAREN):
+                payload_type = self._type_ref()
+                self._consume(
+                    TokenType.RIGHT_PAREN,
+                    "Enum varyantı payload tipinden sonra ')' bekleniyordu.",
+                )
+            variants.append(
+                EnumVariant(variant.value, payload_type, self._location(variant))
+            )
+            if not self._match(TokenType.COMMA):
+                break
+            if self._check(TokenType.RIGHT_BRACE):
+                break
+
+        self._consume(TokenType.RIGHT_BRACE, "Enum sonunda '}' bekleniyordu.")
+        return EnumDeclaration(name.value, tuple(variants), self._location(enum_token))
 
     def _function_declaration(self) -> FunctionDeclaration:
         fn_token = self._consume(TokenType.FN, "Fonksiyon 'fn' ile başlamalıdır.")
@@ -155,14 +194,27 @@ class Parser:
         return Parameter(name.value, type_ref, self._location(name))
 
     def _type_ref(self) -> TypeRef:
-        first = self._consume(TokenType.TYPE, "Tip adı bekleniyordu.")
-        names = [first.value]
+        first = self._peek()
+        names = [self._type_atom()]
 
         while self._match(TokenType.OR):
-            next_type = self._consume(TokenType.TYPE, "'or' sonrasında tip adı bekleniyordu.")
-            names.append(next_type.value)
+            names.append(self._type_atom())
 
         return TypeRef(tuple(names), self._location(first))
+
+    def _type_atom(self) -> str:
+        token = self._consume(TokenType.TYPE, "Tip adı bekleniyordu.")
+        name = token.value
+        if not self._match(TokenType.LESS):
+            return name
+
+        arguments: list[str] = []
+        while True:
+            arguments.append(self._type_atom())
+            if not self._match(TokenType.COMMA):
+                break
+        self._consume(TokenType.GREATER, "Generic tip sonunda '>' bekleniyordu.")
+        return f"{name}<{', '.join(arguments)}>"
 
     def _block(self) -> Block:
         self._consume(TokenType.LEFT_BRACE, "Blok başlangıcı için '{' bekleniyordu.")
@@ -395,6 +447,9 @@ class Parser:
         return CallExpression(callee, tuple(arguments), self._location(left_paren))
 
     def _primary(self) -> Expression:
+        if self._match(TokenType.MATCH):
+            return self._match_expression(self._previous())
+
         if self._match(TokenType.STRING, TokenType.NUMBER):
             token = self._previous()
             return Literal(token.value, self._location(token))
@@ -429,6 +484,44 @@ class Parser:
             return expression
 
         self._error(self._peek(), "İfade bekleniyordu.")
+
+    def _match_expression(self, match_token: Token) -> MatchExpression:
+        value = self._expression()
+        self._consume(TokenType.LEFT_BRACE, "match değerinden sonra '{' bekleniyordu.")
+        arms: list[MatchArm] = []
+
+        while not self._check(TokenType.RIGHT_BRACE) and not self._is_at_end():
+            variant = self._consume(
+                TokenType.TYPE, "match kolunda varyant adı bekleniyordu."
+            )
+            binding: str | None = None
+            if self._match(TokenType.LEFT_PAREN):
+                name = self._consume(
+                    TokenType.IDENTIFIER,
+                    "Varyant payload'ı için bağlama adı bekleniyordu.",
+                )
+                binding = name.value
+                self._consume(
+                    TokenType.RIGHT_PAREN,
+                    "match bağlamasından sonra ')' bekleniyordu.",
+                )
+            self._consume(TokenType.FAT_ARROW, "match kolunda '=>' bekleniyordu.")
+            body = self._expression()
+            arms.append(
+                MatchArm(
+                    variant.value,
+                    binding,
+                    body,
+                    self._location(variant),
+                )
+            )
+            if not self._match(TokenType.COMMA):
+                break
+            if self._check(TokenType.RIGHT_BRACE):
+                break
+
+        self._consume(TokenType.RIGHT_BRACE, "match sonunda '}' bekleniyordu.")
+        return MatchExpression(value, tuple(arms), self._location(match_token))
 
     def _list_literal(self, bracket: Token) -> ListLiteral:
         items: list[Expression] = []

@@ -56,6 +56,7 @@ SPACED_OPERATORS = {
     TokenType.AMP_AMP,
     TokenType.PIPE_PIPE,
     TokenType.ARROW,
+    TokenType.FAT_ARROW,
 }
 
 # Bir isim/değer başlangıcı sayılan tokenlar (tekil '-' ayrımı için)
@@ -90,6 +91,7 @@ STATEMENT_STARTERS = {
     TokenType.LET,
     TokenType.FOR,
     TokenType.STRUCT,
+    TokenType.ENUM,
     TokenType.IMPORT,
     TokenType.RETURN,
     TokenType.IF,
@@ -181,7 +183,10 @@ def _brace_is_literal(tokens: list[Token], index: int) -> bool:
     if previous.type is TokenType.TYPE:
         # `struct User { ... }` bildirimdir; diğer `User { ... }` biçimleri
         # struct literalidir.
-        return not (index >= 2 and tokens[index - 2].type is TokenType.STRUCT)
+        return not (
+            index >= 2
+            and tokens[index - 2].type in {TokenType.STRUCT, TokenType.ENUM}
+        )
 
     if _brace_has_top_level_colon(tokens, index):
         return True
@@ -332,6 +337,10 @@ def _needs_space(
         and token.type is TokenType.RIGHT_BRACE
     ):
         return False
+    if token.type in {TokenType.LESS, TokenType.GREATER} and _is_generic_angle(row, index):
+        return False
+    if previous.type is TokenType.LESS and _is_generic_angle(row, index - 1):
+        return False
     if token.type in NO_SPACE_BEFORE:
         return False
     if previous.type in NO_SPACE_AFTER:
@@ -355,6 +364,24 @@ def _needs_space(
         return True
 
     return True
+
+
+def _is_generic_angle(row: list[Token], index: int) -> bool:
+    token = row[index]
+    if token.type is TokenType.LESS:
+        return index > 0 and row[index - 1].type is TokenType.TYPE
+    if token.type is not TokenType.GREATER:
+        return False
+    depth = 0
+    for cursor in range(index - 1, -1, -1):
+        current = row[cursor]
+        if current.type is TokenType.GREATER:
+            depth += 1
+        elif current.type is TokenType.LESS:
+            if depth == 0:
+                return cursor > 0 and row[cursor - 1].type is TokenType.TYPE
+            depth -= 1
+    return False
 
 
 def _is_binary_position(row: list[Token], index: int) -> bool:

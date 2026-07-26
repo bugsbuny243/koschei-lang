@@ -32,6 +32,8 @@ class TokenType(Enum):
     FOR = auto()
     IN = auto()
     STRUCT = auto()
+    ENUM = auto()
+    MATCH = auto()
     IMPORT = auto()
     TRUE = auto()
     FALSE = auto()
@@ -67,6 +69,7 @@ class TokenType(Enum):
 
     # Çok karakterli semboller
     ARROW = auto()            # ->
+    FAT_ARROW = auto()        # =>
     EQUAL_EQUAL = auto()      # ==
     BANG_EQUAL = auto()       # !=
     LESS = auto()             # <
@@ -110,6 +113,8 @@ class Lexer:
         "for": TokenType.FOR,
         "in": TokenType.IN,
         "struct": TokenType.STRUCT,
+        "enum": TokenType.ENUM,
+        "match": TokenType.MATCH,
         "import": TokenType.IMPORT,
         "true": TokenType.TRUE,
         "false": TokenType.FALSE,
@@ -227,7 +232,9 @@ class Lexer:
             return
 
         if char == "=":
-            if self._match("="):
+            if self._match(">"):
+                self._add_token(TokenType.FAT_ARROW, "=>")
+            elif self._match("="):
                 self._add_token(TokenType.EQUAL_EQUAL, "==")
             else:
                 self._add_token(TokenType.EQUAL, "=")

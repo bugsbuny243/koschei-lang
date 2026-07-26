@@ -51,6 +51,20 @@ class StructDeclaration:
 
 
 @dataclass(frozen=True, slots=True)
+class EnumVariant:
+    name: str
+    payload_type: TypeRef | None
+    location: SourceLocation
+
+
+@dataclass(frozen=True, slots=True)
+class EnumDeclaration:
+    name: str
+    variants: tuple[EnumVariant, ...]
+    location: SourceLocation
+
+
+@dataclass(frozen=True, slots=True)
 class Identifier:
     name: str
     location: SourceLocation
@@ -158,6 +172,21 @@ class OrBlockExpression:
     location: SourceLocation
 
 
+@dataclass(frozen=True, slots=True)
+class MatchArm:
+    variant: str
+    binding: str | None
+    body: "Expression"
+    location: SourceLocation
+
+
+@dataclass(frozen=True, slots=True)
+class MatchExpression:
+    value: "Expression"
+    arms: tuple[MatchArm, ...]
+    location: SourceLocation
+
+
 Expression: TypeAlias = (
     Identifier
     | Literal
@@ -173,6 +202,7 @@ Expression: TypeAlias = (
     | OrReturnExpression
     | OrElseExpression
     | OrBlockExpression
+    | MatchExpression
 )
 
 
@@ -250,3 +280,4 @@ class Program:
     declarations: tuple[FunctionDeclaration, ...]
     structs: tuple[StructDeclaration, ...] = ()
     imports: tuple[ImportDeclaration, ...] = ()
+    enums: tuple[EnumDeclaration, ...] = ()

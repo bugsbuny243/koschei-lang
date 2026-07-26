@@ -15,7 +15,13 @@ from pathlib import Path
 from .capabilities import DOMAIN_ORDER, analyze as analyze_capabilities, render as render_manifest, to_dict as manifest_to_dict
 from .capabilities import analyze_graph
 from .codegen_go import CodegenError, generate_go
-from .modules import ModuleError, check_graph, load_graph, namespaces
+from .modules import (
+    ModuleError,
+    check_graph,
+    enum_declarations,
+    load_graph,
+    namespaces,
+)
 from .diagnostics import known_codes, lookup as lookup_diagnostic
 from .formatter import check_source, format_source
 from .interpreter import KoscheiRuntimeError, run as interpret
@@ -75,6 +81,7 @@ def command_run(path: str) -> int:
         [],
         namespaces=namespaces(graph),
         imports=root.imports,
+        enums=enum_declarations(graph),
     )
 
 
