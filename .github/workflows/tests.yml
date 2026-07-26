@@ -110,6 +110,20 @@ jobs:
           interpreted="$(python -m koschei run examples/v08_types.ks)"
           test "$native" = "$interpreted"
 
+      - name: Native v0.8 daily collections match interpreter
+        run: |
+          python -m koschei build examples/daily.ks -o /tmp/koschei-daily
+          native="$(/tmp/koschei-daily)"
+          interpreted="$(python -m koschei run examples/daily.ks)"
+          test "$native" = "$interpreted"
+
+      - name: Native v0.8 maps match interpreter
+        run: |
+          python -m koschei build examples/maps.ks -o /tmp/koschei-maps
+          native="$(/tmp/koschei-maps)"
+          interpreted="$(python -m koschei run examples/maps.ks)"
+          test "$native" = "$interpreted"
+
       - name: Run data-structure example
         run: |
           output="$(python -m koschei run examples/holders.ks)"
