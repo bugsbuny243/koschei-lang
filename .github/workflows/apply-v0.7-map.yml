@@ -33,13 +33,63 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          base64 --decode .github/v0.7-map.patch.gz.b64 | gzip --decompress > /tmp/v0.7-map.patch
-          git apply --3way /tmp/v0.7-map.patch
+
+          base_commit="5511e7f0c783444b0e5d78bdf7b45061995e9c54"
+          patch_file="/tmp/v0.7-map.patch"
+          patched_tree="/tmp/koschei-map-patched"
+          base_files="/tmp/koschei-map-base"
+
+          base64 --decode .github/v0.7-map.patch.gz.b64 | gzip --decompress > "$patch_file"
+          git worktree add --detach "$patched_tree" "$base_commit"
+          mkdir -p "$base_files"
+
+          modified_files=(
+            README.md
+            docs/language-core.md
+            koschei/ast_nodes.py
+            koschei/capabilities.py
+            koschei/codegen_go.py
+            koschei/diagnostics.py
+            koschei/formatter.py
+            koschei/interpreter.py
+            koschei/parser.py
+            koschei/semantic.py
+          )
+
+          for file in "${modified_files[@]}"; do
+            mkdir -p "$base_files/$(dirname "$file")"
+            cp "$patched_tree/$file" "$base_files/$file"
+          done
+
+          git -C "$patched_tree" apply "$patch_file"
+
+          for file in "${modified_files[@]}"; do
+            merged="$(mktemp)"
+            git merge-file -p --union \
+              "$file" \
+              "$base_files/$file" \
+              "$patched_tree/$file" > "$merged" || true
+            mv "$merged" "$file"
+          done
+
+          cp "$patched_tree/examples/maps.ks" examples/maps.ks
+          cp "$patched_tree/tests/test_maps.py" tests/test_maps.py
+
           rm .github/v0.7-map.patch.gz.b64
           rm .github/workflows/apply-v0.7-map.yml
+          git worktree remove --force "$patched_tree"
+          git diff --check
 
       - name: Run test suite
         run: python -m unittest discover -s tests -v
+
+      - name: Validate Map example
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m koschei check examples/maps.ks
+          python -m koschei run examples/maps.ks
+          python -m koschei fmt --check examples/maps.ks
 
       - name: Commit merged implementation
         shell: bash
