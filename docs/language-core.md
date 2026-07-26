@@ -211,7 +211,7 @@ içine konamaz veya `push` ile eklenemez.
 | KS2402 | Kök yetki doğrudan kullanılamaz; önce daraltılmalı |
 | KS2403 | Daraltılmış yetki yeniden genişletilemez |
 | KS2404 | Bu yetki türü ilgili işleme izin vermez |
-| KS4001 | Yetki içeren program native derlemede henüz desteklenmiyor (aşama 1) |
+| KS4001 | Native hedef capability sözleşmesini aynı güvenlikle uygulayamıyor |
 | KS4002 | Native derlemede desteklenmeyen dil yapısı |
 | KS4003 | Çağrıda argüman sayısı uyuşmuyor |
 
@@ -288,7 +288,7 @@ Manifesto bilinçli olarak muhafazakârdır: kapsam sabit bir metin değilse
 **kesin sayılmaz**. Bilmediğini bildiğini iddia eden bir güvenlik raporu, rapor
 olmaktan çıkar.
 
-## Native derleme (aşama 1)
+## Native derleme (v0.8 alpha 2)
 
 Koschei programları Go ara koduna çevrilip tek bir native binary olarak
 derlenebilir:
@@ -303,17 +303,25 @@ ks build program.ks -o prog  # tek dosya binary (Go kurulu olmalı)
 okunabilirlik değil davranış eşliği hedeflenir. `build` çıktısı ile `run`
 çıktısının aynı olması CI'da her koşuda doğrulanır.
 
-**Aşama 1 kapsamı:** yetki (capability) içermeyen, struct/List/Map/`for`/`import`
-kullanmayan programlar. Desteklenmeyen yapılar sessizce yanlış çevrilmez, **KS4002** ile
-açıkça reddedilir; bunlar `run` ile çalıştırılır. Yetki taşıyan
-programlar bilinçli olarak reddedilir (KS4001) ve `run` ile çalıştırılır. Sıra
-kasıtlıdır: yetki denetimi üretilen binary'ye taşınmadan yetkili program
-derlemek, dili kâğıt üstünde güvenli ama gerçekte açık bırakırdı. Native yetki
-runtime'ı aşama 2'nin konusudur.
+v0.8 alpha 2, capability runtime ABI v1 çekirdeğini üretilen binary'ye taşır:
 
-Native tarafta halihazırda korunan davranışlar: hatalar değerdir (`or`'un üç
-biçimi), çağrı derinliği sınırı (KS3105), sıfıra bölme bir hata değeridir, ve
-değer gösterimi host dilden bağımsızdır (`true`/`false`, `4.0`).
+- `main(caps: SystemCaps)` için kök yetki çalışma anında enjekte edilir.
+- `EnvCaps`, yalnız izin verilen environment değişkenini okuyabilir.
+- `NetCaps.get`, yalnız `http/https` kullanır; scheme + host + etkin port aynı
+  origin olmak zorundadır. Redirect zinciri de aynı origin içinde kalır.
+- `DiskCaps` ve `DiskReadCaps`, Linux hedefinde kapsam kökünü bir dosya
+  tanıtıcısıyla sabitler; yol bileşenleri `openat` ve `O_NOFOLLOW` ile geçilir.
+  `read/write/list/delete` kapsam dışına ve sembolik bağlara karşı fail-closed'dur.
+- `ProcessCaps.run/spawn` henüz işlem başlatmaz; hata değeri döndürerek kapalı kalır.
+
+Native disk ABI daha zayıf bir yol kontrolüne GERİ DÜŞMEZ. Güvenli primitive'ler
+bulunmayan hedefte derleme **KS4001** ile durur. Enum/match/Option/Result,
+List/Map/struct/import gibi henüz taşınmamış dil yapıları da **KS4002** ile açıkça
+reddedilir; sessiz yanlış çeviri yapılmaz.
+
+Native tarafta ayrıca korunan davranışlar: hatalar değerdir (`or`'un üç biçimi),
+çağrı derinliği sınırı (KS3105), sıfıra bölme bir hata değeridir ve değer gösterimi
+host dilden bağımsızdır (`true`/`false`, `4.0`).
 
 **Bilinen sınırlar:** Int aritmetiği native tarafta 64 bit ile sınırlıdır
 (yorumlayıcıda Python'un sınırsız tam sayıları kullanılır); çok büyük sayılarla
@@ -328,7 +336,7 @@ değer gösterimi host dilden bağımsızdır (`true`/`false`, `4.0`).
     -> ast_nodes.py
     -> semantic.py  (scope, tip, kök/daraltılmış yetki denetimi)
     -> interpreter.py  (tree-walking runtime, yetki denetimi çalışma anında)
-    -> codegen_go.py   (Go ara kodu -> native binary, aşama 1)
+    -> codegen_go.py   (Go ara kodu -> native binary + capability ABI v1 alpha)
 ```
 
 ## CLI
@@ -347,10 +355,12 @@ Tanı katalogu sabittir: yalnızca açıklama üretir, hiçbir denetimi gevşetm
 
 `check` komutu lexer, parser ve semantic güvenlik kontrollerini birlikte çalıştırır.
 
-## Bilinen sınırlar (v0.8 alpha 1)
+## Bilinen sınırlar (v0.8 alpha 2)
 
 - Generic sözdizimi yalnızca `Option<T>` ve `Result<T, E>` için açıktır; List/Map ve kullanıcı tanımlı generics henüz yoktur.
 - Map anahtarları yalnızca String'dir; List ve Map öğe tipi akış boyunca statik olarak korunmaz.
-- Go backend enum/match/Option/Result, List/Map/struct ve capability runtime ABI'sini henüz üretmez; bu programlar `KS4001`/`KS4002` ile fail-closed reddedilir.
-- Yol/origin sınırları interpreter runtime'ında fiilen uygulanır; native capability ABI v0.8'in kalan kritik kapısıdır.
+- Go backend enum/match/Option/Result ile List/Map/struct/import yapılarını henüz üretmez; bunlar **KS4002** ile fail-closed reddedilir.
+- Native ağ ABI bu aşamada yalnız GET'i gerçekleştirir; POST/PUT/DELETE/request hata değeri olarak kapalıdır.
+- Native disk ABI alpha yalnız Linux `openat`/`O_NOFOLLOW` hedefindedir. Güvenli eşdeğeri olmayan platformlarda **KS4001** üretilir.
+- Native process capability işlem başlatmaz; `run/spawn` hata değeri döndürür.
 - Tanı mesajları şimdilik Türkçedir; İngilizce yerelleştirme v0.9 kapsamındadır.

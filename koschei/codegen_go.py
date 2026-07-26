@@ -1,22 +1,23 @@
-"""Koschei AST -> Go kaynak kodu üreteci (native derleme, aşama 1).
+"""Koschei AST -> Go kaynak kodu üreteci.
 
-Kapsam (v0.3 aşama 1): YETKİ İÇERMEYEN saf hesaplama programları.
-Yetki (capability) taşıyan programlar bilinçli olarak REDDEDİLİR (KS4001);
-yetki runtime'ı aşama 2'de üretilen koda taşınacaktır. Bu sıra kasıtlıdır:
-zırh üretilen binary'ye doğru taşınmadan yetkili program derlemek, dili kâğıt
-üstünde güvenli ama gerçekte açık bırakırdı.
+v0.8 alpha 2, capability runtime ABI v1 çekirdeğini native binary’ye taşır:
+SystemCaps kökü yalnızca main’e enjekte edilir; ağ origin’i ve disk yolu çalışma
+anında fail-closed sınırlandırılır. Disk ABI bu aşamada Linux openat/O_NOFOLLOW
+hedefinde desteklenir; daha zayıf yol doğrulamasına sessizce düşülmez.
 
 Üretilen Go kodu kullanıcıya gösterilmek için değildir; Koschei için bir ara
 temsildir (assembly gibi). Bu yüzden okunabilirlik değil, DAVRANIŞ EŞLİĞİ
 önceliklidir: `ks run` ile üretilen binary aynı çıktıyı vermelidir.
 
 Hata kodları:
-    KS4001  Yetki içeren program bu aşamada derlenemez
+    KS4001  Native hedefte güvenli uygulanamayan yetki sözleşmesi
     KS4002  Desteklenmeyen dil yapısı
     KS4003  Fonksiyon çağrısında argüman sayısı uyuşmuyor
 """
 
 from __future__ import annotations
+
+import sys
 
 from .ast_nodes import (
     AssignmentExpression,
@@ -56,6 +57,25 @@ from .semantic import (
 )
 
 MAX_CALL_DEPTH = 512
+
+NATIVE_CAPABILITY_METHODS = {
+    "allow",
+    "allow_read_only",
+    "get",
+    "post",
+    "put",
+    "delete",
+    "request",
+    "read",
+    "read_file",
+    "write",
+    "write_file",
+    "list",
+    "run",
+    "spawn",
+    "text",
+    "status",
+}
 
 STRING_METHODS = {
     "length",
@@ -146,6 +166,12 @@ func ksToString(value any) string {
 		return "unit"
 	case *KsError:
 		return item.Message
+	case []string:
+		parts := make([]string, len(item))
+		for index, value := range item {
+			parts[index] = strconv.Quote(value)
+		}
+		return "[" + strings.Join(parts, ", ") + "]"
 	}
 	return fmt.Sprintf("%v", value)
 }
@@ -399,6 +425,580 @@ func ksLeave() {
 }
 '''
 
+CAPABILITY_RUNTIME = r'''// Capability runtime ABI v1 alpha — Linux için fail-closed kapsam koruması.
+
+type ksSystemCaps struct {
+	net     *ksNetRoot
+	disk    *ksDiskRoot
+	env     *ksEnvRoot
+	process *ksProcessRoot
+}
+
+type ksNetRoot struct{}
+type ksDiskRoot struct{}
+type ksEnvRoot struct{}
+type ksProcessRoot struct{}
+
+type ksOriginKey struct {
+	scheme string
+	host   string
+	port   string
+}
+
+type ksNetCaps struct {
+	origin string
+	key    ksOriginKey
+	valid  bool
+}
+
+type ksDiskCapability struct {
+	rootPath  string
+	rootFD    int
+	openError string
+	readOnly  bool
+}
+
+type ksDiskCaps struct{ capability *ksDiskCapability }
+type ksDiskReadCaps struct{ capability *ksDiskCapability }
+type ksEnvCaps struct{ name string }
+type ksProcessCaps struct{ command string }
+
+type ksResponse struct {
+	body   string
+	status int64
+}
+
+type ksRedirectDenied struct{ target string }
+
+func (e *ksRedirectDenied) Error() string {
+	return "KS3402: Ağ yönlendirmesi kapsam dışına çıktı: " + e.target
+}
+
+func ksNewSystemCaps() any {
+	return &ksSystemCaps{
+		net:     &ksNetRoot{},
+		disk:    &ksDiskRoot{},
+		env:     &ksEnvRoot{},
+		process: &ksProcessRoot{},
+	}
+}
+
+func ksMember(value any, name string) any {
+	if failure, ok := value.(*KsError); ok {
+		return failure
+	}
+	switch item := value.(type) {
+	case *ksSystemCaps:
+		switch name {
+		case "net":
+			return item.net
+		case "disk":
+			return item.disk
+		case "env":
+			return item.env
+		case "process":
+			return item.process
+		}
+	}
+	return ksErrorf("KS3101: Tanımsız alan: '" + name + "'.")
+}
+
+func ksMethodArity(method string, arguments []any, expected int) *KsError {
+	if len(arguments) == expected {
+		return nil
+	}
+	return &KsError{Message: fmt.Sprintf(
+		"KS4003: '%s' için %d argüman bekleniyor, %d verildi.",
+		method, expected, len(arguments),
+	)}
+}
+
+func ksStringArgument(method string, arguments []any, index int) (string, *KsError) {
+	if index >= len(arguments) {
+		return "", &KsError{Message: "KS4003: Eksik metot argümanı: " + method}
+	}
+	value, ok := arguments[index].(string)
+	if !ok {
+		return "", &KsError{Message: "KS1301: '" + method + "' String argüman bekler."}
+	}
+	return value, nil
+}
+
+func ksParseOrigin(raw string) (ksOriginKey, bool) {
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Scheme == "" || parsed.Hostname() == "" {
+		return ksOriginKey{}, false
+	}
+	scheme := strings.ToLower(parsed.Scheme)
+	if scheme != "http" && scheme != "https" {
+		return ksOriginKey{}, false
+	}
+	port := parsed.Port()
+	if port == "" {
+		if scheme == "https" {
+			port = "443"
+		} else {
+			port = "80"
+		}
+	}
+	return ksOriginKey{scheme: scheme, host: strings.ToLower(parsed.Hostname()), port: port}, true
+}
+
+func ksNetGet(capability *ksNetCaps, rawURL string) any {
+	key, ok := ksParseOrigin(rawURL)
+	if !capability.valid || !ok || key != capability.key {
+		return ksErrorf("KS3402: Ağ origin kapsamı dışında erişim reddedildi: " + rawURL)
+	}
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+		CheckRedirect: func(request *http.Request, via []*http.Request) error {
+			if len(via) >= 5 {
+				return fmt.Errorf("çok fazla yönlendirme")
+			}
+			redirectKey, allowed := ksParseOrigin(request.URL.String())
+			if !allowed || redirectKey != capability.key {
+				return &ksRedirectDenied{target: request.URL.String()}
+			}
+			return nil
+		},
+	}
+	request, err := http.NewRequest(http.MethodGet, rawURL, nil)
+	if err != nil {
+		return ksErrorf("API isteği başarısız: " + err.Error())
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		var denied *ksRedirectDenied
+		if errors.As(err, &denied) {
+			return ksErrorf(denied.Error())
+		}
+		return ksErrorf("API isteği başarısız: " + err.Error())
+	}
+	defer response.Body.Close()
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		return ksErrorf("API yanıtı okunamadı: " + err.Error())
+	}
+	return &ksResponse{body: string(body), status: int64(response.StatusCode)}
+}
+
+func ksNewDiskCapability(prefix string, readOnly bool) *ksDiskCapability {
+	capability := &ksDiskCapability{rootFD: -1, readOnly: readOnly}
+	absolute, err := filepath.Abs(prefix)
+	if err != nil {
+		capability.openError = err.Error()
+		return capability
+	}
+	resolved, err := filepath.EvalSymlinks(absolute)
+	if err == nil {
+		absolute = resolved
+	}
+	capability.rootPath = filepath.Clean(absolute)
+	if runtime.GOOS != "linux" {
+		capability.openError = "KS3406: Native disk ABI şu anda yalnızca Linux openat/O_NOFOLLOW hedefinde destekleniyor."
+		return capability
+	}
+	fd, err := syscall.Open(
+		capability.rootPath,
+		syscall.O_RDONLY|syscall.O_DIRECTORY|syscall.O_NOFOLLOW|syscall.O_CLOEXEC,
+		0,
+	)
+	if err != nil {
+		capability.openError = err.Error()
+		return capability
+	}
+	capability.rootFD = fd
+	return capability
+}
+
+func (capability *ksDiskCapability) reject(path string) any {
+	return ksErrorf("KS3402: Disk kapsamı dışında erişim reddedildi: " + path)
+}
+
+func (capability *ksDiskCapability) symlinkDenied(name string) any {
+	return ksErrorf(
+		"KS3402: Disk kapsamı sembolik bağ üzerinden aşılamaz; " +
+			"KS3405: Kapsam içinde sembolik bağ takip edilmez: " + name,
+	)
+}
+
+func (capability *ksDiskCapability) parts(path string) ([]string, any) {
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return nil, capability.reject(path)
+	}
+	relative, err := filepath.Rel(capability.rootPath, filepath.Clean(absolute))
+	if err != nil {
+		return nil, capability.reject(path)
+	}
+	if relative == "." {
+		return []string{}, nil
+	}
+	parentPrefix := ".." + string(os.PathSeparator)
+	if relative == ".." || strings.HasPrefix(relative, parentPrefix) || filepath.IsAbs(relative) {
+		return nil, capability.reject(path)
+	}
+	parts := strings.Split(filepath.Clean(relative), string(os.PathSeparator))
+	for _, part := range parts {
+		if part == "" || part == "." || part == ".." {
+			return nil, capability.reject(path)
+		}
+	}
+	return parts, nil
+}
+
+func (capability *ksDiskCapability) rootDuplicate(operation string) (int, any) {
+	if capability.rootFD < 0 {
+		if strings.HasPrefix(capability.openError, "KS3406:") {
+			return -1, ksErrorf(capability.openError)
+		}
+		return -1, ksErrorf(operation + ": " + capability.openError)
+	}
+	fd, err := syscall.Dup(capability.rootFD)
+	if err != nil {
+		return -1, ksErrorf(operation + ": " + err.Error())
+	}
+	return fd, nil
+}
+
+func (capability *ksDiskCapability) parent(parts []string, operation string) (int, any) {
+	current, failure := capability.rootDuplicate(operation)
+	if failure != nil {
+		return -1, failure
+	}
+	for _, component := range parts[:len(parts)-1] {
+		next, err := syscall.Openat(
+			current,
+			component,
+			syscall.O_RDONLY|syscall.O_DIRECTORY|syscall.O_NOFOLLOW|syscall.O_CLOEXEC,
+			0,
+		)
+		syscall.Close(current)
+		if err != nil {
+			if errors.Is(err, syscall.ELOOP) || errors.Is(err, syscall.ENOTDIR) {
+				return -1, capability.symlinkDenied(component)
+			}
+			return -1, ksErrorf(operation + ": " + err.Error())
+		}
+		current = next
+	}
+	return current, nil
+}
+
+func (capability *ksDiskCapability) read(path string) any {
+	parts, failure := capability.parts(path)
+	if failure != nil {
+		return failure
+	}
+	if len(parts) == 0 {
+		return ksErrorf("Dosya okunamadı: kapsam kökü bir dizindir: " + path)
+	}
+	parent, failure := capability.parent(parts, "Dosya okunamadı")
+	if failure != nil {
+		return failure
+	}
+	defer syscall.Close(parent)
+	fd, err := syscall.Openat(
+		parent, parts[len(parts)-1],
+		syscall.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_CLOEXEC,
+		0,
+	)
+	if err != nil {
+		if errors.Is(err, syscall.ELOOP) {
+			return capability.symlinkDenied(parts[len(parts)-1])
+		}
+		return ksErrorf("Dosya okunamadı: " + err.Error())
+	}
+	file := os.NewFile(uintptr(fd), parts[len(parts)-1])
+	if file == nil {
+		syscall.Close(fd)
+		return ksErrorf("Dosya okunamadı: geçersiz dosya tanıtıcısı")
+	}
+	defer file.Close()
+	content, err := io.ReadAll(file)
+	if err != nil {
+		return ksErrorf("Dosya okunamadı: " + err.Error())
+	}
+	return string(content)
+}
+
+func (capability *ksDiskCapability) list(path string) any {
+	parts, failure := capability.parts(path)
+	if failure != nil {
+		return failure
+	}
+	var fd int
+	if len(parts) == 0 {
+		fd, failure = capability.rootDuplicate("Dizin listelenemedi")
+	} else {
+		parent, parentFailure := capability.parent(parts, "Dizin listelenemedi")
+		if parentFailure != nil {
+			return parentFailure
+		}
+		defer syscall.Close(parent)
+		var err error
+		fd, err = syscall.Openat(
+			parent, parts[len(parts)-1],
+			syscall.O_RDONLY|syscall.O_DIRECTORY|syscall.O_NOFOLLOW|syscall.O_CLOEXEC,
+			0,
+		)
+		if err != nil {
+			if errors.Is(err, syscall.ELOOP) || errors.Is(err, syscall.ENOTDIR) {
+				return capability.symlinkDenied(parts[len(parts)-1])
+			}
+			return ksErrorf("Dizin listelenemedi: " + err.Error())
+		}
+	}
+	if failure != nil {
+		return failure
+	}
+	file := os.NewFile(uintptr(fd), "directory")
+	if file == nil {
+		syscall.Close(fd)
+		return ksErrorf("Dizin listelenemedi: geçersiz dosya tanıtıcısı")
+	}
+	defer file.Close()
+	names, err := file.Readdirnames(-1)
+	if err != nil {
+		return ksErrorf("Dizin listelenemedi: " + err.Error())
+	}
+	sort.Strings(names)
+	return names
+}
+
+func (capability *ksDiskCapability) write(path string, value string) any {
+	parts, failure := capability.parts(path)
+	if failure != nil {
+		return failure
+	}
+	if capability.readOnly {
+		return ksErrorf("KS3404: DiskReadCaps 'write' işlemine izin vermez.")
+	}
+	if len(parts) == 0 {
+		return ksErrorf("Dosya yazılamadı: kapsam kökü bir dizindir: " + path)
+	}
+	parent, failure := capability.parent(parts, "Dosya yazılamadı")
+	if failure != nil {
+		return failure
+	}
+	defer syscall.Close(parent)
+	fd, err := syscall.Openat(
+		parent, parts[len(parts)-1],
+		syscall.O_WRONLY|syscall.O_CREAT|syscall.O_TRUNC|syscall.O_NOFOLLOW|syscall.O_CLOEXEC,
+		0600,
+	)
+	if err != nil {
+		if errors.Is(err, syscall.ELOOP) {
+			return capability.symlinkDenied(parts[len(parts)-1])
+		}
+		return ksErrorf("Dosya yazılamadı: " + err.Error())
+	}
+	file := os.NewFile(uintptr(fd), parts[len(parts)-1])
+	if file == nil {
+		syscall.Close(fd)
+		return ksErrorf("Dosya yazılamadı: geçersiz dosya tanıtıcısı")
+	}
+	defer file.Close()
+	if _, err := file.WriteString(value); err != nil {
+		return ksErrorf("Dosya yazılamadı: " + err.Error())
+	}
+	return ksUnit
+}
+
+func (capability *ksDiskCapability) delete(path string) any {
+	parts, failure := capability.parts(path)
+	if failure != nil {
+		return failure
+	}
+	if capability.readOnly {
+		return ksErrorf("KS3404: DiskReadCaps 'delete' işlemine izin vermez.")
+	}
+	if len(parts) == 0 {
+		return ksErrorf("Dosya silinemedi: kapsam kökü silinemez: " + path)
+	}
+	parent, failure := capability.parent(parts, "Dosya silinemedi")
+	if failure != nil {
+		return failure
+	}
+	defer syscall.Close(parent)
+	fd, err := syscall.Openat(
+		parent, parts[len(parts)-1],
+		syscall.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_CLOEXEC,
+		0,
+	)
+	if err != nil {
+		if errors.Is(err, syscall.ELOOP) {
+			return capability.symlinkDenied(parts[len(parts)-1])
+		}
+		return ksErrorf("Dosya silinemedi: " + err.Error())
+	}
+	syscall.Close(fd)
+	anchored := filepath.Join("/proc/self/fd", strconv.Itoa(parent), parts[len(parts)-1])
+	if _, err := os.Lstat(anchored); err != nil {
+		return ksErrorf("Dosya silinemedi: " + err.Error())
+	}
+	if err := os.Remove(anchored); err != nil {
+		return ksErrorf("Dosya silinemedi: " + err.Error())
+	}
+	return ksUnit
+}
+
+func ksCallMethod(receiver any, method string, arguments ...any) any {
+	if failure, ok := receiver.(*KsError); ok {
+		return failure
+	}
+	switch item := receiver.(type) {
+	case *ksNetRoot:
+		if method != "allow" {
+			return ksErrorf("KS2402: NetRoot önce allow ile daraltılmalıdır.")
+		}
+		if failure := ksMethodArity(method, arguments, 1); failure != nil {
+			return failure
+		}
+		origin, failure := ksStringArgument(method, arguments, 0)
+		if failure != nil {
+			return failure
+		}
+		key, valid := ksParseOrigin(origin)
+		return &ksNetCaps{origin: origin, key: key, valid: valid}
+	case *ksDiskRoot:
+		if method != "allow" && method != "allow_read_only" {
+			return ksErrorf("KS2402: DiskRoot önce allow ile daraltılmalıdır.")
+		}
+		if failure := ksMethodArity(method, arguments, 1); failure != nil {
+			return failure
+		}
+		prefix, failure := ksStringArgument(method, arguments, 0)
+		if failure != nil {
+			return failure
+		}
+		readOnly := method == "allow_read_only"
+		capability := ksNewDiskCapability(prefix, readOnly)
+		if readOnly {
+			return &ksDiskReadCaps{capability: capability}
+		}
+		return &ksDiskCaps{capability: capability}
+	case *ksEnvRoot:
+		if method != "allow" {
+			return ksErrorf("KS2402: EnvRoot önce allow ile daraltılmalıdır.")
+		}
+		if failure := ksMethodArity(method, arguments, 1); failure != nil {
+			return failure
+		}
+		name, failure := ksStringArgument(method, arguments, 0)
+		if failure != nil {
+			return failure
+		}
+		return &ksEnvCaps{name: name}
+	case *ksProcessRoot:
+		if method != "allow" {
+			return ksErrorf("KS2402: ProcessRoot önce allow ile daraltılmalıdır.")
+		}
+		if failure := ksMethodArity(method, arguments, 1); failure != nil {
+			return failure
+		}
+		command, failure := ksStringArgument(method, arguments, 0)
+		if failure != nil {
+			return failure
+		}
+		return &ksProcessCaps{command: command}
+	case *ksNetCaps:
+		if method != "get" {
+			return ksErrorf(method + " henüz desteklenmiyor")
+		}
+		if failure := ksMethodArity(method, arguments, 1); failure != nil {
+			return failure
+		}
+		rawURL, failure := ksStringArgument(method, arguments, 0)
+		if failure != nil {
+			return failure
+		}
+		return ksNetGet(item, rawURL)
+	case *ksDiskCaps:
+		return ksDiskCall(item.capability, method, arguments)
+	case *ksDiskReadCaps:
+		return ksDiskCall(item.capability, method, arguments)
+	case *ksEnvCaps:
+		if method != "get" {
+			return ksErrorf("KS2404: EnvCaps yetkisi '" + method + "' işlemine izin vermez.")
+		}
+		if failure := ksMethodArity(method, arguments, 0); failure != nil {
+			return failure
+		}
+		value, ok := os.LookupEnv(item.name)
+		if !ok {
+			return ksErrorf("Ortam değişkeni bulunamadı: " + item.name)
+		}
+		return value
+	case *ksProcessCaps:
+		if method == "run" || method == "spawn" {
+			return ksErrorf("process yetkisi bu sürümde kapalı")
+		}
+		return ksErrorf("KS2404: ProcessCaps yetkisi '" + method + "' işlemine izin vermez.")
+	case *ksResponse:
+		switch method {
+		case "text":
+			if failure := ksMethodArity(method, arguments, 0); failure != nil {
+				return failure
+			}
+			return item.body
+		case "status":
+			if failure := ksMethodArity(method, arguments, 0); failure != nil {
+				return failure
+			}
+			return item.status
+		}
+	}
+	return ksErrorf("KS3101: Native runtime'da tanımsız metot: '" + method + "'.")
+}
+
+func ksDiskCall(capability *ksDiskCapability, method string, arguments []any) any {
+	switch method {
+	case "read", "read_file":
+		if failure := ksMethodArity(method, arguments, 1); failure != nil {
+			return failure
+		}
+		path, failure := ksStringArgument(method, arguments, 0)
+		if failure != nil {
+			return failure
+		}
+		return capability.read(path)
+	case "list":
+		if failure := ksMethodArity(method, arguments, 1); failure != nil {
+			return failure
+		}
+		path, failure := ksStringArgument(method, arguments, 0)
+		if failure != nil {
+			return failure
+		}
+		return capability.list(path)
+	case "write", "write_file":
+		if failure := ksMethodArity(method, arguments, 2); failure != nil {
+			return failure
+		}
+		path, failure := ksStringArgument(method, arguments, 0)
+		if failure != nil {
+			return failure
+		}
+		value, failure := ksStringArgument(method, arguments, 1)
+		if failure != nil {
+			return failure
+		}
+		return capability.write(path, value)
+	case "delete":
+		if failure := ksMethodArity(method, arguments, 1); failure != nil {
+			return failure
+		}
+		path, failure := ksStringArgument(method, arguments, 0)
+		if failure != nil {
+			return failure
+		}
+		return capability.delete(path)
+	}
+	return ksErrorf("KS2404: Disk capability '" + method + "' işlemine izin vermez.")
+}
+'''
+
 
 class GoCodegen:
     def __init__(self, program: Program) -> None:
@@ -414,7 +1014,7 @@ class GoCodegen:
 
     def generate(self) -> str:
         self._reject_unsupported()
-        self._reject_capabilities()
+        self._validate_capability_backend()
 
         lines: list[str] = [
             "// Bu dosya Koschei derleyicisi tarafından üretilmiştir.",
@@ -423,14 +1023,25 @@ class GoCodegen:
             "package main",
             "",
             "import (",
+            '\t"errors"',
             '\t"fmt"',
+            '\t"io"',
+            '\t"net/http"',
+            '\t"net/url"',
             '\t"os"',
+            '\t"path/filepath"',
+            '\t"runtime"',
+            '\t"sort"',
             '\t"strconv"',
             '\t"strings"',
+            '\t"syscall"',
+            '\t"time"',
             ")",
             "",
         ]
         lines.extend(RUNTIME_PRELUDE.splitlines())
+        lines.append("")
+        lines.extend(CAPABILITY_RUNTIME.splitlines())
         lines.append("")
 
         for declaration in self.program.declarations:
@@ -506,34 +1117,40 @@ class GoCodegen:
                             expression.location,
                         )
 
-    def _reject_capabilities(self) -> None:
-        """Aşama 1: yetki taşıyan programlar bilinçli olarak reddedilir."""
+    def _validate_capability_backend(self) -> None:
+        """Native capability ABI güvenlik sınırlarını hedefe göre doğrular."""
+        uses_disk = False
         for declaration in self.program.declarations:
             for parameter in declaration.parameters:
-                if any(name in CAPABILITY_TYPES for name in parameter.type_ref.names):
-                    raise CodegenError(
-                        "KS4001",
-                        f"'{declaration.name}' fonksiyonu yetki (capability) parametresi "
-                        f"alıyor: {parameter.type_ref}. Native derleme aşama 1 yalnızca "
-                        "yetki içermeyen programları destekler; yetkili programlar için "
-                        "şimdilik 'koschei.py run' kullanın.",
-                        parameter.location,
-                    )
-            self._reject_capability_usage(declaration.body)
-
-    def _reject_capability_usage(self, block: Block) -> None:
-        for statement in block.statements:
-            for expression in _walk_statement(statement):
-                if isinstance(expression, MemberExpression) and (
-                    expression.member in GUARDED_METHODS
-                    or expression.member in {"allow", "allow_read_only"}
+                if any(
+                    name in {"DiskRoot", "DiskCaps", "DiskReadCaps"}
+                    for name in parameter.type_ref.names
                 ):
-                    raise CodegenError(
-                        "KS4001",
-                        f"'{expression.member}' yetki işlemi native derlemede henüz "
-                        "desteklenmiyor (aşama 2). Şimdilik 'koschei.py run' kullanın.",
-                        expression.location,
-                    )
+                    uses_disk = True
+            for statement in declaration.body.statements:
+                for expression in _walk_statement(statement):
+                    if (
+                        isinstance(expression, MemberExpression)
+                        and expression.member
+                        in {
+                            "allow_read_only",
+                            "read",
+                            "read_file",
+                            "write",
+                            "write_file",
+                            "list",
+                            "delete",
+                        }
+                    ):
+                        uses_disk = True
+        if uses_disk and not sys.platform.startswith("linux"):
+            raise CodegenError(
+                "KS4001",
+                "Native disk capability ABI bu alpha sürümünde yalnızca Linux "
+                "openat/O_NOFOLLOW hedefinde desteklenir; daha zayıf yol "
+                "doğrulamasına geri düşülmez.",
+                SourceLocation(1, 1),
+            )
 
     # ------------------------------------------------------------------
     # Fonksiyonlar
@@ -561,15 +1178,25 @@ class GoCodegen:
             raise CodegenError(
                 "KS4002", "'main' fonksiyonu bulunamadı.", SourceLocation(1, 1)
             )
-        if main.parameters:
+        if len(main.parameters) > 1:
             raise CodegenError(
-                "KS4001",
-                "Native derleme aşama 1'de 'main' yetki parametresi alamaz.",
+                "KS4002",
+                "'main' sıfır parametre veya tek SystemCaps parametresi alabilir.",
                 main.location,
             )
+        invocation = f"{_fn('main')}()"
+        if main.parameters:
+            parameter = main.parameters[0]
+            if parameter.type_ref.names != ("SystemCaps",):
+                raise CodegenError(
+                    "KS4001",
+                    "Native main parametresi yalnızca SystemCaps olabilir.",
+                    parameter.location,
+                )
+            invocation = f"{_fn('main')}(ksNewSystemCaps())"
         return [
             "func main() {",
-            f"\tresult := {_fn('main')}()",
+            f"\tresult := {invocation}",
             "\tif failure, ok := result.(*KsError); ok {",
             '\t\tfmt.Fprintln(os.Stderr, "KOSCHEI RUNTIME ERROR: "+failure.Message)',
             "\t\tos.Exit(1)",
@@ -717,6 +1344,9 @@ class GoCodegen:
             )
 
         if isinstance(expression, MemberExpression):
+            receiver, prelude = self._expression(expression.object, depth)
+            if expression.member in {"net", "disk", "env", "process"}:
+                return f"ksMember({receiver}, {_go_string(expression.member)})", prelude
             raise CodegenError(
                 "KS4002",
                 f"Üye erişimi ('{expression.member}') yalnızca çağrı olarak desteklenir.",
@@ -832,6 +1462,13 @@ class GoCodegen:
             receiver, receiver_prelude = self._expression(callee.object, depth)
             prelude = receiver_prelude + prelude
             method = callee.member
+            if method in NATIVE_CAPABILITY_METHODS:
+                rendered = ", ".join(arguments)
+                suffix = f", {rendered}" if rendered else ""
+                return (
+                    f"ksCallMethod({receiver}, {_go_string(method)}{suffix})",
+                    prelude,
+                )
             if method not in STRING_METHODS:
                 raise CodegenError(
                     "KS4002",
