@@ -60,12 +60,16 @@ jobs:
           interpreted="$(python -m koschei run examples/hello.ks)"
           test "$native" = "$interpreted"
 
-      - name: Capability programs are rejected by native backend
+      - name: Native capability runtime matches interpreter
         run: |
-          if python -m koschei emit-go examples/showcase.ks; then
-            echo "HATA: yetkili program native derlemede reddedilmeliydi" >&2
-            exit 1
-          fi
+          python -m koschei build examples/runtime_demo.ks -o /tmp/koschei-runtime
+          native="$(KOSCHEI_RUNTIME_NAME=Native /tmp/koschei-runtime)"
+          interpreted="$(KOSCHEI_RUNTIME_NAME=Native python -m koschei run examples/runtime_demo.ks)"
+          test "$native" = "$interpreted"
+          case "$native" in
+            *"Merhaba Native"*) ;;
+            *) echo "HATA: native capability runtime beklenen env çıktısını vermedi" >&2; exit 1 ;;
+          esac
 
       - name: Capability manifest for showcase
         run: python -m koschei caps examples/showcase.ks
