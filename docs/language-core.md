@@ -288,7 +288,7 @@ Manifesto bilinçli olarak muhafazakârdır: kapsam sabit bir metin değilse
 **kesin sayılmaz**. Bilmediğini bildiğini iddia eden bir güvenlik raporu, rapor
 olmaktan çıkar.
 
-## Native derleme (v0.8 alpha 2)
+## Native derleme (v0.8 alpha 3)
 
 Koschei programları Go ara koduna çevrilip tek bir native binary olarak
 derlenebilir:
@@ -303,7 +303,7 @@ ks build program.ks -o prog  # tek dosya binary (Go kurulu olmalı)
 okunabilirlik değil davranış eşliği hedeflenir. `build` çıktısı ile `run`
 çıktısının aynı olması CI'da her koşuda doğrulanır.
 
-v0.8 alpha 2, capability runtime ABI v1 çekirdeğini üretilen binary'ye taşır:
+v0.8 alpha 3, capability runtime ABI ile cebirsel tip çekirdeğini üretilen binary'ye taşır:
 
 - `main(caps: SystemCaps)` için kök yetki çalışma anında enjekte edilir.
 - `EnvCaps`, yalnız izin verilen environment değişkenini okuyabilir.
@@ -313,11 +313,15 @@ v0.8 alpha 2, capability runtime ABI v1 çekirdeğini üretilen binary'ye taşı
   tanıtıcısıyla sabitler; yol bileşenleri `openat` ve `O_NOFOLLOW` ile geçilir.
   `read/write/list/delete` kapsam dışına ve sembolik bağlara karşı fail-closed'dur.
 - `ProcessCaps.run/spawn` henüz işlem başlatmaz; hata değeri döndürerek kapalı kalır.
+- Kullanıcı enum constructor'ları, nested exhaustive `match`, `Some/None`,
+  `Ok/Err`, `or` ve `or return` Go binary'de yorumlayıcıyla aynı davranır.
+- Enum eşitliği pointer kimliğiyle değil enum adı, varyant ve payload üzerinden
+  yapısal olarak hesaplanır.
 
 Native disk ABI daha zayıf bir yol kontrolüne GERİ DÜŞMEZ. Güvenli primitive'ler
-bulunmayan hedefte derleme **KS4001** ile durur. Enum/match/Option/Result,
-List/Map/struct/import gibi henüz taşınmamış dil yapıları da **KS4002** ile açıkça
-reddedilir; sessiz yanlış çeviri yapılmaz.
+bulunmayan hedefte derleme **KS4001** ile durur. List/Map/struct/import gibi
+henüz taşınmamış dil yapıları **KS4002** ile açıkça reddedilir; sessiz yanlış
+çeviri yapılmaz.
 
 Native tarafta ayrıca korunan davranışlar: hatalar değerdir (`or`'un üç biçimi),
 çağrı derinliği sınırı (KS3105), sıfıra bölme bir hata değeridir ve değer gösterimi
@@ -355,11 +359,11 @@ Tanı katalogu sabittir: yalnızca açıklama üretir, hiçbir denetimi gevşetm
 
 `check` komutu lexer, parser ve semantic güvenlik kontrollerini birlikte çalıştırır.
 
-## Bilinen sınırlar (v0.8 alpha 2)
+## Bilinen sınırlar (v0.8 alpha 3)
 
 - Generic sözdizimi yalnızca `Option<T>` ve `Result<T, E>` için açıktır; List/Map ve kullanıcı tanımlı generics henüz yoktur.
 - Map anahtarları yalnızca String'dir; List ve Map öğe tipi akış boyunca statik olarak korunmaz.
-- Go backend enum/match/Option/Result ile List/Map/struct/import yapılarını henüz üretmez; bunlar **KS4002** ile fail-closed reddedilir.
+- Go backend List/Map/struct/import yapılarını henüz üretmez; bunlar **KS4002** ile fail-closed reddedilir.
 - Native ağ ABI bu aşamada yalnız GET'i gerçekleştirir; POST/PUT/DELETE/request hata değeri olarak kapalıdır.
 - Native disk ABI alpha yalnız Linux `openat`/`O_NOFOLLOW` hedefindedir. Güvenli eşdeğeri olmayan platformlarda **KS4001** üretilir.
 - Native process capability işlem başlatmaz; `run/spawn` hata değeri döndürür.

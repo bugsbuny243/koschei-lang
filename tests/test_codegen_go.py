@@ -86,8 +86,8 @@ class GoCodegenTests(unittest.TestCase):
             "}"
         )
         generated = compile_source(source)
-        self.assertIn("ksIsError(", generated)
-        self.assertGreaterEqual(generated.count("ksIsError("), 3)
+        self.assertIn("ksUnwrapFallible(", generated)
+        self.assertGreaterEqual(generated.count("ksUnwrapFallible("), 3)
 
     def test_booleans_render_lowercase_like_source(self) -> None:
         generated = compile_source("fn main() { println(true) }")

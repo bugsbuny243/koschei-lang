@@ -286,16 +286,18 @@ None=>"yok",
                 )
             self.assertEqual(output.getvalue(), "modül\n")
 
-    def test_native_backend_rejects_new_v08_values_fail_closed(self) -> None:
+    def test_native_backend_generates_v08_algebraic_values(self) -> None:
         sources = (
             'enum S { A } fn main() { println(match A() { A => "x" }) }',
-            'fn main() { let x = Some("x") println(x) }',
+            'fn main() { let x = Some("x") println(match x { Some(v) => v, None => "y", }) }',
         )
         for source in sources:
             with self.subTest(source=source):
-                with self.assertRaises(CodegenError) as raised:
-                    generate_go(parse(source))
-                self.assertEqual(raised.exception.code, "KS4002")
+                program = parse(source)
+                check(program)
+                generated = generate_go(program)
+                self.assertIn("KsEnum", generated)
+                self.assertIn("ksEnum", generated)
 
 
 if __name__ == "__main__":

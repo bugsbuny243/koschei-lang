@@ -1,6 +1,6 @@
 """Koschei AST -> Go kaynak kodu üreteci.
 
-v0.8 alpha 2, capability runtime ABI v1 çekirdeğini native binary’ye taşır:
+v0.8 alpha 3, capability runtime ABI ve cebirsel tip çekirdeğini native binary’ye taşır:
 SystemCaps kökü yalnızca main’e enjekte edilir; ağ origin’i ve disk yolu çalışma
 anında fail-closed sınırlandırılır. Disk ABI bu aşamada Linux openat/O_NOFOLLOW
 hedefinde desteklenir; daha zayıf yol doğrulamasına sessizce düşülmez.
@@ -125,6 +125,45 @@ type ksUnitType struct{}
 
 var ksUnit any = ksUnitType{}
 
+type KsEnum struct {
+	EnumName   string
+	Variant    string
+	Payload    any
+	HasPayload bool
+}
+
+func ksEnum(enumName string, variant string, payload any, hasPayload bool) any {
+	if hasPayload && ksContainsCapability(payload) {
+		return ksErrorf("KS3401: Capability taşıyan değerler enum/Option/Result payload'ına konamaz.")
+	}
+	return &KsEnum{EnumName: enumName, Variant: variant, Payload: payload, HasPayload: hasPayload}
+}
+
+func ksUnwrapFallible(value any) (bool, any) {
+	if _, ok := value.(*KsError); ok {
+		return false, value
+	}
+	if item, ok := value.(*KsEnum); ok {
+		switch item.EnumName {
+		case "Option":
+			if item.Variant == "Some" && item.HasPayload {
+				return true, item.Payload
+			}
+			if item.Variant == "None" {
+				return false, value
+			}
+		case "Result":
+			if item.Variant == "Ok" && item.HasPayload {
+				return true, item.Payload
+			}
+			if item.Variant == "Err" {
+				return false, value
+			}
+		}
+	}
+	return true, value
+}
+
 const ksMaxDepth = 512
 const ksIntMin int64 = -9223372036854775808
 const ksIntMax int64 = 9223372036854775807
@@ -166,6 +205,11 @@ func ksToString(value any) string {
 		return "unit"
 	case *KsError:
 		return item.Message
+	case *KsEnum:
+		if !item.HasPayload {
+			return item.Variant
+		}
+		return item.Variant + "(" + ksToString(item.Payload) + ")"
 	case []string:
 		parts := make([]string, len(item))
 		for index, value := range item {
@@ -359,11 +403,42 @@ func ksGreaterEq(left any, right any) any {
 }
 
 func ksEq(left any, right any) any {
-	return left == right
+	if a, ok := left.(*KsEnum); ok {
+		b, ok := right.(*KsEnum)
+		if !ok || a.EnumName != b.EnumName || a.Variant != b.Variant || a.HasPayload != b.HasPayload {
+			return false
+		}
+		if !a.HasPayload {
+			return true
+		}
+		return ksTruthy(ksEq(a.Payload, b.Payload))
+	}
+	if a, ok := left.(*KsError); ok {
+		b, ok := right.(*KsError)
+		return ok && a.Message == b.Message
+	}
+	switch a := left.(type) {
+	case string:
+		b, ok := right.(string)
+		return ok && a == b
+	case bool:
+		b, ok := right.(bool)
+		return ok && a == b
+	case int64:
+		b, ok := right.(int64)
+		return ok && a == b
+	case float64:
+		b, ok := right.(float64)
+		return ok && a == b
+	case ksUnitType:
+		_, ok := right.(ksUnitType)
+		return ok
+	}
+	return false
 }
 
 func ksNotEq(left any, right any) any {
-	return left != right
+	return !ksTruthy(ksEq(left, right))
 }
 
 func ksLength(value any) any {
@@ -462,6 +537,17 @@ type ksDiskCaps struct{ capability *ksDiskCapability }
 type ksDiskReadCaps struct{ capability *ksDiskCapability }
 type ksEnvCaps struct{ name string }
 type ksProcessCaps struct{ command string }
+
+func ksContainsCapability(value any) bool {
+	switch item := value.(type) {
+	case *ksSystemCaps, *ksNetRoot, *ksDiskRoot, *ksEnvRoot, *ksProcessRoot,
+		*ksNetCaps, *ksDiskCaps, *ksDiskReadCaps, *ksEnvCaps, *ksProcessCaps:
+		return true
+	case *KsEnum:
+		return item.HasPayload && ksContainsCapability(item.Payload)
+	}
+	return false
+}
 
 type ksResponse struct {
 	body   string
@@ -1006,6 +1092,18 @@ class GoCodegen:
         self.functions = {
             declaration.name: declaration for declaration in program.declarations
         }
+        self.enum_variants: dict[str, tuple[str, bool]] = {
+            "Some": ("Option", True),
+            "None": ("Option", False),
+            "Ok": ("Result", True),
+            "Err": ("Result", True),
+        }
+        for enum in program.enums:
+            for variant in enum.variants:
+                self.enum_variants[variant.name] = (
+                    enum.name,
+                    variant.payload_type is not None,
+                )
         self._temp_index = 0
 
     # ------------------------------------------------------------------
@@ -1066,14 +1164,6 @@ class GoCodegen:
                 "'koschei.py run' kullanın.",
                 self.program.structs[0].location,
             )
-        if self.program.enums:
-            raise CodegenError(
-                "KS4002",
-                "Enum ve match native derlemede henüz desteklenmiyor; şimdilik "
-                "'koschei.py run' kullanın.",
-                self.program.enums[0].location,
-            )
-
         for declaration in self.program.declarations:
             for statement in declaration.body.statements:
                 for expression in _walk_statement(statement):
@@ -1095,24 +1185,6 @@ class GoCodegen:
                         raise CodegenError(
                             "KS4002",
                             "Struct değerleri native derlemede henüz desteklenmiyor; "
-                            "şimdilik 'koschei.py run' kullanın.",
-                            expression.location,
-                        )
-                    if isinstance(expression, MatchExpression):
-                        raise CodegenError(
-                            "KS4002",
-                            "match native derlemede henüz desteklenmiyor; şimdilik "
-                            "'koschei.py run' kullanın.",
-                            expression.location,
-                        )
-                    if (
-                        isinstance(expression, CallExpression)
-                        and isinstance(expression.callee, Identifier)
-                        and expression.callee.name in {"Some", "None", "Ok", "Err"}
-                    ):
-                        raise CodegenError(
-                            "KS4002",
-                            "Option/Result değerleri native derlemede henüz desteklenmiyor; "
                             "şimdilik 'koschei.py run' kullanın.",
                             expression.location,
                         )
@@ -1335,6 +1407,9 @@ class GoCodegen:
         if isinstance(expression, CallExpression):
             return self._call(expression, depth)
 
+        if isinstance(expression, MatchExpression):
+            return self._match(expression, depth)
+
         if isinstance(expression, (ListLiteral, MapLiteral, StructLiteral)):
             raise CodegenError(
                 "KS4002",
@@ -1438,6 +1513,17 @@ class GoCodegen:
 
         if isinstance(callee, Identifier):
             name = callee.name
+            constructor = self.enum_variants.get(name)
+            if constructor is not None:
+                enum_name, has_payload = constructor
+                expected = 1 if has_payload else 0
+                self._check_arity(name, arguments, expected, expression.location)
+                payload = arguments[0] if has_payload else "ksUnit"
+                return (
+                    f"ksEnum({_go_string(enum_name)}, {_go_string(name)}, {payload}, "
+                    f"{'true' if has_payload else 'false'})",
+                    prelude,
+                )
             if name in {"println", "print"}:
                 self._check_arity(name, arguments, 1, expression.location)
                 helper = "ksPrintln" if name == "println" else "ksPrint"
@@ -1498,6 +1584,44 @@ class GoCodegen:
             "KS4002", "Desteklenmeyen çağrı biçimi.", expression.location
         )
 
+    def _match(
+        self, expression: MatchExpression, depth: int
+    ) -> tuple[str, list[str]]:
+        value, prelude = self._expression(expression.value, depth)
+        source = self._temp()
+        enum_value = self._temp()
+        result = self._temp()
+        ok = self._temp()
+        lines = list(prelude)
+        lines.append(f"{source} := {value}")
+        lines.append(f"{enum_value}, {ok} := {source}.(*KsEnum)")
+        lines.append(f"var {result} any")
+        lines.append(f"if !{ok} {{")
+        lines.append(
+            f'\t{result} = ksErrorf("KS3101: match çalışma anında enum, Option veya Result bekler")'
+        )
+        lines.append("} else {")
+        lines.append(f"\tswitch {enum_value}.Variant {{")
+        for arm in expression.arms:
+            lines.append(f"\tcase {_go_string(arm.variant)}:")
+            lines.append("\t\t{")
+            if arm.binding is not None:
+                lines.append(
+                    f"\t\t\tvar {_var(arm.binding)} any = {enum_value}.Payload"
+                )
+                lines.append(f"\t\t\t_ = {_var(arm.binding)}")
+            body, body_prelude = self._expression(arm.body, depth + 3)
+            lines.extend("\t\t\t" + line for line in body_prelude)
+            lines.append(f"\t\t\t{result} = {body}")
+            lines.append("\t\t}")
+        lines.append("\tdefault:")
+        lines.append(
+            f'\t\t{result} = ksErrorf("KS3101: match içinde varyant kolu yok: " + {enum_value}.Variant)'
+        )
+        lines.append("\t}")
+        lines.append("}")
+        return result, lines
+
     def _or_return(
         self, expression: OrReturnExpression, depth: int
     ) -> tuple[str, list[str]]:
@@ -1505,7 +1629,10 @@ class GoCodegen:
         temp = self._temp()
         lines = list(prelude)
         lines.append(f"{temp} := {value}")
-        lines.append(f"if ksIsError({temp}) {{")
+        success = self._temp()
+        payload = self._temp()
+        lines.append(f"{success}, {payload} := ksUnwrapFallible({temp})")
+        lines.append(f"if !{success} {{")
         if expression.error is None:
             lines.append(f"\treturn {temp}")
         else:
@@ -1513,6 +1640,7 @@ class GoCodegen:
             lines.extend("\t" + line for line in error_prelude)
             lines.append(f"\treturn {error}")
         lines.append("}")
+        lines.append(f"{temp} = {payload}")
         return temp, lines
 
     def _or_else(
@@ -1522,10 +1650,15 @@ class GoCodegen:
         temp = self._temp()
         lines = list(prelude)
         lines.append(f"{temp} := {value}")
-        lines.append(f"if ksIsError({temp}) {{")
+        success = self._temp()
+        payload = self._temp()
+        lines.append(f"{success}, {payload} := ksUnwrapFallible({temp})")
+        lines.append(f"if !{success} {{")
         fallback, fallback_prelude = self._expression(expression.fallback, depth + 1)
         lines.extend("\t" + line for line in fallback_prelude)
         lines.append(f"\t{temp} = {fallback}")
+        lines.append("} else {")
+        lines.append(f"\t{temp} = {payload}")
         lines.append("}")
         return temp, lines
 
@@ -1536,7 +1669,10 @@ class GoCodegen:
         temp = self._temp()
         lines = list(prelude)
         lines.append(f"{temp} := {value}")
-        lines.append(f"if ksIsError({temp}) {{")
+        success = self._temp()
+        payload = self._temp()
+        lines.append(f"{success}, {payload} := ksUnwrapFallible({temp})")
+        lines.append(f"if !{success} {{")
 
         statements = expression.handler.statements
         body_statements = statements
@@ -1558,6 +1694,8 @@ class GoCodegen:
         elif not (statements and isinstance(statements[-1], ReturnStatement)):
             lines.append(f"\t{temp} = ksUnit")
 
+        lines.append("} else {")
+        lines.append(f"\t{temp} = {payload}")
         lines.append("}")
         return temp, lines
 
