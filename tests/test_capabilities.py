@@ -125,7 +125,7 @@ class CapsCommandTests(unittest.TestCase):
             ["caps", str(REPO_ROOT / "examples" / "showcase.ks"), "--deny", "net"]
         )
         self.assertEqual(code, 2)
-        self.assertIn("reddedilen yetki alanı", error)
+        self.assertIn("denied capability domain", error)
 
     def test_deny_policy_passes_for_pure_program(self) -> None:
         code, _, _ = self.run_cli(

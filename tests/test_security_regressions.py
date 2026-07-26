@@ -74,7 +74,7 @@ class CapabilityContractRegressionTests(unittest.TestCase):
                 exit_code = main(["caps", str(path), "--deny", "net"])
 
         self.assertEqual(exit_code, 2)
-        self.assertIn("reddedilen yetki alanı", error.getvalue())
+        self.assertIn("denied capability domain", error.getvalue())
         self.assertNotIn("saf hesaplama", output.getvalue())
 
 

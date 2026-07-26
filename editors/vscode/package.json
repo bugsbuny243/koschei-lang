@@ -1,0 +1,75 @@
+{
+  "name": "koschei-language",
+  "displayName": "Koschei Language",
+  "description": "Syntax highlighting and on-save diagnostics for the Koschei capability-secure language.",
+  "version": "0.9.0",
+  "publisher": "koschei-lang",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Linters"
+  ],
+  "activationEvents": [
+    "onLanguage:koschei",
+    "onCommand:koschei.checkFile"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "koschei",
+        "aliases": [
+          "Koschei",
+          "koschei"
+        ],
+        "extensions": [
+          ".ks"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "koschei",
+        "scopeName": "source.koschei",
+        "path": "./syntaxes/koschei.tmLanguage.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "koschei.checkFile",
+        "title": "Koschei: Check Current File"
+      }
+    ],
+    "configuration": {
+      "title": "Koschei",
+      "properties": {
+        "koschei.executable": {
+          "type": "string",
+          "default": "ks",
+          "description": "Koschei CLI executable used for diagnostics."
+        },
+        "koschei.checkOnSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Run ks check --json whenever a Koschei file is saved."
+        },
+        "koschei.language": {
+          "type": "string",
+          "enum": [
+            "en",
+            "tr"
+          ],
+          "default": "en",
+          "description": "Diagnostic language passed to the Koschei compiler."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "check": "node --check extension.js"
+  }
+}

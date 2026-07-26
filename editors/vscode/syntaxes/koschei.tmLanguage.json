@@ -1,0 +1,103 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Koschei",
+  "scopeName": "source.koschei",
+  "patterns": [
+    {"include": "#comments"},
+    {"include": "#strings"},
+    {"include": "#numbers"},
+    {"include": "#keywords"},
+    {"include": "#types"},
+    {"include": "#functions"},
+    {"include": "#constants"}
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.koschei",
+          "match": "//.*$"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.koschei",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.koschei",
+              "match": "\\\\[nrt\\\"{}]"
+            },
+            {
+              "name": "meta.interpolation.koschei",
+              "begin": "(?<!\\\\)\\{",
+              "end": "(?<!\\\\)\\}",
+              "patterns": [
+                {"include": "$self"}
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.float.koschei",
+          "match": "\\b[0-9]+\\.[0-9]+\\b"
+        },
+        {
+          "name": "constant.numeric.integer.koschei",
+          "match": "\\b[0-9]+\\b"
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.koschei",
+          "match": "\\b(fn|let|mut|return|if|else|while|for|in|match|or|import)\\b"
+        },
+        {
+          "name": "storage.type.koschei",
+          "match": "\\b(struct|enum)\\b"
+        }
+      ]
+    },
+    "types": {
+      "patterns": [
+        {
+          "name": "support.type.koschei",
+          "match": "\\b(Int|Float|Bool|String|Unit|List|Map|Option|Result|Error|SystemCaps|DiskRoot|DiskCaps|DiskReadCaps|NetRoot|NetCaps|EnvRoot|EnvCaps|ProcessRoot|ProcessCaps|Response)\\b"
+        },
+        {
+          "name": "entity.name.type.koschei",
+          "match": "\\b[A-Z][A-Za-z0-9_]*\\b"
+        }
+      ]
+    },
+    "functions": {
+      "patterns": [
+        {
+          "name": "entity.name.function.koschei",
+          "match": "(?<=\\bfn\\s)[a-z_][A-Za-z0-9_]*"
+        },
+        {
+          "name": "support.function.builtin.koschei",
+          "match": "\\b(print|println|Some|None|Ok|Err|Error)\\b"
+        }
+      ]
+    },
+    "constants": {
+      "patterns": [
+        {
+          "name": "constant.language.boolean.koschei",
+          "match": "\\b(true|false)\\b"
+        }
+      ]
+    }
+  }
+}

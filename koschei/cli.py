@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Koschei compiler prototipi için ilk komut satırı aracı."""
+"""Koschei command-line interface."""
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -12,9 +13,21 @@ import tempfile
 from dataclasses import asdict
 from pathlib import Path
 
-from .capabilities import DOMAIN_ORDER, analyze as analyze_capabilities, render as render_manifest, to_dict as manifest_to_dict
-from .capabilities import analyze_graph
+from . import __version__
+from .capabilities import DOMAIN_ORDER, analyze_graph
+from .capabilities import render as render_manifest
+from .capabilities import to_dict as manifest_to_dict
 from .codegen_go import CodegenError, generate_go
+from .diagnostics import (
+    diagnostic_payload,
+    known_codes,
+    lookup as lookup_diagnostic,
+    normalize_locale,
+    render_error,
+)
+from .formatter import format_source
+from .interpreter import KoscheiRuntimeError, run as interpret
+from .lexer import LexerError, tokenize
 from .modules import (
     ModuleError,
     check_graph,
@@ -23,18 +36,15 @@ from .modules import (
     module_imports,
     namespaces,
 )
-from .diagnostics import known_codes, lookup as lookup_diagnostic
-from .formatter import check_source, format_source
-from .interpreter import KoscheiRuntimeError, run as interpret
-from .lexer import LexerError, tokenize
 from .parser import ParserError, parse
-from .semantic import SemanticError, check as semantic_check
+from .project import ProjectError, create_project, resolve_source
+from .semantic import SemanticError
 
 
 def require_ks_extension(path: str) -> Path:
-    source_path = Path(path)
+    source_path = resolve_source(path)
     if source_path.suffix != ".ks":
-        raise ValueError("Koschei kaynak dosyası '.ks' uzantılı olmalıdır.")
+        raise ValueError("Koschei source files must use the '.ks' extension.")
     return source_path
 
 
@@ -43,9 +53,9 @@ def read_source(path: str) -> str:
 
 
 def open_graph(path: str):
-    """Kök dosyayı doğrular ve modül grafiğini yükler."""
-    require_ks_extension(path)
-    return load_graph(path)
+    """Resolve a file or project path and load its module graph."""
+    source = require_ks_extension(path)
+    return load_graph(source)
 
 
 def command_tokens(path: str) -> int:
@@ -60,16 +70,41 @@ def command_ast(path: str) -> int:
     return 0
 
 
-def command_check(path: str) -> int:
-    graph = open_graph(path)
+def command_check(path: str, as_json: bool, locale: str) -> int:
+    source = require_ks_extension(path)
+    graph = load_graph(source)
     report = check_graph(graph)
     module_count = len(graph.modules)
-    suffix = f", {module_count} modül" if module_count > 1 else ""
-    print(
-        f"KOSCHEI CHECK: PASS ({report.functions} fonksiyon, "
-        f"{report.variables} değişken, {report.capability_values} capability değeri"
-        f"{suffix})"
-    )
+    if as_json:
+        print(
+            json.dumps(
+                {
+                    "ok": True,
+                    "source": str(source),
+                    "functions": report.functions,
+                    "variables": report.variables,
+                    "capability_values": report.capability_values,
+                    "modules": module_count,
+                },
+                ensure_ascii=False,
+            )
+        )
+        return 0
+
+    if locale == "en":
+        suffix = f", {module_count} modules" if module_count > 1 else ""
+        print(
+            f"KOSCHEI CHECK: PASS ({report.functions} functions, "
+            f"{report.variables} variables, "
+            f"{report.capability_values} capability values{suffix})"
+        )
+    else:
+        suffix = f", {module_count} modül" if module_count > 1 else ""
+        print(
+            f"KOSCHEI CHECK: PASS ({report.functions} fonksiyon, "
+            f"{report.variables} değişken, "
+            f"{report.capability_values} capability değeri{suffix})"
+        )
     return 0
 
 
@@ -87,26 +122,43 @@ def command_run(path: str) -> int:
     )
 
 
-def command_fmt(path: str, write: bool, check_only: bool) -> int:
-    source = read_source(path)
+def command_fmt(path: str, write: bool, check_only: bool, locale: str) -> int:
+    source_path = require_ks_extension(path)
+    source = source_path.read_text(encoding="utf-8")
     formatted = format_source(source)
 
     if check_only:
         if formatted == source:
             return 0
-        print(
-            f"KOSCHEI FMT: {path} kanonik biçimde değil "
-            "('koschei.py fmt --write' ile düzeltin).",
-            file=sys.stderr,
-        )
+        if locale == "en":
+            message = (
+                f"KOSCHEI FMT: {source_path} is not canonical "
+                "(run 'ks fmt --write' to fix it)."
+            )
+        else:
+            message = (
+                f"KOSCHEI FMT: {source_path} kanonik biçimde değil "
+                "('ks fmt --write' ile düzeltin)."
+            )
+        print(message, file=sys.stderr)
         return 1
 
     if write:
         if formatted == source:
-            print(f"KOSCHEI FMT: {path} zaten kanonik biçimde.")
+            message = (
+                f"KOSCHEI FMT: {source_path} is already canonical."
+                if locale == "en"
+                else f"KOSCHEI FMT: {source_path} zaten kanonik biçimde."
+            )
+            print(message)
             return 0
-        Path(path).write_text(formatted, encoding="utf-8")
-        print(f"KOSCHEI FMT: {path} yeniden biçimlendirildi.")
+        source_path.write_text(formatted, encoding="utf-8")
+        message = (
+            f"KOSCHEI FMT: reformatted {source_path}."
+            if locale == "en"
+            else f"KOSCHEI FMT: {source_path} yeniden biçimlendirildi."
+        )
+        print(message)
         return 0
 
     print(formatted, end="")
@@ -114,16 +166,21 @@ def command_fmt(path: str, write: bool, check_only: bool) -> int:
 
 
 def command_caps(path: str, as_json: bool, denied: list[str] | None) -> int:
-    graph = open_graph(path)
+    source = require_ks_extension(path)
+    graph = load_graph(source)
     check_graph(graph)
-    # Manifesto tüm grafiği kapsar: içe aktarılan modüllerin talep ettiği
-    # yetkiler de programın saldırı yüzeyine dahildir.
     manifest = analyze_graph(graph)
 
     if as_json:
-        print(json.dumps(manifest_to_dict(manifest, path), ensure_ascii=False, indent=2))
+        print(
+            json.dumps(
+                manifest_to_dict(manifest, str(source)),
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
     else:
-        print(render_manifest(manifest, path), end="")
+        print(render_manifest(manifest, str(source)), end="")
 
     if not denied:
         return 0
@@ -131,7 +188,7 @@ def command_caps(path: str, as_json: bool, denied: list[str] | None) -> int:
     violations = sorted(set(manifest.domains()) & set(denied))
     if violations:
         print(
-            "KOSCHEI POLICY: reddedilen yetki alanı talep edildi: "
+            "KOSCHEI POLICY: denied capability domain requested: "
             + ", ".join(violations),
             file=sys.stderr,
         )
@@ -146,23 +203,24 @@ def command_emit_go(path: str) -> int:
     return 0
 
 
-def command_build(path: str, output: str | None) -> int:
-    graph = open_graph(path)
+def command_build(path: str, output: str | None, locale: str) -> int:
+    source_path = require_ks_extension(path)
+    graph = load_graph(source_path)
     check_graph(graph)
     go_source = generate_go(graph.root_module.program, graph)
 
     go_binary = shutil.which("go")
     if go_binary is None:
-        print(
-            "KOSCHEI ERROR: 'go' bulunamadı. Native derleme için Go kurulu olmalıdır "
-            "(https://go.dev/dl). Go kurmadan çalıştırmak için 'koschei.py run' "
-            "kullanabilir, üretilen Go kaynağını görmek için 'koschei.py emit-go' "
-            "çalıştırabilirsiniz.",
-            file=sys.stderr,
+        message = (
+            "KOSCHEI ERROR: 'go' was not found. Install Go for native builds "
+            "or use 'ks run'."
+            if locale == "en"
+            else "KOSCHEI ERROR: 'go' bulunamadı. Native derleme için Go kurun "
+            "veya 'ks run' kullanın."
         )
+        print(message, file=sys.stderr)
         return 1
 
-    source_path = Path(path)
     target = Path(output) if output else source_path.with_suffix("")
     target = target.resolve()
 
@@ -180,106 +238,181 @@ def command_build(path: str, output: str | None) -> int:
         )
 
     if completed.returncode != 0:
-        print(
-            "KOSCHEI ERROR: Go derlemesi başarısız oldu. Bu bir derleyici hatasıdır; "
-            "lütfen kaynak dosyayla birlikte bildirin.\n" + completed.stderr.strip(),
-            file=sys.stderr,
+        message = (
+            "KOSCHEI ERROR: Go compilation failed. This is a compiler bug; "
+            "report it with the source file.\n"
+            if locale == "en"
+            else "KOSCHEI ERROR: Go derlemesi başarısız oldu. Bu bir derleyici "
+            "hatasıdır; kaynak dosyayla birlikte bildirin.\n"
         )
+        print(message + completed.stderr.strip(), file=sys.stderr)
         return 1
 
     print(f"KOSCHEI BUILD: {target}")
     return 0
 
 
-def command_explain(code: str) -> int:
-    diagnostic = lookup_diagnostic(code)
+def command_explain(code: str, locale: str) -> int:
+    diagnostic = lookup_diagnostic(code, locale)
     if diagnostic is None:
-        print(
-            f"KOSCHEI ERROR: '{code}' bilinen bir hata kodu değil. "
-            f"Bilinen kodlar: {', '.join(known_codes())}",
-            file=sys.stderr,
-        )
+        if locale == "en":
+            message = (
+                f"KOSCHEI ERROR: '{code}' is not a known error code. "
+                f"Known codes: {', '.join(known_codes())}"
+            )
+        else:
+            message = (
+                f"KOSCHEI ERROR: '{code}' bilinen bir hata kodu değil. "
+                f"Bilinen kodlar: {', '.join(known_codes())}"
+            )
+        print(message, file=sys.stderr)
         return 1
-    print(diagnostic.render())
+    print(diagnostic.render(locale))
     return 0
 
 
-def print_explain_hint(message: str) -> None:
-    """Hata metninde bir KS kodu varsa 'explain' komutunu önerir."""
-    diagnostic = lookup_diagnostic(message)
-    if diagnostic is not None:
-        print(
-            f"İpucu: bu hatanın açıklaması için "
-            f"'python koschei.py explain {diagnostic.code}' çalıştırın.",
-            file=sys.stderr,
-        )
+def command_new(name: str, destination: str | None, locale: str) -> int:
+    project = create_project(name, destination)
+    if locale == "en":
+        print(f"KOSCHEI NEW: created {project.name} at {project.root}")
+        print(f"Entry: {project.entry.relative_to(project.root)}")
+    else:
+        print(f"KOSCHEI NEW: {project.name} projesi oluşturuldu: {project.root}")
+        print(f"Giriş: {project.entry.relative_to(project.root)}")
+    return 0
+
+
+def command_version(as_json: bool) -> int:
+    if as_json:
+        print(json.dumps({"name": "koschei-lang", "version": __version__}))
+    else:
+        print(f"Koschei {__version__}")
+    return 0
+
+
+def print_explain_hint(message: str, locale: str) -> None:
+    diagnostic = lookup_diagnostic(message, locale)
+    if diagnostic is None:
+        return
+    if locale == "en":
+        hint = f"Hint: run 'ks --lang en explain {diagnostic.code}' for details."
+    else:
+        hint = f"İpucu: ayrıntı için 'ks --lang tr explain {diagnostic.code}' çalıştırın."
+    print(hint, file=sys.stderr)
+
+
+def _add_language_option(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--lang",
+        choices=("en", "tr"),
+        default=argparse.SUPPRESS,
+        help="Diagnostic language: en or tr",
+    )
+
+
+def _source_command(
+    subcommands: argparse._SubParsersAction,
+    name: str,
+    help_text: str,
+) -> argparse.ArgumentParser:
+    command = subcommands.add_parser(name, help=help_text)
+    _add_language_option(command)
+    command.add_argument(
+        "source",
+        nargs="?",
+        default=".",
+        help=".ks source file, project directory, or koschei.toml",
+    )
+    return command
 
 
 def build_parser() -> argparse.ArgumentParser:
+    default_language = normalize_locale(os.environ.get("KOSCHEI_LANG", "en"))
     cli = argparse.ArgumentParser(
         prog="koschei",
-        description="Koschei (.ks) compiler prototipi",
+        description="Koschei capability-secure compiler",
+    )
+    cli.add_argument(
+        "--lang",
+        choices=("en", "tr"),
+        default=default_language,
+        help="Diagnostic language (default: KOSCHEI_LANG or en)",
     )
     subcommands = cli.add_subparsers(dest="command", required=True)
 
-    for name, help_text in (
-        ("tokens", "Lexer tokenlarını yazdırır"),
-        ("ast", "Parser AST çıktısını JSON olarak yazdırır"),
-        ("check", "Sözdizimi, değişmezlik ve capability kurallarını doğrular"),
-        ("run", "Koschei programını yorumlayıcı ile çalıştırır"),
-        ("emit-go", "Üretilen Go ara kaynağını yazdırır (Go kurulumu gerekmez)"),
-    ):
-        command = subcommands.add_parser(name, help=help_text)
-        command.add_argument("source", help=".ks kaynak dosyası")
-
-    formatter = subcommands.add_parser(
-        "fmt",
-        help="Kaynağı kanonik Koschei biçimine getirir",
+    _source_command(subcommands, "tokens", "Print lexer tokens")
+    _source_command(subcommands, "ast", "Print the parser AST as JSON")
+    check = _source_command(
+        subcommands,
+        "check",
+        "Validate syntax, types, modules, and capability rules",
     )
-    formatter.add_argument("source", help=".ks kaynak dosyası")
+    check.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit one stable JSON result for editor and CI integrations",
+    )
+    _source_command(subcommands, "run", "Run a Koschei program")
+    _source_command(subcommands, "emit-go", "Print generated Go source")
+
+    formatter = _source_command(
+        subcommands,
+        "fmt",
+        "Format source into canonical Koschei style",
+    )
     formatter.add_argument(
-        "-w", "--write", action="store_true", help="Dosyayı yerinde günceller"
+        "-w", "--write", action="store_true", help="Update the file in place"
     )
     formatter.add_argument(
         "--check",
         action="store_true",
-        help="Biçim bozuksa çıkış kodu 1 döner (CI kapısı); dosyayı değiştirmez",
+        help="Exit with code 1 when formatting differs; do not modify the file",
     )
 
-    caps = subcommands.add_parser(
+    caps = _source_command(
+        subcommands,
         "caps",
-        help="Programın erişebildiği yetkileri listeler (yetki manifestosu)",
+        "Render the program capability manifest",
     )
-    caps.add_argument("source", help=".ks kaynak dosyası")
-    caps.add_argument(
-        "--json", action="store_true", help="Manifestoyu JSON olarak yazdırır"
-    )
+    caps.add_argument("--json", action="store_true", help="Emit JSON")
     caps.add_argument(
         "--deny",
         action="append",
         choices=list(DOMAIN_ORDER),
-        help=(
-            "Belirtilen yetki alanı talep edilirse çıkış kodu 2 döner "
-            "(CI politikası için; birden fazla kez kullanılabilir)"
-        ),
+        help="Exit with code 2 when the program requests this capability domain",
     )
 
-    build = subcommands.add_parser(
-        "build", help="Koschei programını tek bir native binary olarak derler"
+    build = _source_command(
+        subcommands,
+        "build",
+        "Compile a Koschei program into one native binary",
     )
-    build.add_argument("source", help=".ks kaynak dosyası")
-    build.add_argument("-o", "--output", help="Çıktı binary yolu")
+    build.add_argument("-o", "--output", help="Native binary output path")
 
     explain = subcommands.add_parser(
-        "explain", help="Bir Koschei hata kodunu açıklar ve düzeltme örneği verir"
+        "explain", help="Explain a Koschei error code and show a fix"
     )
-    explain.add_argument("code", help="Hata kodu (ör. KS2403) veya kodu içeren hata metni")
+    _add_language_option(explain)
+    explain.add_argument("code", help="Error code or error text containing a code")
+
+    new = subcommands.add_parser("new", help="Create a new Koschei project")
+    _add_language_option(new)
+    new.add_argument("name", help="Lowercase package name")
+    new.add_argument(
+        "--path",
+        help="Destination directory (defaults to a directory named after the package)",
+    )
+
+    version = subcommands.add_parser("version", help="Print the Koschei version")
+    _add_language_option(version)
+    version.add_argument("--json", action="store_true", help="Emit JSON")
 
     return cli
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    locale = normalize_locale(args.lang)
 
     try:
         if args.command == "tokens":
@@ -287,34 +420,73 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "ast":
             return command_ast(args.source)
         if args.command == "check":
-            return command_check(args.source)
+            return command_check(args.source, args.json, locale)
         if args.command == "run":
             return command_run(args.source)
         if args.command == "fmt":
-            return command_fmt(args.source, args.write, args.check)
+            return command_fmt(args.source, args.write, args.check, locale)
         if args.command == "caps":
             return command_caps(args.source, args.json, args.deny)
         if args.command == "emit-go":
             return command_emit_go(args.source)
         if args.command == "build":
-            return command_build(args.source, args.output)
+            return command_build(args.source, args.output, locale)
         if args.command == "explain":
-            return command_explain(args.code)
+            return command_explain(args.code, locale)
+        if args.command == "new":
+            return command_new(args.name, args.path, locale)
+        if args.command == "version":
+            return command_version(args.json)
     except KoscheiRuntimeError as error:
-        print(f"KOSCHEI RUNTIME ERROR: {error}", file=sys.stderr)
-        print_explain_hint(str(error))
+        if args.command == "check" and getattr(args, "json", False):
+            print(
+                json.dumps(
+                    diagnostic_payload(
+                        str(error),
+                        locale=locale,
+                        source=getattr(args, "source", None),
+                        error=error,
+                    ),
+                    ensure_ascii=False,
+                )
+            )
+        else:
+            print(
+                f"KOSCHEI RUNTIME ERROR: "
+                f"{render_error(str(error), locale=locale, error=error)}",
+                file=sys.stderr,
+            )
+            print_explain_hint(str(error), locale)
         return 1
     except (
         OSError,
         ValueError,
+        ProjectError,
         LexerError,
         ParserError,
         SemanticError,
         CodegenError,
         ModuleError,
     ) as error:
-        print(f"KOSCHEI ERROR: {error}", file=sys.stderr)
-        print_explain_hint(str(error))
+        if args.command == "check" and getattr(args, "json", False):
+            print(
+                json.dumps(
+                    diagnostic_payload(
+                        str(error),
+                        locale=locale,
+                        source=getattr(args, "source", None),
+                        error=error,
+                    ),
+                    ensure_ascii=False,
+                )
+            )
+        else:
+            print(
+                f"KOSCHEI ERROR: "
+                f"{render_error(str(error), locale=locale, error=error)}",
+                file=sys.stderr,
+            )
+            print_explain_hint(str(error), locale)
         return 1
 
     return 1

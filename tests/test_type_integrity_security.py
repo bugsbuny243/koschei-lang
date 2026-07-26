@@ -136,7 +136,7 @@ class CapabilityTypeIntegrityTests(unittest.TestCase):
                 exit_code = main(["caps", str(path), "--deny", "net"])
 
         self.assertEqual(exit_code, 2)
-        self.assertIn("reddedilen yetki alanı", error.getvalue())
+        self.assertIn("denied capability domain", error.getvalue())
 
 
 if __name__ == "__main__":
