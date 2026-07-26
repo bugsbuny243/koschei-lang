@@ -1,99 +1,138 @@
-# Koschei Programming Language (`.ks`)
+# Koschei (`.ks`)
 
-> **Çökmeyen, Hacklenemeyen, Ölümsüz Dil.**  
-> **Uncrashable, Unhackable, Immortal.**
+**Capability tabanlı güvenli bir programlama dili. İçe aktardığınız bir paket, siz açıkça bir jeton vermedikçe diskinize, ağınıza veya ortam değişkenlerinize dokunamaz.**
 
-Koschei, kolay okunabilen sözdizimini bellek güvenliği ve capability tabanlı sistem güvenliğiyle birleştirmeyi amaçlayan yeni nesil bağımsız bir programlama dilidir.
+Tedarik zinciri saldırılarının çalışma nedeni şu: bir bağımlılık, sürecin sahip olduğu bütün izinleri otomatik olarak devralır. Paketi kurarsınız ve o paket `~/.ssh` dizinini, `.env` dosyanızı okuyabilir veya bir socket açabilir — hiç sormadan. Koschei bu "ortamdan gelen yetki"yi kaldırır: yan etki erişimi, fonksiyona parametre olarak geçirilmesi gereken bir değerdir ve derleyici, kendisine verilmemiş bir yetkiye uzanan programı reddeder.
 
-Bu repository yalnızca Koschei dilinin compiler, runtime, standart kütüphane ve geliştirici araçlarını içerir.
+English: [README.md](README.md)
+
+---
+
+## 60 saniyede dene
+
+Kasıtlı olarak zararlı hazırlanmış bir paket, bir sır dosyasını okuyup çağırana döndürmeye çalışıyor. Hiç çalışmadığını kendi makinenizde doğrulayın.
+
+```bash
+git clone https://github.com/bugsbuny243/koschei-lang
+cd koschei-lang
+pip install .
+ks check examples/supply_chain/main.ks
+```
+
+Test edilen paket — `examples/supply_chain/analytics.ks`:
+
+```ks
+fn track(event: String) -> String or Error {
+    let secret = disk.read("/etc/app/secrets.env") or return Error("okunamadi")
+    return secret
+}
+```
+
+Çıktı:
+
+```text
+KOSCHEI ERROR: KS2401 [line 6, column 18]: Required capability is unavailable
+in this scope — A disk, network, environment, or process operation was
+attempted without the corresponding capability token.
+Hint: run 'ks --lang en explain KS2401' for details.
+```
+
+Çıkış kodu `1`. Program hiç çalışmadı. Dosya hiç açılmadı. Hiçbir yere hiçbir şey gönderilmedi.
+
+Bu, çağrıyı yakalayan bir runtime sandbox değil. `track` fonksiyonunun içinde `disk` diye bir şey hiç yok — saldırı derleme anında ölüyor.
+
+---
+
+## Kurulum
+
+Python 3.12 veya üstü. Başka hiçbir bağımlılık yok — bir güvenlik dilinin kurulumu, güvenmek zorunda olduğunuz paket sayısını artırmamalı.
+
+```bash
+pip install git+https://github.com/bugsbuny243/koschei-lang
+ks version
+```
+
+İlk programınız:
+
+```bash
+ks new hello-koschei
+cd hello-koschei
+ks run .
+```
+
+`ks new`, `koschei.toml` ve `src/main.ks` içeren sıfır bağımlılıklı bir proje oluşturur. Komutlar kaynak dosyası, proje dizini veya doğrudan `koschei.toml` yolu kabul eder.
+
+---
 
 ## Temel ilkeler
 
-- `null` ve `nil` yoktur; bulunmayabilecek değerler `Option<T>` ile temsil edilir.
-- Hatalar `Result<T, E>` ve `or return` akışıyla ele alınır.
-- Değişkenler varsayılan olarak immutable'dır; değişiklik için `let mut` gerekir.
-- Ağ, disk, environment ve process erişimi açık capability değerleri gerektirir.
-- Compiler, kapsam ve capability ihlallerini program çalışmadan önce reddeder.
-- Uzun vadeli bellek modeli GC'siz static region inference üzerine kuruludur.
+- **Ortamdan gelen yetki yok.** Disk, ağ, ortam değişkeni ve process erişimi açık bir capability değeri gerektirir. Kendisine böyle bir değer geçirilmemiş fonksiyon o etkiyi gerçekleştiremez.
+- **Yetkiler daralır, asla genişlemez.** `caps.disk` yalnızca devredebilen bir kök jetondur; `caps.disk.allow(yol)` daraltılmış bir jeton üretir ve bu jeton yeniden genişletilemez (`KS2403`), kök jeton da doğrudan I/O yapamaz (`KS2402`).
+- **`null` yok.** Bulunmayabilecek değerler `Option<T>` ile temsil edilir (`Some` / `None`).
+- **Hatalar birer değerdir.** `Result<T, E>` ve tek bir `or` anahtar sözcüğünün üç biçimi: `or return`, `or default`, `or { blok }`. Ele alınmamış hata değeri derleme hatasıdır (`KS1401`).
+- **Varsayılan immutable.** Değer değiştirmek için `let mut` gerekir.
+- **Her tanı açıklanabilir.** 33 hata kodu, Türkçe/İngilizce katalog; `ks explain KS2401` nedeni ve çözümü yazdırır.
 
-## Örnek Koschei kodu
+## Örnek
 
 ```ks
 fn fetch_data(net: NetCaps, url: String) -> String or Error {
-    let response = net.get(url) or return Error("Veri alınamadı")
+    let response = net.get(url) or return Error("istek başarısız")
     return response.text()
 }
 
 fn main(caps: SystemCaps) {
     let api_net = caps.net.allow("https://api.example.com")
-    let mut retry_count = 3
     let response = fetch_data(api_net, "https://api.example.com/v1")
-
-    retry_count = 2
     println(response)
 }
 ```
 
-## Mevcut compiler hattı
+`fetch_data` tam olarak tek bir origin'e erişebilir. Diske dokunamaz, ortam değişkeni okuyamaz, process başlatamaz — denetlenip "yapmıyor" bulunduğu için değil, buna izin verecek jetonu taşımadığı için.
+
+## Yetki manifestosu
+
+Yetki kaynak kodda açık olduğu için makineyle özetlenebilir. `ks caps`, bir programın erişebildiği her şeyi tüm modül grafiği boyunca raporlar:
+
+```bash
+ks caps examples/app.ks
+ks caps --json src/main.ks
+ks caps --deny net src/main.ks   # program ağa erişebiliyorsa 2 ile çıkar
+```
+
+Saf bir program için manifesto boştur ve bu, kod incelemesinde verilen bir söz değil, doğrulanabilir bir olgudur:
 
 ```text
-.ks source
-    -> lexer.py
-    -> parser.py
-    -> ast_nodes.py
-    -> semantic.py
+KOSCHEI YETKİ MANİFESTOSU: examples/app.ks
+
+Bu program hiçbir yan etki yeteneği taşımıyor.
+Disk, ağ, ortam değişkeni ve süreç erişimi YOKTUR — saf hesaplama.
 ```
 
-Mevcut prototip şunları destekler:
+`--deny` kapısı CI için tasarlandı: bir bağımlılık güncellemesi sessizce erişim ekliyorsa build düşer.
 
-- `fn` fonksiyon tanımları
-- Tipli parametreler
-- `let` ve `let mut`
-- Fonksiyon ve metot çağrıları
-- `return` ve `or return`
-- Struct, List, `for` döngüsü ve immutable Map (`get/set/keys/contains`)
-- Tam ifade interpolasyonu (`"{items.length()}"`, `"{1 + 2}"`)
-- Günlük stdlib: String `trim/split/join`, List `sort/filter/contains`
-- Enum constructor'ları ve exhaustive `match`
-- Gerçek `Option<T>` / `Result<T, E>` değerleri (`Some/None`, `Ok/Err`)
-- `or` sonrası union/Result/Option başarı tipi daraltması
-- AST üretimi
-- Immutable değer denetimi
-- Capability scope denetimi
-- Satır ve sütun bilgili compiler hataları
+## Dil özellikleri
 
-## CLI ve proje araçları
+Bugün çalışan: tipli parametrelerle fonksiyonlar, `let` / `let mut`, struct, `List`, immutable `Map` (`get`/`set`/`keys`/`contains`), `for`-in, yalnızca `Bool` koşullu `if`/`else`/`while`, exhaustive `match` ile enum'lar, gerçek `Option<T>` / `Result<T, E>`, tam ifade interpolasyonu (`"{items.length()}"`), günlük stdlib (`String` `trim`/`split`/`join`, `List` `sort`/`filter`/`contains`) ve `import risk` yazınca yanındaki `risk.ks` dosyasını bağlayan modül sistemi — manifest yok, build script yok, config yok.
+
+## Araç zinciri
 
 ```bash
-ks version
-ks new hello-koschei
-cd hello-koschei
-ks check .
-ks run .
-ks build . -o ./hello-koschei
+ks check src/main.ks          # tip, modül ve capability denetimi
+ks run src/main.ks            # interpreter
+ks build src/main.ks -o app   # üretilen Go üzerinden native binary
+ks fmt --write src/           # kanonik biçimlendirme
+ks caps src/main.ks           # yetki manifestosu
+ks explain KS2401             # tanılar, Türkçe için --lang tr
+ks check --json src/main.ks   # editörler için sabit code/message/line/column
+ks tokens / ks ast / ks emit-go
 ```
 
-`ks new`, `koschei.toml` ve `src/main.ks` içeren sıfır bağımlılıklı bir proje
-oluşturur. Kaynak dosyası yerine proje dizini veya doğrudan `koschei.toml`
-verilebilir.
+Hat şöyle: `.ks` → lexer → parser → AST → tip, capability ve immutability denetimleri → Go kod üretimi → native binary. Tanılar varsayılan olarak İngilizcedir; `--lang tr` veya `KOSCHEI_LANG=tr` aynı hata kodlarıyla Türkçe kataloğu seçer.
 
-Tanılar varsayılan olarak İngilizcedir; Türkçe katalog aynı hata kodlarıyla
-korunur:
+## Editör desteği
 
-```bash
-ks explain KS2403
-ks --lang tr explain KS2403
-ks check --json src/main.ks
-```
-
-`check --json`, editör ve CI entegrasyonları için sabit `code`, `message`, `line`
-ve `column` alanlarını üretir.
-
-## VS Code
-
-`editors/vscode` içindeki resmi uzantı `.ks` syntax highlighting, bracket/comment
-kuralları, `Koschei: Check Current File` komutu ve kaydette otomatik
-`ks check --json` tanıları sağlar. Dış npm bağımlılığı yoktur.
+`editors/vscode` içinde resmi uzantı var: `.ks` syntax highlighting, bracket/comment kuralları, `Koschei: Check Current File` komutu ve kaydette tanılar. npm bağımlılığı yoktur.
 
 ## Testler
 
@@ -101,44 +140,26 @@ kuralları, `Koschei: Check Current File` komutu ve kaydette otomatik
 python -m unittest discover -s tests -v
 ```
 
-GitHub Actions, her push ve pull request üzerinde compiler testlerini otomatik çalıştırır.
+321 test. Atlanan 33 tanesi yerel Go toolchain gerektirir ve CI'da koşar; CI her push ve pull request'te tüm test setini çalıştırır — buna zararlı `examples/supply_chain/` paketinin hâlâ derlenemediğinin doğrulanması da dahil.
 
-## Yol haritası
+## Durum
 
-`main` dalı şu anda **v0.9.0 — Müşteri karşısına çıkabilsin** kararlı ürün
-kapısındadır.
+Koschei **v0.9.0**, alpha aşamasında. Gerçek çok dosyalı programları çalıştırıyor ve capability modeli baştan sona uygulanıyor, ancak sözdizimi ve runtime sözleşmeleri v1.0'a kadar değişebilir. Henüz prodüksiyona koymayın.
 
-Tamamlanan v0.9 dilimleri:
+Native tarafta şu anda uygulanan güvenlik sınırları:
 
-- 33 hata kodunun merkezi Türkçe/İngilizce tanı kataloğu
-- İngilizce varsayılan CLI ve `--lang tr` / `KOSCHEI_LANG=tr` desteği
-- Editörler için kararlı `ks check --json` tanı sözleşmesi
-- Resmi VS Code uzantısı: syntax highlight, komut ve kaydette otomatik check
-- `ks new`, `ks version`, minimal `koschei.toml` ve proje dizininden
-  `check/run/build`
-- Manifest entry yolunun proje kökü dışına kaçmasını reddeden fail-closed çözümleme
+- Güvenli native disk ABI, Linux `openat` / `O_NOFOLLOW` hedefler. Güvenli eşdeğerin bulunmadığı bir platformda disk kullanan build daha zayıf bir yola düşmek yerine `KS4001` ile durur.
+- Process capability'sinin `run` / `spawn`'ı process başlatmaz; hata değeri döndürür.
+- Çalışma anında path traversal, symlink kaçışı ve kapsam dışı yollar `KS3402` verir; salt-okunur jetonla yazma `KS3404` verir; izin verilen origin'den çıkan HTTP redirect reddedilir; çağrı derinliği 512 ile sınırlıdır (`KS3105`).
 
-v0.8'in native güvenlik sınırları aynen korunur:
+Sıradaki kapı **v1.0**: dondurulmuş sözdizimi ve capability runtime ABI, SemVer uyumluluk taahhüdü, en az `List<T>` ve `Option<T>` için generic sözleşme, kilit dosyalı paket çözümleme ve migration testleri.
 
-- Güvenli native disk ABI Linux `openat`/`O_NOFOLLOW` hedefindedir; güvenli eşdeğer
-  bulunmayan platformda disk kullanan build **KS4001** ile durur.
-- Process capability `run/spawn` işlem başlatmaz ve hata değeri döndürür.
+**Tasarlandı ama yapılmadı** — ve tamamlanmış özellik olarak sunulmuyor: static region inference, C backend, Sentinel / tarpit katmanları. Koschei yetkileri tip sisteminde zorunlu kılar; formel matematiksel kanıt üretmez ve bugün region tabanlı bellek yönetimi kullanan bir dil değildir — mevcut backend Go üretir ve Go'nun çöp toplayıcısını kullanır.
 
-Sıradaki ana kapı **v1.0 — İlk kararlı sürüm**:
+## Katkı
 
-- Sözdizimi ve capability runtime ABI v1 dondurması
-- SemVer ve geriye dönük uyumluluk taahhüdü
-- En az `List<T>` ve `Option<T>` generic sözleşmesi
-- Basit paket/dependency çözümleme ve kilit dosyası
-- Migration/compatibility testleri ve 1.0 release belgeleri
+Şu anda en faydalı katkı gerçek bir program. Koschei'de küçük bir şey yazın ve dil ayağınıza dolandığında issue açın — eksik bir stdlib fonksiyonu, kafa karıştıran bir tanı, derlenmesi gerekirken derlenmeyen bir kalıp. Problemi tekrar üreten bir `.ks` dosyasıyla gelen hata bildirimleri en hızlı düzelen bildirimlerdir.
 
-Static region inference, C backend ve Sentinel/Tarpit/Phantom katmanları henüz
-tasarım/spec aşamasındadır; tamamlanmış özellik olarak sunulmaz.
-
-## Proje durumu
-
-Koschei erken compiler geliştirme aşamasındadır. Sözdizimi ve runtime sözleşmeleri v1.0'a kadar değişebilir.
-
-## License
+## Lisans
 
 MIT
