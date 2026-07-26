@@ -56,7 +56,15 @@ from .semantic import (
 
 MAX_CALL_DEPTH = 512
 
-STRING_METHODS = {"length", "to_int", "to_float", "contains"}
+STRING_METHODS = {
+    "length",
+    "to_int",
+    "to_float",
+    "contains",
+    "trim",
+    "split",
+    "join",
+}
 
 BINARY_HELPERS = {
     "+": "ksAdd",
@@ -368,6 +376,14 @@ func ksContains(value any, needle any) any {
 		return ksErrorf("KS1301: 'contains' yalnızca String üzerinde çağrılabilir")
 	}
 	return strings.Contains(item, ksToString(needle))
+}
+
+func ksTrim(value any) any {
+	item, ok := value.(string)
+	if !ok {
+		return ksErrorf("KS1301: 'trim' yalnızca String üzerinde çağrılabilir")
+	}
+	return strings.TrimSpace(item)
 }
 
 func ksEnter(location string) {
@@ -796,6 +812,13 @@ class GoCodegen:
                     f"Native derlemede desteklenmeyen metot: '{method}'.",
                     callee.location,
                 )
+            if method in {"split", "join"}:
+                raise CodegenError(
+                    "KS4002",
+                    f"String.{method}() List runtime'ı gerektirir; native List desteği "
+                    "v0.8 Go codegen aşamasında eklenecek.",
+                    callee.location,
+                )
             if method == "contains":
                 self._check_arity(method, arguments, 1, callee.location)
                 return f"ksContains({receiver}, {arguments[0]})", prelude
@@ -804,6 +827,7 @@ class GoCodegen:
                 "length": "ksLength",
                 "to_int": "ksToInt",
                 "to_float": "ksToFloat",
+                "trim": "ksTrim",
             }[method]
             return f"{helper}({receiver})", prelude
 

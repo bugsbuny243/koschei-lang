@@ -177,7 +177,7 @@ class InterpreterTests(unittest.TestCase):
 
     def test_unhandled_error_returns_exit_code_one(self) -> None:
         code, output, error = self.run_source(
-            'fn main() { "x".to_int() }'
+            'fn main() { return "x".to_int() }'
         )
         self.assertEqual(code, 1)
         self.assertEqual(output, "")

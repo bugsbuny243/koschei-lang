@@ -64,7 +64,7 @@ class Literal:
 
 @dataclass(frozen=True, slots=True)
 class InterpolatedString:
-    """"Selam {name}" — parça listesi: Literal veya değişken/alan erişimi."""
+    """"Selam {items.length()}" — metin ve normal ifade parçaları."""
 
     parts: tuple["Expression", ...]
     location: SourceLocation

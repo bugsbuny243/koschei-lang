@@ -86,7 +86,7 @@ class StructValue:
     fields: dict[str, Any]
 
 
-LIST_METHODS = {"length", "get", "push", "contains"}
+LIST_METHODS = {"length", "get", "push", "contains", "sort", "filter"}
 ALLOWED_NET_SCHEMES = frozenset({"http", "https"})
 MAP_METHODS = {"get", "set", "keys", "contains"}
 
@@ -721,11 +721,11 @@ class ProcessCaps(_NarrowedCapability):
 
     @staticmethod
     def run(*arguments: Any) -> KsError:
-        return KsError("process yetkisi v0.1'de kapalı")
+        return KsError("process yetkisi bu sürümde kapalı")
 
     @staticmethod
     def spawn(*arguments: Any) -> KsError:
-        return KsError("process yetkisi v0.1'de kapalı")
+        return KsError("process yetkisi bu sürümde kapalı")
 
 
 def _contains_capability(value: Any, seen: set[int] | None = None) -> bool:
@@ -1023,6 +1023,13 @@ class Interpreter:
                 value = self._evaluate(item)
                 if isinstance(value, KsError):
                     return value
+                if _contains_capability(value):
+                    raise KoscheiRuntimeError(
+                        "KS3401",
+                        "Capability taşıyan değerler List içine konamaz; runtime "
+                        "type-laundering girişimini reddetti.",
+                        item.location,
+                    )
                 items.append(value)
             return items
 
@@ -1272,7 +1279,15 @@ class Interpreter:
             EnvCaps: {"get"},
             ProcessCaps: {"run", "spawn"},
             Response: {"text", "status"},
-            str: {"length", "to_int", "to_float", "contains"},
+            str: {
+                "length",
+                "to_int",
+                "to_float",
+                "contains",
+                "trim",
+                "split",
+                "join",
+            },
         }
         for receiver_type, members in allowed_members.items():
             if isinstance(receiver, receiver_type) and name in members:
@@ -1332,6 +1347,25 @@ class Interpreter:
             if name == "contains":
                 self._require_arity(name, arguments, 1, member.location)
                 return str(arguments[0]) in receiver
+            if name == "trim":
+                self._require_arity(name, arguments, 0, member.location)
+                return receiver.strip()
+            if name == "split":
+                self._require_arity(name, arguments, 1, member.location)
+                separator = arguments[0]
+                if not isinstance(separator, str):
+                    return KsError("String.split() ayıracı String olmalıdır")
+                if separator == "":
+                    return KsError("String.split() ayıracı boş olamaz")
+                return receiver.split(separator)
+            if name == "join":
+                self._require_arity(name, arguments, 1, member.location)
+                values = arguments[0]
+                if not isinstance(values, list):
+                    return KsError("String.join() bir List bekler")
+                if any(not isinstance(value, str) for value in values):
+                    return KsError("String.join() yalnızca String öğeleri birleştirir")
+                return receiver.join(values)
 
         if isinstance(receiver, list):
             if name == "length":
@@ -1350,11 +1384,52 @@ class Interpreter:
                 return receiver[index]
             if name == "push":
                 self._require_arity(name, arguments, 1, member.location)
+                if _contains_capability(arguments[0]):
+                    raise KoscheiRuntimeError(
+                        "KS3401",
+                        "Capability taşıyan değerler List içine konamaz; runtime "
+                        "type-laundering girişimini reddetti.",
+                        member.location,
+                    )
                 # Değerler değişmezdir: push YENİ bir liste döndürür.
                 return receiver + [arguments[0]]
             if name == "contains":
                 self._require_arity(name, arguments, 1, member.location)
                 return arguments[0] in receiver
+            if name == "sort":
+                self._require_arity(name, arguments, 0, member.location)
+                if _contains_capability(receiver):
+                    raise KoscheiRuntimeError(
+                        "KS3401",
+                        "Capability taşıyan List sıralanamaz.",
+                        member.location,
+                    )
+                if not receiver:
+                    return []
+                numeric = all(type(value) in {int, float} for value in receiver)
+                strings = all(isinstance(value, str) for value in receiver)
+                if not (numeric or strings):
+                    return KsError(
+                        "List.sort() yalnızca homojen String veya sayısal öğeleri sıralar"
+                    )
+                return sorted(receiver)
+            if name == "filter":
+                self._require_arity(name, arguments, 1, member.location)
+                predicate = arguments[0]
+                if not isinstance(predicate, FunctionDeclaration):
+                    return KsError(
+                        "List.filter() yerel, adlandırılmış bir predicate fonksiyonu bekler"
+                    )
+                filtered: list[Any] = []
+                for value in receiver:
+                    decision = self._call_function(predicate, [value])
+                    if isinstance(decision, KsError):
+                        return decision
+                    if not isinstance(decision, bool):
+                        return KsError("List.filter() predicate'i Bool döndürmelidir")
+                    if decision:
+                        filtered.append(value)
+                return filtered
 
         if isinstance(receiver, dict):
             if name == "get":

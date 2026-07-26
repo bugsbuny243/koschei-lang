@@ -181,5 +181,23 @@ class SemanticTests(unittest.TestCase):
         self.assertEqual(report.functions, 1)
 
 
+    def test_unknown_string_method_is_rejected(self) -> None:
+        program = parse('fn main() { let value = "x".reverse() }')
+        with self.assertRaisesRegex(SemanticError, "KS1502"):
+            check(program)
+
+    def test_fallible_interpolation_requires_or(self) -> None:
+        program = parse('fn main() { println("değer: {\"x\".to_int()}") }')
+        with self.assertRaisesRegex(SemanticError, "KS1401"):
+            check(program)
+
+    def test_fallible_interpolation_with_or_passes(self) -> None:
+        program = parse(
+            'fn main() { println("değer: {\"x\".to_int() or 0}") }'
+        )
+        report = check(program)
+        self.assertEqual(report.functions, 1)
+
+
 if __name__ == "__main__":
     unittest.main()

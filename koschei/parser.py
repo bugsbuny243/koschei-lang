@@ -486,12 +486,13 @@ class Parser:
                 parts.append(Literal(content, location))
                 continue
 
-            # "user.email" -> Identifier / MemberExpression zinciri
-            names = content.split(".")
-            expression: Expression = Identifier(names[0], location)
-            for member in names[1:]:
-                expression = MemberExpression(expression, member, location)
-            parts.append(expression)
+            try:
+                parts.append(parse_expression(content))
+            except (ParserError, SyntaxError) as error:
+                raise ParserError(
+                    f"KS1001 [satır {location.line}, sütun {location.column}]: "
+                    f"Geçersiz interpolasyon ifadesi {{{content}}}: {error}"
+                ) from error
 
         return InterpolatedString(tuple(parts), location)
 
@@ -537,6 +538,18 @@ class Parser:
     @staticmethod
     def _error(token: Token, message: str) -> None:
         raise ParserError(f"[satır {token.line}, sütun {token.column}] {message}")
+
+
+def parse_expression(source: str) -> Expression:
+    """Tek bir Koschei ifadesini ayrıştır; interpolasyon ve araçlar kullanır."""
+    parser = Parser.from_source(source)
+    expression = parser._expression()
+    if not parser._is_at_end():
+        parser._error(
+            parser._peek(),
+            "İnterpolasyon içinde tek bir ifade bekleniyordu.",
+        )
+    return expression
 
 
 def parse(source: str) -> Program:

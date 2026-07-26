@@ -75,6 +75,15 @@ class FormatterInvariantTests(unittest.TestCase):
         )
         self.assert_invariants(source)
 
+    def test_expression_interpolation_survives_formatting(self) -> None:
+        source = (
+            'fn main() { let items = [1, 2] '
+            'println("n={items.length()} toplam={1 + 2}") }'
+        )
+        formatted = self.assert_invariants(source)
+        self.assertIn('{items.length()}', formatted)
+        self.assertIn('{1 + 2}', formatted)
+
     def test_floats_and_unary_minus_survive(self) -> None:
         self.assert_invariants("fn main() { let pi = 3.14 let z = (2 + 3) * 4 - -1 }")
 

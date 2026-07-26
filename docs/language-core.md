@@ -1,4 +1,4 @@
-# Koschei Language Core v0.1
+# Koschei Language Core v0.7
 
 > Çökmeyen, Hacklenemeyen, Ölümsüz Dil.
 
@@ -64,7 +64,7 @@ Sonuçlar:
 - `true` / `false` Bool değerleridir; `if` ve `while` koşulları Bool olmalıdır.
 - Mantıksal işleçler `&&`, `||`, `!` — `or` anahtar kelimesi yalnızca hata/varsayılan akışı içindir.
 - Operatör önceliği: `or` → `||` → `&&` → `== !=` → `< <= > >=` → `+ -` → `* /` → `! -` (unary) → çağrı.
-- String interpolasyonu: `"Selam {user.email}"`. v0.1'de yalnızca değişken ve alan erişimi desteklenir; `{1 + 2}` geçersizdir. Düz süslü parantez için `\{` ve `\}` kullanılır.
+- String interpolasyonu normal Koschei ifadelerini kabul eder: `"{items.length()}"`, `"{1 + 2}"`, `"{config.get("name") or "?"}"`. Düz süslü parantez için `\{` ve `\}` kullanılır.
 
 ## 'or' biçimleri
 
@@ -99,6 +99,41 @@ Metotlar:
 Capability değerleri Map içine konamaz. `Map.get()` öğe tipini henüz statik
 olarak korumadığı için compiler ve runtime bu yolu capability type-laundering'e
 karşı kapatır.
+
+## Günlük String ve List metotları
+
+String değerleri immutable'dır:
+
+```ks
+let clean = "  ali,ayşe  ".trim()
+let names = clean.split(",")
+let label = " | ".join(names)
+```
+
+| String metodu | Sonuç |
+|---|---|
+| `trim()` | Baştaki/sondaki boşlukları kaldıran `String` |
+| `split(separator)` | Parçalardan oluşan `List`; boş ayıraç hata değeridir |
+| `join(parts)` | String öğeli List'i alıcı String ile birleştirir |
+| `length()` | Unicode karakter sayısı |
+| `contains(value)` | Alt metin varsa `true` |
+
+List metotları mevcut listeyi değiştirmez:
+
+```ks
+fn positive(value: Int) -> Bool {
+    return value > 0
+}
+
+let values = [3, -1, 2]
+let ordered = values.sort() or []
+let selected = values.filter(positive) or []
+```
+
+`filter`, lambda sözdizimi gelene kadar tek argüman alan ve `Bool` döndüren yerel,
+adlandırılmış bir fonksiyon kullanır. `sort()` yalnızca homojen String veya sayısal
+List'leri sıralar; desteklenmeyen öğeler hata değeridir. Capability değerleri List
+içine konamaz veya `push` ile eklenemez.
 
 ## Hata kodları
 
@@ -228,7 +263,7 @@ değer gösterimi host dilden bağımsızdır (`true`/`false`, `4.0`).
 (yorumlayıcıda Python'un sınırsız tam sayıları kullanılır); çok büyük sayılarla
 çalışan programlarda iki hedef farklılaşabilir.
 
-## v0.1 compiler hattı
+## v0.7 compiler hattı
 
 ```text
 .ks source
@@ -256,12 +291,11 @@ Tanı katalogu sabittir: yalnızca açıklama üretir, hiçbir denetimi gevşetm
 
 `check` komutu lexer, parser ve semantic güvenlik kontrollerini birlikte çalıştırır.
 
-## Bilinen sınırlar (v0.1)
+## Bilinen sınırlar (v0.7)
 
-- Birleşik dönüş tipleri (`String or Error`) metin olarak taşınır; tam tip denetimi v0.2'de.
+- Birleşik dönüş tipleri (`String or Error`) henüz gerçek union değildir; tam daraltma v0.8 kapsamındadır.
 - Enum/match, generics ve genel fonksiyon çağrılarında tam argüman tipi denetimi yok.
-- Map anahtarları String'dir; generic `Map<K, V>` ve öğe tipi takibi henüz yoktur.
-- String interpolasyonu yalnızca değişken ve alan erişimi alır; `{liste.length()}`
-  gibi metot çağrıları desteklenmez (önce bir değişkene bağlayın).
-- Yol/origin sınırları (`allow("/etc/app/")` kapsamı) statik olarak tip düzeyinde, dinamik olarak runtime aşamasında zorlanacaktır; runtime henüz yazılmadı.
+- Map anahtarları yalnızca String'dir; List ve Map henüz generic değildir ve öğe tipi akış boyunca statik olarak korunmaz.
+- Go backend List/Map/struct ve capability runtime ABI'sini henüz üretmez; bu programlar `KS4001`/`KS4002` ile fail-closed reddedilir.
+- Yol/origin sınırları interpreter runtime'ında fiilen uygulanır; native capability ABI v0.8 kapsamındadır.
 - Tanı mesajları şimdilik Türkçedir; İngilizce yerelleştirme planlanmaktadır.
