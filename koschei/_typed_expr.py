@@ -64,9 +64,7 @@ def infer_expression(checker, expression):
         return checker.record(expression, generic("Map", STRING, values))
 
     if isinstance(expression, StructLiteral):
-        for _, value in expression.fields:
-            checker.infer(value)
-        return checker.record(expression, NamedType(expression.type_name))
+        return checker.record(expression, checker.struct_literal_type(expression))
 
     if isinstance(expression, Identifier):
         local = checker.resolve(expression.name)
@@ -94,14 +92,22 @@ def infer_expression(checker, expression):
         arguments = tuple(checker.infer(item) for item in expression.arguments)
         if isinstance(expression.callee, MemberExpression):
             receiver = checker.infer(expression.callee.object)
-            module_result = checker.module_call_type(receiver, expression.callee.member)
+            module_result = checker.module_call_type(
+                receiver,
+                expression.callee.member,
+                arguments,
+                expression.location,
+            )
             result = module_result if module_result is not None else method_type(
                 receiver, expression.callee.member, arguments, expression.location
             )
             return checker.record(expression, result)
         if isinstance(expression.callee, Identifier):
             return checker.record(
-                expression, checker.call_type(expression.callee.name, arguments)
+                expression,
+                checker.call_type(
+                    expression.callee.name, arguments, expression.location
+                ),
             )
         checker.infer(expression.callee)
         return checker.record(expression, UNKNOWN)

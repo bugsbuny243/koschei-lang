@@ -24,6 +24,7 @@ from pathlib import Path
 
 from .ast_nodes import Program, SourceLocation
 from .integrity import check_program_integrity
+from .legacy_types import erase_imports, erase_program
 from .lexer import LexerError
 from .parser import ParserError, parse
 from .semantic import ImportedModule, SemanticError, SemanticReport, check as semantic_check
@@ -196,8 +197,10 @@ def check_graph(graph: ModuleGraph) -> SemanticReport:
         try:
             imports = imported_modules(graph, module)
             check_program_integrity(module.program)
-            result = semantic_check(module.program, imports)
             check_typed_hir(module.program, imports)
+            result = semantic_check(
+                erase_program(module.program), erase_imports(imports)
+            )
         except SemanticError as error:
             error.source_path = module.path
             raise
