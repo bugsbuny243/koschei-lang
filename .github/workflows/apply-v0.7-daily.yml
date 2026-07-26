@@ -56,39 +56,14 @@ jobs:
       - name: Build wheel
         run: python -m pip wheel . --no-deps --no-build-isolation -w /tmp/wheel
 
-      - name: Diagnose commit and push
-        id: publish
-        continue-on-error: true
+      - name: Commit implementation
         shell: bash
         run: |
-          set +e
-          exec > >(tee /tmp/v0.7-publish.log) 2>&1
+          set -euo pipefail
+          rm -rf build *.egg-info
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git status --short
           git add -A
           git diff --cached --check
-          status=$?
-          if [ "$status" -eq 0 ]; then
-            git commit -m "v0.7: complete daily programming features"
-            status=$?
-          fi
-          if [ "$status" -eq 0 ]; then
-            git push origin HEAD:agent/v0.7-daily-stdlib
-            status=$?
-          fi
-          echo "exit_status=$status"
-          exit "$status"
-
-      - name: Upload publish diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: v0.7-publish-diagnostics
-          path: /tmp/v0.7-publish.log
-          if-no-files-found: error
-          retention-days: 1
-
-      - name: Fail when publish failed
-        if: steps.publish.outcome == 'failure'
-        run: exit 1
+          git commit -m "v0.7: complete daily programming features"
+          git push origin HEAD:agent/v0.7-daily-stdlib
