@@ -1,75 +1,46 @@
 {
   "name": "koschei-language",
   "displayName": "Koschei Language",
-  "description": "Syntax highlighting and on-save diagnostics for the Koschei capability-secure language.",
-  "version": "0.9.0",
+  "description": "Zero-dependency LSP, diagnostics, formatting, hover, definitions, symbols and completion for Koschei.",
+  "version": "0.9.1",
   "publisher": "koschei-lang",
   "license": "MIT",
-  "engines": {
-    "vscode": "^1.85.0"
-  },
-  "categories": [
-    "Programming Languages",
-    "Linters"
-  ],
-  "activationEvents": [
-    "onLanguage:koschei",
-    "onCommand:koschei.checkFile"
-  ],
+  "engines": {"vscode": "^1.85.0"},
+  "categories": ["Programming Languages", "Linters"],
+  "activationEvents": ["onLanguage:koschei", "onCommand:koschei.checkFile"],
   "main": "./extension.js",
   "contributes": {
-    "languages": [
-      {
-        "id": "koschei",
-        "aliases": [
-          "Koschei",
-          "koschei"
-        ],
-        "extensions": [
-          ".ks"
-        ],
-        "configuration": "./language-configuration.json"
-      }
-    ],
-    "grammars": [
-      {
-        "language": "koschei",
-        "scopeName": "source.koschei",
-        "path": "./syntaxes/koschei.tmLanguage.json"
-      }
-    ],
-    "commands": [
-      {
-        "command": "koschei.checkFile",
-        "title": "Koschei: Check Current File"
-      }
-    ],
+    "languages": [{
+      "id": "koschei",
+      "aliases": ["Koschei", "koschei"],
+      "extensions": [".ks"],
+      "configuration": "./language-configuration.json"
+    }],
+    "grammars": [{
+      "language": "koschei",
+      "scopeName": "source.koschei",
+      "path": "./syntaxes/koschei.tmLanguage.json"
+    }],
+    "commands": [{
+      "command": "koschei.checkFile",
+      "title": "Koschei: Check Current File"
+    }],
     "configuration": {
       "title": "Koschei",
       "properties": {
-        "koschei.executable": {
+        "koschei.server.command": {
           "type": "string",
-          "default": "ks",
-          "description": "Koschei CLI executable used for diagnostics."
+          "default": "ks-lsp",
+          "description": "Koschei language server executable. Installed with koschei-lang."
         },
-        "koschei.checkOnSave": {
-          "type": "boolean",
-          "default": true,
-          "description": "Run ks check --json whenever a Koschei file is saved."
-        },
-        "koschei.language": {
-          "type": "string",
-          "enum": [
-            "en",
-            "tr"
-          ],
-          "default": "en",
-          "description": "Diagnostic language passed to the Koschei compiler."
+        "koschei.server.args": {
+          "type": "array",
+          "items": {"type": "string"},
+          "default": [],
+          "description": "Additional arguments passed to the Koschei language server."
         }
       }
     }
   },
-  "scripts": {
-    "check": "node --check extension.js"
-  }
+  "scripts": {"check": "node --check extension.js"}
 }

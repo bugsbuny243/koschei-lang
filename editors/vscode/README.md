@@ -1,11 +1,14 @@
 # Koschei Language for VS Code
 
-This extension provides:
+The extension uses Koschei's dependency-free language server and provides:
 
-- `.ks` syntax highlighting;
-- bracket, comment, and indentation rules;
-- `Koschei: Check Current File`;
-- automatic `ks check --json` diagnostics on save.
+- `.ks` syntax highlighting and language configuration;
+- live compiler diagnostics while typing;
+- canonical document formatting;
+- hover information and go-to-definition;
+- document symbols and core completion;
+- `Koschei: Check Current File`.
 
-Install the Koschei CLI first and make sure `ks` is available on `PATH`. The
-`koschei.executable` setting can point to another executable path.
+Install `koschei-lang` so `ks-lsp` is available on `PATH`. A custom executable
+or argument list can be selected with `koschei.server.command` and
+`koschei.server.args`.
