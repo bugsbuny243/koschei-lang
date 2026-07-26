@@ -1,3 +1,4 @@
+# Safe one-shot merge for PR #58.
 name: Apply v0.7 Map patch
 
 on:
