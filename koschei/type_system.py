@@ -25,6 +25,11 @@ class NamedType:
 
 
 @dataclass(frozen=True, slots=True)
+class TypeVariable:
+    name: str
+
+
+@dataclass(frozen=True, slots=True)
 class GenericType:
     name: str
     arguments: tuple["TypeNode", ...]
@@ -35,7 +40,7 @@ class UnionType:
     options: tuple["TypeNode", ...]
 
 
-TypeNode: TypeAlias = UnknownType | NamedType | GenericType | UnionType
+TypeNode: TypeAlias = UnknownType | NamedType | TypeVariable | GenericType | UnionType
 UNKNOWN = UnknownType()
 VOID = NamedType("Void")
 BOOL = NamedType("Bool")
@@ -112,7 +117,7 @@ def parse_type_ref(type_ref: TypeRef | None) -> TypeNode:
 def render_type(type_node: TypeNode) -> str:
     if isinstance(type_node, UnknownType):
         return "_"
-    if isinstance(type_node, NamedType):
+    if isinstance(type_node, (NamedType, TypeVariable)):
         return type_node.name
     if isinstance(type_node, GenericType):
         arguments = ", ".join(render_type(item) for item in type_node.arguments)
@@ -157,6 +162,52 @@ def is_named(type_node: TypeNode, name: str) -> bool:
     return isinstance(type_node, NamedType) and type_node.name == name
 
 
+def bind_type_variables(type_node: TypeNode, names: set[str] | frozenset[str]) -> TypeNode:
+    """Turn declared generic names into explicit type-variable nodes."""
+
+    if isinstance(type_node, NamedType) and type_node.name in names:
+        return TypeVariable(type_node.name)
+    if isinstance(type_node, GenericType):
+        return GenericType(
+            type_node.name,
+            tuple(bind_type_variables(argument, names) for argument in type_node.arguments),
+        )
+    if isinstance(type_node, UnionType):
+        return union_type(*(bind_type_variables(option, names) for option in type_node.options))
+    return type_node
+
+
+def substitute_type(type_node: TypeNode, mapping: dict[str, TypeNode]) -> TypeNode:
+    """Apply inferred generic arguments to a structural type."""
+
+    if isinstance(type_node, TypeVariable):
+        return mapping.get(type_node.name, type_node)
+    if isinstance(type_node, GenericType):
+        return GenericType(
+            type_node.name,
+            tuple(substitute_type(argument, mapping) for argument in type_node.arguments),
+        )
+    if isinstance(type_node, UnionType):
+        return union_type(*(substitute_type(option, mapping) for option in type_node.options))
+    return type_node
+
+
+def unresolved_type_variables(type_node: TypeNode) -> frozenset[str]:
+    if isinstance(type_node, TypeVariable):
+        return frozenset({type_node.name})
+    if isinstance(type_node, GenericType):
+        result: set[str] = set()
+        for argument in type_node.arguments:
+            result.update(unresolved_type_variables(argument))
+        return frozenset(result)
+    if isinstance(type_node, UnionType):
+        result: set[str] = set()
+        for option in type_node.options:
+            result.update(unresolved_type_variables(option))
+        return frozenset(result)
+    return frozenset()
+
+
 def success_type(type_node: TypeNode) -> TypeNode:
     """Return the value exposed after ``or`` / ``or return`` narrowing."""
 
@@ -175,6 +226,8 @@ def success_type(type_node: TypeNode) -> TypeNode:
 def contains_named(type_node: TypeNode, names: set[str]) -> bool:
     if isinstance(type_node, NamedType):
         return type_node.name in names
+    if isinstance(type_node, TypeVariable):
+        return False
     if isinstance(type_node, GenericType):
         return type_node.name in names or any(
             contains_named(argument, names) for argument in type_node.arguments

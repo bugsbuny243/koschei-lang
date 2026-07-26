@@ -20,7 +20,12 @@ from .ast_nodes import (
     WhileStatement,
 )
 from .semantic import ImportedModule, SemanticError
-from .type_contracts import TypeContractValidator, require_assignable
+from .type_contracts import (
+    TypeContractValidator,
+    function_type,
+    instantiate_function,
+    require_assignable,
+)
 from .type_system import (
     ERROR,
     UNKNOWN,
@@ -81,9 +86,7 @@ class TypedHIRChecker:
             for name, declaration in module.enums.items():
                 self.enums.setdefault(name, declaration)
                 for variant in declaration.variants:
-                    self.variants.setdefault(
-                        variant.name, (name, variant)
-                    )
+                    self.variants.setdefault(variant.name, (name, variant))
         self.scopes: list[dict[str, TypeNode]] = []
         self.bindings: list[TypedBinding] = []
         self.expressions: list[TypedExpression] = []
@@ -100,7 +103,7 @@ class TypedHIRChecker:
                 for parameter in function.parameters:
                     self.declare(
                         parameter.name,
-                        parse_type_ref(parameter.type_ref),
+                        function_type(function, parameter.type_ref),
                         parameter.location,
                         "parameter",
                     )
@@ -159,7 +162,10 @@ class TypedHIRChecker:
                     and self.current_function.return_type is not None
                 ):
                     require_assignable(
-                        parse_type_ref(self.current_function.return_type),
+                        function_type(
+                            self.current_function,
+                            self.current_function.return_type,
+                        ),
                         actual,
                         f"'{self.current_function.name}' dönüş değeri",
                         statement.location,
@@ -202,8 +208,7 @@ class TypedHIRChecker:
     ) -> TypeNode:
         function = self.functions.get(name)
         if function is not None:
-            self.validate_arguments(function, arguments, location)
-            return parse_type_ref(function.return_type)
+            return instantiate_function(function, arguments, location, self.contracts)
         variant = self.variants.get(name)
         if variant is not None:
             enum_name, declaration = variant
@@ -251,14 +256,20 @@ class TypedHIRChecker:
             return UNKNOWN
         function = module.functions.get(member)
         if function is not None:
-            if arguments is not None and location is not None:
-                self.validate_arguments(function, arguments, location)
-            return parse_type_ref(function.return_type)
+            if arguments is None or location is None:
+                return function_type(function, function.return_type)
+            return instantiate_function(function, arguments, location, self.contracts)
         if member in module.structs or member in module.enums:
             return NamedType(member)
         return UNKNOWN
 
     def field_type(self, receiver: TypeNode, member: str) -> TypeNode | None:
+        if isinstance(receiver, NamedType) and receiver.name == "SystemCaps":
+            from .semantic import CAPABILITY_MEMBERS
+
+            capability = CAPABILITY_MEMBERS.get(member)
+            if capability is not None:
+                return NamedType(capability)
         module_type = self.module_call_type(receiver, member)
         if module_type is not None:
             return module_type
@@ -278,26 +289,10 @@ class TypedHIRChecker:
             return UNKNOWN
         return None
 
-
     def validate_arguments(
         self, function, arguments: tuple[TypeNode, ...], location: SourceLocation
-    ) -> None:
-        if len(arguments) != len(function.parameters):
-            raise SemanticError(
-                "KS1301",
-                f"'{function.name}' {len(function.parameters)} argüman bekler, "
-                f"{len(arguments)} verildi.",
-                location,
-            )
-        for index, (parameter, actual) in enumerate(
-            zip(function.parameters, arguments), start=1
-        ):
-            require_assignable(
-                parse_type_ref(parameter.type_ref),
-                actual,
-                f"'{function.name}' çağrısının {index}. argümanı",
-                location,
-            )
+    ) -> TypeNode:
+        return instantiate_function(function, arguments, location, self.contracts)
 
     def struct_literal_type(self, expression) -> TypeNode:
         declaration = self.structs.get(expression.type_name)

@@ -72,9 +72,11 @@ def infer_expression(checker, expression):
             return checker.record(expression, local)
         function = checker.functions.get(expression.name)
         if function is not None:
-            from .type_system import parse_type_ref
+            from .type_contracts import function_type
 
-            return checker.record(expression, parse_type_ref(function.return_type))
+            return checker.record(
+                expression, function_type(function, function.return_type)
+            )
         if expression.name in checker.imports:
             return checker.record(expression, NamedType(f"Module:{expression.name}"))
         variant = checker.variants.get(expression.name)

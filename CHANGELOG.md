@@ -31,6 +31,13 @@
   capability type-integrity violations (`KS3401`).
 - Define `Int / Int` as checked integer division truncated toward zero and keep
   interpreter/native behavior identical; `Float / Float` remains floating-point.
+- Add declared generic functions such as `fn identity<T>(value: T) -> T`, with
+  call-site inference, nested substitution and cross-module contracts.
+- Keep generic inference identical across CLI checks, live LSP diagnostics,
+  interpreter runtime checks and native Go builds; ambiguous inference fails with
+  bilingual `KS1307` instead of falling back to a dynamic type.
+- Keep capability-bearing generic substitutions closed until effect generics are
+  explicit, preventing authority from being hidden behind an unconstrained `T`.
 
 The V5 design principle is: **security beyond ambient-authority languages and a
 writing experience simpler than Python without hiding dangerous effects.**

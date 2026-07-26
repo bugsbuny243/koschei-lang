@@ -11,7 +11,9 @@ from typing import Any
 
 from . import codegen_go as _codegen
 from . import interpreter as _runtime
-from .semantic import CAPABILITY_TYPES, INT_MIN
+from .ast_nodes import FunctionDeclaration, Parameter, TypeRef
+from .semantic import CAPABILITY_TYPES, INT_MIN, SemanticError
+from .type_contracts import function_type, infer_function_mapping
 from .type_system import (
     GenericType,
     NamedType,
@@ -22,6 +24,7 @@ from .type_system import (
     generic,
     parse_type_text,
     render_type,
+    substitute_type,
     union_type,
 )
 
@@ -185,6 +188,14 @@ def _raise_runtime_contract_error(
     )
 
 
+def _type_ref(type_node: TypeNode, location) -> TypeRef:
+    if isinstance(type_node, UnionType):
+        names = tuple(render_type(option) for option in type_node.options)
+    else:
+        names = (render_type(type_node),)
+    return TypeRef(names, location)
+
+
 def _call_function(
     self,
     function,
@@ -192,6 +203,65 @@ def _call_function(
     namespace=None,
     imports=None,
 ) -> Any:
+    type_parameters = getattr(function, "type_parameters", ())
+    if type_parameters:
+        runtime_types = tuple(_runtime_type_node(value) for value in arguments)
+        try:
+            mapping = infer_function_mapping(function, runtime_types, function.location)
+        except SemanticError as error:
+            capability_related = any(
+                contains_named(item, CAPABILITY_TYPES) for item in runtime_types
+            ) or error.code.startswith("KS24")
+            code = "KS3401" if capability_related else "KS3106"
+            label = (
+                "capability type-integrity ihlali"
+                if capability_related
+                else "normal runtime generic tip uyuşmazlığı; capability ihlali değildir"
+            )
+            raise _runtime.KoscheiRuntimeError(
+                code,
+                f"'{function.name}' generic çağrısı runtime'da çıkarılamadı: "
+                f"{error.message}. Sınıflandırma: {label}.",
+                function.location,
+            ) from error
+
+        if any(contains_named(item, CAPABILITY_TYPES) for item in mapping.values()):
+            raise _runtime.KoscheiRuntimeError(
+                "KS3401",
+                f"'{function.name}' generic çağrısına capability tipi bağlanamaz.",
+                function.location,
+            )
+
+        parameters = tuple(
+            Parameter(
+                parameter.name,
+                _type_ref(
+                    substitute_type(
+                        function_type(function, parameter.type_ref), mapping
+                    ),
+                    parameter.type_ref.location,
+                ),
+                parameter.location,
+            )
+            for parameter in function.parameters
+        )
+        return_type = None
+        if function.return_type is not None:
+            return_type = _type_ref(
+                substitute_type(
+                    function_type(function, function.return_type), mapping
+                ),
+                function.return_type.location,
+            )
+        concrete = FunctionDeclaration(
+            function.name,
+            parameters,
+            return_type,
+            function.body,
+            function.location,
+        )
+        return _call_function(self, concrete, arguments, namespace, imports)
+
     if len(arguments) != len(function.parameters):
         raise _runtime.KoscheiRuntimeError(
             "KS3101",
