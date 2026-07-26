@@ -28,7 +28,7 @@ classifiers = [
     "Topic :: Security",
 ]
 
-# BağD�mlılık YOKTUR ve olmayacaktır: derleyicinin kendisi yalnızca Python
+# Bağımlılık YOKTUR ve olmayacaktır: derleyicinin kendisi yalnızca Python
 # standart kütüphanesine dayanır. Bir güvenlik dilinin kurulumu, güvenmek
 # zorunda olduğunuz paket sayısını artırmamalıdır.
 dependencies = []
