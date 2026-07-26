@@ -52,6 +52,8 @@ Mevcut prototip şunları destekler:
 - Fonksiyon ve metot çağrıları
 - `return` ve `or return`
 - Struct, List, `for` döngüsü ve immutable Map (`get/set/keys/contains`)
+- Tam ifade interpolasyonu (`"{items.length()}"`, `"{1 + 2}"`)
+- Günlük stdlib: String `trim/split/join`, List `sort/filter/contains`
 - AST üretimi
 - Immutable değer denetimi
 - Capability scope denetimi
@@ -81,14 +83,15 @@ GitHub Actions, her push ve pull request üzerinde compiler testlerini otomatik 
 
 ## Yol haritası
 
-- `Option<T>`, `Some` ve `None`
-- `Result<T, E>`, `Ok` ve `Err`
-- Fonksiyon tip kontrolü
-- Koschei → C backend
-- Native binary üretimi
-- Static region inference
-- Capability runtime ABI
-- Sentinel, Tarpit ve Phantom Sandbox runtime katmanı
+Mevcut sürüm **v0.7.0 — Günlük kod yazılabilsin**. Sonraki ana kapı v0.8'dir:
+
+- Enum + exhaustive `match`
+- Gerçek `Option<T>` ve `Result<T, E>` tipleri
+- Union daraltma ve tam fonksiyon sınırı tip denetimi
+- Capability kullanan programların Go codegen/runtime ABI desteği
+
+Static region inference, C backend ve Sentinel/Tarpit/Phantom katmanları henüz
+tasarım/spec aşamasındadır; tamamlanmış özellik olarak sunulmaz.
 
 ## Proje durumu
 

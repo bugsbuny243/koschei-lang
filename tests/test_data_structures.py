@@ -105,7 +105,7 @@ class ListSemanticTests(unittest.TestCase):
 
     def test_unknown_list_method_is_rejected(self) -> None:
         with self.assertRaisesRegex(SemanticError, "KS1502"):
-            compile_program("fn main() { let xs = [1] let y = xs.sort() }")
+            compile_program("fn main() { let xs = [1] let y = xs.reverse() }")
 
     def test_list_get_is_not_confused_with_capability_get(self) -> None:
         # 'get' aynı zamanda bir yetki metodu adıdır; liste erişimi yetki

@@ -161,9 +161,9 @@ CATALOG: dict[str, Diagnostic] = {
             "anına taşınmaz."
         ),
         fix=(
-            "Alan adını struct tanımıyla karşılaştırın. List için kullanılabilir "
-            "metotlar: length, get, push, contains. Map için: get, set, keys, "
-            "contains."
+            "Alan adını struct tanımıyla karşılaştırın. String için: length, "
+            "to_int, to_float, contains, trim, split, join. List için: length, "
+            "get, push, contains, sort, filter. Map için: get, set, keys, contains."
         ),
         example=(
             "let items = [1, 2, 3]\n"

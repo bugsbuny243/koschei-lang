@@ -7,14 +7,13 @@ ayrı token türleri olarak üretilir.
 Kurallar:
 - Büyük harfle başlayan isimler TYPE olarak sınıflandırılır; bu yüzden
   değişken ve fonksiyon adları küçük harfle başlamalıdır.
-- "Selam {name}" biçimindeki metinler STRING_INTERP token'ı üretir;
-  interpolasyon v0.1'de yalnızca değişken ve alan erişimi
-  ({name}, {user.email}) destekler.
+- "Selam {name}" biçimindeki metinler STRING_INTERP token'ı üretir.
+  Süslü parantezin içi normal Koschei ifade sözdizimiyle yeniden ayrıştırılır;
+  çağrılar, işleçler, liste/Map ve struct ifadeleri kullanılabilir.
 """
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Any
@@ -96,10 +95,6 @@ class Token:
 
 class LexerError(SyntaxError):
     """Koschei kaynak kodu tokenize edilemediğinde yükseltilir."""
-
-
-# {user.email} gibi interpolasyon ifadeleri: identifier(.identifier)*
-INTERP_PATTERN = re.compile(r"^[a-z_][A-Za-z0-9_]*(\.[a-z_][A-Za-z0-9_]*)*$")
 
 
 class Lexer:
@@ -340,21 +335,9 @@ class Lexer:
                 continue
 
             if char == "{":
-                expr_chars: list[str] = []
-                while not self._is_at_end() and self._peek() not in {"}", '"', "\n"}:
-                    expr_chars.append(self._advance())
-                if self._peek() != "}":
-                    self._error("İnterpolasyon '}' ile kapatılmalıdır.")
-                self._advance()  # '}' tüket
-
-                expr_source = "".join(expr_chars).strip()
+                expr_source = self._interpolation_expression()
                 if not expr_source:
                     self._error("Boş interpolasyon: '{}' geçersizdir.")
-                if not INTERP_PATTERN.match(expr_source):
-                    self._error(
-                        "İnterpolasyon v0.1'de yalnızca değişken ve alan erişimi "
-                        "destekler (örn. {name}, {user.email})."
-                    )
                 flush_text()
                 segments.append(("expr", expr_source))
                 continue
@@ -365,6 +348,54 @@ class Lexer:
             text_parts.append(char)
 
         self._error("Kapatılmamış metin değeri.")
+
+    def _interpolation_expression(self) -> str:
+        """Açılmış bir ``{`` sonrasındaki dengeli Koschei ifadesini oku.
+
+        Map/struct literalindeki iç içe süslüler ve ifade içindeki metinler
+        doğru eşleştirilir. İfadenin geçerliliği parser tarafından denetlenir;
+        lexer yalnızca sınırı güvenli biçimde bulur.
+        """
+        depth = 1
+        expression: list[str] = []
+        in_string = False
+        escaped = False
+
+        while not self._is_at_end():
+            char = self._advance()
+
+            if in_string:
+                expression.append(char)
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == '"':
+                    in_string = False
+                elif char == "\n":
+                    self._error("İnterpolasyon içindeki metin satır sonuna taşamaz.")
+                continue
+
+            if char == '"':
+                in_string = True
+                expression.append(char)
+                continue
+            if char == "{":
+                depth += 1
+                expression.append(char)
+                continue
+            if char == "}":
+                depth -= 1
+                if depth == 0:
+                    return "".join(expression).strip()
+                expression.append(char)
+                continue
+            if char == "\n":
+                self._error("İnterpolasyon '}' ile aynı satırda kapatılmalıdır.")
+            expression.append(char)
+
+        self._error("İnterpolasyon '}' ile kapatılmalıdır.")
+        raise AssertionError("unreachable")
 
     def _add_token(self, token_type: TokenType, value: Any) -> None:
         self.tokens.append(

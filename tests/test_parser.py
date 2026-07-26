@@ -6,6 +6,8 @@ from koschei.ast_nodes import (
     BinaryExpression,
     IfStatement,
     InterpolatedString,
+    BinaryExpression,
+    CallExpression,
     LetStatement,
     Literal,
     OrBlockExpression,
@@ -155,6 +157,20 @@ class ParserTests(unittest.TestCase):
         argument = call.arguments[0]
         self.assertIsInstance(argument, InterpolatedString)
         self.assertEqual(len(argument.parts), 2)  # "selam " + user
+
+    def test_interpolated_string_parses_calls_and_arithmetic(self) -> None:
+        program = parse(
+            'fn main() { let items = [1, 2] println("{items.length()}:{1 + 2}") }'
+        )
+        statement = program.declarations[0].body.statements[1]
+        argument = statement.expression.arguments[0]
+        self.assertIsInstance(argument, InterpolatedString)
+        self.assertIsInstance(argument.parts[0], CallExpression)
+        self.assertIsInstance(argument.parts[2], BinaryExpression)
+
+    def test_invalid_interpolation_expression_is_parser_error(self) -> None:
+        with self.assertRaisesRegex(ParserError, "Geçersiz interpolasyon"):
+            parse('fn main() { println("bozuk: {1 + }") }')
 
 
 if __name__ == "__main__":

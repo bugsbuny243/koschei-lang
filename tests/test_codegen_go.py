@@ -97,6 +97,21 @@ class GoCodegenTests(unittest.TestCase):
         self.assertIn("ksPrintln(true)", generated)
 
 
+    def test_trim_and_expression_interpolation_are_generated(self) -> None:
+        generated = compile_source(
+            'fn main() { let name = "  Koschei  ".trim() '
+            'println("{name}:{1 + 2}") }'
+        )
+        self.assertIn("ksTrim", generated)
+        self.assertIn("ksAdd", generated)
+
+    def test_split_is_fail_closed_until_native_list_runtime(self) -> None:
+        with self.assertRaises(CodegenError) as context:
+            compile_source('fn main() { let parts = "a,b".split(",") }')
+        self.assertEqual(context.exception.code, "KS4002")
+        self.assertIn("native List desteği", context.exception.message)
+
+
 class EmitGoCommandTests(unittest.TestCase):
     def test_emit_go_prints_source(self) -> None:
         output = io.StringIO()
@@ -159,7 +174,7 @@ class NativeBuildTests(unittest.TestCase):
         source = (
             "fn main() { "
             "let total = 2 + 3 * 4 "
-            'let name = "koschei" '
+            'let name = "  koschei  ".trim() '
             "let size = name.length() "
             'let flag = name.contains("osc") '
             'let port = "8080".to_int() or 0 '

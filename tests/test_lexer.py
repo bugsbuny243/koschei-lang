@@ -79,9 +79,16 @@ class LexerTests(unittest.TestCase):
         string_token = next(t for t in tokens if t.type is TokenType.STRING)
         self.assertEqual(string_token.value, "json: {a}")
 
-    def test_invalid_interpolation_expression_is_rejected(self) -> None:
-        with self.assertRaisesRegex(LexerError, "yalnızca değişken"):
-            tokenize('let s = "sonuç: {1 + 2}"')
+    def test_interpolation_accepts_normal_expressions(self) -> None:
+        tokens = tokenize('let s = "sonuç: {1 + 2} uzunluk: {items.length()}"')
+        token = next(t for t in tokens if t.type is TokenType.STRING_INTERP)
+        self.assertIn(("expr", "1 + 2"), token.value)
+        self.assertIn(("expr", "items.length()"), token.value)
+
+    def test_nested_braces_inside_interpolation_are_balanced(self) -> None:
+        tokens = tokenize('let s = "var: {{\"a\": 1}.contains(\"a\")}"')
+        token = next(t for t in tokens if t.type is TokenType.STRING_INTERP)
+        self.assertEqual(token.value, (("text", "var: "), ("expr", '{"a": 1}.contains("a")')))
 
     def test_empty_interpolation_is_rejected(self) -> None:
         with self.assertRaisesRegex(LexerError, "Boş interpolasyon"):

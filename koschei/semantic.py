@@ -106,7 +106,16 @@ BUILTIN_CALLS = {
 # List üzerinde çağrılabilen metotlar. 'get' aynı zamanda bir yetki metodu
 # adı olduğu için alıcının tipi ÖNCE denetlenir; aksi hâlde liste erişimi
 # yanlışlıkla yetki ihlali sayılırdı.
-LIST_METHODS = {"length", "get", "push", "contains"}
+STRING_METHODS = {
+    "length",
+    "to_int",
+    "to_float",
+    "contains",
+    "trim",
+    "split",
+    "join",
+}
+LIST_METHODS = {"length", "get", "push", "contains", "sort", "filter"}
 MAP_METHODS = {"get", "set", "keys", "contains"}
 
 COMPARISON_OPERATORS = {"==", "!=", "<", "<=", ">", ">="}
@@ -403,11 +412,25 @@ class SemanticChecker:
         if isinstance(expression, InterpolatedString):
             for part in expression.parts:
                 self._check_expression(part)
+                if self._is_fallible_call(part):
+                    raise SemanticError(
+                        "KS1401",
+                        "İnterpolasyon içindeki hata dönebilen ifade önce 'or' ile "
+                        "ele alınmalıdır.",
+                        part.location,
+                    )
             return "String"
 
         if isinstance(expression, ListLiteral):
             for item in expression.items:
-                self._check_expression(item)
+                item_type = self._check_expression(item)
+                if self._types_are_sensitive(self._type_names(item_type)):
+                    raise SemanticError(
+                        "KS2401",
+                        "Capability taşıyan değerler List içine konamaz; öğe tipi "
+                        "korunmadığı için bu işlem yetki type-laundering oluşturur.",
+                        item.location,
+                    )
             return "List"
 
         if isinstance(expression, MapLiteral):
@@ -870,15 +893,120 @@ class SemanticChecker:
             self._check_call_arguments(function, argument_types or [], location)
             return str(function.return_type) if function.return_type else "Void"
 
+        if receiver_type == "String":
+            expected_arity = {
+                "length": 0,
+                "to_int": 0,
+                "to_float": 0,
+                "contains": 1,
+                "trim": 0,
+                "split": 1,
+                "join": 1,
+            }
+            if method_name not in STRING_METHODS:
+                raise SemanticError(
+                    "KS1502",
+                    f"String üzerinde '{method_name}' metodu yok. "
+                    f"Kullanılabilir: {', '.join(sorted(STRING_METHODS))}.",
+                    location,
+                )
+            values = argument_types or []
+            required = expected_arity[method_name]
+            if len(values) != required:
+                raise SemanticError(
+                    "KS1301",
+                    f"String.{method_name}() {required} argüman bekler, "
+                    f"{len(values)} verildi.",
+                    location,
+                )
+            if method_name == "split":
+                self._require_assignable(
+                    ("String",),
+                    values[0],
+                    "String.split() ayıracı",
+                    location,
+                )
+                return "List"
+            if method_name == "join":
+                self._require_assignable(
+                    ("List",),
+                    values[0],
+                    "String.join() parçaları",
+                    location,
+                )
+                return "String"
+            return {
+                "length": "Int",
+                "to_int": "Int",
+                "to_float": "Float",
+                "contains": "Bool",
+                "trim": "String",
+            }[method_name]
+
         if receiver_type == "List":
-            if method_name in LIST_METHODS:
-                return "List" if method_name == "push" else None
-            raise SemanticError(
-                "KS1502",
-                f"List üzerinde '{method_name}' metodu yok. "
-                f"Kullanılabilir: {', '.join(sorted(LIST_METHODS))}.",
-                location,
-            )
+            expected_arity = {
+                "length": 0,
+                "get": 1,
+                "push": 1,
+                "contains": 1,
+                "sort": 0,
+                "filter": 1,
+            }
+            if method_name not in LIST_METHODS:
+                raise SemanticError(
+                    "KS1502",
+                    f"List üzerinde '{method_name}' metodu yok. "
+                    f"Kullanılabilir: {', '.join(sorted(LIST_METHODS))}.",
+                    location,
+                )
+            values = argument_types or []
+            required = expected_arity[method_name]
+            if len(values) != required:
+                raise SemanticError(
+                    "KS1301",
+                    f"List.{method_name}() {required} argüman bekler, "
+                    f"{len(values)} verildi.",
+                    location,
+                )
+            if method_name == "get":
+                self._require_assignable(("Int",), values[0], "List.get() indeksi", location)
+                return None
+            if method_name == "push":
+                if self._types_are_sensitive(self._type_names(values[0])):
+                    raise SemanticError(
+                        "KS2401",
+                        "Capability taşıyan değerler List içine konamaz.",
+                        location,
+                    )
+                return "List"
+            if method_name == "filter":
+                predicate = (arguments or [None])[0]
+                if not isinstance(predicate, Identifier) or predicate.name not in self.functions:
+                    raise SemanticError(
+                        "KS1301",
+                        "List.filter() yerel, adlandırılmış bir predicate fonksiyonu bekler.",
+                        location,
+                    )
+                function = self.functions[predicate.name]
+                if len(function.parameters) != 1:
+                    raise SemanticError(
+                        "KS1301",
+                        f"List.filter() predicate'i 1 argüman almalıdır; "
+                        f"'{function.name}' {len(function.parameters)} argüman alıyor.",
+                        location,
+                    )
+                if function.return_type is None or function.return_type.names != ("Bool",):
+                    raise SemanticError(
+                        "KS1301",
+                        "List.filter() predicate'i Bool döndürmelidir.",
+                        location,
+                    )
+                return "List"
+            return {
+                "length": "Int",
+                "contains": "Bool",
+                "sort": "List",
+            }.get(method_name)
 
         if receiver_type == "Map":
             expected_arity = {
@@ -1007,13 +1135,34 @@ class SemanticChecker:
                     and function.return_type is not None
                     and "Error" in function.return_type.names
                 )
-            if receiver in {"List", "Map"} and callee.member == "get":
+            if receiver == "String" and callee.member in {
+                "to_int",
+                "to_float",
+                "split",
+                "join",
+            }:
+                return True
+            if receiver == "List" and callee.member in {"get", "sort", "filter"}:
+                return True
+            if receiver == "Map" and callee.member == "get":
                 return True
             return receiver in NARROWED_METHODS
 
         return False
 
     def _receiver_type(self, expression: Expression) -> str | None:
+        if isinstance(expression, Literal):
+            if isinstance(expression.value, bool):
+                return "Bool"
+            if isinstance(expression.value, str):
+                return "String"
+            if isinstance(expression.value, int):
+                return "Int"
+            if isinstance(expression.value, float):
+                return "Float"
+            return None
+        if isinstance(expression, InterpolatedString):
+            return "String"
         if isinstance(expression, ListLiteral):
             return "List"
         if isinstance(expression, MapLiteral):
@@ -1031,6 +1180,40 @@ class SemanticChecker:
             object_type = self._receiver_type(expression.object)
             if object_type == "SystemCaps" and expression.member in CAPABILITY_MEMBERS:
                 return CAPABILITY_MEMBERS[expression.member]
+            return None
+        if isinstance(expression, CallExpression):
+            callee = expression.callee
+            if isinstance(callee, Identifier):
+                function = self.functions.get(callee.name)
+                if function is not None and function.return_type is not None:
+                    return str(function.return_type)
+                return None
+            if isinstance(callee, MemberExpression):
+                receiver = self._receiver_type(callee.object)
+                if receiver == "String":
+                    return {
+                        "length": "Int",
+                        "to_int": "Int",
+                        "to_float": "Float",
+                        "contains": "Bool",
+                        "trim": "String",
+                        "split": "List",
+                        "join": "String",
+                    }.get(callee.member)
+                if receiver == "List":
+                    return {
+                        "length": "Int",
+                        "push": "List",
+                        "contains": "Bool",
+                        "sort": "List",
+                        "filter": "List",
+                    }.get(callee.member)
+                if receiver == "Map":
+                    return {
+                        "set": "Map",
+                        "keys": "List",
+                        "contains": "Bool",
+                    }.get(callee.member)
             return None
         return None
 
