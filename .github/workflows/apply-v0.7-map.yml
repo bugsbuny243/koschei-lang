@@ -1,0 +1,44 @@
+name: Apply v0.7 Map patch
+
+on:
+  push:
+    branches:
+      - agent/v0.7-map
+    paths:
+      - .github/workflows/apply-v0.7-map.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply-map:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/v0.7-map
+          fetch-depth: 0
+
+      - name: Merge Map changes onto current main
+        shell: bash
+        run: |
+          set -euo pipefail
+          base64 --decode .github/v0.7-map.patch.gz.b64 | gzip --decompress > /tmp/v0.7-map.patch
+          git apply --3way /tmp/v0.7-map.patch
+          rm .github/v0.7-map.patch.gz.b64
+          rm .github/workflows/apply-v0.7-map.yml
+
+      - name: Run test suite
+        run: python -m unittest discover -s tests -v
+
+      - name: Commit merged implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "v0.7: add immutable Map support"
+          git push origin HEAD:agent/v0.7-map
