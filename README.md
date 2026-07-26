@@ -87,21 +87,30 @@ GitHub Actions, her push ve pull request üzerinde compiler testlerini otomatik 
 ## Yol haritası
 
 Kararlı taban **v0.7.0 — Günlük kod yazılabilsin**. `main` dalı şu anda
-**v0.8.0a1 — Derleyici verdiğimiz sözü tutsun / tip çekirdeği** aşamasındadır:
+**v0.8.0a2 — Derleyici verdiğimiz sözü tutsun / native capability ABI alpha**
+aşamasındadır.
 
-Tamamlanan v0.8 dilimi:
+Tamamlanan v0.8 dilimleri:
 
 - Enum + exhaustive `match`
 - Gerçek `Option<T>` ve `Result<T, E>` tipleri
 - `or` sonrası union/Option/Result daraltması
 - Mutable atamalarda ve fonksiyon sınırlarında tip sözleşmesi
 - Enumların modüller arasında taşınması
+- Native `SystemCaps` enjeksiyonu
+- Native environment kapsamı
+- Native HTTP GET: yalnız `http/https`, aynı-origin ve redirect sınırı
+- Native disk ABI (Linux): sabitlenen kök fd, `openat`/`O_NOFOLLOW`,
+  read/write/list/delete ve salt-okunur jeton savunması
 
-v0.8'in açık kritik kapısı:
+v0.8 kararlı sürümünün açık kapıları:
 
-- Capability kullanan programların Go codegen/runtime ABI desteği
+- Enum/match/Option/Result'ın Go backend'e davranış eşliğiyle taşınması
+- List/Map/struct/import native kapsamının tamamlanması
+- Disk capability ABI'nın Linux dışı hedefler için güvenli tasarımı
+- Process capability'nin güvenli native sözleşmesi (şimdilik fail-closed)
 
-Bu native güvenlik kapısı tamamlanmadan v0.8 kararlı sürüm olarak etiketlenmez.
+Bu kapılar tamamlanmadan v0.8 kararlı sürüm olarak etiketlenmez.
 
 Static region inference, C backend ve Sentinel/Tarpit/Phantom katmanları henüz
 tasarım/spec aşamasındadır; tamamlanmış özellik olarak sunulmaz.

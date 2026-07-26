@@ -506,24 +506,25 @@ CATALOG: dict[str, Diagnostic] = {
     ),
     "KS4001": Diagnostic(
         code="KS4001",
-        title="Yetki içeren program bu aşamada native derlenemez",
+        title="Native hedef capability sözleşmesini güvenle uygulayamıyor",
         summary=(
-            "Program bir yetki (capability) parametresi alıyor ya da bir yetki işlemi "
-            "çağırıyor; native derleme aşama 1 yalnızca yetki içermeyen programları "
-            "destekler."
+            "Programın istediği capability, seçilen native hedefte aynı güvenlik "
+            "anlamıyla uygulanamıyor. Derleyici daha zayıf bir uygulamaya sessizce "
+            "düşmek yerine üretimi durdurur."
         ),
         why=(
-            "Yetki denetimi üretilen binary'ye taşınmadan yetkili program derlemek, dili "
-            "kâğıt üstünde güvenli ama gerçekte açık bırakırdı. Bu yüzden native yetki "
-            "runtime'ı tamamlanana kadar (aşama 2) bu programlar bilinçli olarak "
-            "reddedilir."
+            "Bir jetonun kapsamı interpreter ve native binary arasında değişirse "
+            "capability modeli yalnızca kâğıt üzerinde kalır. Örneğin disk sınırı "
+            "yarışsız dosya-tanıtıcısı geçişi gerektirir; bunu sağlayamayan hedefte "
+            "yol metni kontrolüne geri dönmek TOCTOU açığını yeniden doğururdu."
         ),
         fix=(
-            "Programı şimdilik 'koschei.py run' ile çalıştırın; yetki denetimleri orada "
-            "tam olarak uygulanır. Üretilen Go ara kaynağını görmek için "
-            "'koschei.py emit-go' kullanabilirsiniz."
+            "Programı capability'nin güvenli ABI'sini destekleyen hedefte derleyin "
+            "(disk ABI alpha için Linux) veya 'ks run' ile interpreter runtime'ını "
+            "kullanın. Desteklenmeyen capability daha sonra ayrı bir ABI diliminde "
+            "eklenecektir."
         ),
-        example="python koschei.py run examples/showcase.ks",
+        example="ks build examples/runtime_demo.ks -o runtime-demo",
     ),
     "KS4002": Diagnostic(
         code="KS4002",

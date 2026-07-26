@@ -10,4 +10,4 @@ capabilities (ks caps).
 from .cli import main
 
 __all__ = ["main"]
-__version__ = "0.8.0a1"
+__version__ = "0.8.0a2"

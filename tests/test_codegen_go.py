@@ -12,15 +12,13 @@ from contextlib import redirect_stdout
 from koschei.codegen_go import CodegenError, generate_go
 from koschei.cli import main
 from koschei.parser import parse
-from koschei.semantic import check
+from koschei.semantic import SemanticError, check
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 GO_BINARY = shutil.which("go")
 
-# Yetki içermeyen örnekler: aşama 1 kapsamı.
+# Saf programlar ve capability kullanan programlar aynı native backend’den geçer.
 PURE_EXAMPLES = ("hello.ks", "control_flow.ks")
-
-# Yetki içeren örnekler: aşama 1'de bilinçli olarak reddedilir.
 CAPABILITY_EXAMPLES = ("capability.ks", "runtime_demo.ks", "showcase.ks")
 
 
@@ -40,24 +38,23 @@ class GoCodegenTests(unittest.TestCase):
                 self.assertIn("func ksfn_main() any", generated)
                 self.assertIn("func main() {", generated)
 
-    def test_capability_programs_are_rejected_with_ks4001(self) -> None:
+    def test_capability_programs_produce_native_runtime_source(self) -> None:
         for name in CAPABILITY_EXAMPLES:
             with self.subTest(example=name):
                 source = (REPO_ROOT / "examples" / name).read_text(encoding="utf-8")
-                with self.assertRaises(CodegenError) as context:
-                    compile_source(source)
-                self.assertEqual(context.exception.code, "KS4001")
+                generated = compile_source(source)
+                self.assertIn("ksNewSystemCaps", generated)
+                self.assertIn("ksCallMethod", generated)
 
-    def test_capability_method_call_is_rejected(self) -> None:
+    def test_unscoped_capability_name_is_rejected_semantically(self) -> None:
         source = (
             "fn main() { "
             'let secret = disk.read("/etc/passwd") or "" '
             "}"
         )
-        program = parse(source)
-        with self.assertRaises(CodegenError) as context:
-            generate_go(program)
-        self.assertEqual(context.exception.code, "KS4001")
+        with self.assertRaises(SemanticError) as context:
+            check(parse(source))
+        self.assertEqual(context.exception.code, "KS2401")
 
     def test_wrong_arity_is_rejected_with_ks4003(self) -> None:
         source = (
