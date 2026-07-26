@@ -36,14 +36,22 @@ jobs:
           (
             set -euo pipefail
 
-            base_commit="5511e7f0c783444b0e5d78bdf7b45061995e9c54"
             patch_file="/tmp/v0.7-map.patch"
-            patched_tree="/tmp/koschei-map-patched"
-            base_files="/tmp/koschei-map-base"
+            exact_base_archive="/tmp/v0.7-map-exact-base.tar.gz"
+            exact_base_dir="/tmp/v0.7-map-exact-base"
+            base_dir="/tmp/v0.7-map-base"
+            patched_dir="/tmp/v0.7-map-patched"
 
-            base64 --decode .github/v0.7-map.patch.gz.b64 | gzip --decompress > "$patch_file"
-            git worktree add --detach "$patched_tree" "$base_commit"
-            mkdir -p "$base_files"
+            base64 --decode .github/v0.7-map.patch.gz.b64 \
+              | gzip --decompress > "$patch_file"
+            cat \
+              .github/v0.7-map-base-00 \
+              .github/v0.7-map-base-01 \
+              .github/v0.7-map-base-02 \
+              | base64 --decode > "$exact_base_archive"
+
+            mkdir -p "$exact_base_dir" "$base_dir" "$patched_dir"
+            tar -xzf "$exact_base_archive" -C "$exact_base_dir"
 
             modified_files=(
               README.md
@@ -59,33 +67,55 @@ jobs:
             )
 
             for file in "${modified_files[@]}"; do
-              mkdir -p "$base_files/$(dirname "$file")"
-              cp "$patched_tree/$file" "$base_files/$file"
+              mkdir -p "$base_dir/$(dirname "$file")"
+              cp "$file" "$base_dir/$file"
             done
 
-            git -C "$patched_tree" apply "$patch_file"
+            exact_base_files=(
+              koschei/codegen_go.py
+              koschei/diagnostics.py
+              koschei/interpreter.py
+              koschei/semantic.py
+            )
+            for file in "${exact_base_files[@]}"; do
+              cp "$exact_base_dir/$file" "$base_dir/$file"
+            done
+
+            cp -a "$base_dir/." "$patched_dir/"
+            git -C "$patched_dir" init -q
+            git -C "$patched_dir" apply "$patch_file"
 
             for file in "${modified_files[@]}"; do
               merged="$(mktemp)"
-              git merge-file -p --union \
+              if ! git merge-file -p \
                 "$file" \
-                "$base_files/$file" \
-                "$patched_tree/$file" > "$merged" || true
+                "$base_dir/$file" \
+                "$patched_dir/$file" > "$merged"; then
+                echo "CONFLICT: $file"
+                cat "$merged"
+                exit 1
+              fi
               mv "$merged" "$file"
             done
 
-            cp "$patched_tree/examples/maps.ks" examples/maps.ks
-            cp "$patched_tree/tests/test_maps.py" tests/test_maps.py
+            cp "$patched_dir/examples/maps.ks" examples/maps.ks
+            cp "$patched_dir/tests/test_maps.py" tests/test_maps.py
 
-            rm .github/v0.7-map.patch.gz.b64
-            rm .github/workflows/apply-v0.7-map.yml
-            git worktree remove --force "$patched_tree"
+            rm -f \
+              .github/v0.7-map.patch.gz.b64 \
+              .github/v0.7-map-base-00 \
+              .github/v0.7-map-base-01 \
+              .github/v0.7-map-base-02 \
+              .github/map-merge.log \
+              .github/workflows/apply-v0.7-map.yml
+
             git diff --check
           ) > /tmp/map-merge.log 2>&1
           status=$?
 
           if [ "$status" -ne 0 ]; then
             git reset --hard HEAD
+            git clean -fd
             cp /tmp/map-merge.log .github/map-merge.log
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
