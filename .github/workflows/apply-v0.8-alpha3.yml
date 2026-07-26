@@ -33,6 +33,7 @@ jobs:
           git apply /tmp/v0.8-alpha3.patch
           rm .github/v0.8-alpha3.patch.gz.b64
           rm .github/workflows/apply-v0.8-alpha3.yml
+          git checkout origin/main -- .github/workflows/tests.yml
           git diff --check
 
       - name: Run full test suite
