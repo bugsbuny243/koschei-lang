@@ -203,6 +203,14 @@ def namespaces(graph: ModuleGraph) -> dict[str, dict]:
     }
 
 
+def module_imports(graph: ModuleGraph) -> dict[str, dict[str, str]]:
+    """Modül anahtarı -> o modülün yerel import alias tablosu."""
+    return {
+        key: dict(module.imports)
+        for key, module in graph.modules.items()
+    }
+
+
 def enum_declarations(graph: ModuleGraph) -> dict[str, object]:
     """Tüm modül grafiğindeki enum tanımları (yorumlayıcı constructor tablosu)."""
     result: dict[str, object] = {}

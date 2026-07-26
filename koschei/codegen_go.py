@@ -1,6 +1,6 @@
 """Koschei AST -> Go kaynak kodu üreteci.
 
-v0.8 alpha 4, capability ABI, cebirsel tipler ve immutable koleksiyonları native binary’ye taşır:
+v0.8, capability ABI, cebirsel tipler, immutable koleksiyonlar, struct ve modülleri native binary’ye taşır:
 SystemCaps kökü yalnızca main’e enjekte edilir; ağ origin’i ve disk yolu çalışma
 anında fail-closed sınırlandırılır. Disk ABI bu aşamada Linux openat/O_NOFOLLOW
 hedefinde desteklenir; daha zayıf yol doğrulamasına sessizce düşülmez.
@@ -36,6 +36,7 @@ from .ast_nodes import (
     InterpolatedString,
     LetStatement,
     Literal,
+    MatchArm,
     MatchExpression,
     MemberExpression,
     OrBlockExpression,
@@ -157,6 +158,29 @@ type KsMap struct {
 	Values map[string]any
 }
 
+type KsStruct struct {
+	TypeName string
+	Order    []string
+	Fields   map[string]any
+}
+
+func ksNewStruct(typeName string, names []string, values []any) any {
+	if len(names) != len(values) {
+		return ksErrorf("KS3101: Struct alan/değer sayısı uyuşmuyor")
+	}
+	result := &KsStruct{TypeName: typeName, Order: append([]string(nil), names...), Fields: make(map[string]any, len(names))}
+	for index, name := range names {
+		if _, exists := result.Fields[name]; exists {
+			return ksErrorf("KS3101: Yinelenen struct alanı: " + name)
+		}
+		if ksContainsCapability(values[index]) {
+			return ksErrorf("KS3401: Capability taşıyan değerler struct içine konamaz")
+		}
+		result.Fields[name] = values[index]
+	}
+	return result
+}
+
 func ksNewMap(keys []any, values []any) any {
 	if len(keys) != len(values) {
 		return ksErrorf("KS3101: Map anahtar/değer sayısı uyuşmuyor")
@@ -268,6 +292,12 @@ func ksToString(value any) string {
 			parts = append(parts, strconv.Quote(key)+": "+ksRepr(item.Values[key]))
 		}
 		return "{" + strings.Join(parts, ", ") + "}"
+	case *KsStruct:
+		parts := make([]string, 0, len(item.Order))
+		for _, name := range item.Order {
+			parts = append(parts, name+": "+ksRepr(item.Fields[name]))
+		}
+		return item.TypeName + " { " + strings.Join(parts, ", ") + " }"
 	}
 	return fmt.Sprintf("%v", value)
 }
@@ -495,6 +525,19 @@ func ksEq(left any, right any) any {
 		}
 		for key, value := range a.Values {
 			other, exists := b.Values[key]
+			if !exists || !ksTruthy(ksEq(value, other)) {
+				return false
+			}
+		}
+		return true
+	}
+	if a, ok := left.(*KsStruct); ok {
+		b, ok := right.(*KsStruct)
+		if !ok || a.TypeName != b.TypeName || len(a.Fields) != len(b.Fields) {
+			return false
+		}
+		for name, value := range a.Fields {
+			other, exists := b.Fields[name]
 			if !exists || !ksTruthy(ksEq(value, other)) {
 				return false
 			}
@@ -903,6 +946,10 @@ func ksContainsCapability(value any) bool {
 		for _, value := range item.Values {
 			if ksContainsCapability(value) { return true }
 		}
+	case *KsStruct:
+		for _, value := range item.Fields {
+			if ksContainsCapability(value) { return true }
+		}
 	}
 	return false
 }
@@ -942,6 +989,10 @@ func ksMember(value any, name string) any {
 			return item.env
 		case "process":
 			return item.process
+		}
+	case *KsStruct:
+		if field, exists := item.Fields[name]; exists {
+			return field
 		}
 	}
 	return ksErrorf("KS3101: Tanımsız alan: '" + name + "'.")
@@ -1526,23 +1577,6 @@ class GoCodegen:
                 "'koschei.py run' kullanın.",
                 self.program.imports[0].location,
             )
-        if self.program.structs:
-            raise CodegenError(
-                "KS4002",
-                "Struct tanımları native derlemede henüz desteklenmiyor; şimdilik "
-                "'koschei.py run' kullanın.",
-                self.program.structs[0].location,
-            )
-        for declaration in self.program.declarations:
-            for statement in declaration.body.statements:
-                for expression in _walk_statement(statement):
-                    if isinstance(expression, StructLiteral):
-                        raise CodegenError(
-                            "KS4002",
-                            "Struct değerleri native derlemede henüz desteklenmiyor; "
-                            "şimdilik 'koschei.py run' kullanın.",
-                            expression.location,
-                        )
 
     def _validate_capability_backend(self) -> None:
         """Native capability ABI güvenlik sınırlarını hedefe göre doğrular."""
@@ -1796,22 +1830,23 @@ class GoCodegen:
             )
 
         if isinstance(expression, StructLiteral):
-            raise CodegenError(
-                "KS4002",
-                "Struct değerleri native derlemede henüz desteklenmiyor; "
-                "şimdilik 'koschei.py run' kullanın.",
-                expression.location,
+            names: list[str] = []
+            values: list[str] = []
+            prelude: list[str] = []
+            for name, value_expression in expression.fields:
+                value, value_prelude = self._expression(value_expression, depth)
+                prelude.extend(value_prelude)
+                names.append(_go_string(name))
+                values.append(value)
+            return (
+                f"ksNewStruct({_go_string(expression.type_name)}, "
+                f"[]string{{{', '.join(names)}}}, []any{{{', '.join(values)}}})",
+                prelude,
             )
 
         if isinstance(expression, MemberExpression):
             receiver, prelude = self._expression(expression.object, depth)
-            if expression.member in {"net", "disk", "env", "process"}:
-                return f"ksMember({receiver}, {_go_string(expression.member)})", prelude
-            raise CodegenError(
-                "KS4002",
-                f"Üye erişimi ('{expression.member}') yalnızca çağrı olarak desteklenir.",
-                expression.location,
-            )
+            return f"ksMember({receiver}, {_go_string(expression.member)})", prelude
 
         if isinstance(expression, OrReturnExpression):
             return self._or_return(expression, depth)
@@ -2200,6 +2235,246 @@ def _go_string(value: str) -> str:
     return f'"{escaped}"'
 
 
-def generate_go(program: Program) -> str:
-    """Koschei programını Go kaynak koduna çevirir."""
+class _ModuleFlattener:
+    """Bir modülün çağrılarını tek Go ad alanına taşır."""
+
+    def __init__(
+        self,
+        local_functions: dict[str, str],
+        imported_functions: dict[str, dict[str, str]],
+    ) -> None:
+        self.local_functions = local_functions
+        self.imported_functions = imported_functions
+
+    def function(self, declaration: FunctionDeclaration) -> FunctionDeclaration:
+        return FunctionDeclaration(
+            self.local_functions[declaration.name],
+            declaration.parameters,
+            declaration.return_type,
+            self.block(declaration.body),
+            declaration.location,
+        )
+
+    def block(self, block: Block) -> Block:
+        return Block(tuple(self.statement(item) for item in block.statements))
+
+    def statement(self, statement: Statement) -> Statement:
+        if isinstance(statement, LetStatement):
+            return LetStatement(
+                statement.name,
+                statement.is_mutable,
+                self.expression(statement.value),
+                statement.location,
+            )
+        if isinstance(statement, ReturnStatement):
+            return ReturnStatement(
+                self.expression(statement.value) if statement.value is not None else None,
+                statement.location,
+            )
+        if isinstance(statement, ExpressionStatement):
+            return ExpressionStatement(
+                self.expression(statement.expression), statement.location
+            )
+        if isinstance(statement, IfStatement):
+            branch = statement.else_branch
+            if isinstance(branch, Block):
+                branch = self.block(branch)
+            elif isinstance(branch, IfStatement):
+                branch = self.statement(branch)
+            return IfStatement(
+                self.expression(statement.condition),
+                self.block(statement.then_block),
+                branch,
+                statement.location,
+            )
+        if isinstance(statement, WhileStatement):
+            return WhileStatement(
+                self.expression(statement.condition),
+                self.block(statement.body),
+                statement.location,
+            )
+        if isinstance(statement, ForStatement):
+            return ForStatement(
+                statement.variable,
+                self.expression(statement.iterable),
+                self.block(statement.body),
+                statement.location,
+            )
+        raise AssertionError(type(statement).__name__)
+
+    def expression(self, expression: Expression) -> Expression:
+        if isinstance(expression, Identifier):
+            renamed = self.local_functions.get(expression.name)
+            return Identifier(renamed, expression.location) if renamed else expression
+        if isinstance(expression, Literal):
+            return expression
+        if isinstance(expression, InterpolatedString):
+            return InterpolatedString(
+                tuple(self.expression(item) for item in expression.parts),
+                expression.location,
+            )
+        if isinstance(expression, StructLiteral):
+            return StructLiteral(
+                expression.type_name,
+                tuple(
+                    (name, self.expression(value))
+                    for name, value in expression.fields
+                ),
+                expression.location,
+            )
+        if isinstance(expression, ListLiteral):
+            return ListLiteral(
+                tuple(self.expression(item) for item in expression.items),
+                expression.location,
+            )
+        if isinstance(expression, MapLiteral):
+            return MapLiteral(
+                tuple(
+                    (self.expression(key), self.expression(value))
+                    for key, value in expression.entries
+                ),
+                expression.location,
+            )
+        if isinstance(expression, MemberExpression):
+            if isinstance(expression.object, Identifier):
+                functions = self.imported_functions.get(expression.object.name)
+                if functions is not None and expression.member in functions:
+                    return Identifier(functions[expression.member], expression.location)
+            return MemberExpression(
+                self.expression(expression.object),
+                expression.member,
+                expression.location,
+            )
+        if isinstance(expression, CallExpression):
+            return CallExpression(
+                self.expression(expression.callee),
+                tuple(self.expression(item) for item in expression.arguments),
+                expression.location,
+            )
+        if isinstance(expression, AssignmentExpression):
+            return AssignmentExpression(
+                self.expression(expression.target),
+                self.expression(expression.value),
+                expression.location,
+            )
+        if isinstance(expression, BinaryExpression):
+            return BinaryExpression(
+                self.expression(expression.left),
+                expression.operator,
+                self.expression(expression.right),
+                expression.location,
+            )
+        if isinstance(expression, UnaryExpression):
+            return UnaryExpression(
+                expression.operator,
+                self.expression(expression.operand),
+                expression.location,
+            )
+        if isinstance(expression, OrReturnExpression):
+            return OrReturnExpression(
+                self.expression(expression.value),
+                self.expression(expression.error) if expression.error is not None else None,
+                expression.location,
+            )
+        if isinstance(expression, OrElseExpression):
+            return OrElseExpression(
+                self.expression(expression.value),
+                self.expression(expression.fallback),
+                expression.location,
+            )
+        if isinstance(expression, OrBlockExpression):
+            return OrBlockExpression(
+                self.expression(expression.value),
+                self.block(expression.handler),
+                expression.location,
+            )
+        if isinstance(expression, MatchExpression):
+            return MatchExpression(
+                self.expression(expression.value),
+                tuple(
+                    MatchArm(
+                        arm.variant,
+                        arm.binding,
+                        self.expression(arm.body),
+                        arm.location,
+                    )
+                    for arm in expression.arms
+                ),
+                expression.location,
+            )
+        raise AssertionError(type(expression).__name__)
+
+
+def _flatten_module_graph(graph: object) -> Program:
+    """Doğrulanmış ModuleGraph'i tek native program hâline getirir.
+
+    Modül fonksiyonları benzersiz Go/Koschei iç adlarına çevrilir. Struct ve enum
+    adları dil yüzeyinde nominal kaldığı için grafikte çakışıyorsa native backend
+    sessizce yanlış bağlamak yerine KS4002 ile durur.
+    """
+    ordered = graph.in_dependency_order()
+    root_key = graph.root
+    function_names: dict[str, dict[str, str]] = {}
+    for index, module in enumerate(ordered):
+        if str(module.path) == root_key:
+            function_names[str(module.path)] = {
+                declaration.name: declaration.name
+                for declaration in module.program.declarations
+            }
+            continue
+        prefix = f"__module_{index}_{module.name}_"
+        function_names[str(module.path)] = {
+            declaration.name: prefix + declaration.name
+            for declaration in module.program.declarations
+        }
+
+    structs = []
+    enums = []
+    seen_structs: dict[str, object] = {}
+    seen_enums: dict[str, object] = {}
+    declarations = []
+    for module in ordered:
+        key = str(module.path)
+        imported = {
+            alias: function_names[target]
+            for alias, target in module.imports.items()
+        }
+        flattener = _ModuleFlattener(function_names[key], imported)
+        declarations.extend(
+            flattener.function(declaration)
+            for declaration in module.program.declarations
+        )
+        for declaration in module.program.structs:
+            previous = seen_structs.get(declaration.name)
+            if previous is not None and previous is not declaration:
+                raise CodegenError(
+                    "KS4002",
+                    f"Native modül birleştirmesinde yinelenen struct adı: '{declaration.name}'.",
+                    declaration.location,
+                )
+            seen_structs[declaration.name] = declaration
+            if previous is None:
+                structs.append(declaration)
+        for declaration in module.program.enums:
+            previous = seen_enums.get(declaration.name)
+            if previous is not None and previous is not declaration:
+                raise CodegenError(
+                    "KS4002",
+                    f"Native modül birleştirmesinde yinelenen enum adı: '{declaration.name}'.",
+                    declaration.location,
+                )
+            seen_enums[declaration.name] = declaration
+            if previous is None:
+                enums.append(declaration)
+
+    return Program(tuple(declarations), tuple(structs), (), tuple(enums))
+
+
+def generate_go(program: Program, graph: object | None = None) -> str:
+    """Koschei programını Go kaynak koduna çevirir.
+
+    `graph` verildiğinde doğrulanmış modüller tek native ad alanına flatten edilir.
+    """
+    if graph is not None:
+        program = _flatten_module_graph(graph)
     return GoCodegen(program).generate()

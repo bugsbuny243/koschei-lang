@@ -821,6 +821,7 @@ class Interpreter:
         namespaces: dict[str, dict[str, FunctionDeclaration]] | None = None,
         imports: dict[str, str] | None = None,
         enums: dict[str, Any] | None = None,
+        module_imports: dict[str, dict[str, str]] | None = None,
     ) -> None:
         self.program = program
         self.argv = list(argv or [])
@@ -854,6 +855,8 @@ class Interpreter:
         self.namespaces = namespaces or {}
         # Yerel import adı -> modül anahtarı
         self.imports = imports or {}
+        # Modül anahtarı -> o modülün kendi import alias tablosu
+        self.module_imports = module_imports or {}
         self.environment = _Environment()
         self._depth = 0
 
@@ -907,6 +910,7 @@ class Interpreter:
         function: FunctionDeclaration,
         arguments: list[Any],
         namespace: dict[str, FunctionDeclaration] | None = None,
+        imports: dict[str, str] | None = None,
     ) -> Any:
         if len(arguments) != len(function.parameters):
             raise KoscheiRuntimeError(
@@ -936,9 +940,12 @@ class Interpreter:
             )
         previous = self.environment
         previous_functions = self.functions
+        previous_imports = self.imports
         self.environment = _Environment()
         if namespace is not None:
             self.functions = namespace
+        if imports is not None:
+            self.imports = imports
         self._depth += 1
         try:
             for parameter, value in zip(function.parameters, arguments):
@@ -966,6 +973,7 @@ class Interpreter:
             self._depth -= 1
             self.environment = previous
             self.functions = previous_functions
+            self.imports = previous_imports
 
     def _execute_block(self, block: Block, *, create_scope: bool = True) -> Any:
         if create_scope:
@@ -1394,6 +1402,7 @@ class Interpreter:
                 callee.declaration,
                 arguments,
                 namespace=self.namespaces.get(callee.module_name, {}),
+                imports=self.module_imports.get(callee.module_name, {}),
             )
         if isinstance(callee, _EnumConstructor):
             expected = 0 if callee.payload_type is None else 1
@@ -1743,6 +1752,7 @@ def run(
     namespaces: dict[str, dict[str, FunctionDeclaration]] | None = None,
     imports: dict[str, str] | None = None,
     enums: dict[str, Any] | None = None,
+    module_imports: dict[str, dict[str, str]] | None = None,
 ) -> int:
     """Programı çalıştırır.
 
@@ -1751,7 +1761,9 @@ def run(
     """
     if namespaces is None:
         semantic_check(program)
-    result = Interpreter(program, argv, namespaces, imports, enums).execute_main()
+    result = Interpreter(
+        program, argv, namespaces, imports, enums, module_imports
+    ).execute_main()
     if isinstance(result, KsError):
         print(f"KOSCHEI RUNTIME ERROR: {result.message}", file=sys.stderr)
         return 1

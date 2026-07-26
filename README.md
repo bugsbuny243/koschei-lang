@@ -86,9 +86,8 @@ GitHub Actions, her push ve pull request üzerinde compiler testlerini otomatik 
 
 ## Yol haritası
 
-Kararlı taban **v0.7.0 — Günlük kod yazılabilsin**. `main` dalı şu anda
-**v0.8.0a4 — Derleyici verdiğimiz sözü tutsun / native koleksiyon eşliği alpha**
-aşamasındadır.
+`main` dalı şu anda **v0.8.0 — Derleyici verdiğimiz sözü tutsun**
+kararlı sürümündedir.
 
 Tamamlanan v0.8 dilimleri:
 
@@ -106,14 +105,19 @@ Tamamlanan v0.8 dilimleri:
   `or`/`or return` davranış eşliği
 - Native immutable List/Map literal ve metotları, String `split/join`, `for` döngüsü
   ve insertion-order Map gösterimi
+- Native struct literal/alan erişimi, yapısal eşitlik ve capability containment
+- Çok dosyalı programların tek binary'ye güvenli flatten edilmesi; nested import
+  ad alanları ve modül içi yerel fonksiyonlar izole edilir
 
-v0.8 kararlı sürümünün açık kapıları:
+v0.8'in destek matrisi bilinçli olarak dar ve fail-closed'dur:
 
-- Struct ve import native kapsamının tamamlanması
-- Disk capability ABI'nın Linux dışı hedefler için güvenli tasarımı
-- Process capability'nin güvenli native sözleşmesi (şimdilik fail-closed)
+- Güvenli native disk ABI Linux `openat`/`O_NOFOLLOW` hedefindedir; güvenli eşdeğer
+  bulunmayan platformda disk kullanan build **KS4001** ile durur.
+- Process capability `run/spawn` işlem başlatmaz ve hata değeri döndürür. Güvenli
+  process sözleşmesi ayrı bir sürüm kapısıdır; mevcut sürüm yetkiyi sessizce açmaz.
 
-Bu kapılar tamamlanmadan v0.8 kararlı sürüm olarak etiketlenmez.
+Sıradaki ürün kapısı **v0.9 — Müşteri karşısına çıkabilsin**: İngilizce tanılar,
+VS Code entegrasyonu, `ks new` ve minimal proje manifesti.
 
 Static region inference, C backend ve Sentinel/Tarpit/Phantom katmanları henüz
 tasarım/spec aşamasındadır; tamamlanmış özellik olarak sunulmaz.

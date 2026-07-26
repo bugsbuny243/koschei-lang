@@ -20,6 +20,7 @@ from .modules import (
     check_graph,
     enum_declarations,
     load_graph,
+    module_imports,
     namespaces,
 )
 from .diagnostics import known_codes, lookup as lookup_diagnostic
@@ -82,6 +83,7 @@ def command_run(path: str) -> int:
         namespaces=namespaces(graph),
         imports=root.imports,
         enums=enum_declarations(graph),
+        module_imports=module_imports(graph),
     )
 
 
@@ -140,14 +142,14 @@ def command_caps(path: str, as_json: bool, denied: list[str] | None) -> int:
 def command_emit_go(path: str) -> int:
     graph = open_graph(path)
     check_graph(graph)
-    print(generate_go(graph.root_module.program), end="")
+    print(generate_go(graph.root_module.program, graph), end="")
     return 0
 
 
 def command_build(path: str, output: str | None) -> int:
     graph = open_graph(path)
     check_graph(graph)
-    go_source = generate_go(graph.root_module.program)
+    go_source = generate_go(graph.root_module.program, graph)
 
     go_binary = shutil.which("go")
     if go_binary is None:

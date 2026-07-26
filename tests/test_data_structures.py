@@ -225,18 +225,23 @@ class FormatterWithDataStructuresTests(unittest.TestCase):
         )
 
 
-class NativeBackendRejectionTests(unittest.TestCase):
-    """Native derleyici desteklemediği yapıyı sessizce yanlış çevirmez, reddeder."""
+class NativeBackendDataStructureTests(unittest.TestCase):
+    """Native derleyici veri yapılarını açık runtime yardımcılarıyla üretir."""
 
     def assert_ks4002(self, source: str) -> None:
         with self.assertRaises(CodegenError) as context:
             generate_go(compile_program(source))
         self.assertEqual(context.exception.code, "KS4002")
 
-    def test_structs_are_rejected(self) -> None:
-        self.assert_ks4002(
-            "struct User { id: Int }\nfn main() { let u = User { id: 1 } }"
+    def test_structs_are_generated(self) -> None:
+        generated = generate_go(
+            compile_program(
+                "struct User { id: Int }\n"
+                "fn main() { let u = User { id: 1 } println(u.id) }"
+            )
         )
+        self.assertIn("ksNewStruct", generated)
+        self.assertIn('ksMember(ksv_u, "id")', generated)
 
     def test_lists_are_generated(self) -> None:
         generated = generate_go(compile_program("fn main() { let xs = [1, 2] println(xs) }"))
