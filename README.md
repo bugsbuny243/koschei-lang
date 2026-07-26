@@ -1,0 +1,165 @@
+# Koschei (`.ks`)
+
+**A capability-secure programming language. An imported package cannot touch your disk, network, or environment unless you hand it a token.**
+
+Most supply-chain attacks work because a dependency inherits every permission the process has. Install a package, and it can read `~/.ssh`, your `.env`, or open a socket — without asking. Koschei removes that ambient authority: side-effect access is a value that must be passed in, and the compiler rejects a program that reaches for authority it was never given.
+
+Türkçe: [README.tr.md](README.tr.md)
+
+---
+
+## Try it in 60 seconds
+
+A deliberately malicious package tries to read a secrets file and return it to the caller. Verify on your own machine that it never runs.
+
+```bash
+git clone https://github.com/bugsbuny243/koschei-lang
+cd koschei-lang
+pip install .
+ks check examples/supply_chain/main.ks
+```
+
+The package under test — `examples/supply_chain/analytics.ks`:
+
+```ks
+fn track(event: String) -> String or Error {
+    let secret = disk.read("/etc/app/secrets.env") or return Error("unreadable")
+    return secret
+}
+```
+
+Output:
+
+```text
+KOSCHEI ERROR: KS2401 [line 6, column 18]: Required capability is unavailable
+in this scope — A disk, network, environment, or process operation was
+attempted without the corresponding capability token.
+Hint: run 'ks --lang en explain KS2401' for details.
+```
+
+Exit code `1`. The program never ran. The file was never opened. Nothing was sent anywhere.
+
+This is not a runtime sandbox catching the call. `disk` does not exist inside `track` at all, so the attack fails at compile time.
+
+---
+
+## Install
+
+Python 3.12 or newer. No other dependencies — a security language should not increase the number of packages you are forced to trust.
+
+```bash
+pip install git+https://github.com/bugsbuny243/koschei-lang
+ks version
+```
+
+Your first program:
+
+```bash
+ks new hello-koschei
+cd hello-koschei
+ks run .
+```
+
+`ks new` creates a zero-dependency project with a `koschei.toml` and `src/main.ks`. Commands accept a source file, a project directory, or a `koschei.toml` path.
+
+---
+
+## Core ideas
+
+- **No ambient authority.** Disk, network, environment, and process access require an explicit capability value. A function that was not passed one cannot perform the effect.
+- **Capabilities narrow, never widen.** `caps.disk` is a root token that can only delegate; `caps.disk.allow(path)` produces a narrowed token that cannot re-widen (`KS2403`) and a root token cannot perform I/O directly (`KS2402`).
+- **No `null`.** Values that may be absent are `Option<T>` (`Some` / `None`).
+- **Errors are values.** `Result<T, E>` with a single `or` keyword in three forms: `or return`, `or default`, `or { block }`. An unhandled error value is a compile error (`KS1401`).
+- **Immutable by default.** Rebinding requires `let mut`.
+- **Every diagnostic is explainable.** 33 error codes with a bilingual catalog; `ks explain KS2401` prints the cause and a fix.
+
+## Example
+
+```ks
+fn fetch_data(net: NetCaps, url: String) -> String or Error {
+    let response = net.get(url) or return Error("request failed")
+    return response.text()
+}
+
+fn main(caps: SystemCaps) {
+    let api_net = caps.net.allow("https://api.example.com")
+    let response = fetch_data(api_net, "https://api.example.com/v1")
+    println(response)
+}
+```
+
+`fetch_data` can reach exactly one origin. It cannot touch the disk, read an environment variable, or start a process — not because it was audited and found not to, but because it holds no token that would let it.
+
+## The capability manifest
+
+Because authority is explicit in the source, it can be summarized mechanically. `ks caps` reports everything a program is able to reach, across the whole module graph:
+
+```bash
+ks caps examples/app.ks
+ks caps --json src/main.ks
+ks caps --deny net src/main.ks   # exits 2 if the program can reach the network
+```
+
+For a pure program the manifest is empty, and that is a checkable fact rather than a claim in a code review:
+
+```text
+KOSCHEI CAPABILITY MANIFEST: examples/app.ks
+
+This program carries no side-effect capability.
+No disk, network, environment, or process access — pure computation.
+```
+
+The `--deny` gate is designed for CI: a build fails if a dependency update silently adds reach.
+
+## Language features
+
+Implemented today: functions with typed parameters, `let` / `let mut`, structs, `List`, immutable `Map` (`get`/`set`/`keys`/`contains`), `for`-in, `if`/`else`/`while` with `Bool`-only conditions, enums with exhaustive `match`, real `Option<T>` / `Result<T, E>`, full expression interpolation (`"{items.length()}"`), a daily standard library (`String` `trim`/`split`/`join`, `List` `sort`/`filter`/`contains`), and a module system where `import risk` binds `risk.ks` next to the importing file — no manifest, no build script, no config.
+
+## Toolchain
+
+```bash
+ks check src/main.ks          # types, modules, capability rules
+ks run src/main.ks            # interpreter
+ks build src/main.ks -o app   # native binary via generated Go
+ks fmt --write src/           # canonical formatting
+ks caps src/main.ks           # capability manifest
+ks explain KS2401             # diagnostics, --lang tr for Turkish
+ks check --json src/main.ks   # stable code/message/line/column for editors
+ks tokens / ks ast / ks emit-go
+```
+
+The pipeline is `.ks` → lexer → parser → AST → type, capability and immutability checks → Go code generation → native binary. Diagnostics default to English; `--lang tr` or `KOSCHEI_LANG=tr` selects the Turkish catalog with identical error codes.
+
+## Editor support
+
+`editors/vscode` contains the official extension: `.ks` syntax highlighting, bracket and comment rules, a `Koschei: Check Current File` command, and diagnostics on save. No npm dependencies.
+
+## Tests
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+321 tests. The 33 that are skipped require a local Go toolchain and run in CI, which executes the full suite on every push and pull request — including a check that the malicious `examples/supply_chain/` package still fails to compile.
+
+## Status
+
+Koschei is at **v0.9.0**, alpha. It runs real multi-file programs and the capability model is enforced end to end, but syntax and runtime contracts may change before v1.0. Do not put it in production yet.
+
+Security boundaries currently enforced in the native path:
+
+- The safe native disk ABI targets Linux `openat` / `O_NOFOLLOW`. On a platform without a safe equivalent, a disk-using build stops with `KS4001` rather than falling back to something weaker.
+- The process capability's `run` / `spawn` does not start a process; it returns an error value.
+- At runtime, path traversal, symlink escape and out-of-scope paths give `KS3402`; a write through a read-only token gives `KS3404`; an HTTP redirect leaving the allowed origin is rejected; call depth is capped at 512 (`KS3105`).
+
+Next gate is **v1.0**: frozen syntax and capability runtime ABI, a SemVer compatibility commitment, a generic contract for at least `List<T>` and `Option<T>`, package resolution with a lock file, and migration tests.
+
+**Designed but not built**, and not presented as features: static region inference, the C backend, and the Sentinel / tarpit layers. Koschei enforces capabilities in its type system — it does not produce formal mathematical proofs, and it is not a memory-managed-by-region language today; the current backend generates Go and uses Go's garbage collector.
+
+## Contributing
+
+The most useful thing right now is a real program. Write something small in Koschei, and open an issue when the language gets in your way — a missing stdlib function, a confusing diagnostic, a pattern that should compile and doesn't. Bug reports that come with a `.ks` file that reproduces the problem are the fastest path to a fix.
+
+## License
+
+MIT
