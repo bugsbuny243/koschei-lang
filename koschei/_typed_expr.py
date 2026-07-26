@@ -96,12 +96,12 @@ def infer_expression(checker, expression):
             receiver = checker.infer(expression.callee.object)
             module_result = checker.module_call_type(receiver, expression.callee.member)
             result = module_result if module_result is not None else method_type(
-                receiver, expression.calleee.member, arguments, expression.location
+                receiver, expression.callee.member, arguments, expression.location
             )
             return checker.record(expression, result)
         if isinstance(expression.callee, Identifier):
             return checker.record(
-                expression, checker.call_type(expression.calleee.name, arguments)
+                expression, checker.call_type(expression.callee.name, arguments)
             )
         checker.infer(expression.callee)
         return checker.record(expression, UNKNOWN)
