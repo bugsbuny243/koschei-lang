@@ -87,7 +87,7 @@ GitHub Actions, her push ve pull request üzerinde compiler testlerini otomatik 
 ## Yol haritası
 
 Kararlı taban **v0.7.0 — Günlük kod yazılabilsin**. `main` dalı şu anda
-**v0.8.0a2 — Derleyici verdiğimiz sözü tutsun / native capability ABI alpha**
+**v0.8.0a3 — Derleyici verdiğimiz sözü tutsun / native davranış eşliği alpha**
 aşamasındadır.
 
 Tamamlanan v0.8 dilimleri:
@@ -102,10 +102,11 @@ Tamamlanan v0.8 dilimleri:
 - Native HTTP GET: yalnız `http/https`, aynı-origin ve redirect sınırı
 - Native disk ABI (Linux): sabitlenen kök fd, `openat`/`O_NOFOLLOW`,
   read/write/list/delete ve salt-okunur jeton savunması
+- Native enum constructor, exhaustive `match`, `Option<T>`, `Result<T, E>` ve
+  `or`/`or return` davranış eşliği
 
 v0.8 kararlı sürümünün açık kapıları:
 
-- Enum/match/Option/Result'ın Go backend'e davranış eşliğiyle taşınması
 - List/Map/struct/import native kapsamının tamamlanması
 - Disk capability ABI'nın Linux dışı hedefler için güvenli tasarımı
 - Process capability'nin güvenli native sözleşmesi (şimdilik fail-closed)
