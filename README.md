@@ -54,6 +54,9 @@ Mevcut prototip şunları destekler:
 - Struct, List, `for` döngüsü ve immutable Map (`get/set/keys/contains`)
 - Tam ifade interpolasyonu (`"{items.length()}"`, `"{1 + 2}"`)
 - Günlük stdlib: String `trim/split/join`, List `sort/filter/contains`
+- Enum constructor'ları ve exhaustive `match`
+- Gerçek `Option<T>` / `Result<T, E>` değerleri (`Some/None`, `Ok/Err`)
+- `or` sonrası union/Result/Option başarı tipi daraltması
 - AST üretimi
 - Immutable değer denetimi
 - Capability scope denetimi
@@ -83,12 +86,22 @@ GitHub Actions, her push ve pull request üzerinde compiler testlerini otomatik 
 
 ## Yol haritası
 
-Mevcut sürüm **v0.7.0 — Günlük kod yazılabilsin**. Sonraki ana kapı v0.8'dir:
+Kararlı taban **v0.7.0 — Günlük kod yazılabilsin**. `main` dalı şu anda
+**v0.8.0a1 — Derleyici verdiğimiz sözü tutsun / tip çekirdeği** aşamasındadır:
+
+Tamamlanan v0.8 dilimi:
 
 - Enum + exhaustive `match`
 - Gerçek `Option<T>` ve `Result<T, E>` tipleri
-- Union daraltma ve tam fonksiyon sınırı tip denetimi
+- `or` sonrası union/Option/Result daraltması
+- Mutable atamalarda ve fonksiyon sınırlarında tip sözleşmesi
+- Enumların modüller arasında taşınması
+
+v0.8'in açık kritik kapısı:
+
 - Capability kullanan programların Go codegen/runtime ABI desteği
+
+Bu native güvenlik kapısı tamamlanmadan v0.8 kararlı sürüm olarak etiketlenmez.
 
 Static region inference, C backend ve Sentinel/Tarpit/Phantom katmanları henüz
 tasarım/spec aşamasındadır; tamamlanmış özellik olarak sunulmaz.

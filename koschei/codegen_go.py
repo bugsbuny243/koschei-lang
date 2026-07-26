@@ -35,6 +35,7 @@ from .ast_nodes import (
     InterpolatedString,
     LetStatement,
     Literal,
+    MatchExpression,
     MemberExpression,
     OrBlockExpression,
     OrElseExpression,
@@ -454,6 +455,13 @@ class GoCodegen:
                 "'koschei.py run' kullanın.",
                 self.program.structs[0].location,
             )
+        if self.program.enums:
+            raise CodegenError(
+                "KS4002",
+                "Enum ve match native derlemede henüz desteklenmiyor; şimdilik "
+                "'koschei.py run' kullanın.",
+                self.program.enums[0].location,
+            )
 
         for declaration in self.program.declarations:
             for statement in declaration.body.statements:
@@ -476,6 +484,24 @@ class GoCodegen:
                         raise CodegenError(
                             "KS4002",
                             "Struct değerleri native derlemede henüz desteklenmiyor; "
+                            "şimdilik 'koschei.py run' kullanın.",
+                            expression.location,
+                        )
+                    if isinstance(expression, MatchExpression):
+                        raise CodegenError(
+                            "KS4002",
+                            "match native derlemede henüz desteklenmiyor; şimdilik "
+                            "'koschei.py run' kullanın.",
+                            expression.location,
+                        )
+                    if (
+                        isinstance(expression, CallExpression)
+                        and isinstance(expression.callee, Identifier)
+                        and expression.callee.name in {"Some", "None", "Ok", "Err"}
+                    ):
+                        raise CodegenError(
+                            "KS4002",
+                            "Option/Result değerleri native derlemede henüz desteklenmiyor; "
                             "şimdilik 'koschei.py run' kullanın.",
                             expression.location,
                         )
@@ -988,6 +1014,10 @@ def _walk_expression(expression: Expression):
         yield from _walk_expression(expression.value)
         for statement in expression.handler.statements:
             yield from _walk_statement(statement)
+    elif isinstance(expression, MatchExpression):
+        yield from _walk_expression(expression.value)
+        for arm in expression.arms:
+            yield from _walk_expression(arm.body)
 
 
 def _fn(name: str) -> str:

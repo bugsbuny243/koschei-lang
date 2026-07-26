@@ -1,4 +1,4 @@
-# Koschei Language Core v0.7
+# Koschei Language Core v0.8 alpha 1
 
 > Çökmeyen, Hacklenemeyen, Ölümsüz Dil.
 
@@ -7,7 +7,7 @@ Bu belge, çalışan Koschei compiler çekirdeğinin kapsamını sabitler.
 ## Dört ilke
 
 1. **Yetki olmadan yan etki yok.** Disk, ağ, ortam, süreç — hepsi jeton ister ve jeton derleme zamanında denetlenir.
-2. **Null yok.** İleride `Option<T>` ile `Some(value)` / `None` kullanılacaktır.
+2. **Null yok.** Bulunmayabilecek değerler `Option<T>` ile `Some(value)` / `None()` olarak temsil edilir.
 3. **Hatalar değerdir.** `or return`, `or varsayilan`, `or { ... }` ile ele alınır; sessizce yutulamaz.
 4. **Varsayılan değişmezlik.** `let` immutable, `let mut` açık niyet ister.
 
@@ -73,6 +73,60 @@ let a = f() or return Error("üst kata fırlat")
 let b = f() or 8080                  // varsayılan değer
 let c = f() or { println("logla") }  // blokla ele al
 ```
+
+## Enum, exhaustive `match`, Option ve Result
+
+Enum varyantları constructor gibi çağrılır. Payload taşımayan varyantlarda da
+parantez kullanılır; bu, değer ile tip adını açık biçimde ayırır:
+
+```ks
+enum Delivery {
+    Pending,
+    Sent(String),
+    Failed(Error),
+}
+
+let state = Sent("kargoya verildi")
+```
+
+`match` bir ifade üretir ve **exhaustive** olmak zorundadır. Aynı varyant iki kez
+yazılamaz; payload taşıyan kol bir bağlama adı ister:
+
+```ks
+let message = match state {
+    Pending => "bekliyor",
+    Sent(text) => text,
+    Failed(error) => "hata",
+}
+```
+
+Bir enum'a yeni varyant eklendiğinde eski `match` ifadeleri sessizce eksik
+çalışmaz; KS1702 ile derleme durur. Bu, durum uzayının tamamını derleyicinin
+korumasına verir.
+
+Yerleşik cebirsel tipler aynı runtime modelini kullanır:
+
+```ks
+fn find(active: Bool) -> Option<String> {
+    if active { return Some("Onur") }
+    return None()
+}
+
+fn load(active: Bool) -> Result<String, Error> {
+    let name = find(active) or return Err(Error("bulunamadı"))
+    return Ok(name)
+}
+```
+
+- `Option<T>` varyantları: `Some(T)`, `None()`
+- `Result<T, E>` varyantları: `Ok(T)`, `Err(E)`
+- `or` başarı varyantını açar; `None` / `Err` / legacy `Error` akışını ele alır.
+- `or return` hata varyantını üst fonksiyona taşır.
+- Generic arity sabittir: `Option` bir, `Result` iki tip argümanı alır.
+- Capability değerleri enum, Option veya Result payload'ına saklanamaz.
+
+Bu alpha diliminde generic sözdizimi yalnızca `Option<T>` ve `Result<T, E>` için
+açıktır. Kullanıcı tanımlı generic struct/fonksiyonlar v1.x kapsamındadır.
 
 ## Map / sözlük
 
@@ -150,7 +204,9 @@ içine konamaz veya `push` ile eklenemez.
 | KS1602 | Döngüsel import |
 | KS1603 | Aynı modül birden fazla kez içe aktarılmış |
 | KS1604 | İki modül aynı struct adını tanımlıyor |
-| KS1605 | Modülde böyle bir fonksiyon veya struct yok |
+| KS1605 | Modülde böyle bir fonksiyon, struct veya enum yok |
+| KS1701 | Enum/varyant constructor sözleşmesi hatası |
+| KS1702 | `match` exhaustive değil veya kol sözleşmesi hatalı |
 | KS2401 | Gerekli yetki bu scope içinde mevcut değil |
 | KS2402 | Kök yetki doğrudan kullanılamaz; önce daraltılmalı |
 | KS2403 | Daraltılmış yetki yeniden genişletilemez |
@@ -263,12 +319,12 @@ değer gösterimi host dilden bağımsızdır (`true`/`false`, `4.0`).
 (yorumlayıcıda Python'un sınırsız tam sayıları kullanılır); çok büyük sayılarla
 çalışan programlarda iki hedef farklılaşabilir.
 
-## v0.7 compiler hattı
+## v0.8 alpha compiler hattı
 
 ```text
 .ks source
-    -> lexer.py     (interpolasyon, && || !, if/else/while, true/false)
-    -> parser.py    (öncelik zinciri, üç 'or' biçimi, kontrol akışı)
+    -> lexer.py     (interpolasyon, enum/match, generic tip işaretleri)
+    -> parser.py    (öncelik zinciri, üç 'or' biçimi, exhaustive match AST)
     -> ast_nodes.py
     -> semantic.py  (scope, tip, kök/daraltılmış yetki denetimi)
     -> interpreter.py  (tree-walking runtime, yetki denetimi çalışma anında)
@@ -291,11 +347,10 @@ Tanı katalogu sabittir: yalnızca açıklama üretir, hiçbir denetimi gevşetm
 
 `check` komutu lexer, parser ve semantic güvenlik kontrollerini birlikte çalıştırır.
 
-## Bilinen sınırlar (v0.7)
+## Bilinen sınırlar (v0.8 alpha 1)
 
-- Birleşik dönüş tipleri (`String or Error`) henüz gerçek union değildir; tam daraltma v0.8 kapsamındadır.
-- Enum/match, generics ve genel fonksiyon çağrılarında tam argüman tipi denetimi yok.
-- Map anahtarları yalnızca String'dir; List ve Map henüz generic değildir ve öğe tipi akış boyunca statik olarak korunmaz.
-- Go backend List/Map/struct ve capability runtime ABI'sini henüz üretmez; bu programlar `KS4001`/`KS4002` ile fail-closed reddedilir.
-- Yol/origin sınırları interpreter runtime'ında fiilen uygulanır; native capability ABI v0.8 kapsamındadır.
-- Tanı mesajları şimdilik Türkçedir; İngilizce yerelleştirme planlanmaktadır.
+- Generic sözdizimi yalnızca `Option<T>` ve `Result<T, E>` için açıktır; List/Map ve kullanıcı tanımlı generics henüz yoktur.
+- Map anahtarları yalnızca String'dir; List ve Map öğe tipi akış boyunca statik olarak korunmaz.
+- Go backend enum/match/Option/Result, List/Map/struct ve capability runtime ABI'sini henüz üretmez; bu programlar `KS4001`/`KS4002` ile fail-closed reddedilir.
+- Yol/origin sınırları interpreter runtime'ında fiilen uygulanır; native capability ABI v0.8'in kalan kritik kapısıdır.
+- Tanı mesajları şimdilik Türkçedir; İngilizce yerelleştirme v0.9 kapsamındadır.

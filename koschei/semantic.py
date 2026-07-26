@@ -11,6 +11,8 @@ Hata kodları:
     KS1502  Struct'ta böyle bir alan yok
     KS1604  İki modül aynı struct adını tanımlıyor
     KS1605  Modülde böyle bir fonksiyon veya struct yok
+    KS1701  Enum veya varyant sözleşmesi hatası
+    KS1702  match exhaustive değil veya kol sözleşmesi hatalı
     KS2401  Gerekli yetki bu scope içinde mevcut değil
     KS2402  Kök yetki doğrudan kullanılamaz (önce allow ile daraltılmalı)
     KS2403  Daraltılmış yetki yeniden genişletilemez
@@ -32,6 +34,8 @@ from urllib.parse import urlsplit
 
 from .ast_nodes import (
     AssignmentExpression,
+    EnumDeclaration,
+    EnumVariant,
     ForStatement,
     ListLiteral,
     MapLiteral,
@@ -47,6 +51,7 @@ from .ast_nodes import (
     InterpolatedString,
     LetStatement,
     Literal,
+    MatchExpression,
     MemberExpression,
     OrBlockExpression,
     OrElseExpression,
@@ -158,12 +163,19 @@ MODULE_TYPE_PREFIX = "Module:"
 class ImportedModule:
     """İçe aktarılmış bir modülün dışarıya açık yüzü."""
 
-    __slots__ = ("name", "functions", "structs")
+    __slots__ = ("name", "functions", "structs", "enums")
 
-    def __init__(self, name: str, functions: dict, structs: dict) -> None:
+    def __init__(
+        self,
+        name: str,
+        functions: dict,
+        structs: dict,
+        enums: dict | None = None,
+    ) -> None:
         self.name = name
         self.functions = functions
         self.structs = structs
+        self.enums = enums or {}
 
 
 class SemanticChecker:
@@ -176,6 +188,13 @@ class SemanticChecker:
         self.structs = {
             declaration.name: declaration for declaration in program.structs
         }
+        self.enums = {
+            declaration.name: declaration for declaration in program.enums
+        }
+        self.variants: dict[str, tuple[str, EnumVariant]] = {}
+        for declaration in program.enums:
+            for variant in declaration.variants:
+                self.variants.setdefault(variant.name, (declaration.name, variant))
 
         # İçe aktarılan struct'lar niteliksiz adlarıyla kullanılabilir; aynı adın
         # iki modülden gelmesi belirsizlik yaratacağı için reddedilir.
@@ -190,12 +209,76 @@ class SemanticChecker:
                         declaration.location,
                     )
                 self.structs.setdefault(name, declaration)
+            for name, declaration in module.enums.items():
+                existing = self.enums.get(name)
+                if existing is not None and existing is not declaration:
+                    raise SemanticError(
+                        "KS1701",
+                        f"'{name}' enum'u hem bu dosyada hem de '{module.name}' modülünde tanımlı.",
+                        declaration.location,
+                    )
+                self.enums.setdefault(name, declaration)
+                for variant in declaration.variants:
+                    current = self.variants.get(variant.name)
+                    if current is not None and current[1] is not variant:
+                        raise SemanticError(
+                            "KS1701",
+                            f"'{variant.name}' varyantı modüller arasında çakışıyor.",
+                            variant.location,
+                        )
+                    self.variants.setdefault(variant.name, (name, variant))
         self.scopes: list[dict[str, Symbol]] = []
         self.variable_count = 0
         self.capability_count = 0
         self.current_function: FunctionDeclaration | None = None
 
     def check(self) -> SemanticReport:
+        seen_enum_names: set[str] = set()
+        seen_variants: set[str] = set()
+        for declaration in self.program.enums:
+            if (
+                declaration.name in seen_enum_names
+                or declaration.name in self.structs
+                or declaration.name in {"Option", "Result", "Error"}
+            ):
+                raise SemanticError(
+                    "KS1701",
+                    f"'{declaration.name}' enum adı birden fazla tanımlandı veya bir struct ile çakışıyor.",
+                    declaration.location,
+                )
+            seen_enum_names.add(declaration.name)
+            if not declaration.variants:
+                raise SemanticError(
+                    "KS1701",
+                    f"'{declaration.name}' enum'u en az bir varyant içermelidir.",
+                    declaration.location,
+                )
+            local_variants: set[str] = set()
+            for variant in declaration.variants:
+                if (
+                    variant.name in local_variants
+                    or variant.name in seen_variants
+                    or variant.name in BUILTIN_CALLS
+                    or variant.name in self.functions
+                ):
+                    raise SemanticError(
+                        "KS1701",
+                        f"'{variant.name}' varyantı birden fazla tanımlandı. Varyant adları program genelinde benzersizdir.",
+                        variant.location,
+                    )
+                local_variants.add(variant.name)
+                seen_variants.add(variant.name)
+                if variant.payload_type is not None:
+                    for type_name in variant.payload_type.names:
+                        self._validate_generic_type(type_name, variant.location)
+                    payload_names = set(variant.payload_type.names)
+                    if self._types_are_sensitive(payload_names):
+                        raise SemanticError(
+                            "KS2402",
+                            f"'{declaration.name}.{variant.name}' varyantı capability taşıyamaz.",
+                            variant.location,
+                        )
+
         for declaration in self.program.structs:
             seen: set[str] = set()
             for field in declaration.fields:
@@ -207,6 +290,8 @@ class SemanticChecker:
                         field.location,
                     )
                 seen.add(field.name)
+                for type_name in field.type_ref.names:
+                    self._validate_generic_type(type_name, field.location)
 
                 roots = set(field.type_ref.names) & ROOT_CAPABILITY_TYPES
                 if roots:
@@ -232,6 +317,19 @@ class SemanticChecker:
         )
 
     def _validate_function_signature(self, function: FunctionDeclaration) -> None:
+        if function.name in {"Some", "None", "Ok", "Err"} or function.name in self.variants:
+            raise SemanticError(
+                "KS1701",
+                f"'{function.name}' adı bir enum constructor'ı ile çakışıyor.",
+                function.location,
+            )
+        for parameter in function.parameters:
+            for type_name in parameter.type_ref.names:
+                self._validate_generic_type(type_name, parameter.location)
+        if function.return_type is not None:
+            for type_name in function.return_type.names:
+                self._validate_generic_type(type_name, function.return_type.location)
+
         if function.name == "main":
             if len(function.parameters) > 1:
                 raise SemanticError(
@@ -475,6 +573,9 @@ class SemanticChecker:
                 return str(function.return_type) if function.return_type else "Void"
             if expression.name in self.imports:
                 return MODULE_TYPE_PREFIX + expression.name
+            variant = self.variants.get(expression.name)
+            if variant is not None:
+                return variant[0]
             if expression.name in BUILTIN_CALLS:
                 return None
             self._raise_unknown_identifier(expression)
@@ -496,6 +597,8 @@ class SemanticChecker:
                         str(function.return_type) if function.return_type else "Void"
                     )
                 if expression.member in module.structs:
+                    return expression.member
+                if expression.member in module.enums:
                     return expression.member
                 raise SemanticError(
                     "KS1605",
@@ -539,7 +642,8 @@ class SemanticChecker:
                 )
 
             if isinstance(expression.callee, Identifier):
-                function = self.functions.get(expression.callee.name)
+                name = expression.callee.name
+                function = self.functions.get(name)
                 if function is not None:
                     self._check_call_arguments(
                         function,
@@ -551,6 +655,62 @@ class SemanticChecker:
                         if function.return_type
                         else "Void"
                     )
+                constructor = self.variants.get(name)
+                if constructor is not None:
+                    enum_name, variant = constructor
+                    expected = 0 if variant.payload_type is None else 1
+                    if len(argument_types) != expected:
+                        raise SemanticError(
+                            "KS1701",
+                            f"'{name}' varyantı {expected} argüman bekler, {len(argument_types)} verildi.",
+                            expression.location,
+                        )
+                    if variant.payload_type is not None:
+                        self._require_assignable(
+                            variant.payload_type.names,
+                            argument_types[0],
+                            f"'{name}' varyant payload'ı",
+                            expression.location,
+                        )
+                    return enum_name
+                if name == "Error":
+                    if len(argument_types) != 1:
+                        raise SemanticError("KS1301", "Error() 1 argüman bekler.", expression.location)
+                    return "Error"
+                if name == "Some":
+                    if len(argument_types) != 1:
+                        raise SemanticError("KS1701", "Some() 1 argüman bekler.", expression.location)
+                    if self._types_are_sensitive(self._type_names(argument_types[0])):
+                        raise SemanticError(
+                            "KS2401",
+                            "Capability taşıyan değerler Option payload'ına konamaz.",
+                            expression.location,
+                        )
+                    return f"Option<{argument_types[0] or '_'}>"
+                if name == "None":
+                    if argument_types:
+                        raise SemanticError("KS1701", "None() argüman almaz.", expression.location)
+                    return "Option<_>"
+                if name == "Ok":
+                    if len(argument_types) != 1:
+                        raise SemanticError("KS1701", "Ok() 1 argüman bekler.", expression.location)
+                    if self._types_are_sensitive(self._type_names(argument_types[0])):
+                        raise SemanticError(
+                            "KS2401",
+                            "Capability taşıyan değerler Result payload'ına konamaz.",
+                            expression.location,
+                        )
+                    return f"Result<{argument_types[0] or '_'}, _>"
+                if name == "Err":
+                    if len(argument_types) != 1:
+                        raise SemanticError("KS1701", "Err() 1 argüman bekler.", expression.location)
+                    if self._types_are_sensitive(self._type_names(argument_types[0])):
+                        raise SemanticError(
+                            "KS2401",
+                            "Capability taşıyan değerler Result payload'ına konamaz.",
+                            expression.location,
+                        )
+                    return f"Result<_, {argument_types[0] or '_'}>"
 
             return self._check_expression(expression.callee)
 
@@ -588,19 +748,43 @@ class SemanticChecker:
 
         if isinstance(expression, OrReturnExpression):
             value_type = self._check_expression(expression.value)
+            success_type = self._success_type(value_type)
             if expression.error is not None:
-                self._check_expression(expression.error)
-            return value_type
+                error_type = self._check_expression(expression.error)
+                if self.current_function is not None and self.current_function.return_type is not None:
+                    self._require_assignable(
+                        self.current_function.return_type.names,
+                        error_type,
+                        "'or return' hata değeri",
+                        expression.error.location,
+                    )
+            return success_type
 
         if isinstance(expression, OrElseExpression):
             value_type = self._check_expression(expression.value)
+            success_type = self._success_type(value_type)
             fallback_type = self._check_expression(expression.fallback)
-            return value_type or fallback_type
+            # Legacy `T or Error` akışında fallback tipinin T ile aynı olması
+            # zorunlu değildir; bu davranış v0.7 programlarıyla uyumluluk için
+            # korunur. Generic Option/Result ise aynı başarı tipine daralır.
+            base, _ = self._generic_type(value_type or "")
+            if base in {"Option", "Result"} and success_type is not None:
+                self._require_assignable(
+                    (success_type,),
+                    fallback_type,
+                    "'or' varsayılan değeri",
+                    expression.fallback.location,
+                )
+                return self._unify_types(success_type, fallback_type, expression.location)
+            return success_type or fallback_type
 
         if isinstance(expression, OrBlockExpression):
             value_type = self._check_expression(expression.value)
             self._check_block(expression.handler)
-            return value_type
+            return self._success_type(value_type)
+
+        if isinstance(expression, MatchExpression):
+            return self._check_match_expression(expression)
 
         if isinstance(expression, AssignmentExpression):
             value_type = self._check_expression(expression.value)
@@ -612,6 +796,13 @@ class SemanticChecker:
                     raise SemanticError(
                         "KS1201",
                         f"'{symbol.name}' immutable bir değerdir; değiştirmek için 'let mut' kullanın.",
+                        expression.location,
+                    )
+                if symbol.type_name is not None:
+                    self._require_assignable(
+                        (symbol.type_name,),
+                        value_type,
+                        f"'{symbol.name}' ataması",
                         expression.location,
                     )
                 return symbol.type_name or value_type
@@ -719,14 +910,203 @@ class SemanticChecker:
 
         return None
 
+    def _validate_generic_type(
+        self, type_name: str, location: SourceLocation
+    ) -> None:
+        base, arguments = self._generic_type(type_name)
+        expected_arity = {"Option": 1, "Result": 2}.get(base)
+        if arguments and expected_arity is None:
+            raise SemanticError(
+                "KS1301",
+                f"'{base}' generic tip değildir; bu sürümde yalnızca Option<T> ve Result<T, E> desteklenir.",
+                location,
+            )
+        if expected_arity is not None and len(arguments) != expected_arity:
+            raise SemanticError(
+                "KS1301",
+                f"{base} {expected_arity} tip argümanı bekler, {len(arguments)} verildi.",
+                location,
+            )
+        for argument in arguments:
+            self._validate_generic_type(argument, location)
+
+    @staticmethod
+    def _split_top_level(text: str, separator: str) -> list[str]:
+        parts: list[str] = []
+        depth = 0
+        start = 0
+        index = 0
+        while index <= len(text) - len(separator):
+            char = text[index]
+            if char == "<":
+                depth += 1
+            elif char == ">":
+                depth -= 1
+            if depth == 0 and text.startswith(separator, index):
+                parts.append(text[start:index].strip())
+                index += len(separator)
+                start = index
+                continue
+            index += 1
+        parts.append(text[start:].strip())
+        return [part for part in parts if part]
+
+    @classmethod
+    def _generic_type(cls, name: str) -> tuple[str, tuple[str, ...]]:
+        name = name.strip()
+        if "<" not in name or not name.endswith(">"):
+            return name, ()
+        base, rest = name.split("<", 1)
+        inner = rest[:-1]
+        return base.strip(), tuple(cls._split_top_level(inner, ","))
+
     def _type_names(self, type_name: str | None) -> set[str]:
         if type_name is None:
             return set()
+        return set(self._split_top_level(type_name, " or "))
+
+    def _type_compatible(self, expected: str, actual: str) -> bool:
+        if expected == actual or expected == "_" or actual == "_":
+            return True
+        expected_base, expected_args = self._generic_type(expected)
+        actual_base, actual_args = self._generic_type(actual)
+        if expected_base != actual_base or len(expected_args) != len(actual_args):
+            return False
+        if not expected_args:
+            return False
+        return all(
+            self._type_compatible(expected_arg, actual_arg)
+            for expected_arg, actual_arg in zip(expected_args, actual_args)
+        )
+
+    def _unify_types(
+        self,
+        left: str | None,
+        right: str | None,
+        location: SourceLocation,
+    ) -> str | None:
+        if left is None:
+            return right
+        if right is None:
+            return left
+        if left == right:
+            return left
+        left_base, left_args = self._generic_type(left)
+        right_base, right_args = self._generic_type(right)
+        if left_base == right_base and left_args and len(left_args) == len(right_args):
+            merged: list[str] = []
+            for left_arg, right_arg in zip(left_args, right_args):
+                if left_arg == "_":
+                    merged.append(right_arg)
+                elif right_arg == "_":
+                    merged.append(left_arg)
+                elif left_arg == right_arg:
+                    merged.append(left_arg)
+                else:
+                    raise SemanticError(
+                        "KS1702",
+                        f"match kolları uyumsuz tip döndürüyor: {left} ve {right}.",
+                        location,
+                    )
+            return f"{left_base}<{', '.join(merged)}>"
+        if self._type_compatible(left, right):
+            return left
+        if self._type_compatible(right, left):
+            return right
+        raise SemanticError(
+            "KS1702",
+            f"match kolları uyumsuz tip döndürüyor: {left} ve {right}.",
+            location,
+        )
+
+    def _success_type(self, type_name: str | None) -> str | None:
+        names = self._type_names(type_name)
+        if "Error" in names:
+            remaining = sorted(names - {"Error"})
+            return " or ".join(remaining) if remaining else None
+        if type_name is None:
+            return None
+        base, arguments = self._generic_type(type_name)
+        if base == "Option" and len(arguments) == 1:
+            return arguments[0]
+        if base == "Result" and len(arguments) == 2:
+            return arguments[0]
+        return type_name
+
+    def _enum_shape(self, type_name: str | None) -> dict[str, str | None] | None:
+        if type_name is None or len(self._type_names(type_name)) != 1:
+            return None
+        base, arguments = self._generic_type(type_name)
+        if base == "Option" and len(arguments) == 1:
+            return {"Some": arguments[0], "None": None}
+        if base == "Result" and len(arguments) == 2:
+            return {"Ok": arguments[0], "Err": arguments[1]}
+        declaration = self.enums.get(type_name)
+        if declaration is None:
+            return None
         return {
-            part.strip()
-            for part in type_name.split(" or ")
-            if part.strip()
+            variant.name: (
+                str(variant.payload_type) if variant.payload_type is not None else None
+            )
+            for variant in declaration.variants
         }
+
+    def _check_match_expression(self, expression: MatchExpression) -> str | None:
+        value_type = self._check_expression(expression.value)
+        variants = self._enum_shape(value_type)
+        if variants is None:
+            raise SemanticError(
+                "KS1702",
+                f"match bir enum, Option veya Result bekler; {value_type or '<bilinmiyor>'} bulundu.",
+                expression.location,
+            )
+        seen: set[str] = set()
+        result_type: str | None = None
+        for arm in expression.arms:
+            if arm.variant in seen:
+                raise SemanticError(
+                    "KS1702",
+                    f"match içinde '{arm.variant}' kolu birden fazla yazılmış.",
+                    arm.location,
+                )
+            seen.add(arm.variant)
+            if arm.variant not in variants:
+                raise SemanticError(
+                    "KS1702",
+                    f"'{arm.variant}' varyantı {value_type} tipine ait değil.",
+                    arm.location,
+                )
+            payload_type = variants[arm.variant]
+            if payload_type is None and arm.binding is not None:
+                raise SemanticError(
+                    "KS1702",
+                    f"'{arm.variant}' payload taşımadığı için bağlama alamaz.",
+                    arm.location,
+                )
+            if payload_type is not None and arm.binding is None:
+                raise SemanticError(
+                    "KS1702",
+                    f"'{arm.variant}' payload taşıdığı için bir bağlama adı gerektirir.",
+                    arm.location,
+                )
+            self.scopes.append({})
+            try:
+                if arm.binding is not None:
+                    self._declare(Symbol(arm.binding, payload_type, False, arm.location))
+                arm_type = self._check_expression(arm.body)
+            finally:
+                self.scopes.pop()
+            result_type = self._unify_types(result_type, arm_type, arm.location)
+        missing = set(variants) - seen
+        if missing:
+            raise SemanticError(
+                "KS1702",
+                "match exhaustive olmalıdır; eksik varyantlar: "
+                + ", ".join(sorted(missing))
+                + ".",
+                expression.location,
+            )
+        return result_type
 
     def _name_is_sensitive(
         self,
@@ -735,13 +1115,27 @@ class SemanticChecker:
     ) -> bool:
         if name in CAPABILITY_TYPES:
             return True
-        declaration = self.structs.get(name)
+        base, arguments = self._generic_type(name)
+        if arguments and any(self._name_is_sensitive(argument, seen) for argument in arguments):
+            return True
+        declaration = self.structs.get(base)
         if declaration is None:
-            return False
+            enum_declaration = self.enums.get(base)
+            if enum_declaration is None:
+                return False
+            visited = set(seen or ())
+            if base in visited:
+                return False
+            visited.add(base)
+            return any(
+                variant.payload_type is not None
+                and any(self._name_is_sensitive(type_name, visited) for type_name in variant.payload_type.names)
+                for variant in enum_declaration.variants
+            )
         visited = set(seen or ())
-        if name in visited:
+        if base in visited:
             return False
-        visited.add(name)
+        visited.add(base)
         return any(
             self._name_is_sensitive(type_name, visited)
             for field in declaration.fields
@@ -774,7 +1168,10 @@ class SemanticChecker:
                 )
             return
 
-        if actual.issubset(expected):
+        if all(
+            any(self._type_compatible(expected_name, actual_name) for expected_name in expected)
+            for actual_name in actual
+        ):
             return
 
         code = "KS2401" if expected_sensitive or actual_sensitive else "KS1301"
@@ -1119,22 +1516,22 @@ class SemanticChecker:
             if callee.name == "Error":
                 return True
             function = self.functions.get(callee.name)
-            return (
-                function is not None
-                and function.return_type is not None
-                and "Error" in function.return_type.names
-            )
+            if function is None or function.return_type is None:
+                return False
+            return_type = str(function.return_type)
+            base, _ = self._generic_type(return_type)
+            return "Error" in function.return_type.names or base in {"Option", "Result"}
 
         if isinstance(callee, MemberExpression):
             receiver = self._receiver_type(callee.object)
             if isinstance(receiver, str) and receiver.startswith(MODULE_TYPE_PREFIX):
                 module = self.imports.get(receiver[len(MODULE_TYPE_PREFIX):])
                 function = module.functions.get(callee.member) if module else None
-                return (
-                    function is not None
-                    and function.return_type is not None
-                    and "Error" in function.return_type.names
-                )
+                if function is None or function.return_type is None:
+                    return False
+                return_type = str(function.return_type)
+                base, _ = self._generic_type(return_type)
+                return "Error" in function.return_type.names or base in {"Option", "Result"}
             if receiver == "String" and callee.member in {
                 "to_int",
                 "to_float",
@@ -1169,6 +1566,8 @@ class SemanticChecker:
             return "Map"
         if isinstance(expression, StructLiteral):
             return expression.type_name
+        if isinstance(expression, MatchExpression):
+            return self._check_match_expression(expression)
         if isinstance(expression, Identifier):
             symbol = self._resolve(expression.name)
             if symbol is not None:

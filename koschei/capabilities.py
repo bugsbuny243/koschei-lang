@@ -29,6 +29,7 @@ from .ast_nodes import (
     InterpolatedString,
     LetStatement,
     Literal,
+    MatchExpression,
     MemberExpression,
     OrBlockExpression,
     OrElseExpression,
@@ -279,10 +280,17 @@ def _inspect(
     from .ast_nodes import Identifier
 
     receiver = callee.object
+    domain: str | None = None
     if isinstance(receiver, Identifier):
         domain = bindings.get(receiver.name)
-        if domain is not None and _is_guarded(method):
-            manifest.operations.setdefault(domain, set()).add(method)
+    elif (
+        isinstance(receiver, CallExpression)
+        and isinstance(receiver.callee, MemberExpression)
+        and receiver.callee.member in NARROWING_METHODS
+    ):
+        domain = _root_domain(receiver.callee.object, roots)
+    if domain is not None and _is_guarded(method):
+        manifest.operations.setdefault(domain, set()).add(method)
 
 
 def _is_guarded(method: str) -> bool:
@@ -464,6 +472,10 @@ def _walk_expression(expression: Expression):
         yield from _walk_expression(expression.value)
         for statement in expression.handler.statements:
             yield from _walk_statement(statement)
+    elif isinstance(expression, MatchExpression):
+        yield from _walk_expression(expression.value)
+        for arm in expression.arms:
+            yield from _walk_expression(arm.body)
 
 
 def analyze_graph(graph) -> Manifest:
