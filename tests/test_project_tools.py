@@ -113,15 +113,19 @@ class VsCodeExtensionTests(unittest.TestCase):
 
         package = json.loads(paths[0].read_text(encoding="utf-8"))
         self.assertEqual(package["contributes"]["languages"][0]["extensions"], [".ks"])
-        self.assertEqual(package["version"], "0.9.0")
+        self.assertEqual(package["version"], "0.9.1")
+        properties = package["contributes"]["configuration"]["properties"]
+        self.assertEqual(properties["koschei.server.command"]["default"], "ks-lsp")
 
-    def test_extension_uses_machine_readable_check_contract(self) -> None:
+    def test_extension_uses_live_lsp_contract(self) -> None:
         extension = (
             REPO_ROOT / "editors" / "vscode" / "extension.js"
         ).read_text(encoding="utf-8")
-        self.assertIn("check", extension)
-        self.assertIn("--json", extension)
-        self.assertIn("onDidSaveTextDocument", extension)
+        self.assertIn("Content-Length", extension)
+        self.assertIn("textDocument/publishDiagnostics", extension)
+        self.assertIn("registerHoverProvider", extension)
+        self.assertIn("registerDefinitionProvider", extension)
+        self.assertIn("registerDocumentFormattingEditProvider", extension)
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is not installed")
     def test_extension_javascript_parses(self) -> None:
