@@ -17,6 +17,11 @@ verme tarzını** anlatır — biçimlendiricinin dayatamayacağı kısmı.
 Jetonlar yalnızca `main` içinde doğar. Fonksiyonlar kök yetki (`SystemCaps`,
 `DiskRoot`, `NetRoot`) almaz — ihtiyaç duydukları en dar jetonu alır.
 
+Bu örnek `/etc/app/config.json` dosyasının varlığını varsaydığı için release gate
+onu çalıştırmaz; sözdizimi ve capability sözleşmesi compiler testlerinde ayrıca
+kapsanır.
+
+<!-- verify: skip — host üzerinde /etc/app/config.json gerektirir -->
 ```ks
 // ✅ Koschei tarzı
 fn load_config(disk: DiskReadCaps, path: String) -> String or Error {
@@ -30,12 +35,16 @@ fn main(caps: SystemCaps) {
 }
 ```
 
+<!-- verify: skip — kasıtlı olarak eksik bırakılmış karşı-örnek -->
 ```ks
 // ❌ Koschei tarzı DEĞİL: tüm yetki aşağı taşınıyor
 fn load_config(caps: SystemCaps, path: String) -> String or Error { ... }
 ```
 
-İkisi de derlenir. Ama ikincisi, dilin var oluş sebebini çöpe atar: yetki ne
+İlk örnek derlenir. İkinci satır ise gövdesi özellikle `...` bırakılmış bir
+üslup karşı-örneğidir; tek başına derlenebilir program değildir.
+
+İkisi de tamamlanmış gövdelerle yazıldığında derlenebilir. Ama ikincisi, dilin var oluş sebebini çöpe atar: yetki ne
 kadar aşağı inerse, o kadar çok kod her şeye dokunabilir hale gelir.
 **Kural: bir fonksiyon ne kadar az yetki alıyorsa o kadar iyidir.**
 
@@ -43,8 +52,10 @@ kadar aşağı inerse, o kadar çok kod her şeye dokunabilir hale gelir.
 
 Bir fonksiyonun neye dokunduğunu anlamak için gövdesini okumayın —
 parametrelerine bakın. Bu yüzden yetki parametreleri **her zaman başta** durur
-ve gerçek adıyla anılır.
+ve gerçek adıyla anılır. Aşağıdaki satır bir API imzası örneğidir; gövde
+bilerek gösterilmez.
 
+<!-- verify: skip — yalnızca fonksiyon imzası örneği -->
 ```ks
 fn sync_prices(net: NetCaps, cache: DiskCaps, symbol: String) -> Int or Error
 ```
@@ -123,8 +134,10 @@ let disk = caps.disk.allow("/")
 
 ## Program iskeleti
 
-Tipik bir Koschei programı şu sırayla okunur:
+Tipik bir Koschei programı şu sırayla okunur. Örnek gerçek bir dış API çağrısı
+varsaydığı için release gate tarafından çalıştırılmaz.
 
+<!-- verify: skip — api.example.com dış servisini gerektirir -->
 ```ks
 // 1. Veri tipleri
 struct UserProfile { id: Int, username: String }

@@ -1,0 +1,5 @@
+Geçersiz sayı blok içinde ele alındı
+Geri sayım: 3
+Geri sayım: 2
+Geri sayım: 1
+Merhaba misafir; sayı hazır; varsayılan: 2

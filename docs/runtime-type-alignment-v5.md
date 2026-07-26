@@ -11,7 +11,8 @@ runtime, including nested forms such as:
 
 ```ks
 fn first_port(rows: List<Map<String, Int>>) -> Int {
-    let row = rows.get(0) or {"port": 0}
+    let fallback = {"port": 0}
+    let row = rows.get(0) or fallback
     return row.get("port") or 0
 }
 ```

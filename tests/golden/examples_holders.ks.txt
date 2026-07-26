@@ -1,0 +1,7 @@
+Holder sayisi: 3
+7xKq...aB1 -> %62 [KRITIK]
+9mPz...cD2 -> %24 [YUKSEK]
+4nRw...eF3 -> %5 [NORMAL]
+Ilk uc holder toplami: %91
+En buyuk pay: 7xKq...aB1
+Aralik disi erisim guvenli: -

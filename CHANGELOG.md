@@ -38,6 +38,11 @@
   bilingual `KS1307` instead of falling back to a dynamic type.
 - Keep capability-bearing generic substitutions closed until effect generics are
   explicit, preventing authority from being hidden behind an unconstrained `T`.
+- Add an executable, zero-dependency `verify.sh` repository truth gate that checks
+  the complete test suite, committed example outputs, documentation code blocks
+  and the malicious supply-chain rejection.
+- Add `design/v5-usage-guide.md` as a machine-tracked target board; future syntax,
+  expected failures and backend-only milestones are explicitly classified.
 
 The V5 design principle is: **security beyond ambient-authority languages and a
 writing experience simpler than Python without hiding dangerous effects.**

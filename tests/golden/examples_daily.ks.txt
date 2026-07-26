@@ -1,0 +1,3 @@
+Kişiler: ali | ayşe | mehmet
+Pozitif skorlar: [2, 3]
+Kişi sayısı: 3
