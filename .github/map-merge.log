@@ -1,0 +1,4 @@
+Preparing worktree (detached HEAD 5511e7f)
+HEAD is now at 5511e7f packaging 2/2: documentation uses the installed ks command
+error: patch failed: koschei/interpreter.py:689
+error: koschei/interpreter.py: patch does not apply
