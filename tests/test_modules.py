@@ -10,7 +10,7 @@ from koschei.capabilities import analyze_graph
 from koschei.codegen_go import CodegenError, generate_go
 from koschei.interpreter import Interpreter
 from koschei.cli import main
-from koschei.modules import ModuleError, check_graph, load_graph, namespaces
+from koschei.modules import ModuleError, check_graph, load_graph, module_imports, namespaces
 from koschei.parser import parse
 from koschei.semantic import SemanticError
 
@@ -46,7 +46,11 @@ class ModuleWorkspace(unittest.TestCase):
         output = io.StringIO()
         with redirect_stdout(output):
             Interpreter(
-                root.program, [], namespaces(graph), root.imports
+                root.program,
+                [],
+                namespaces(graph),
+                root.imports,
+                module_imports=module_imports(graph),
             ).execute_main()
         return output.getvalue()
 

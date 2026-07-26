@@ -288,7 +288,7 @@ Manifesto bilinçli olarak muhafazakârdır: kapsam sabit bir metin değilse
 **kesin sayılmaz**. Bilmediğini bildiğini iddia eden bir güvenlik raporu, rapor
 olmaktan çıkar.
 
-## Native derleme (v0.8 alpha 4)
+## Native derleme (v0.8)
 
 Koschei programları Go ara koduna çevrilip tek bir native binary olarak
 derlenebilir:
@@ -303,7 +303,7 @@ ks build program.ks -o prog  # tek dosya binary (Go kurulu olmalı)
 okunabilirlik değil davranış eşliği hedeflenir. `build` çıktısı ile `run`
 çıktısının aynı olması CI'da her koşuda doğrulanır.
 
-v0.8 alpha 4, capability runtime ABI, cebirsel tip çekirdeği ve immutable koleksiyonları üretilen binary'ye taşır:
+v0.8, capability runtime ABI, cebirsel tip çekirdeği, immutable koleksiyonları, struct ve modülleri üretilen binary'ye taşır:
 
 - `main(caps: SystemCaps)` için kök yetki çalışma anında enjekte edilir.
 - `EnvCaps`, yalnız izin verilen environment değişkenini okuyabilir.
@@ -321,11 +321,16 @@ v0.8 alpha 4, capability runtime ABI, cebirsel tip çekirdeği ve immutable kole
   `get/set/keys/contains` ve String `split/join` native runtime'da immutable çalışır.
 - Map anahtar sırası ve değer gösterimi yorumlayıcıyla aynıdır; koleksiyon eşitliği
   iç içe değerlerde yapısal olarak hesaplanır.
+- Struct literal, alan erişimi ve nominal/yapısal eşitlik native runtime'da bulunur;
+  capability taşıyan alanlar ikinci savunma katmanında KS3401 ile reddedilir.
+- Import grafiği dependency-order ile tek binary'ye flatten edilir. Her modülün yerel
+  fonksiyon ad alanı benzersizleştirilir; nested import alias'ları hem interpreter
+  hem native runtime'da çağrılan modülün kendi bağlamında çözülür.
 
 Native disk ABI daha zayıf bir yol kontrolüne GERİ DÜŞMEZ. Güvenli primitive'ler
-bulunmayan hedefte derleme **KS4001** ile durur. Struct/import gibi
-henüz taşınmamış dil yapıları **KS4002** ile açıkça reddedilir; sessiz yanlış
-çeviri yapılmaz.
+bulunmayan hedefte derleme **KS4001** ile durur. Native backend'in gelecekte
+karşılaşacağı desteklenmeyen bir yapı **KS4002** ile açıkça reddedilir; sessiz
+yanlış çeviri yapılmaz.
 
 Native tarafta ayrıca korunan davranışlar: hatalar değerdir (`or`'un üç biçimi),
 çağrı derinliği sınırı (KS3105), sıfıra bölme bir hata değeridir ve değer gösterimi
@@ -363,11 +368,10 @@ Tanı katalogu sabittir: yalnızca açıklama üretir, hiçbir denetimi gevşetm
 
 `check` komutu lexer, parser ve semantic güvenlik kontrollerini birlikte çalıştırır.
 
-## Bilinen sınırlar (v0.8 alpha 4)
+## Bilinen sınırlar (v0.8)
 
 - Generic sözdizimi yalnızca `Option<T>` ve `Result<T, E>` için açıktır; List/Map ve kullanıcı tanımlı generics henüz yoktur.
 - Map anahtarları yalnızca String'dir; List ve Map öğe tipi akış boyunca statik olarak korunmaz.
-- Go backend struct ve import yapılarını henüz üretmez; bunlar **KS4002** ile fail-closed reddedilir.
 - Native ağ ABI bu aşamada yalnız GET'i gerçekleştirir; POST/PUT/DELETE/request hata değeri olarak kapalıdır.
 - Native disk ABI alpha yalnız Linux `openat`/`O_NOFOLLOW` hedefindedir. Güvenli eşdeğeri olmayan platformlarda **KS4001** üretilir.
 - Native process capability işlem başlatmaz; `run/spawn` hata değeri döndürür.
