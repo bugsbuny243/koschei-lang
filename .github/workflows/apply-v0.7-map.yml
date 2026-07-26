@@ -32,53 +32,69 @@ jobs:
       - name: Merge Map changes onto current main
         shell: bash
         run: |
-          set -euo pipefail
+          set +e
+          (
+            set -euo pipefail
 
-          base_commit="5511e7f0c783444b0e5d78bdf7b45061995e9c54"
-          patch_file="/tmp/v0.7-map.patch"
-          patched_tree="/tmp/koschei-map-patched"
-          base_files="/tmp/koschei-map-base"
+            base_commit="5511e7f0c783444b0e5d78bdf7b45061995e9c54"
+            patch_file="/tmp/v0.7-map.patch"
+            patched_tree="/tmp/koschei-map-patched"
+            base_files="/tmp/koschei-map-base"
 
-          base64 --decode .github/v0.7-map.patch.gz.b64 | gzip --decompress > "$patch_file"
-          git worktree add --detach "$patched_tree" "$base_commit"
-          mkdir -p "$base_files"
+            base64 --decode .github/v0.7-map.patch.gz.b64 | gzip --decompress > "$patch_file"
+            git worktree add --detach "$patched_tree" "$base_commit"
+            mkdir -p "$base_files"
 
-          modified_files=(
-            README.md
-            docs/language-core.md
-            koschei/ast_nodes.py
-            koschei/capabilities.py
-            koschei/codegen_go.py
-            koschei/diagnostics.py
-            koschei/formatter.py
-            koschei/interpreter.py
-            koschei/parser.py
-            koschei/semantic.py
-          )
+            modified_files=(
+              README.md
+              docs/language-core.md
+              koschei/ast_nodes.py
+              koschei/capabilities.py
+              koschei/codegen_go.py
+              koschei/diagnostics.py
+              koschei/formatter.py
+              koschei/interpreter.py
+              koschei/parser.py
+              koschei/semantic.py
+            )
 
-          for file in "${modified_files[@]}"; do
-            mkdir -p "$base_files/$(dirname "$file")"
-            cp "$patched_tree/$file" "$base_files/$file"
-          done
+            for file in "${modified_files[@]}"; do
+              mkdir -p "$base_files/$(dirname "$file")"
+              cp "$patched_tree/$file" "$base_files/$file"
+            done
 
-          git -C "$patched_tree" apply "$patch_file"
+            git -C "$patched_tree" apply "$patch_file"
 
-          for file in "${modified_files[@]}"; do
-            merged="$(mktemp)"
-            git merge-file -p --union \
-              "$file" \
-              "$base_files/$file" \
-              "$patched_tree/$file" > "$merged" || true
-            mv "$merged" "$file"
-          done
+            for file in "${modified_files[@]}"; do
+              merged="$(mktemp)"
+              git merge-file -p --union \
+                "$file" \
+                "$base_files/$file" \
+                "$patched_tree/$file" > "$merged" || true
+              mv "$merged" "$file"
+            done
 
-          cp "$patched_tree/examples/maps.ks" examples/maps.ks
-          cp "$patched_tree/tests/test_maps.py" tests/test_maps.py
+            cp "$patched_tree/examples/maps.ks" examples/maps.ks
+            cp "$patched_tree/tests/test_maps.py" tests/test_maps.py
 
-          rm .github/v0.7-map.patch.gz.b64
-          rm .github/workflows/apply-v0.7-map.yml
-          git worktree remove --force "$patched_tree"
-          git diff --check
+            rm .github/v0.7-map.patch.gz.b64
+            rm .github/workflows/apply-v0.7-map.yml
+            git worktree remove --force "$patched_tree"
+            git diff --check
+          ) > /tmp/map-merge.log 2>&1
+          status=$?
+
+          if [ "$status" -ne 0 ]; then
+            git reset --hard HEAD
+            cp /tmp/map-merge.log .github/map-merge.log
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add .github/map-merge.log
+            git commit -m "chore: capture Map merge failure"
+            git push origin HEAD:agent/v0.7-map
+            cat /tmp/map-merge.log
+            exit "$status"
+          fi
 
       - name: Run test suite
         run: python -m unittest discover -s tests -v
