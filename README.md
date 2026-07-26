@@ -21,6 +21,7 @@ ks check examples/supply_chain/main.ks
 
 The package under test — `examples/supply_chain/analytics.ks`:
 
+<!-- verify: expect KS2401 -->
 ```ks
 fn track(event: String) -> String or Error {
     let secret = disk.read("/etc/app/secrets.env") or return Error("unreadable")
@@ -113,7 +114,7 @@ The `--deny` gate is designed for CI: a build fails if a dependency update silen
 
 ## Language features
 
-Implemented today: functions with typed parameters, `let` / `let mut`, structs, `List`, immutable `Map` (`get`/`set`/`keys`/`contains`), `for`-in, `if`/`else`/`while` with `Bool`-only conditions, enums with exhaustive `match`, real `Option<T>` / `Result<T, E>`, full expression interpolation (`"{items.length()}"`), a daily standard library (`String` `trim`/`split`/`join`, `List` `sort`/`filter`/`contains`), and a module system where `import risk` binds `risk.ks` next to the importing file — no manifest, no build script, no config.
+Implemented today: functions with typed parameters, inferred generic functions, `let` / `let mut`, structs, `List<T>`, immutable `Map<String, V>` (`get`/`set`/`keys`/`contains`), `for`-in, `if`/`else`/`while` with `Bool`-only conditions, enums with exhaustive `match`, real `Option<T>` / `Result<T, E>`, full expression interpolation (`"{items.length()}"`), a daily standard library (`String` `trim`/`split`/`join`, `List` `sort`/`filter`/`contains`), and a module system where `import risk` binds `risk.ks` next to the importing file — no manifest, no build script, no config.
 
 ## Toolchain
 
@@ -125,6 +126,7 @@ ks fmt --write src/           # canonical formatting
 ks caps src/main.ks           # capability manifest
 ks explain KS2401             # diagnostics, --lang tr for Turkish
 ks check --json src/main.ks   # stable code/message/line/column for editors
+ks lsp                         # zero-dependency language server
 ks tokens / ks ast / ks emit-go
 ```
 
@@ -132,7 +134,7 @@ The pipeline is `.ks` → lexer → parser → AST → type, capability and immu
 
 ## Editor support
 
-`editors/vscode` contains the official extension: `.ks` syntax highlighting, bracket and comment rules, a `Koschei: Check Current File` command, and diagnostics on save. No npm dependencies.
+`editors/vscode` contains the official zero-dependency LSP extension: `.ks` syntax highlighting, live diagnostics, formatting, hover, go-to-definition, document symbols, and completion. The server is available through `ks lsp` (with `ks-lsp` kept as a compatibility alias).
 
 ## Tests
 
@@ -140,7 +142,7 @@ The pipeline is `.ks` → lexer → parser → AST → type, capability and immu
 python -m unittest discover -s tests -v
 ```
 
-321 tests. The 33 that are skipped require a local Go toolchain and run in CI, which executes the full suite on every push and pull request — including a check that the malicious `examples/supply_chain/` package still fails to compile.
+The current CI suite runs 372 tests, plus native/interpreter parity, repository documentation examples, committed golden outputs, and a check that the malicious `examples/supply_chain/` package still fails to compile.
 
 ## Status
 
@@ -152,7 +154,7 @@ Security boundaries currently enforced in the native path:
 - The process capability's `run` / `spawn` does not start a process; it returns an error value.
 - At runtime, path traversal, symlink escape and out-of-scope paths give `KS3402`; a write through a read-only token gives `KS3404`; an HTTP redirect leaving the allowed origin is rejected; call depth is capped at 512 (`KS3105`).
 
-Next gate is **v1.0**: frozen syntax and capability runtime ABI, a SemVer compatibility commitment, a generic contract for at least `List<T>` and `Option<T>`, package resolution with a lock file, and migration tests.
+The next V5 gate is user-defined generic structs/enums, followed by a backend-independent MIR. The v1.0 release gate additionally requires frozen syntax and capability runtime ABI, a SemVer compatibility commitment, package resolution with a lock file, and migration tests.
 
 **Designed but not built**, and not presented as features: static region inference, the C backend, and the Sentinel / tarpit layers. Koschei enforces capabilities in its type system — it does not produce formal mathematical proofs, and it is not a memory-managed-by-region language today; the current backend generates Go and uses Go's garbage collector.
 

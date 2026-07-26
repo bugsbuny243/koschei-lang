@@ -86,7 +86,10 @@ enum Delivery {
     Failed(Error),
 }
 
-let state = Sent("kargoya verildi")
+fn main() {
+    let state = Sent("kargoya verildi")
+    println(state)
+}
 ```
 
 `match` bir ifade üretir ve **exhaustive** olmak zorundadır. Aynı varyant iki kez
@@ -122,11 +125,12 @@ fn load(active: Bool) -> Result<String, Error> {
 - `Result<T, E>` varyantları: `Ok(T)`, `Err(E)`
 - `or` başarı varyantını açar; `None` / `Err` / legacy `Error` akışını ele alır.
 - `or return` hata varyantını üst fonksiyona taşır.
-- Generic arity sabittir: `Option` bir, `Result` iki tip argümanı alır.
+- Yerleşik generic arity sabittir: `Option` ve `List` bir; `Result` ve `Map` iki tip argümanı alır.
 - Capability değerleri enum, Option veya Result payload'ına saklanamaz.
 
-Bu alpha diliminde generic sözdizimi yalnızca `Option<T>` ve `Result<T, E>` için
-açıktır. Kullanıcı tanımlı generic struct/fonksiyonlar v1.x kapsamındadır.
+Generic fonksiyonlar artık bildirim yerinde tip parametresi alabilir ve çağrı
+yerinde argümanlardan çıkarılır (`fn first<T>(items: List<T>) -> Option<T>`).
+Kullanıcı tanımlı generic struct ve enumlar henüz sonraki V5 kapısıdır.
 
 ## Map / sözlük
 
@@ -150,9 +154,9 @@ Metotlar:
 | `keys()` | Ekleme sırasındaki anahtarları taşıyan `List` |
 | `contains(key)` | Anahtar varsa `true` |
 
-Capability değerleri Map içine konamaz. `Map.get()` öğe tipini henüz statik
-olarak korumadığı için compiler ve runtime bu yolu capability type-laundering'e
-karşı kapatır.
+Capability değerleri Map içine konamaz. `Map<String, V>` değer tipi,
+`get()` ve `or` daraltması boyunca Typed HIR tarafından korunur; runtime da aynı
+yapısal sözleşmeyi savunma katmanı olarak tekrar doğrular.
 
 ## Günlük String ve List metotları
 
@@ -179,9 +183,12 @@ fn positive(value: Int) -> Bool {
     return value > 0
 }
 
-let values = [3, -1, 2]
-let ordered = values.sort() or []
-let selected = values.filter(positive) or []
+fn main() {
+    let values = [3, -1, 2]
+    let ordered = values.sort() or []
+    let selected = values.filter(positive) or []
+    println("{ordered} / {selected}")
+}
 ```
 
 `filter`, lambda sözdizimi gelene kadar tek argüman alan ve `Bool` döndüren yerel,
@@ -336,9 +343,9 @@ Native tarafta ayrıca korunan davranışlar: hatalar değerdir (`or`'un üç bi
 çağrı derinliği sınırı (KS3105), sıfıra bölme bir hata değeridir ve değer gösterimi
 host dilden bağımsızdır (`true`/`false`, `4.0`).
 
-**Bilinen sınırlar:** Int aritmetiği native tarafta 64 bit ile sınırlıdır
-(yorumlayıcıda Python'un sınırsız tam sayıları kullanılır); çok büyük sayılarla
-çalışan programlarda iki hedef farklılaşabilir.
+`Int`, yorumlayıcı ve native backend'de aynı işaretli 64-bit sözleşmeyi kullanır.
+Taşma ve `Int.MIN / -1` sessizce farklılaşmaz; checked hata üretir. `Int / Int`
+tam sayı bölmesidir ve sıfıra doğru kesilir; `Float / Float` ayrı kalır.
 
 ## v0.9 compiler hattı
 
@@ -368,14 +375,20 @@ Tanı katalogu sabittir: yalnızca açıklama üretir, hiçbir denetimi gevşetm
 
 `check` komutu lexer, parser ve semantic güvenlik kontrollerini birlikte çalıştırır.
 
-## Bilinen sınırlar (v0.9)
+## Bilinen sınırlar (v0.9 + V5 geçiş katmanı)
 
-- Generic sözdizimi yalnızca `Option<T>` ve `Result<T, E>` için açıktır; List/Map ve kullanıcı tanımlı generics henüz yoktur.
-- Map anahtarları yalnızca String'dir; List ve Map öğe tipi akış boyunca statik olarak korunmaz.
-- Native ağ ABI bu aşamada yalnız GET'i gerçekleştirir; POST/PUT/DELETE/request hata değeri olarak kapalıdır.
-- Native disk ABI alpha yalnız Linux `openat`/`O_NOFOLLOW` hedefindedir. Güvenli eşdeğeri olmayan platformlarda **KS4001** üretilir.
+- `Option<T>`, `Result<T, E>`, `List<T>`, `Map<String, V>` ve çıkarımlı generic
+  fonksiyonlar çalışır. Kullanıcı tanımlı generic struct/enum, trait ve closure
+  henüz yoktur.
+- Map anahtarları şimdilik yalnızca `String`'dir. Ham `List` / `Map` anotasyonları
+  v0.9 uyumluluk wildcard'ı olarak kabul edilir; yeni API'lerde typed biçim önerilir.
+- Native ağ ABI bu aşamada yalnız GET'i gerçekleştirir; POST/PUT/DELETE/request
+  hata değeri olarak kapalıdır.
+- Native disk ABI alpha yalnız Linux `openat`/`O_NOFOLLOW` hedefindedir. Güvenli
+  eşdeğeri olmayan platformlarda **KS4001** üretilir.
 - Native process capability işlem başlatmaz; `run/spawn` hata değeri döndürür.
-- Tanı mesajları şimdilik Türkçedir; İngilizce yerelleştirme v0.9 kapsamındadır.
+- Tanılar Türkçe ve İngilizce aynı sabit KS kodlarıyla sunulur. LSP canlı tanı,
+  formatlama, hover, definition, sembol ve completion sağlar.
 
 
 ## v0.9 diagnostics and project contract

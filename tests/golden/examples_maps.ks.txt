@@ -1,0 +1,5 @@
+Ali
+true
+["name", "age", "city"]
+{"name": "Ali", "age": 42}
+{"name": "Ali", "age": 42, "city": "Istanbul"}
