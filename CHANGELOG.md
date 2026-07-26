@@ -38,11 +38,12 @@
   bilingual `KS1307` instead of falling back to a dynamic type.
 - Keep capability-bearing generic substitutions closed until effect generics are
   explicit, preventing authority from being hidden behind an unconstrained `T`.
-- Add an executable, zero-dependency `verify.sh` repository truth gate that checks
-  the complete test suite, committed example outputs, documentation code blocks
-  and the malicious supply-chain rejection.
-- Add `design/v5-usage-guide.md` as a machine-tracked target board; future syntax,
-  expected failures and backend-only milestones are explicitly classified.
+- Add user-defined generic structs and enums with constructor inference, field
+  substitution, exhaustive-match payload typing, module contracts and native parity.
+- Reject raw or ambiguous aggregate generics with `KS1307`; keep Map keys concretely
+  String and prevent capability values from binding to aggregate type parameters.
+- Preserve inferred aggregate arguments in the defensive interpreter runtime while
+  the legacy semantic bridge receives an explicitly erased post-Typed-HIR view.
 
 The V5 design principle is: **security beyond ambient-authority languages and a
 writing experience simpler than Python without hiding dangerous effects.**
