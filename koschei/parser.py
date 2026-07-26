@@ -18,6 +18,7 @@ from .ast_nodes import (
     ImportDeclaration,
     ForStatement,
     ListLiteral,
+    MapLiteral,
     StructDeclaration,
     StructField,
     StructLiteral,
@@ -411,6 +412,9 @@ class Parser:
         if self._match(TokenType.LEFT_BRACKET):
             return self._list_literal(self._previous())
 
+        if self._match(TokenType.LEFT_BRACE):
+            return self._map_literal(self._previous())
+
         if self._match(TokenType.IDENTIFIER, TokenType.TYPE):
             token = self._previous()
             # 'UserProfile { ... }' bir struct literalidir. Tip adları büyük
@@ -438,6 +442,24 @@ class Parser:
                     break
         self._consume(TokenType.RIGHT_BRACKET, "Liste sonunda ']' bekleniyordu.")
         return ListLiteral(tuple(items), self._location(bracket))
+
+    def _map_literal(self, brace: Token) -> MapLiteral:
+        entries: list[tuple[Expression, Expression]] = []
+        if not self._check(TokenType.RIGHT_BRACE):
+            while True:
+                key = self._expression()
+                self._consume(
+                    TokenType.COLON,
+                    "Map anahtarından sonra ':' bekleniyordu.",
+                )
+                value = self._expression()
+                entries.append((key, value))
+                if not self._match(TokenType.COMMA):
+                    break
+                if self._check(TokenType.RIGHT_BRACE):
+                    break
+        self._consume(TokenType.RIGHT_BRACE, "Map sonunda '}' bekleniyordu.")
+        return MapLiteral(tuple(entries), self._location(brace))
 
     def _struct_literal(self, type_token: Token) -> StructLiteral:
         self._consume(TokenType.LEFT_BRACE, "Struct literalinde '{' bekleniyordu.")

@@ -22,6 +22,7 @@ from .ast_nodes import (
     AssignmentExpression,
     ForStatement,
     ListLiteral,
+    MapLiteral,
     StructLiteral,
     BinaryExpression,
     Block,
@@ -438,6 +439,31 @@ class GoCodegen:
                 self.program.structs[0].location,
             )
 
+        for declaration in self.program.declarations:
+            for statement in declaration.body.statements:
+                for expression in _walk_statement(statement):
+                    if isinstance(expression, MapLiteral):
+                        raise CodegenError(
+                            "KS4002",
+                            "Map değerleri native derlemede henüz desteklenmiyor; "
+                            "şimdilik 'koschei.py run' kullanın.",
+                            expression.location,
+                        )
+                    if isinstance(expression, ListLiteral):
+                        raise CodegenError(
+                            "KS4002",
+                            "Liste değerleri native derlemede henüz desteklenmiyor; "
+                            "şimdilik 'koschei.py run' kullanın.",
+                            expression.location,
+                        )
+                    if isinstance(expression, StructLiteral):
+                        raise CodegenError(
+                            "KS4002",
+                            "Struct değerleri native derlemede henüz desteklenmiyor; "
+                            "şimdilik 'koschei.py run' kullanın.",
+                            expression.location,
+                        )
+
     def _reject_capabilities(self) -> None:
         """Aşama 1: yetki taşıyan programlar bilinçli olarak reddedilir."""
         for declaration in self.program.declarations:
@@ -640,10 +666,10 @@ class GoCodegen:
         if isinstance(expression, CallExpression):
             return self._call(expression, depth)
 
-        if isinstance(expression, (ListLiteral, StructLiteral)):
+        if isinstance(expression, (ListLiteral, MapLiteral, StructLiteral)):
             raise CodegenError(
                 "KS4002",
-                "Liste ve struct değerleri native derlemede henüz desteklenmiyor; "
+                "Liste, Map ve struct değerleri native derlemede henüz desteklenmiyor; "
                 "şimdilik 'koschei.py run' kullanın.",
                 expression.location,
             )
@@ -892,6 +918,10 @@ def _walk_statement(statement: Statement):
         yield from _walk_expression(statement.condition)
         for inner in statement.body.statements:
             yield from _walk_statement(inner)
+    elif isinstance(statement, ForStatement):
+        yield from _walk_expression(statement.iterable)
+        for inner in statement.body.statements:
+            yield from _walk_statement(inner)
 
 
 def _walk_expression(expression: Expression):
@@ -913,6 +943,16 @@ def _walk_expression(expression: Expression):
     elif isinstance(expression, InterpolatedString):
         for part in expression.parts:
             yield from _walk_expression(part)
+    elif isinstance(expression, ListLiteral):
+        for item in expression.items:
+            yield from _walk_expression(item)
+    elif isinstance(expression, MapLiteral):
+        for key, value in expression.entries:
+            yield from _walk_expression(key)
+            yield from _walk_expression(value)
+    elif isinstance(expression, StructLiteral):
+        for _, value in expression.fields:
+            yield from _walk_expression(value)
     elif isinstance(expression, OrReturnExpression):
         yield from _walk_expression(expression.value)
         if expression.error is not None:

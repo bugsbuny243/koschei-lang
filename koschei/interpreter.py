@@ -19,6 +19,7 @@ from .ast_nodes import (
     AssignmentExpression,
     ForStatement,
     ListLiteral,
+    MapLiteral,
     StructLiteral,
     BinaryExpression,
     Block,
@@ -87,6 +88,7 @@ class StructValue:
 
 LIST_METHODS = {"length", "get", "push", "contains"}
 ALLOWED_NET_SCHEMES = frozenset({"http", "https"})
+MAP_METHODS = {"get", "set", "keys", "contains"}
 
 
 class _KsUnit:
@@ -118,6 +120,11 @@ def ks_to_string(value: Any) -> str:
         return text
     if isinstance(value, list):
         return "[" + ", ".join(_ks_repr(item) for item in value) + "]"
+    if isinstance(value, dict):
+        inner = ", ".join(
+            f"{_ks_repr(key)}: {_ks_repr(item)}" for key, item in value.items()
+        )
+        return "{" + inner + "}"
     if isinstance(value, StructValue):
         inner = ", ".join(
             f"{name}: {_ks_repr(item)}" for name, item in value.fields.items()
@@ -721,6 +728,44 @@ class ProcessCaps(_NarrowedCapability):
         return KsError("process yetkisi v0.1'de kapalı")
 
 
+def _contains_capability(value: Any, seen: set[int] | None = None) -> bool:
+    """Dinamik kapsayıcıların capability type-laundering yapmasını engeller."""
+    if isinstance(
+        value,
+        (
+            SystemCaps,
+            NetRoot,
+            DiskRoot,
+            EnvRoot,
+            ProcessRoot,
+            _NarrowedCapability,
+        ),
+    ):
+        return True
+
+    visited = seen if seen is not None else set()
+    identity = id(value)
+    if identity in visited:
+        return False
+
+    if isinstance(value, StructValue):
+        visited.add(identity)
+        return any(
+            _contains_capability(item, visited)
+            for item in value.fields.values()
+        )
+    if isinstance(value, list):
+        visited.add(identity)
+        return any(_contains_capability(item, visited) for item in value)
+    if isinstance(value, dict):
+        visited.add(identity)
+        return any(
+            _contains_capability(key, visited) or _contains_capability(item, visited)
+            for key, item in value.items()
+        )
+    return False
+
+
 def _origin_key(url: str) -> tuple[str, str, int | None] | None:
     try:
         parsed = urlsplit(url)
@@ -981,6 +1026,38 @@ class Interpreter:
                 items.append(value)
             return items
 
+        if isinstance(expression, MapLiteral):
+            entries: dict[str, Any] = {}
+            for key_expression, value_expression in expression.entries:
+                key = self._evaluate(key_expression)
+                if isinstance(key, KsError):
+                    return key
+                if not isinstance(key, str):
+                    raise KoscheiRuntimeError(
+                        "KS3401",
+                        f"Map anahtarı String olmalıdır, "
+                        f"{self._runtime_type_name(key)} bulundu.",
+                        key_expression.location,
+                    )
+                if key in entries:
+                    raise KoscheiRuntimeError(
+                        "KS3101",
+                        f"Map literalinde '{key}' anahtarı birden fazla yazılmış.",
+                        key_expression.location,
+                    )
+                value = self._evaluate(value_expression)
+                if isinstance(value, KsError):
+                    return value
+                if _contains_capability(value):
+                    raise KoscheiRuntimeError(
+                        "KS3401",
+                        "Capability taşıyan değerler Map içine konamaz; runtime "
+                        "type-laundering girişimini reddetti.",
+                        value_expression.location,
+                    )
+                entries[key] = value
+            return entries
+
         if isinstance(expression, StructLiteral):
             fields: dict[str, Any] = {}
             declaration = self.structs.get(expression.type_name)
@@ -1168,6 +1245,13 @@ class Interpreter:
                 "KS3101", f"List üzerinde '{name}' metodu yok.", location
             )
 
+        if isinstance(receiver, dict):
+            if name in MAP_METHODS:
+                return _BoundMember(receiver, name, location)
+            raise KoscheiRuntimeError(
+                "KS3101", f"Map üzerinde '{name}' metodu yok.", location
+            )
+
         if isinstance(receiver, _NarrowedCapability) and name in {
             "allow", "allow_read_only"
         }:
@@ -1272,6 +1356,41 @@ class Interpreter:
                 self._require_arity(name, arguments, 1, member.location)
                 return arguments[0] in receiver
 
+        if isinstance(receiver, dict):
+            if name == "get":
+                self._require_arity(name, arguments, 1, member.location)
+                key = arguments[0]
+                if not isinstance(key, str):
+                    return KsError("Map anahtarı String olmalıdır")
+                if key not in receiver:
+                    return KsError(f"Map anahtarı bulunamadı: {key}")
+                return receiver[key]
+            if name == "set":
+                self._require_arity(name, arguments, 2, member.location)
+                key, value = arguments
+                if not isinstance(key, str):
+                    return KsError("Map anahtarı String olmalıdır")
+                if _contains_capability(value):
+                    raise KoscheiRuntimeError(
+                        "KS3401",
+                        "Capability taşıyan değerler Map içine konamaz; runtime "
+                        "type-laundering girişimini reddetti.",
+                        member.location,
+                    )
+                # Değerler değişmezdir: set YENİ bir Map döndürür.
+                updated = dict(receiver)
+                updated[key] = value
+                return updated
+            if name == "keys":
+                self._require_arity(name, arguments, 0, member.location)
+                return list(receiver.keys())
+            if name == "contains":
+                self._require_arity(name, arguments, 1, member.location)
+                key = arguments[0]
+                if not isinstance(key, str):
+                    return KsError("Map anahtarı String olmalıdır")
+                return key in receiver
+
         method = getattr(receiver, name)
         try:
             return method(*arguments)
@@ -1322,6 +1441,8 @@ class Interpreter:
                 return True
             if name == "List" and isinstance(value, list):
                 return True
+            if name == "Map" and isinstance(value, dict):
+                return True
             if isinstance(value, StructValue) and value.type_name == name:
                 return True
         return False
@@ -1351,6 +1472,7 @@ class Interpreter:
             (float, "Float"),
             (int, "Int"),
             (list, "List"),
+            (dict, "Map"),
         )
         for runtime_type, name in mapping:
             if isinstance(value, runtime_type):

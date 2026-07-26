@@ -51,6 +51,7 @@ Mevcut prototip şunları destekler:
 - `let` ve `let mut`
 - Fonksiyon ve metot çağrıları
 - `return` ve `or return`
+- Struct, List, `for` döngüsü ve immutable Map (`get/set/keys/contains`)
 - AST üretimi
 - Immutable değer denetimi
 - Capability scope denetimi

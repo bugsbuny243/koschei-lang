@@ -34,6 +34,7 @@ from .ast_nodes import (
     AssignmentExpression,
     ForStatement,
     ListLiteral,
+    MapLiteral,
     StructLiteral,
     BinaryExpression,
     Block,
@@ -106,6 +107,7 @@ BUILTIN_CALLS = {
 # adı olduğu için alıcının tipi ÖNCE denetlenir; aksi hâlde liste erişimi
 # yanlışlıkla yetki ihlali sayılırdı.
 LIST_METHODS = {"length", "get", "push", "contains"}
+MAP_METHODS = {"get", "set", "keys", "contains"}
 
 COMPARISON_OPERATORS = {"==", "!=", "<", "<=", ">", ">="}
 LOGICAL_OPERATORS = {"&&", "||"}
@@ -407,6 +409,36 @@ class SemanticChecker:
             for item in expression.items:
                 self._check_expression(item)
             return "List"
+
+        if isinstance(expression, MapLiteral):
+            literal_keys: set[str] = set()
+            for key, value in expression.entries:
+                key_type = self._check_expression(key)
+                if key_type is not None and key_type != "String":
+                    raise SemanticError(
+                        "KS1301",
+                        f"Map anahtarı String olmalıdır, {key_type} bulundu.",
+                        key.location,
+                    )
+                if isinstance(key, Literal) and isinstance(key.value, str):
+                    if key.value in literal_keys:
+                        raise SemanticError(
+                            "KS1501",
+                            f"Map literalinde '{key.value}' anahtarı birden fazla yazılmış.",
+                            key.location,
+                        )
+                    literal_keys.add(key.value)
+
+                value_type = self._check_expression(value)
+                if self._types_are_sensitive(self._type_names(value_type)):
+                    raise SemanticError(
+                        "KS2401",
+                        "Capability taşıyan değerler Map içine konamaz; Map.get() "
+                        "öğe tipini statik olarak korumadığı için bu işlem yetki "
+                        "type-laundering oluşturur.",
+                        value.location,
+                    )
+            return "Map"
 
         if isinstance(expression, StructLiteral):
             return self._check_struct_literal(expression)
@@ -848,6 +880,54 @@ class SemanticChecker:
                 location,
             )
 
+        if receiver_type == "Map":
+            expected_arity = {
+                "get": 1,
+                "set": 2,
+                "keys": 0,
+                "contains": 1,
+            }
+            if method_name not in MAP_METHODS:
+                raise SemanticError(
+                    "KS1502",
+                    f"Map üzerinde '{method_name}' metodu yok. "
+                    f"Kullanılabilir: {', '.join(sorted(MAP_METHODS))}.",
+                    location,
+                )
+
+            arguments = argument_types or []
+            required = expected_arity[method_name]
+            if len(arguments) != required:
+                raise SemanticError(
+                    "KS1301",
+                    f"Map.{method_name}() {required} argüman bekler, "
+                    f"{len(arguments)} verildi.",
+                    location,
+                )
+            if method_name in {"get", "set", "contains"}:
+                key_type = arguments[0]
+                if key_type is not None and key_type != "String":
+                    raise SemanticError(
+                        "KS1301",
+                        f"Map.{method_name}() anahtarı String olmalıdır, "
+                        f"{key_type} bulundu.",
+                        location,
+                    )
+            if method_name == "set":
+                value_type = arguments[1]
+                if self._types_are_sensitive(self._type_names(value_type)):
+                    raise SemanticError(
+                        "KS2401",
+                        "Capability taşıyan değerler Map içine konamaz.",
+                        location,
+                    )
+                return "Map"
+            if method_name == "keys":
+                return "List"
+            if method_name == "contains":
+                return "Bool"
+            return None
+
         if receiver_type in self.structs:
             raise SemanticError(
                 "KS1502",
@@ -927,11 +1007,19 @@ class SemanticChecker:
                     and function.return_type is not None
                     and "Error" in function.return_type.names
                 )
+            if receiver in {"List", "Map"} and callee.member == "get":
+                return True
             return receiver in NARROWED_METHODS
 
         return False
 
     def _receiver_type(self, expression: Expression) -> str | None:
+        if isinstance(expression, ListLiteral):
+            return "List"
+        if isinstance(expression, MapLiteral):
+            return "Map"
+        if isinstance(expression, StructLiteral):
+            return expression.type_name
         if isinstance(expression, Identifier):
             symbol = self._resolve(expression.name)
             if symbol is not None:
