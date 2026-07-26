@@ -25,6 +25,12 @@
   `Result`, structs or enum payloads.
 - Keep live LSP diagnostics, interpreter checks and native builds on the same
   typed-collection contract.
+- Make the defensive interpreter runtime recursively enforce `List<T>` and
+  `Map<String, V>` contracts, including nested collections.
+- Separate ordinary runtime type-contract mismatches (`KS3106`) from genuine
+  capability type-integrity violations (`KS3401`).
+- Define `Int / Int` as checked integer division truncated toward zero and keep
+  interpreter/native behavior identical; `Float / Float` remains floating-point.
 
 The V5 design principle is: **security beyond ambient-authority languages and a
 writing experience simpler than Python without hiding dangerous effects.**
