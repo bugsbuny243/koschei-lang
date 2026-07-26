@@ -4,11 +4,25 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .ast_nodes import FunctionDeclaration
+from .ast_nodes import EnumDeclaration, FunctionDeclaration, StructDeclaration
 
 
 @dataclass(frozen=True, slots=True)
 class GenericFunctionDeclaration(FunctionDeclaration):
     """A function declaration with inferred source-level type parameters."""
+
+    type_parameters: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class GenericStructDeclaration(StructDeclaration):
+    """A struct declaration whose field contracts may reference type parameters."""
+
+    type_parameters: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class GenericEnumDeclaration(EnumDeclaration):
+    """An enum declaration whose payload contracts may reference type parameters."""
 
     type_parameters: tuple[str, ...] = ()

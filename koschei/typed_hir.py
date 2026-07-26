@@ -22,9 +22,13 @@ from .ast_nodes import (
 from .semantic import ImportedModule, SemanticError
 from .type_contracts import (
     TypeContractValidator,
+    declaration_type,
     function_type,
+    infer_declaration_mapping,
     instantiate_function,
+    instantiated_declaration_type,
     require_assignable,
+    type_parameters_of,
 )
 from .type_system import (
     ERROR,
@@ -37,6 +41,7 @@ from .type_system import (
     generic,
     is_named,
     parse_type_ref,
+    substitute_type,
 )
 
 
@@ -211,8 +216,9 @@ class TypedHIRChecker:
             return instantiate_function(function, arguments, location, self.contracts)
         variant = self.variants.get(name)
         if variant is not None:
-            enum_name, declaration = variant
-            expected = 0 if declaration.payload_type is None else 1
+            enum_name, variant_declaration = variant
+            enum_declaration = self.enums[enum_name]
+            expected = 0 if variant_declaration.payload_type is None else 1
             if len(arguments) != expected:
                 raise SemanticError(
                     "KS1301",
@@ -220,14 +226,18 @@ class TypedHIRChecker:
                     f"{len(arguments)} verildi.",
                     location,
                 )
-            if declaration.payload_type is not None:
-                require_assignable(
-                    parse_type_ref(declaration.payload_type),
-                    arguments[0],
-                    f"'{name}' payload'u",
-                    location,
-                )
-            return NamedType(enum_name)
+            evidence = ()
+            if variant_declaration.payload_type is not None:
+                evidence = ((variant_declaration.payload_type, arguments[0]),)
+            mapping = infer_declaration_mapping(
+                enum_declaration,
+                evidence,
+                location,
+                self.contracts,
+                subject=f"'{name}' enum constructor'ı",
+                allow_missing=True,
+            )
+            return instantiated_declaration_type(enum_declaration, mapping)
         if name == "Some":
             return generic("Option", arguments[0] if arguments else UNKNOWN)
         if name == "None":
@@ -273,12 +283,22 @@ class TypedHIRChecker:
         module_type = self.module_call_type(receiver, member)
         if module_type is not None:
             return module_type
-        if isinstance(receiver, NamedType):
+
+        declaration = None
+        mapping: dict[str, TypeNode] = {}
+        if isinstance(receiver, GenericType):
             declaration = self.structs.get(receiver.name)
             if declaration is not None:
-                for field in declaration.fields:
-                    if field.name == member:
-                        return parse_type_ref(field.type_ref)
+                mapping = dict(zip(type_parameters_of(declaration), receiver.arguments))
+        elif isinstance(receiver, NamedType):
+            declaration = self.structs.get(receiver.name)
+
+        if declaration is not None:
+            for field in declaration.fields:
+                if field.name == member:
+                    return substitute_type(
+                        declaration_type(declaration, field.type_ref), mapping
+                    )
         return None
 
     @staticmethod
@@ -298,17 +318,55 @@ class TypedHIRChecker:
         declaration = self.structs.get(expression.type_name)
         if declaration is None:
             return NamedType(expression.type_name)
-        supplied = {name: value for name, value in expression.fields}
-        for field in declaration.fields:
-            value = supplied.get(field.name)
-            if value is not None:
-                require_assignable(
-                    parse_type_ref(field.type_ref),
-                    self.infer(value),
-                    f"'{expression.type_name}.{field.name}' alanı",
+
+        expected_fields = {field.name: field for field in declaration.fields}
+        supplied: dict[str, object] = {}
+        for name, value in expression.fields:
+            if name in supplied:
+                raise SemanticError(
+                    "KS1501",
+                    f"'{expression.type_name}' literalinde '{name}' alanı birden fazla yazılmış.",
                     value.location,
                 )
-        return NamedType(expression.type_name)
+            if name not in expected_fields:
+                raise SemanticError(
+                    "KS1501",
+                    f"'{expression.type_name}' struct'ında '{name}' alanı yok.",
+                    value.location,
+                )
+            supplied[name] = value
+        missing = [name for name in expected_fields if name not in supplied]
+        if missing:
+            raise SemanticError(
+                "KS1501",
+                f"'{expression.type_name}' literalinde eksik alanlar: {', '.join(missing)}.",
+                expression.location,
+            )
+
+        actuals = {
+            name: self.infer(value) for name, value in supplied.items()
+        }
+        evidence = tuple(
+            (field.type_ref, actuals[field.name]) for field in declaration.fields
+        )
+        mapping = infer_declaration_mapping(
+            declaration,
+            evidence,
+            expression.location,
+            self.contracts,
+            subject=f"'{expression.type_name}' struct literal'i",
+        )
+        for field in declaration.fields:
+            expected = substitute_type(
+                declaration_type(declaration, field.type_ref), mapping
+            )
+            require_assignable(
+                expected,
+                actuals[field.name],
+                f"'{expression.type_name}.{field.name}' alanı",
+                supplied[field.name].location,
+            )
+        return instantiated_declaration_type(declaration, mapping)
 
     def variant_payload(self, value_type: TypeNode, variant: str) -> TypeNode:
         if isinstance(value_type, GenericType):
@@ -319,12 +377,22 @@ class TypedHIRChecker:
                     return value_type.arguments[0]
                 if variant == "Err":
                     return value_type.arguments[1]
+            declaration = self.enums.get(value_type.name)
+            if declaration is not None:
+                mapping = dict(
+                    zip(type_parameters_of(declaration), value_type.arguments)
+                )
+                for item in declaration.variants:
+                    if item.name == variant and item.payload_type is not None:
+                        return substitute_type(
+                            declaration_type(declaration, item.payload_type), mapping
+                        )
         if isinstance(value_type, NamedType):
             declaration = self.enums.get(value_type.name)
             if declaration is not None:
                 for item in declaration.variants:
                     if item.name == variant and item.payload_type is not None:
-                        return parse_type_ref(item.payload_type)
+                        return declaration_type(declaration, item.payload_type)
         return UNKNOWN
 
 

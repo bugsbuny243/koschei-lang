@@ -49,16 +49,17 @@ def _brace_is_literal(tokens: list[Token], index: int) -> bool:
         current = tokens[cursor]
         if current.type in {TokenType.LEFT_BRACE, TokenType.RIGHT_BRACE}:
             break
-        if current.type is TokenType.FN:
+        if current.type in {TokenType.FN, TokenType.STRUCT, TokenType.ENUM}:
             header_start = cursor
             break
-    if (
-        header_start < index
-        and header_start + 2 < index
-        and tokens[header_start + 1].type is TokenType.IDENTIFIER
-        and tokens[header_start + 2].type is TokenType.LESS
-    ):
-        return False
+    if header_start < index and header_start + 2 < index:
+        keyword = tokens[header_start].type
+        name = tokens[header_start + 1].type
+        generic = tokens[header_start + 2].type is TokenType.LESS
+        if keyword is TokenType.FN and name is TokenType.IDENTIFIER and generic:
+            return False
+        if keyword in {TokenType.STRUCT, TokenType.ENUM} and name is TokenType.TYPE and generic:
+            return False
     return _ORIGINAL_BRACE_IS_LITERAL(tokens, index)
 
 

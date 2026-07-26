@@ -738,7 +738,7 @@ class SemanticChecker:
             if expression.operator == "!":
                 self._require_bool(operand_type, "'!' işleci", expression.location)
                 return "Bool"
-            if operand_type is not None and operand_type not in NUMERIC_TYPES:
+            if operand_type not in {None, "_"} and operand_type not in NUMERIC_TYPES:
                 raise SemanticError(
                     "KS1301",
                     f"'-' işleci sayısal tip bekler, {operand_type} bulundu.",
@@ -872,8 +872,8 @@ class SemanticChecker:
 
         if operator in COMPARISON_OPERATORS:
             if (
-                left_type is not None
-                and right_type is not None
+                left_type not in {None, "_"}
+                and right_type not in {None, "_"}
                 and left_type != right_type
             ):
                 raise SemanticError(
@@ -884,6 +884,10 @@ class SemanticChecker:
             return "Bool"
 
         if operator in ARITHMETIC_OPERATORS:
+            if left_type == "_":
+                return right_type
+            if right_type == "_":
+                return left_type
             if left_type is not None and right_type is not None:
                 if left_type != right_type:
                     raise SemanticError(
@@ -1619,7 +1623,7 @@ class SemanticChecker:
     def _require_bool(
         self, type_name: str | None, subject: str, location: SourceLocation
     ) -> None:
-        if type_name is not None and type_name != "Bool":
+        if type_name not in {None, "_", "Bool"}:
             raise SemanticError(
                 "KS1301",
                 f"{subject} Bool olmalıdır, {type_name} bulundu.",

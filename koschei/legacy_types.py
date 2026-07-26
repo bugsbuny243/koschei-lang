@@ -1,4 +1,4 @@
-"""Erase V5 collection parameters for the v0.9 semantic compatibility pass."""
+"""Erase V5 structural generics for the v0.9 semantic compatibility pass."""
 
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ from .ast_nodes import (
 from .semantic import ImportedModule
 from .type_system import (
     GenericType,
+    NamedType,
     TypeNode,
     TypeVariable,
     UnionType,
@@ -24,14 +25,17 @@ from .type_system import (
     render_type,
 )
 
+PRESERVED_GENERIC_TYPES = {"Option", "Result"}
+
 
 def erase_node(type_node: TypeNode) -> TypeNode:
     if isinstance(type_node, TypeVariable):
         return UNKNOWN
     if isinstance(type_node, GenericType):
-        if type_node.name in {"List", "Map"}:
-            from .type_system import NamedType
-
+        # The legacy checker understands Option/Result structurally. Collections
+        # and user aggregates are represented by their runtime base type there;
+        # Typed HIR already enforced the complete contract before this bridge.
+        if type_node.name not in PRESERVED_GENERIC_TYPES:
             return NamedType(type_node.name)
         return GenericType(
             type_node.name, tuple(erase_node(item) for item in type_node.arguments)
@@ -59,27 +63,33 @@ def erase_type_ref(
 
 
 def erase_function(function: FunctionDeclaration) -> FunctionDeclaration:
+    parameters = tuple(getattr(function, "type_parameters", ()))
     return FunctionDeclaration(
         function.name,
         tuple(
             Parameter(
                 parameter.name,
-                erase_type_ref(parameter.type_ref, getattr(function, "type_parameters", ())),
+                erase_type_ref(parameter.type_ref, parameters),
                 parameter.location,
             )
             for parameter in function.parameters
         ),
-        erase_type_ref(function.return_type, getattr(function, "type_parameters", ())),
+        erase_type_ref(function.return_type, parameters),
         function.body,
         function.location,
     )
 
 
 def erase_struct(declaration: StructDeclaration) -> StructDeclaration:
+    parameters = tuple(getattr(declaration, "type_parameters", ()))
     return StructDeclaration(
         declaration.name,
         tuple(
-            StructField(field.name, erase_type_ref(field.type_ref), field.location)
+            StructField(
+                field.name,
+                erase_type_ref(field.type_ref, parameters),
+                field.location,
+            )
             for field in declaration.fields
         ),
         declaration.location,
@@ -87,12 +97,13 @@ def erase_struct(declaration: StructDeclaration) -> StructDeclaration:
 
 
 def erase_enum(declaration: EnumDeclaration) -> EnumDeclaration:
+    parameters = tuple(getattr(declaration, "type_parameters", ()))
     return EnumDeclaration(
         declaration.name,
         tuple(
             EnumVariant(
                 variant.name,
-                erase_type_ref(variant.payload_type),
+                erase_type_ref(variant.payload_type, parameters),
                 variant.location,
             )
             for variant in declaration.variants
