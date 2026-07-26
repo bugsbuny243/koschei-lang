@@ -97,7 +97,12 @@ jobs:
 
             for file in "${modified_files[@]}"; do
               merged="$(mktemp)"
-              if ! git merge-file -p \
+              if [ "$file" = "koschei/interpreter.py" ]; then
+                git merge-file -p --union \
+                  "$file" \
+                  "$base_dir/$file" \
+                  "$patched_dir/$file" > "$merged"
+              elif ! git merge-file -p \
                 "$file" \
                 "$base_dir/$file" \
                 "$patched_dir/$file" > "$merged"; then
@@ -107,6 +112,11 @@ jobs:
               fi
               mv "$merged" "$file"
             done
+
+            if grep -nE '^(<<<<<<<|=======|>>>>>>>)' "${modified_files[@]}"; then
+              echo "Unresolved conflict markers remain."
+              exit 1
+            fi
 
             cp "$patched_dir/examples/maps.ks" examples/maps.ks
             cp "$patched_dir/tests/test_maps.py" tests/test_maps.py
