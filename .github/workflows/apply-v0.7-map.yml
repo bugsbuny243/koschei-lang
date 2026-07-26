@@ -2,17 +2,18 @@
 name: Apply v0.7 Map patch
 
 on:
-  push:
+  pull_request:
     branches:
-      - agent/v0.7-map
-    paths:
-      - .github/v0.7-map-trigger
+      - main
+    types:
+      - synchronize
 
 permissions:
   contents: write
 
 jobs:
   apply-map:
+    if: github.head_ref == 'agent/v0.7-map'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout branch
