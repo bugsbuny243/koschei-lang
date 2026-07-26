@@ -27,6 +27,7 @@ from .integrity import check_program_integrity
 from .lexer import LexerError
 from .parser import ParserError, parse
 from .semantic import ImportedModule, SemanticError, SemanticReport, check as semantic_check
+from .typed_hir import check_typed_hir
 
 MODULE_SUFFIX = ".ks"
 
@@ -193,8 +194,10 @@ def check_graph(graph: ModuleGraph) -> SemanticReport:
     report: SemanticReport | None = None
     for module in graph.in_dependency_order():
         try:
+            imports = imported_modules(graph, module)
             check_program_integrity(module.program)
-            result = semantic_check(module.program, imported_modules(graph, module))
+            result = semantic_check(module.program, imports)
+            check_typed_hir(module.program, imports)
         except SemanticError as error:
             error.source_path = module.path
             raise
