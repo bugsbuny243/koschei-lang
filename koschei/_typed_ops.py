@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from .ast_nodes import SourceLocation
 from .semantic import CAPABILITY_TYPES, SemanticError
+from .type_contracts import require_assignable
 from .type_system import (
     BOOL,
     FLOAT,
@@ -29,10 +30,12 @@ def method_type(
     arguments: tuple[TypeNode, ...],
     location: SourceLocation,
 ) -> TypeNode:
-    del arguments
     if isinstance(receiver, UnionType):
         return union_type(
-            *(method_type(item, method, (), location) for item in receiver.options)
+            *(
+                method_type(item, method, arguments, location)
+                for item in receiver.options
+            )
         )
     if isinstance(receiver, UnknownType):
         return UNKNOWN
@@ -40,6 +43,31 @@ def method_type(
         return UNKNOWN
 
     if is_named(receiver, "String"):
+        expected_arity = {
+            "length": 0,
+            "to_int": 0,
+            "to_float": 0,
+            "contains": 1,
+            "trim": 0,
+            "split": 1,
+            "join": 1,
+        }
+        if method in expected_arity and len(arguments) != expected_arity[method]:
+            raise SemanticError(
+                "KS1301",
+                f"String.{method}() {expected_arity[method]} argüman bekler, "
+                f"{len(arguments)} verildi.",
+                location,
+            )
+        if method in {"contains", "split"} and arguments:
+            require_assignable(STRING, arguments[0], f"String.{method}() argümanı", location)
+        if method == "join" and arguments:
+            require_assignable(
+                generic("List", UNKNOWN),
+                arguments[0],
+                "String.join() argümanı",
+                location,
+            )
         result = {
             "length": INT,
             "to_int": generic("Option", INT),
@@ -54,10 +82,28 @@ def method_type(
 
     if isinstance(receiver, GenericType) and receiver.name == "List":
         item = receiver.arguments[0] if receiver.arguments else UNKNOWN
+        expected_arity = {
+            "length": 0,
+            "get": 1,
+            "push": 1,
+            "contains": 1,
+            "sort": 0,
+            "filter": 1,
+        }
+        if method in expected_arity and len(arguments) != expected_arity[method]:
+            raise SemanticError(
+                "KS1301",
+                f"List.{method}() {expected_arity[method]} argüman bekler, "
+                f"{len(arguments)} verildi.",
+                location,
+            )
+        if method == "get" and arguments:
+            require_assignable(INT, arguments[0], "List.get() indeksi", location)
+            return generic("Option", item)
+        if method == "push" and arguments:
+            return generic("List", union_type(item, arguments[0]))
         result = {
             "length": INT,
-            "get": generic("Option", item),
-            "push": receiver,
             "contains": BOOL,
             "sort": receiver,
             "filter": receiver,
@@ -70,9 +116,21 @@ def method_type(
     if isinstance(receiver, GenericType) and receiver.name == "Map":
         key = receiver.arguments[0] if receiver.arguments else STRING
         value = receiver.arguments[1] if len(receiver.arguments) > 1 else UNKNOWN
+        expected_arity = {"get": 1, "set": 2, "keys": 0, "contains": 1}
+        if method in expected_arity and len(arguments) != expected_arity[method]:
+            raise SemanticError(
+                "KS1301",
+                f"Map.{method}() {expected_arity[method]} argüman bekler, "
+                f"{len(arguments)} verildi.",
+                location,
+            )
+        if method in {"get", "set", "contains"} and arguments:
+            require_assignable(key, arguments[0], f"Map.{method}() anahtarı", location)
+        if method == "get":
+            return generic("Option", value)
+        if method == "set" and len(arguments) == 2:
+            return generic("Map", key, union_type(value, arguments[1]))
         result = {
-            "get": generic("Option", value),
-            "set": receiver,
             "keys": generic("List", key),
             "contains": BOOL,
         }.get(method)

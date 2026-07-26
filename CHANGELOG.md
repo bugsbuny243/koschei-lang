@@ -15,6 +15,14 @@
   inference, `for` element propagation and `Option` / `Result` narrowing.
 - Reject collection operations that are unsafe for any possible union member with
   `KS1306` before interpreter or native code generation.
+- Expose `List<T>` and `Map<String, V>` as source-level contracts in parameters,
+  returns, struct fields, enum payloads and module APIs.
+- Enforce typed collection arguments and return values in Typed HIR while keeping
+  raw v0.9 `List` / `Map` annotations as compatibility wildcards.
+- Prevent capabilities from being hidden inside typed collections, `Option`,
+  `Result`, structs or enum payloads.
+- Keep live LSP diagnostics, interpreter checks and native builds on the same
+  typed-collection contract.
 
 The V5 design principle is: **security beyond ambient-authority languages and a
 writing experience simpler than Python without hiding dangerous effects.**

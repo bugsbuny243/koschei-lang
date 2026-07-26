@@ -19,7 +19,8 @@ from .ast_nodes import (
     Statement,
     WhileStatement,
 )
-from .semantic import ImportedModule
+from .semantic import ImportedModule, SemanticError
+from .type_contracts import TypeContractValidator, require_assignable
 from .type_system import (
     ERROR,
     UNKNOWN,
@@ -74,13 +75,26 @@ class TypedHIRChecker:
             for declaration in program.enums
             for variant in declaration.variants
         }
+        for module in self.imports.values():
+            for name, declaration in module.structs.items():
+                self.structs.setdefault(name, declaration)
+            for name, declaration in module.enums.items():
+                self.enums.setdefault(name, declaration)
+                for variant in declaration.variants:
+                    self.variants.setdefault(
+                        variant.name, (name, variant)
+                    )
         self.scopes: list[dict[str, TypeNode]] = []
         self.bindings: list[TypedBinding] = []
         self.expressions: list[TypedExpression] = []
         self.collections = 0
+        self.current_function = None
+        self.contracts = TypeContractValidator(program, self.imports)
 
     def check(self) -> TypedHIRReport:
+        self.contracts.validate()
         for function in self.program.declarations:
+            self.current_function = function
             self.scopes.append({})
             try:
                 for parameter in function.parameters:
@@ -93,6 +107,7 @@ class TypedHIRChecker:
                 self.check_block(function.body, nested=False)
             finally:
                 self.scopes.pop()
+                self.current_function = None
         return TypedHIRReport(
             tuple(self.bindings), tuple(self.expressions), self.collections
         )
@@ -138,7 +153,17 @@ class TypedHIRChecker:
             )
         elif isinstance(statement, ReturnStatement):
             if statement.value is not None:
-                self.infer(statement.value)
+                actual = self.infer(statement.value)
+                if (
+                    self.current_function is not None
+                    and self.current_function.return_type is not None
+                ):
+                    require_assignable(
+                        parse_type_ref(self.current_function.return_type),
+                        actual,
+                        f"'{self.current_function.name}' dönüş değeri",
+                        statement.location,
+                    )
         elif isinstance(statement, ExpressionStatement):
             self.infer(statement.expression)
         elif isinstance(statement, IfStatement):
@@ -169,13 +194,35 @@ class TypedHIRChecker:
         else:
             raise AssertionError(type(statement).__name__)
 
-    def call_type(self, name: str, arguments: tuple[TypeNode, ...]) -> TypeNode:
+    def call_type(
+        self,
+        name: str,
+        arguments: tuple[TypeNode, ...],
+        location: SourceLocation,
+    ) -> TypeNode:
         function = self.functions.get(name)
         if function is not None:
+            self.validate_arguments(function, arguments, location)
             return parse_type_ref(function.return_type)
         variant = self.variants.get(name)
         if variant is not None:
-            return NamedType(variant[0])
+            enum_name, declaration = variant
+            expected = 0 if declaration.payload_type is None else 1
+            if len(arguments) != expected:
+                raise SemanticError(
+                    "KS1301",
+                    f"'{name}' constructor'ı {expected} argüman bekler, "
+                    f"{len(arguments)} verildi.",
+                    location,
+                )
+            if declaration.payload_type is not None:
+                require_assignable(
+                    parse_type_ref(declaration.payload_type),
+                    arguments[0],
+                    f"'{name}' payload'u",
+                    location,
+                )
+            return NamedType(enum_name)
         if name == "Some":
             return generic("Option", arguments[0] if arguments else UNKNOWN)
         if name == "None":
@@ -190,7 +237,13 @@ class TypedHIRChecker:
             return VOID
         return UNKNOWN
 
-    def module_call_type(self, receiver: TypeNode, member: str) -> TypeNode | None:
+    def module_call_type(
+        self,
+        receiver: TypeNode,
+        member: str,
+        arguments: tuple[TypeNode, ...] | None = None,
+        location: SourceLocation | None = None,
+    ) -> TypeNode | None:
         if not isinstance(receiver, NamedType) or not receiver.name.startswith("Module:"):
             return None
         module = self.imports.get(receiver.name.split(":", 1)[1])
@@ -198,6 +251,8 @@ class TypedHIRChecker:
             return UNKNOWN
         function = module.functions.get(member)
         if function is not None:
+            if arguments is not None and location is not None:
+                self.validate_arguments(function, arguments, location)
             return parse_type_ref(function.return_type)
         if member in module.structs or member in module.enums:
             return NamedType(member)
@@ -222,6 +277,43 @@ class TypedHIRChecker:
         if is_named(type_node, "List") or isinstance(type_node, UnknownType):
             return UNKNOWN
         return None
+
+
+    def validate_arguments(
+        self, function, arguments: tuple[TypeNode, ...], location: SourceLocation
+    ) -> None:
+        if len(arguments) != len(function.parameters):
+            raise SemanticError(
+                "KS1301",
+                f"'{function.name}' {len(function.parameters)} argüman bekler, "
+                f"{len(arguments)} verildi.",
+                location,
+            )
+        for index, (parameter, actual) in enumerate(
+            zip(function.parameters, arguments), start=1
+        ):
+            require_assignable(
+                parse_type_ref(parameter.type_ref),
+                actual,
+                f"'{function.name}' çağrısının {index}. argümanı",
+                location,
+            )
+
+    def struct_literal_type(self, expression) -> TypeNode:
+        declaration = self.structs.get(expression.type_name)
+        if declaration is None:
+            return NamedType(expression.type_name)
+        supplied = {name: value for name, value in expression.fields}
+        for field in declaration.fields:
+            value = supplied.get(field.name)
+            if value is not None:
+                require_assignable(
+                    parse_type_ref(field.type_ref),
+                    self.infer(value),
+                    f"'{expression.type_name}.{field.name}' alanı",
+                    value.location,
+                )
+        return NamedType(expression.type_name)
 
     def variant_payload(self, value_type: TypeNode, variant: str) -> TypeNode:
         if isinstance(value_type, GenericType):
