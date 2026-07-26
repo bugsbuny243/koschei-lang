@@ -1,0 +1,3 @@
+# Security Policy
+
+If you discover a capability escape, sandbox bypass, unauthorized disk/network/environment/process access, or any other security issue in Koschei, please do not open a public issue; report it privately through GitHub Security Advisories using the repository’s **Security → Report a vulnerability** flow, including a minimal `.ks` reproducer, the affected version or commit, and the expected versus actual behavior.
