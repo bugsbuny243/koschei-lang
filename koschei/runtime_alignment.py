@@ -7,13 +7,20 @@ be deleted when the interpreter and native runtime consume Typed HIR directly.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any
 
 from . import codegen_go as _codegen
 from . import interpreter as _runtime
-from .ast_nodes import FunctionDeclaration, Parameter, TypeRef
+from .ast_nodes import FunctionDeclaration, Parameter, StructLiteral, TypeRef
 from .semantic import CAPABILITY_TYPES, INT_MIN, SemanticError
-from .type_contracts import function_type, infer_function_mapping
+from .type_contracts import (
+    declaration_type,
+    function_type,
+    infer_declaration_mapping,
+    infer_function_mapping,
+    is_assignable,
+)
 from .type_system import (
     GenericType,
     NamedType,
@@ -26,10 +33,12 @@ from .type_system import (
     render_type,
     substitute_type,
     union_type,
+    unresolved_type_variables,
 )
 
 _INSTALLED = False
 _ORIGINAL_EVALUATE = None
+_ORIGINAL_INVOKE = None
 
 
 def _expected_type(expected_names) -> TypeNode:
@@ -40,6 +49,11 @@ def _runtime_type_node(value: Any) -> TypeNode:
     if value is _runtime.KsUnit:
         return NamedType("Void")
     if isinstance(value, _runtime.StructValue):
+        if value.type_arguments:
+            return GenericType(
+                value.type_name,
+                tuple(parse_type_text(item) for item in value.type_arguments),
+            )
         return NamedType(value.type_name)
     if isinstance(value, _runtime.EnumValue):
         payload = (
@@ -53,6 +67,11 @@ def _runtime_type_node(value: Any) -> TypeNode:
             if value.variant == "Ok":
                 return generic("Result", payload, UnknownType())
             return generic("Result", UnknownType(), payload)
+        if value.type_arguments:
+            return GenericType(
+                value.enum_name,
+                tuple(parse_type_text(item) for item in value.type_arguments),
+            )
         return NamedType(value.enum_name)
     if isinstance(value, _runtime.KsError):
         return NamedType("Error")
@@ -109,7 +128,10 @@ def _matches_node(value: Any, expected: TypeNode) -> bool:
                 isinstance(value, _runtime.EnumValue)
                 and value.enum_name == expected.name
             )
-        return _runtime_type_node(value) == expected
+        actual = _runtime_type_node(value)
+        if isinstance(actual, GenericType):
+            return actual.name == expected.name
+        return actual == expected
     if isinstance(expected, GenericType):
         if expected.name == "Option" and len(expected.arguments) == 1:
             if (
@@ -146,6 +168,9 @@ def _matches_node(value: Any, expected: TypeNode) -> bool:
                 and _matches_node(item, expected.arguments[1])
                 for key, item in value.items()
             )
+        actual = _runtime_type_node(value)
+        if isinstance(actual, (NamedType, GenericType)) and actual.name == expected.name:
+            return is_assignable(expected, actual)
     return False
 
 
@@ -401,7 +426,182 @@ def _reclassify_runtime_error(error):
     )
 
 
+
+class _RuntimeAggregateValidator:
+    """Minimal validator for the defensive runtime bridge.
+
+    Static Typed HIR already validated declaration arity and known type names.
+    The runtime only needs to prevent authority from binding to a generic slot.
+    """
+
+    @staticmethod
+    def is_sensitive(type_node: TypeNode, seen=None) -> bool:
+        return contains_named(type_node, CAPABILITY_TYPES)
+
+    @staticmethod
+    def validate_type(type_node: TypeNode, location, subject: str) -> None:
+        return None
+
+
+_RUNTIME_AGGREGATE_VALIDATOR = _RuntimeAggregateValidator()
+
+
+def _runtime_mapping_error(subject: str, error: SemanticError, values, location):
+    capability_related = any(_runtime._contains_capability(value) for value in values)
+    code = "KS3401" if capability_related or error.code.startswith("KS24") else "KS3106"
+    suffix = (
+        "runtime capability type-integrity savunması"
+        if code == "KS3401"
+        else "normal runtime generic tip uyuşmazlığı; capability ihlali değildir"
+    )
+    return _runtime.KoscheiRuntimeError(
+        code,
+        f"{subject} runtime generic çıkarımı başarısız: {error.message}. {suffix}.",
+        location,
+    )
+
+
+def _evaluate_generic_struct(self, expression: StructLiteral, declaration):
+    expected_fields = {field.name: field for field in declaration.fields}
+    values: dict[str, Any] = {}
+    expressions: dict[str, Any] = {}
+    for name, value_expression in expression.fields:
+        if name in values:
+            raise _runtime.KoscheiRuntimeError(
+                "KS3101",
+                f"'{expression.type_name}' literalinde '{name}' alanı birden fazla yazılmış.",
+                value_expression.location,
+            )
+        if name not in expected_fields:
+            raise _runtime.KoscheiRuntimeError(
+                "KS3101",
+                f"'{expression.type_name}' struct'ında '{name}' alanı yok.",
+                value_expression.location,
+            )
+        value = self._evaluate(value_expression)
+        if isinstance(value, _runtime.KsError):
+            return value
+        values[name] = value
+        expressions[name] = value_expression
+    missing = [name for name in expected_fields if name not in values]
+    if missing:
+        raise _runtime.KoscheiRuntimeError(
+            "KS3101",
+            f"'{expression.type_name}' literalinde eksik alanlar: {', '.join(missing)}.",
+            expression.location,
+        )
+
+    evidence = []
+    for field in declaration.fields:
+        value = values[field.name]
+        pattern = declaration_type(declaration, field.type_ref)
+        if unresolved_type_variables(pattern) and _runtime._contains_capability(value):
+            raise _runtime.KoscheiRuntimeError(
+                "KS3401",
+                f"'{expression.type_name}.{field.name}' generic alanına capability "
+                "değeri bağlanamaz.",
+                expressions[field.name].location,
+            )
+        evidence.append((field.type_ref, _runtime_type_node(value)))
+    try:
+        mapping = infer_declaration_mapping(
+            declaration,
+            tuple(evidence),
+            expression.location,
+            _RUNTIME_AGGREGATE_VALIDATOR,
+            subject=f"'{expression.type_name}' struct literal'i",
+        )
+    except SemanticError as error:
+        raise _runtime_mapping_error(
+            f"'{expression.type_name}' struct literal'i",
+            error,
+            tuple(values.values()),
+            expression.location,
+        ) from error
+
+    for field in declaration.fields:
+        expected = substitute_type(declaration_type(declaration, field.type_ref), mapping)
+        value = values[field.name]
+        if not _matches_node(value, expected):
+            self._raise_runtime_contract_error(
+                f"'{expression.type_name}.{field.name}' alanı",
+                (render_type(expected),),
+                value,
+                expressions[field.name].location,
+            )
+    arguments = tuple(
+        render_type(mapping.get(name, UnknownType()))
+        for name in declaration.type_parameters
+    )
+    return _runtime.StructValue(expression.type_name, values, arguments)
+
+
+def _invoke(self, callee, arguments, location):
+    if isinstance(callee, _runtime._EnumConstructor) and callee.type_parameters:
+        expected = 0 if callee.payload_type is None else 1
+        self._require_arity(callee.variant, arguments, expected, location)
+        payload = _runtime._NO_PAYLOAD if not arguments else arguments[0]
+        if payload is not _runtime._NO_PAYLOAD and _runtime._contains_capability(payload):
+            raise _runtime.KoscheiRuntimeError(
+                "KS3401",
+                "Capability taşıyan değerler generic enum payload'ına konamaz.",
+                location,
+            )
+        declaration = SimpleNamespace(
+            name=callee.enum_name,
+            type_parameters=callee.type_parameters,
+        )
+        evidence = ()
+        if callee.payload_type is not None:
+            evidence = (
+                (TypeRef(callee.payload_type, location), _runtime_type_node(payload)),
+            )
+        try:
+            mapping = infer_declaration_mapping(
+                declaration,
+                evidence,
+                location,
+                _RUNTIME_AGGREGATE_VALIDATOR,
+                subject=f"'{callee.variant}' enum constructor'ı",
+                allow_missing=True,
+            )
+        except SemanticError as error:
+            raise _runtime_mapping_error(
+                f"'{callee.variant}' enum constructor'ı",
+                error,
+                tuple(arguments),
+                location,
+            ) from error
+        if callee.payload_type is not None:
+            expected_type = substitute_type(
+                declaration_type(declaration, TypeRef(callee.payload_type, location)),
+                mapping,
+            )
+            if not _matches_node(payload, expected_type):
+                self._raise_runtime_contract_error(
+                    f"'{callee.variant}' payload'u",
+                    (render_type(expected_type),),
+                    payload,
+                    location,
+                )
+        type_arguments = tuple(
+            render_type(mapping.get(name, UnknownType()))
+            for name in callee.type_parameters
+        )
+        return _runtime.EnumValue(
+            callee.enum_name,
+            callee.variant,
+            payload,
+            type_arguments,
+        )
+    return _ORIGINAL_INVOKE(self, callee, arguments, location)
+
+
 def _evaluate(self, expression):
+    if isinstance(expression, StructLiteral):
+        declaration = self.structs.get(expression.type_name)
+        if declaration is not None and getattr(declaration, "type_parameters", ()):
+            return _evaluate_generic_struct(self, expression, declaration)
     try:
         return _ORIGINAL_EVALUATE(self, expression)
     except _runtime.KoscheiRuntimeError as error:
@@ -455,16 +655,18 @@ def _register_diagnostic() -> None:
 
 
 def install_runtime_alignment() -> None:
-    global _INSTALLED, _ORIGINAL_EVALUATE
+    global _INSTALLED, _ORIGINAL_EVALUATE, _ORIGINAL_INVOKE
     if _INSTALLED:
         return
     _ORIGINAL_EVALUATE = _runtime.Interpreter._evaluate
+    _ORIGINAL_INVOKE = _runtime.Interpreter._invoke
     _runtime.Interpreter._runtime_matches_type = _runtime_matches_type
     _runtime.Interpreter._runtime_type_name = classmethod(_runtime_type_name)
     _runtime.Interpreter._raise_runtime_contract_error = _raise_runtime_contract_error
     _runtime.Interpreter._call_function = _call_function
     _runtime.Interpreter._binary = _binary
     _runtime.Interpreter._evaluate = _evaluate
+    _runtime.Interpreter._invoke = _invoke
     _patch_native_division()
     _register_diagnostic()
     _INSTALLED = True

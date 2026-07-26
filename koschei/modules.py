@@ -212,6 +212,15 @@ def module_imports(graph: ModuleGraph) -> dict[str, dict[str, str]]:
     return {key: dict(module.imports) for key, module in graph.modules.items()}
 
 
+
+
+def struct_declarations(graph: ModuleGraph) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for module in graph.in_dependency_order():
+        for declaration in module.program.structs:
+            result[declaration.name] = declaration
+    return result
+
 def enum_declarations(graph: ModuleGraph) -> dict[str, object]:
     result: dict[str, object] = {}
     for module in graph.in_dependency_order():

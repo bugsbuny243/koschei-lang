@@ -86,6 +86,7 @@ class StructValue:
 
     type_name: str
     fields: dict[str, Any]
+    type_arguments: tuple[str, ...] = ()
 
 
 _NO_PAYLOAD = object()
@@ -98,6 +99,7 @@ class EnumValue:
     enum_name: str
     variant: str
     payload: Any = _NO_PAYLOAD
+    type_arguments: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,6 +107,7 @@ class _EnumConstructor:
     enum_name: str
     variant: str
     payload_type: tuple[str, ...] | None
+    type_parameters: tuple[str, ...] = ()
 
 
 LIST_METHODS = {"length", "get", "push", "contains", "sort", "filter"}
@@ -822,15 +825,16 @@ class Interpreter:
         imports: dict[str, str] | None = None,
         enums: dict[str, Any] | None = None,
         module_imports: dict[str, dict[str, str]] | None = None,
+        structs: dict[str, Any] | None = None,
     ) -> None:
         self.program = program
         self.argv = list(argv or [])
         self.functions = {
             declaration.name: declaration for declaration in program.declarations
         }
-        self.structs = {
-            declaration.name: declaration for declaration in program.structs
-        }
+        self.structs = dict(structs or {})
+        for declaration in program.structs:
+            self.structs[declaration.name] = declaration
         self.constructors: dict[str, _EnumConstructor] = {
             "Some": _EnumConstructor("Option", "Some", ("_",)),
             "None": _EnumConstructor("Option", "None", None),
@@ -850,6 +854,7 @@ class Interpreter:
                         if variant.payload_type is not None
                         else None
                     ),
+                    tuple(getattr(declaration, "type_parameters", ())),
                 )
         # Modül anahtarı -> o modülün fonksiyon tablosu
         self.namespaces = namespaces or {}
@@ -1753,6 +1758,7 @@ def run(
     imports: dict[str, str] | None = None,
     enums: dict[str, Any] | None = None,
     module_imports: dict[str, dict[str, str]] | None = None,
+    structs: dict[str, Any] | None = None,
 ) -> int:
     """Programı çalıştırır.
 
@@ -1762,7 +1768,7 @@ def run(
     if namespaces is None:
         semantic_check(program)
     result = Interpreter(
-        program, argv, namespaces, imports, enums, module_imports
+        program, argv, namespaces, imports, enums, module_imports, structs
     ).execute_main()
     if isinstance(result, KsError):
         print(f"KOSCHEI RUNTIME ERROR: {result.message}", file=sys.stderr)

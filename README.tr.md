@@ -114,7 +114,7 @@ Disk, ağ, ortam değişkeni ve süreç erişimi YOKTUR — saf hesaplama.
 
 ## Dil özellikleri
 
-Bugün çalışan: tipli parametrelerle fonksiyonlar, çıkarımlı generic fonksiyonlar, `let` / `let mut`, struct, `List<T>`, immutable `Map<String, V>` (`get`/`set`/`keys`/`contains`), `for`-in, yalnızca `Bool` koşullu `if`/`else`/`while`, exhaustive `match` ile enum'lar, gerçek `Option<T>` / `Result<T, E>`, tam ifade interpolasyonu (`"{items.length()}"`), günlük stdlib (`String` `trim`/`split`/`join`, `List` `sort`/`filter`/`contains`) ve `import risk` yazınca yanındaki `risk.ks` dosyasını bağlayan modül sistemi — manifest yok, build script yok, config yok.
+Bugün çalışan: tipli parametrelerle fonksiyonlar, çıkarımlı generic fonksiyonlar, generic struct ve enumlar, `let` / `let mut`, struct, `List<T>`, immutable `Map<String, V>` (`get`/`set`/`keys`/`contains`), `for`-in, yalnızca `Bool` koşullu `if`/`else`/`while`, exhaustive `match` ile enum'lar, gerçek `Option<T>` / `Result<T, E>`, tam ifade interpolasyonu (`"{items.length()}"`), günlük stdlib (`String` `trim`/`split`/`join`, `List` `sort`/`filter`/`contains`) ve `import risk` yazınca yanındaki `risk.ks` dosyasını bağlayan modül sistemi — manifest yok, build script yok, config yok.
 
 ## Araç zinciri
 
@@ -142,7 +142,7 @@ Hat şöyle: `.ks` → lexer → parser → AST → tip, capability ve immutabil
 python -m unittest discover -s tests -v
 ```
 
-Güncel CI paketi 372 testin yanında native/interpreter çıktı eşliğini, doküman kod bloklarını, sabitlenmiş golden çıktıları ve zararlı `examples/supply_chain/` paketinin hâlâ derlenemediğini doğrular.
+Güncel CI paketi 391 testin yanında native/interpreter çıktı eşliğini, doküman kod bloklarını, sabitlenmiş golden çıktıları ve zararlı `examples/supply_chain/` paketinin hâlâ derlenemediğini doğrular.
 
 ## Durum
 
@@ -154,7 +154,7 @@ Native tarafta şu anda uygulanan güvenlik sınırları:
 - Process capability'sinin `run` / `spawn`'ı process başlatmaz; hata değeri döndürür.
 - Çalışma anında path traversal, symlink kaçışı ve kapsam dışı yollar `KS3402` verir; salt-okunur jetonla yazma `KS3404` verir; izin verilen origin'den çıkan HTTP redirect reddedilir; çağrı derinliği 512 ile sınırlıdır (`KS3105`).
 
-Sıradaki V5 kapısı kullanıcı tanımlı generic struct/enum, ardından backend bağımsız MIR’dır. v1.0 kapısı ayrıca dondurulmuş sözdizimi ve capability runtime ABI, SemVer uyumluluk taahhüdü, kilit dosyalı paket çözümleme ve migration testleri ister.
+Sıradaki V5 kapısı interpreter ve native backend için tek denetlenmiş girdi olacak backend bağımsız MIR’dır. v1.0 kapısı ayrıca dondurulmuş sözdizimi ve capability runtime ABI, SemVer uyumluluk taahhüdü, kilit dosyalı paket çözümleme ve migration testleri ister.
 
 **Tasarlandı ama yapılmadı** — ve tamamlanmış özellik olarak sunulmuyor: static region inference, C backend, Sentinel / tarpit katmanları. Koschei yetkileri tip sisteminde zorunlu kılar; formel matematiksel kanıt üretmez ve bugün region tabanlı bellek yönetimi kullanan bir dil değildir — mevcut backend Go üretir ve Go'nun çöp toplayıcısını kullanır.
 

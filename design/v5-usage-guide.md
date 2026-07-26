@@ -42,7 +42,7 @@ v5'te güvenlik bilgisi *görünürdür* ama *yazılmaz*. `ks caps` her şeyi g�
 | Lambda yok | Birinci sınıf fonksiyonlar ve closure |
 | `impl` / metot yok | `impl` blokları ve trait'ler |
 | Struct alanı değiştirilemez | `let mut` bağlamada değiştirilebilir |
-| Yerleşik generic tipler ve çıkarımlı generic fonksiyonlar | Generic struct/enum, trait sınırları ve closure generic'leri |
+| Generic fonksiyonlar, structlar ve enumlar | Trait sınırları, closure generic'leri ve MIR monomorphization |
 | `Int / Int` bozuk | `Int / Int -> Int`, `%` kalan, `Float` ayrı |
 | Eşzamanlılık yok | Yapılandırılmış eşzamanlılık |
 | Küçük stdlib | 12 modül |
@@ -103,17 +103,45 @@ fn main() {
 
 ## 3. Generic'ler
 
-<!-- verify: future -->
+Generic fonksiyonlar ile kullanıcı tanımlı generic struct/enumların ilk güvenli
+dilimi bugün çalışıyor. Çıkarılabilen tip argümanları çağrı veya constructor
+yerinde tekrar yazılmaz:
+
 ```ks
 struct Onbellek<K, V> {
     girdiler: Map<K, V>,
     kapasite: Int,
 }
 
+enum Durum<T> {
+    Hazir(T),
+    Eksik,
+}
+
 fn ilk<T>(items: List<T>) -> Option<T> {
     return items.get(0)
 }
 
+fn main() {
+    let cache = Onbellek { girdiler: {"port": 8080}, kapasite: 16 }
+    let durum = Hazir("tamam")
+    let mesaj = match durum {
+        Hazir(value) => value,
+        Eksik => "yok",
+    }
+    println(cache.girdiler.get("port") or 0)
+    println(mesaj)
+}
+```
+
+Bu dilimde raw `Onbellek` API tipi ve çelişen çıkarım `KS1307` ile reddedilir;
+capability değerleri `T` arkasına saklanamaz. Çalışan ayrıntılar
+`docs/generic-aggregates-v5.md` içindedir.
+
+Birinci sınıf fonksiyon tipi, lambda ve closure generic'leri henüz gelmedi:
+
+<!-- verify: future -->
+```ks
 fn esle<T, U>(items: List<T>, f: fn(T) -> U) -> List<U> {
     let mut cikti = []
     for item in items {
@@ -128,7 +156,9 @@ fn main() {
 }
 ```
 
-Çağrı yerinde `<Int>` yazmak zorunda değilsin — tip çıkarımı halleder. Generic'ler monomorphize edilir: çalışma anı maliyeti yoktur.
+V5 hedefinde generic'ler MIR üzerinde monomorphize edilir. Bugünkü geçiş
+katmanında generic fonksiyon çağrıları uzmanlaştırılır; aggregate runtime etiketi
+ve tam backend birleştirmesi MIR kapısında tamamlanacaktır.
 
 ---
 

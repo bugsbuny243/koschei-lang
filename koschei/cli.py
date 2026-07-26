@@ -35,6 +35,7 @@ from .modules import (
     load_graph,
     module_imports,
     namespaces,
+    struct_declarations,
 )
 from .parser import ParserError, parse
 from .project import ProjectError, create_project, resolve_source
@@ -119,6 +120,7 @@ def command_run(path: str) -> int:
         imports=root.imports,
         enums=enum_declarations(graph),
         module_imports=module_imports(graph),
+        structs=struct_declarations(graph),
     )
 
 
