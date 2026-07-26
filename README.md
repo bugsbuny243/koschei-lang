@@ -87,7 +87,7 @@ GitHub Actions, her push ve pull request üzerinde compiler testlerini otomatik 
 ## Yol haritası
 
 Kararlı taban **v0.7.0 — Günlük kod yazılabilsin**. `main` dalı şu anda
-**v0.8.0a3 — Derleyici verdiğimiz sözü tutsun / native davranış eşliği alpha**
+**v0.8.0a4 — Derleyici verdiğimiz sözü tutsun / native koleksiyon eşliği alpha**
 aşamasındadır.
 
 Tamamlanan v0.8 dilimleri:
@@ -104,10 +104,12 @@ Tamamlanan v0.8 dilimleri:
   read/write/list/delete ve salt-okunur jeton savunması
 - Native enum constructor, exhaustive `match`, `Option<T>`, `Result<T, E>` ve
   `or`/`or return` davranış eşliği
+- Native immutable List/Map literal ve metotları, String `split/join`, `for` döngüsü
+  ve insertion-order Map gösterimi
 
 v0.8 kararlı sürümünün açık kapıları:
 
-- List/Map/struct/import native kapsamının tamamlanması
+- Struct ve import native kapsamının tamamlanması
 - Disk capability ABI'nın Linux dışı hedefler için güvenli tasarımı
 - Process capability'nin güvenli native sözleşmesi (şimdilik fail-closed)
 

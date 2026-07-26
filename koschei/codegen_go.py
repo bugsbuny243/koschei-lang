@@ -1,6 +1,6 @@
 """Koschei AST -> Go kaynak kodu üreteci.
 
-v0.8 alpha 3, capability runtime ABI ve cebirsel tip çekirdeğini native binary’ye taşır:
+v0.8 alpha 4, capability ABI, cebirsel tipler ve immutable koleksiyonları native binary’ye taşır:
 SystemCaps kökü yalnızca main’e enjekte edilir; ağ origin’i ve disk yolu çalışma
 anında fail-closed sınırlandırılır. Disk ABI bu aşamada Linux openat/O_NOFOLLOW
 hedefinde desteklenir; daha zayıf yol doğrulamasına sessizce düşülmez.
@@ -87,6 +87,10 @@ STRING_METHODS = {
     "join",
 }
 
+LIST_METHODS = {"length", "get", "push", "contains", "sort", "filter"}
+MAP_METHODS = {"get", "set", "keys", "contains"}
+VALUE_METHODS = STRING_METHODS | LIST_METHODS | MAP_METHODS
+
 BINARY_HELPERS = {
     "+": "ksAdd",
     "-": "ksSub",
@@ -137,6 +141,42 @@ func ksEnum(enumName string, variant string, payload any, hasPayload bool) any {
 		return ksErrorf("KS3401: Capability taşıyan değerler enum/Option/Result payload'ına konamaz.")
 	}
 	return &KsEnum{EnumName: enumName, Variant: variant, Payload: payload, HasPayload: hasPayload}
+}
+
+func ksNewList(values []any) any {
+	for _, value := range values {
+		if ksContainsCapability(value) {
+			return ksErrorf("KS3401: Capability taşıyan değerler List içine konamaz")
+		}
+	}
+	return values
+}
+
+type KsMap struct {
+	Keys   []string
+	Values map[string]any
+}
+
+func ksNewMap(keys []any, values []any) any {
+	if len(keys) != len(values) {
+		return ksErrorf("KS3101: Map anahtar/değer sayısı uyuşmuyor")
+	}
+	result := &KsMap{Keys: make([]string, 0, len(keys)), Values: make(map[string]any, len(keys))}
+	for index, rawKey := range keys {
+		key, ok := rawKey.(string)
+		if !ok {
+			return ksErrorf("Map anahtarı String olmalıdır")
+		}
+		if _, exists := result.Values[key]; exists {
+			return ksErrorf("KS3101: Yinelenen Map anahtarı: " + key)
+		}
+		if ksContainsCapability(values[index]) {
+			return ksErrorf("KS3401: Capability taşıyan değerler Map içine konamaz")
+		}
+		result.Keys = append(result.Keys, key)
+		result.Values[key] = values[index]
+	}
+	return result
 }
 
 func ksUnwrapFallible(value any) (bool, any) {
@@ -216,8 +256,27 @@ func ksToString(value any) string {
 			parts[index] = strconv.Quote(value)
 		}
 		return "[" + strings.Join(parts, ", ") + "]"
+	case []any:
+		parts := make([]string, len(item))
+		for index, value := range item {
+			parts[index] = ksRepr(value)
+		}
+		return "[" + strings.Join(parts, ", ") + "]"
+	case *KsMap:
+		parts := make([]string, 0, len(item.Keys))
+		for _, key := range item.Keys {
+			parts = append(parts, strconv.Quote(key)+": "+ksRepr(item.Values[key]))
+		}
+		return "{" + strings.Join(parts, ", ") + "}"
 	}
 	return fmt.Sprintf("%v", value)
+}
+
+func ksRepr(value any) string {
+	if item, ok := value.(string); ok {
+		return strconv.Quote(item)
+	}
+	return ksToString(value)
 }
 
 func ksPrintln(value any) any {
@@ -417,6 +476,31 @@ func ksEq(left any, right any) any {
 		b, ok := right.(*KsError)
 		return ok && a.Message == b.Message
 	}
+	if a, ok := left.([]any); ok {
+		b, ok := right.([]any)
+		if !ok || len(a) != len(b) {
+			return false
+		}
+		for index := range a {
+			if !ksTruthy(ksEq(a[index], b[index])) {
+				return false
+			}
+		}
+		return true
+	}
+	if a, ok := left.(*KsMap); ok {
+		b, ok := right.(*KsMap)
+		if !ok || len(a.Values) != len(b.Values) {
+			return false
+		}
+		for key, value := range a.Values {
+			other, exists := b.Values[key]
+			if !exists || !ksTruthy(ksEq(value, other)) {
+				return false
+			}
+		}
+		return true
+	}
 	switch a := left.(type) {
 	case string:
 		b, ok := right.(string)
@@ -442,10 +526,13 @@ func ksNotEq(left any, right any) any {
 }
 
 func ksLength(value any) any {
-	if item, ok := value.(string); ok {
+	switch item := value.(type) {
+	case string:
 		return int64(len([]rune(item)))
+	case []any:
+		return int64(len(item))
 	}
-	return ksErrorf("KS1301: 'length' yalnızca String üzerinde çağrılabilir")
+	return ksErrorf("KS1301: 'length' yalnızca String veya List üzerinde çağrılabilir")
 }
 
 func ksToInt(value any) any {
@@ -473,11 +560,25 @@ func ksToFloat(value any) any {
 }
 
 func ksContains(value any, needle any) any {
-	item, ok := value.(string)
-	if !ok {
-		return ksErrorf("KS1301: 'contains' yalnızca String üzerinde çağrılabilir")
+	switch item := value.(type) {
+	case string:
+		return strings.Contains(item, ksToString(needle))
+	case []any:
+		for _, candidate := range item {
+			if ksTruthy(ksEq(candidate, needle)) {
+				return true
+			}
+		}
+		return false
+	case *KsMap:
+		key, ok := needle.(string)
+		if !ok {
+			return ksErrorf("Map anahtarı String olmalıdır")
+		}
+		_, exists := item.Values[key]
+		return exists
 	}
-	return strings.Contains(item, ksToString(needle))
+	return ksErrorf("KS1301: 'contains' bu değer üzerinde çağrılamaz")
 }
 
 func ksTrim(value any) any {
@@ -486,6 +587,255 @@ func ksTrim(value any) any {
 		return ksErrorf("KS1301: 'trim' yalnızca String üzerinde çağrılabilir")
 	}
 	return strings.TrimSpace(item)
+}
+
+func ksSplit(value any, separator any) any {
+	text, ok := value.(string)
+	if !ok {
+		return ksErrorf("String.split() yalnızca String üzerinde çağrılabilir")
+	}
+	sep, ok := separator.(string)
+	if !ok {
+		return ksErrorf("String.split() ayıracı String olmalıdır")
+	}
+	if sep == "" {
+		return ksErrorf("String.split() ayıracı boş olamaz")
+	}
+	raw := strings.Split(text, sep)
+	result := make([]any, len(raw))
+	for index, item := range raw {
+		result[index] = item
+	}
+	return result
+}
+
+func ksJoin(separator any, values any) any {
+	sep, ok := separator.(string)
+	if !ok {
+		return ksErrorf("String.join() yalnızca String üzerinde çağrılabilir")
+	}
+	list, ok := values.([]any)
+	if !ok {
+		return ksErrorf("String.join() bir List bekler")
+	}
+	parts := make([]string, len(list))
+	for index, item := range list {
+		text, ok := item.(string)
+		if !ok {
+			return ksErrorf("String.join() yalnızca String öğeleri birleştirir")
+		}
+		parts[index] = text
+	}
+	return strings.Join(parts, sep)
+}
+
+func ksListGet(value any, index any) any {
+	list, ok := value.([]any)
+	if !ok {
+		return ksErrorf("List.get() bir List bekler")
+	}
+	position, ok := index.(int64)
+	if !ok {
+		return ksErrorf("Liste indeksi Int olmalıdır")
+	}
+	if position < 0 || position >= int64(len(list)) {
+		return ksErrorf("Liste indeksi aralık dışında: " + strconv.FormatInt(position, 10) + " (uzunluk " + strconv.Itoa(len(list)) + ")")
+	}
+	return list[position]
+}
+
+func ksListPush(value any, item any) any {
+	list, ok := value.([]any)
+	if !ok {
+		return ksErrorf("List.push() bir List bekler")
+	}
+	if ksContainsCapability(item) {
+		return ksErrorf("KS3401: Capability taşıyan değerler List içine konamaz")
+	}
+	result := make([]any, len(list), len(list)+1)
+	copy(result, list)
+	return append(result, item)
+}
+
+func ksListSort(value any) any {
+	list, ok := value.([]any)
+	if !ok {
+		return ksErrorf("List.sort() bir List bekler")
+	}
+	result := append([]any(nil), list...)
+	if len(result) == 0 {
+		return result
+	}
+	allStrings := true
+	allNumeric := true
+	for _, item := range result {
+		if _, ok := item.(string); !ok {
+			allStrings = false
+		}
+		switch item.(type) {
+		case int64, float64:
+		default:
+			allNumeric = false
+		}
+	}
+	if !allStrings && !allNumeric {
+		return ksErrorf("List.sort() yalnızca homojen String veya sayısal öğeleri sıralar")
+	}
+	if allStrings {
+		sort.SliceStable(result, func(i, j int) bool { return result[i].(string) < result[j].(string) })
+		return result
+	}
+	asFloat := func(value any) float64 {
+		if integer, ok := value.(int64); ok {
+			return float64(integer)
+		}
+		return value.(float64)
+	}
+	sort.SliceStable(result, func(i, j int) bool { return asFloat(result[i]) < asFloat(result[j]) })
+	return result
+}
+
+func ksListFilter(value any, predicate any) any {
+	list, ok := value.([]any)
+	if !ok {
+		return ksErrorf("List.filter() bir List bekler")
+	}
+	function, ok := predicate.(func(any) any)
+	if !ok {
+		return ksErrorf("List.filter() yerel, adlandırılmış bir predicate fonksiyonu bekler")
+	}
+	result := make([]any, 0, len(list))
+	for _, item := range list {
+		decision := function(item)
+		if failure, ok := decision.(*KsError); ok {
+			return failure
+		}
+		keep, ok := decision.(bool)
+		if !ok {
+			return ksErrorf("List.filter() predicate'i Bool döndürmelidir")
+		}
+		if keep {
+			result = append(result, item)
+		}
+	}
+	return result
+}
+
+func ksMapGet(value any, keyValue any) any {
+	mapping, ok := value.(*KsMap)
+	if !ok {
+		return ksErrorf("Map.get() bir Map bekler")
+	}
+	key, ok := keyValue.(string)
+	if !ok {
+		return ksErrorf("Map anahtarı String olmalıdır")
+	}
+	item, exists := mapping.Values[key]
+	if !exists {
+		return ksErrorf("Map anahtarı bulunamadı: " + key)
+	}
+	return item
+}
+
+func ksMapSet(value any, keyValue any, item any) any {
+	mapping, ok := value.(*KsMap)
+	if !ok {
+		return ksErrorf("Map.set() bir Map bekler")
+	}
+	key, ok := keyValue.(string)
+	if !ok {
+		return ksErrorf("Map anahtarı String olmalıdır")
+	}
+	if ksContainsCapability(item) {
+		return ksErrorf("KS3401: Capability taşıyan değerler Map içine konamaz")
+	}
+	result := &KsMap{Keys: append([]string(nil), mapping.Keys...), Values: make(map[string]any, len(mapping.Values)+1)}
+	for existing, existingValue := range mapping.Values {
+		result.Values[existing] = existingValue
+	}
+	if _, exists := result.Values[key]; !exists {
+		result.Keys = append(result.Keys, key)
+	}
+	result.Values[key] = item
+	return result
+}
+
+func ksMapKeys(value any) any {
+	mapping, ok := value.(*KsMap)
+	if !ok {
+		return ksErrorf("Map.keys() bir Map bekler")
+	}
+	result := make([]any, len(mapping.Keys))
+	for index, key := range mapping.Keys {
+		result[index] = key
+	}
+	return result
+}
+
+func ksCallValueMethod(receiver any, method string, arguments ...any) any {
+	switch receiver.(type) {
+	case string:
+		switch method {
+		case "length":
+			if len(arguments) != 0 { return ksErrorf("KS4003: length argüman almaz") }
+			return ksLength(receiver)
+		case "to_int":
+			if len(arguments) != 0 { return ksErrorf("KS4003: to_int argüman almaz") }
+			return ksToInt(receiver)
+		case "to_float":
+			if len(arguments) != 0 { return ksErrorf("KS4003: to_float argüman almaz") }
+			return ksToFloat(receiver)
+		case "contains":
+			if len(arguments) != 1 { return ksErrorf("KS4003: contains bir argüman alır") }
+			return ksContains(receiver, arguments[0])
+		case "trim":
+			if len(arguments) != 0 { return ksErrorf("KS4003: trim argüman almaz") }
+			return ksTrim(receiver)
+		case "split":
+			if len(arguments) != 1 { return ksErrorf("KS4003: split bir argüman alır") }
+			return ksSplit(receiver, arguments[0])
+		case "join":
+			if len(arguments) != 1 { return ksErrorf("KS4003: join bir argüman alır") }
+			return ksJoin(receiver, arguments[0])
+		}
+	case []any:
+		switch method {
+		case "length":
+			if len(arguments) != 0 { return ksErrorf("KS4003: length argüman almaz") }
+			return ksLength(receiver)
+		case "get":
+			if len(arguments) != 1 { return ksErrorf("KS4003: get bir argüman alır") }
+			return ksListGet(receiver, arguments[0])
+		case "push":
+			if len(arguments) != 1 { return ksErrorf("KS4003: push bir argüman alır") }
+			return ksListPush(receiver, arguments[0])
+		case "contains":
+			if len(arguments) != 1 { return ksErrorf("KS4003: contains bir argüman alır") }
+			return ksContains(receiver, arguments[0])
+		case "sort":
+			if len(arguments) != 0 { return ksErrorf("KS4003: sort argüman almaz") }
+			return ksListSort(receiver)
+		case "filter":
+			if len(arguments) != 1 { return ksErrorf("KS4003: filter bir argüman alır") }
+			return ksListFilter(receiver, arguments[0])
+		}
+	case *KsMap:
+		switch method {
+		case "get":
+			if len(arguments) != 1 { return ksErrorf("KS4003: get bir argüman alır") }
+			return ksMapGet(receiver, arguments[0])
+		case "set":
+			if len(arguments) != 2 { return ksErrorf("KS4003: set iki argüman alır") }
+			return ksMapSet(receiver, arguments[0], arguments[1])
+		case "keys":
+			if len(arguments) != 0 { return ksErrorf("KS4003: keys argüman almaz") }
+			return ksMapKeys(receiver)
+		case "contains":
+			if len(arguments) != 1 { return ksErrorf("KS4003: contains bir argüman alır") }
+			return ksContains(receiver, arguments[0])
+		}
+	}
+	return ksErrorf("KS3101: Bu değer üzerinde '" + method + "' metodu yok")
 }
 
 func ksEnter(location string) {
@@ -545,6 +895,14 @@ func ksContainsCapability(value any) bool {
 		return true
 	case *KsEnum:
 		return item.HasPayload && ksContainsCapability(item.Payload)
+	case []any:
+		for _, value := range item {
+			if ksContainsCapability(value) { return true }
+		}
+	case *KsMap:
+		for _, value := range item.Values {
+			if ksContainsCapability(value) { return true }
+		}
 	}
 	return false
 }
@@ -1038,6 +1396,17 @@ func ksCallMethod(receiver any, method string, arguments ...any) any {
 	return ksErrorf("KS3101: Native runtime'da tanımsız metot: '" + method + "'.")
 }
 
+func ksCallDynamicMethod(receiver any, method string, arguments ...any) any {
+	switch receiver.(type) {
+	case *ksNetRoot, *ksDiskRoot, *ksEnvRoot, *ksProcessRoot,
+		*ksNetCaps, *ksDiskCaps, *ksDiskReadCaps, *ksEnvCaps,
+		*ksProcessCaps, *ksResponse:
+		return ksCallMethod(receiver, method, arguments...)
+	default:
+		return ksCallValueMethod(receiver, method, arguments...)
+	}
+}
+
 func ksDiskCall(capability *ksDiskCapability, method string, arguments []any) any {
 	switch method {
 	case "read", "read_file":
@@ -1167,20 +1536,6 @@ class GoCodegen:
         for declaration in self.program.declarations:
             for statement in declaration.body.statements:
                 for expression in _walk_statement(statement):
-                    if isinstance(expression, MapLiteral):
-                        raise CodegenError(
-                            "KS4002",
-                            "Map değerleri native derlemede henüz desteklenmiyor; "
-                            "şimdilik 'koschei.py run' kullanın.",
-                            expression.location,
-                        )
-                    if isinstance(expression, ListLiteral):
-                        raise CodegenError(
-                            "KS4002",
-                            "Liste değerleri native derlemede henüz desteklenmiyor; "
-                            "şimdilik 'koschei.py run' kullanın.",
-                            expression.location,
-                        )
                     if isinstance(expression, StructLiteral):
                         raise CodegenError(
                             "KS4002",
@@ -1312,12 +1667,21 @@ class GoCodegen:
             return lines
 
         if isinstance(statement, ForStatement):
-            raise CodegenError(
-                "KS4002",
-                "'for ... in' native derlemede henüz desteklenmiyor; şimdilik "
-                "'koschei.py run' kullanın.",
-                statement.location,
-            )
+            iterable, prelude = self._expression(statement.iterable, depth)
+            source = self._temp()
+            list_value = self._temp()
+            ok = self._temp()
+            lines = [pad + line for line in prelude]
+            lines.append(f"{pad}{source} := {iterable}")
+            lines.append(f"{pad}{list_value}, {ok} := {source}.([]any)")
+            lines.append(f"{pad}if !{ok} {{")
+            lines.append(f'{pad}\treturn ksErrorf("KS3101: for yalnızca List üzerinde çalışır")')
+            lines.append(f"{pad}}}")
+            lines.append(f"{pad}for _, {_var(statement.variable)} := range {list_value} {{")
+            lines.append(f"{pad}\t_ = {_var(statement.variable)}")
+            lines.extend(self._block(statement.body, depth + 1))
+            lines.append(f"{pad}}}")
+            return lines
 
         if isinstance(statement, IfStatement):
             return self._if_statement(statement, depth)
@@ -1375,11 +1739,7 @@ class GoCodegen:
 
         if isinstance(expression, Identifier):
             if expression.name in self.functions:
-                raise CodegenError(
-                    "KS4002",
-                    "Fonksiyonlar değer olarak kullanılamaz.",
-                    expression.location,
-                )
+                return _fn(expression.name), []
             return _var(expression.name), []
 
         if isinstance(expression, InterpolatedString):
@@ -1410,10 +1770,35 @@ class GoCodegen:
         if isinstance(expression, MatchExpression):
             return self._match(expression, depth)
 
-        if isinstance(expression, (ListLiteral, MapLiteral, StructLiteral)):
+        if isinstance(expression, ListLiteral):
+            values: list[str] = []
+            prelude: list[str] = []
+            for item in expression.items:
+                value, item_prelude = self._expression(item, depth)
+                prelude.extend(item_prelude)
+                values.append(value)
+            return f"ksNewList([]any{{{', '.join(values)}}})", prelude
+
+        if isinstance(expression, MapLiteral):
+            keys: list[str] = []
+            values: list[str] = []
+            prelude: list[str] = []
+            for key_expression, value_expression in expression.entries:
+                key, key_prelude = self._expression(key_expression, depth)
+                value, value_prelude = self._expression(value_expression, depth)
+                prelude.extend(key_prelude)
+                prelude.extend(value_prelude)
+                keys.append(key)
+                values.append(value)
+            return (
+                f"ksNewMap([]any{{{', '.join(keys)}}}, []any{{{', '.join(values)}}})",
+                prelude,
+            )
+
+        if isinstance(expression, StructLiteral):
             raise CodegenError(
                 "KS4002",
-                "Liste, Map ve struct değerleri native derlemede henüz desteklenmiyor; "
+                "Struct değerleri native derlemede henüz desteklenmiyor; "
                 "şimdilik 'koschei.py run' kullanın.",
                 expression.location,
             )
@@ -1548,37 +1933,18 @@ class GoCodegen:
             receiver, receiver_prelude = self._expression(callee.object, depth)
             prelude = receiver_prelude + prelude
             method = callee.member
-            if method in NATIVE_CAPABILITY_METHODS:
-                rendered = ", ".join(arguments)
-                suffix = f", {rendered}" if rendered else ""
-                return (
-                    f"ksCallMethod({receiver}, {_go_string(method)}{suffix})",
-                    prelude,
-                )
-            if method not in STRING_METHODS:
+            if method not in NATIVE_CAPABILITY_METHODS | VALUE_METHODS:
                 raise CodegenError(
                     "KS4002",
                     f"Native derlemede desteklenmeyen metot: '{method}'.",
                     callee.location,
                 )
-            if method in {"split", "join"}:
-                raise CodegenError(
-                    "KS4002",
-                    f"String.{method}() List runtime'ı gerektirir; native List desteği "
-                    "v0.8 Go codegen aşamasında eklenecek.",
-                    callee.location,
-                )
-            if method == "contains":
-                self._check_arity(method, arguments, 1, callee.location)
-                return f"ksContains({receiver}, {arguments[0]})", prelude
-            self._check_arity(method, arguments, 0, callee.location)
-            helper = {
-                "length": "ksLength",
-                "to_int": "ksToInt",
-                "to_float": "ksToFloat",
-                "trim": "ksTrim",
-            }[method]
-            return f"{helper}({receiver})", prelude
+            rendered = ", ".join(arguments)
+            suffix = f", {rendered}" if rendered else ""
+            return (
+                f"ksCallDynamicMethod({receiver}, {_go_string(method)}{suffix})",
+                prelude,
+            )
 
         raise CodegenError(
             "KS4002", "Desteklenmeyen çağrı biçimi.", expression.location

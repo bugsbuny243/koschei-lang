@@ -187,16 +187,15 @@ class MapToolingTests(unittest.TestCase):
             "}\n",
         )
 
-    def test_native_backend_rejects_map_explicitly(self) -> None:
-        with self.assertRaises(CodegenError) as context:
-            generate_go(
-                compile_program(
-                    'fn main() { let values = {"x": 1} '
-                    'let x = values.get("x") or 0 }'
-                )
+    def test_native_backend_generates_map_runtime(self) -> None:
+        generated = generate_go(
+            compile_program(
+                'fn main() { let values = {"x": 1} '
+                'let x = values.get("x") or 0 println(x) }'
             )
-        self.assertEqual(context.exception.code, "KS4002")
-        self.assertIn("Map", context.exception.message)
+        )
+        self.assertIn("ksNewMap", generated)
+        self.assertIn("ksMapGet", generated)
 
     def test_capability_manifest_walks_map_entries(self) -> None:
         program = parse(

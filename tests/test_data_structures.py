@@ -238,11 +238,13 @@ class NativeBackendRejectionTests(unittest.TestCase):
             "struct User { id: Int }\nfn main() { let u = User { id: 1 } }"
         )
 
-    def test_lists_are_rejected(self) -> None:
-        self.assert_ks4002("fn main() { let xs = [1, 2] }")
+    def test_lists_are_generated(self) -> None:
+        generated = generate_go(compile_program("fn main() { let xs = [1, 2] println(xs) }"))
+        self.assertIn("ksNewList", generated)
 
-    def test_for_loops_are_rejected(self) -> None:
-        self.assert_ks4002("fn main() { for x in [1] { println(x) } }")
+    def test_for_loops_are_generated(self) -> None:
+        generated = generate_go(compile_program("fn main() { for x in [1] { println(x) } }"))
+        self.assertIn("for _, ksv_x := range", generated)
 
 
 class HoldersExampleTests(unittest.TestCase):
