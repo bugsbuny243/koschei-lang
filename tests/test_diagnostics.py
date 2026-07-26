@@ -16,10 +16,14 @@ CODE_IN_SOURCE = re.compile(r'"(KS\d{4})"')
 class DiagnosticsCatalogTests(unittest.TestCase):
     def test_every_code_used_in_compiler_has_an_explanation(self) -> None:
         used: set[str] = set()
-        for name in ("semantic.py", "interpreter.py", "codegen_go.py", "modules.py"):
+        for name in (
+            "semantic.py",
+            "integrity.py",
+            "interpreter.py",
+            "codegen_go.py",
+            "modules.py",
+        ):
             path = REPO_ROOT / "koschei" / name
-            # Henüz eklenmemiş bir kaynak dosya testi çökertmemeli; var olan
-            # her dosyanın kodları eksiksiz açıklanmış olmalıdır.
             if not path.is_file():
                 continue
             used.update(CODE_IN_SOURCE.findall(path.read_text(encoding="utf-8")))
@@ -110,10 +114,6 @@ class ExplainCommandTests(unittest.TestCase):
         self.assertIn("explain KS2403", error)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class JsonDiagnosticTests(unittest.TestCase):
     def run_cli(self, argv: list[str]) -> tuple[int, str, str]:
         output = io.StringIO()
@@ -145,3 +145,7 @@ class JsonDiagnosticTests(unittest.TestCase):
         payload = __import__("json").loads(output)
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["modules"], 1)
+
+
+if __name__ == "__main__":
+    unittest.main()

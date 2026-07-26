@@ -41,6 +41,7 @@ Issues = "https://github.com/bugsbuny243/koschei-lang/issues"
 [project.scripts]
 koschei = "koschei.cli:main"
 ks = "koschei.cli:main"
+ks-lsp = "koschei.lsp:main"
 
 [tool.setuptools]
 packages = ["koschei"]

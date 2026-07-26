@@ -14,6 +14,7 @@ Hata kodları:
     KS1601  Modül dosyası bulunamadı
     KS1602  Döngüsel import
     KS1603  Modül adı çakışması (aynı isim iki kez bağlandı)
+    KS1801  Binary giriş noktası bulunamadı veya geçersiz
 """
 
 from __future__ import annotations
@@ -22,8 +23,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .ast_nodes import Program, SourceLocation
-from .parser import parse
-from .semantic import ImportedModule, SemanticReport, check as semantic_check
+from .integrity import check_program_integrity
+from .lexer import LexerError
+from .parser import ParserError, parse
+from .semantic import ImportedModule, SemanticError, SemanticReport, check as semantic_check
 
 MODULE_SUFFIX = ".ks"
 
@@ -113,7 +116,11 @@ def load_graph(root_path: str | Path) -> ModuleGraph:
             )
 
         source = path.read_text(encoding="utf-8")
-        program = parse(source)
+        try:
+            program = parse(source)
+        except (LexerError, ParserError) as error:
+            error.source_path = path
+            raise
         module = Module(name=name, path=path, program=program)
 
         loading.append(key)
@@ -185,11 +192,47 @@ def check_graph(graph: ModuleGraph) -> SemanticReport:
     """
     report: SemanticReport | None = None
     for module in graph.in_dependency_order():
-        result = semantic_check(module.program, imported_modules(graph, module))
+        try:
+            check_program_integrity(module.program)
+            result = semantic_check(module.program, imported_modules(graph, module))
+        except SemanticError as error:
+            error.source_path = module.path
+            raise
         if module.path == graph.root_module.path:
             report = result
     assert report is not None
     return report
+
+
+def require_entrypoint(graph: ModuleGraph) -> None:
+    """Kök modülün çalıştırılabilir bir binary giriş noktası taşımasını zorlar.
+
+    Normal ``check`` bir kütüphane dosyasını da doğrulayabilmelidir. Buna karşılık
+    ``run``, ``build`` ve ``emit-go`` kesin olarak bir binary üretir; ``main``
+    eksikliğini interpreter/Go backend aşamasına sızdırmadan burada keseriz.
+    """
+
+    main = next(
+        (
+            declaration
+            for declaration in graph.root_module.program.declarations
+            if declaration.name == "main"
+        ),
+        None,
+    )
+    if main is None:
+        raise ModuleError(
+            "KS1801",
+            "Binary hedefi için kök modülde 'fn main()' giriş noktası bulunmalıdır.",
+            SourceLocation(1, 1),
+        )
+    if main.return_type is not None:
+        raise ModuleError(
+            "KS1801",
+            "Bu sürümde 'main' dönüş tipi bildiremez; başarı/hata akışı "
+            "Result ve 'or return' ile yönetilmelidir.",
+            main.return_type.location,
+        )
 
 
 def namespaces(graph: ModuleGraph) -> dict[str, dict]:
