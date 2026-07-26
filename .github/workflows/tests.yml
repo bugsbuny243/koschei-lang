@@ -71,6 +71,29 @@ jobs:
             *) echo "HATA: native capability runtime beklenen env çıktısını vermedi" >&2; exit 1 ;;
           esac
 
+      - name: Validate v0.9 diagnostics and project tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m koschei version | grep -F "Koschei 0.9.0"
+          python -m koschei check --json examples/hello.ks \
+            | python -c 'import json,sys; data=json.load(sys.stdin); assert data["ok"] and data["modules"] == 1'
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          python -m koschei new ci-project --path "$tmp/ci-project"
+          python -m koschei check --json "$tmp/ci-project" \
+            | python -c 'import json,sys; assert json.load(sys.stdin)["ok"]'
+          python -m koschei run "$tmp/ci-project" | grep -F "Hello from ci-project"
+          python -m koschei build "$tmp/ci-project" -o "$tmp/app"
+          test "$("$tmp/app")" = "Hello from ci-project"
+
+      - name: Validate VS Code extension
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check editors/vscode/extension.js
+          python -c 'import json; from pathlib import Path; [json.loads(Path(p).read_text(encoding="utf-8")) for p in ("editors/vscode/package.json", "editors/vscode/language-configuration.json", "editors/vscode/syntaxes/koschei.tmLanguage.json")]'
+
       - name: Capability manifest for showcase
         run: python -m koschei caps examples/showcase.ks
 
