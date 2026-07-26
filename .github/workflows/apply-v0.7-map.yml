@@ -6,6 +6,14 @@ on:
       - agent/v0.7-map
     paths:
       - .github/workflows/apply-v0.7-map.yml
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+    paths:
+      - .github/workflows/apply-v0.7-map.yml
 
 permissions:
   contents: write
