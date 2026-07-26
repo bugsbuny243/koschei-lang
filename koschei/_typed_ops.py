@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from .ast_nodes import SourceLocation
-from .semantic import CAPABILITY_TYPES, SemanticError
+from .semantic import CAPABILITY_TYPES, ROOT_METHODS, SemanticError
 from .type_contracts import require_assignable
 from .type_system import (
     BOOL,
@@ -39,6 +39,9 @@ def method_type(
         )
     if isinstance(receiver, UnknownType):
         return UNKNOWN
+    if isinstance(receiver, NamedType) and receiver.name in ROOT_METHODS:
+        narrowed = ROOT_METHODS[receiver.name].get(method)
+        return UNKNOWN if narrowed is None else NamedType(narrowed)
     if isinstance(receiver, NamedType) and receiver.name in CAPABILITY_TYPES:
         return UNKNOWN
 
