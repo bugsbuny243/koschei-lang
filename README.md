@@ -114,7 +114,7 @@ The `--deny` gate is designed for CI: a build fails if a dependency update silen
 
 ## Language features
 
-Implemented today: functions with typed parameters, inferred generic functions, `let` / `let mut`, structs, `List<T>`, immutable `Map<String, V>` (`get`/`set`/`keys`/`contains`), `for`-in, `if`/`else`/`while` with `Bool`-only conditions, enums with exhaustive `match`, real `Option<T>` / `Result<T, E>`, full expression interpolation (`"{items.length()}"`), a daily standard library (`String` `trim`/`split`/`join`, `List` `sort`/`filter`/`contains`), and a module system where `import risk` binds `risk.ks` next to the importing file — no manifest, no build script, no config.
+Implemented today: functions with typed parameters, inferred generic functions, generic structs and enums, `let` / `let mut`, structs, `List<T>`, immutable `Map<String, V>` (`get`/`set`/`keys`/`contains`), `for`-in, `if`/`else`/`while` with `Bool`-only conditions, enums with exhaustive `match`, real `Option<T>` / `Result<T, E>`, full expression interpolation (`"{items.length()}"`), a daily standard library (`String` `trim`/`split`/`join`, `List` `sort`/`filter`/`contains`), and a module system where `import risk` binds `risk.ks` next to the importing file — no manifest, no build script, no config.
 
 ## Toolchain
 
@@ -142,7 +142,7 @@ The pipeline is `.ks` → lexer → parser → AST → type, capability and immu
 python -m unittest discover -s tests -v
 ```
 
-The current CI suite runs 372 tests, plus native/interpreter parity, repository documentation examples, committed golden outputs, and a check that the malicious `examples/supply_chain/` package still fails to compile.
+The current CI suite runs 391 tests, plus native/interpreter parity, repository documentation examples, committed golden outputs, and a check that the malicious `examples/supply_chain/` package still fails to compile.
 
 ## Status
 
@@ -154,7 +154,7 @@ Security boundaries currently enforced in the native path:
 - The process capability's `run` / `spawn` does not start a process; it returns an error value.
 - At runtime, path traversal, symlink escape and out-of-scope paths give `KS3402`; a write through a read-only token gives `KS3404`; an HTTP redirect leaving the allowed origin is rejected; call depth is capped at 512 (`KS3105`).
 
-The next V5 gate is user-defined generic structs/enums, followed by a backend-independent MIR. The v1.0 release gate additionally requires frozen syntax and capability runtime ABI, a SemVer compatibility commitment, package resolution with a lock file, and migration tests.
+The next V5 gate is a backend-independent MIR that becomes the single checked input for the interpreter and native backends. The v1.0 release gate additionally requires frozen syntax and capability runtime ABI, a SemVer compatibility commitment, package resolution with a lock file, and migration tests.
 
 **Designed but not built**, and not presented as features: static region inference, the C backend, and the Sentinel / tarpit layers. Koschei enforces capabilities in its type system — it does not produce formal mathematical proofs, and it is not a memory-managed-by-region language today; the current backend generates Go and uses Go's garbage collector.
 
