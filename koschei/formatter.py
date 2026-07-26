@@ -143,11 +143,11 @@ def _logical_lines(tokens: list[Token]) -> list[tuple[list[Token], bool]]:
 
 
 def _literal_depths(tokens: list[Token]) -> list[int]:
-    """Her token için 'struct literali içinde miyim' derinliğini hesaplar.
+    """Her token için struct/Map literali derinliğini hesaplar.
 
-    'UserProfile { ... }' ile blok '{ ... }' aynı token'ı kullanır. Literal
-    parantezleri satır kırmamalıdır; ayrım, '{' işaretinden hemen önce bir TİP
-    adı bulunmasıyla yapılır.
+    Struct, Map ve bloklar aynı süslü parantezleri kullanır. Literal
+    parantezleri blok gibi satır kırmamalıdır; bu yüzden açılış bağlamı ve
+    Map'teki üst-seviye ':' işareti birlikte değerlendirilir.
     """
     depths: list[int] = []
     stack: list[bool] = []
@@ -155,7 +155,7 @@ def _literal_depths(tokens: list[Token]) -> list[int]:
 
     for index, token in enumerate(tokens):
         if token.type is TokenType.LEFT_BRACE:
-            is_literal = index > 0 and tokens[index - 1].type is TokenType.TYPE
+            is_literal = _brace_is_literal(tokens, index)
             stack.append(is_literal)
             depths.append(depth)
             if is_literal:
@@ -173,6 +173,52 @@ def _literal_depths(tokens: list[Token]) -> list[int]:
     return depths
 
 
+def _brace_is_literal(tokens: list[Token], index: int) -> bool:
+    if index == 0:
+        return _brace_has_top_level_colon(tokens, index)
+
+    previous = tokens[index - 1]
+    if previous.type is TokenType.TYPE:
+        # `struct User { ... }` bildirimdir; diğer `User { ... }` biçimleri
+        # struct literalidir.
+        return not (index >= 2 and tokens[index - 2].type is TokenType.STRUCT)
+
+    if _brace_has_top_level_colon(tokens, index):
+        return True
+
+    # Boş Map (`{}`) için ':' sinyali yoktur; ifade başlangıcı bağlamını kullan.
+    return previous.type in {
+        TokenType.EQUAL,
+        TokenType.COMMA,
+        TokenType.LEFT_PAREN,
+        TokenType.LEFT_BRACKET,
+        TokenType.COLON,
+        TokenType.RETURN,
+    }
+
+
+def _brace_has_top_level_colon(tokens: list[Token], index: int) -> bool:
+    depth = 0
+    for token in tokens[index + 1:]:
+        if token.type in {
+            TokenType.LEFT_BRACE,
+            TokenType.LEFT_BRACKET,
+            TokenType.LEFT_PAREN,
+        }:
+            depth += 1
+        elif token.type in {
+            TokenType.RIGHT_BRACE,
+            TokenType.RIGHT_BRACKET,
+            TokenType.RIGHT_PAREN,
+        }:
+            if token.type is TokenType.RIGHT_BRACE and depth == 0:
+                return False
+            depth = max(depth - 1, 0)
+        elif token.type is TokenType.COLON and depth == 0:
+            return True
+    return False
+
+
 def _breaks_before(
     token: Token, previous: Token, depth: int, previous_depth: int
 ) -> bool:
@@ -184,10 +230,13 @@ def _breaks_before(
 
     # Süslü parantez kuralları yalnızca BLOK parantezleri için geçerlidir;
     # struct literalinin içi satır kırmaz.
+    # depth=0 olan bir RIGHT_BRACE blok kapatır. Hemen öncesinde Map/struct
+    # literali kapanmış olsa bile blok kapanışı yeni satıra geçmelidir.
+    if depth == 0 and token.type is TokenType.RIGHT_BRACE:
+        return True
+
     if depth == 0 and previous_depth == 0:
         if previous.type is TokenType.LEFT_BRACE:
-            return True
-        if token.type is TokenType.RIGHT_BRACE:
             return True
         if previous.type is TokenType.RIGHT_BRACE:
             return token.type is not TokenType.ELSE
@@ -278,6 +327,11 @@ def _render_line(row: list[Token]) -> str:
 def _needs_space(
     previous: Token, token: Token, row: list[Token], index: int
 ) -> bool:
+    if (
+        previous.type is TokenType.LEFT_BRACE
+        and token.type is TokenType.RIGHT_BRACE
+    ):
+        return False
     if token.type in NO_SPACE_BEFORE:
         return False
     if previous.type in NO_SPACE_AFTER:

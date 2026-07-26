@@ -126,23 +126,27 @@ CATALOG: dict[str, Diagnostic] = {
     ),
     "KS1501": Diagnostic(
         code="KS1501",
-        title="Struct literalinde alan hatası",
+        title="Yapısal literal alan/anahtar hatası",
         summary=(
             "Struct oluşturulurken bir alan eksik bırakıldı, tanımsız bir alan verildi "
-            "ya da aynı alan birden fazla kez yazıldı."
+            "ya da aynı alan birden fazla kez yazıldı. Map literalinde aynı sabit "
+            "anahtarın tekrarlanması da bu hatayı üretir."
         ),
         why=(
             "Bir struct'ın tüm alanları oluşturulduğu anda bilinir. Eksik alan, sonradan "
             "'boş' bir değerle karşılaşma riski demektir; Koschei'de null olmadığı için "
-            "bu boşluk baştan kapatılır."
+            "bu boşluk baştan kapatılır. Map'te yinelenen anahtarın hangisinin geçerli "
+            "olacağı belirsiz bırakılmaz."
         ),
         fix=(
             "Struct tanımındaki alanların tamamını, tam olarak birer kez verin. Alan "
-            "adlarını tanımla karşılaştırın."
+            "adlarını tanımla karşılaştırın. Map literalindeki sabit anahtarları "
+            "benzersiz tutun."
         ),
         example=(
             "struct UserProfile { id: Int, username: String }\n"
-            'let user = UserProfile { id: 1, username: "onur" }'
+            'let user = UserProfile { id: 1, username: "onur" }\n'
+            'let labels = {"role": "admin", "active": true}'
         ),
     ),
     "KS1502": Diagnostic(
@@ -158,12 +162,15 @@ CATALOG: dict[str, Diagnostic] = {
         ),
         fix=(
             "Alan adını struct tanımıyla karşılaştırın. List için kullanılabilir "
-            "metotlar: length, get, push, contains."
+            "metotlar: length, get, push, contains. Map için: get, set, keys, "
+            "contains."
         ),
         example=(
             "let items = [1, 2, 3]\n"
             "let count = items.length()\n"
-            "let first = items.get(0) or 0"
+            "let first = items.get(0) or 0\n"
+            'let config = {"port": 8080}\n'
+            'let port = config.get("port") or 3000'
         ),
     ),
     "KS1601": Diagnostic(

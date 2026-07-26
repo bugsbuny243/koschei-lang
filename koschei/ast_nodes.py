@@ -88,6 +88,14 @@ class ListLiteral:
 
 
 @dataclass(frozen=True, slots=True)
+class MapLiteral:
+    """{"musteri": "Ali", "aktif": true}"""
+
+    entries: tuple[tuple["Expression", "Expression"], ...]
+    location: SourceLocation
+
+
+@dataclass(frozen=True, slots=True)
 class MemberExpression:
     object: "Expression"
     member: str
@@ -156,6 +164,7 @@ Expression: TypeAlias = (
     | InterpolatedString
     | StructLiteral
     | ListLiteral
+    | MapLiteral
     | MemberExpression
     | CallExpression
     | AssignmentExpression

@@ -18,6 +18,7 @@ from .ast_nodes import (
     AssignmentExpression,
     ForStatement,
     ListLiteral,
+    MapLiteral,
     StructLiteral,
     BinaryExpression,
     Block,
@@ -445,6 +446,10 @@ def _walk_expression(expression: Expression):
     elif isinstance(expression, ListLiteral):
         for item in expression.items:
             yield from _walk_expression(item)
+    elif isinstance(expression, MapLiteral):
+        for key, value in expression.entries:
+            yield from _walk_expression(key)
+            yield from _walk_expression(value)
     elif isinstance(expression, StructLiteral):
         for _, value in expression.fields:
             yield from _walk_expression(value)

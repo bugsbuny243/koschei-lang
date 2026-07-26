@@ -74,6 +74,32 @@ let b = f() or 8080                  // varsayılan değer
 let c = f() or { println("logla") }  // blokla ele al
 ```
 
+## Map / sözlük
+
+Map anahtarları `String` olmak zorundadır. Map değerleri List gibi immutable'dır:
+`set` mevcut değeri değiştirmez, yeni bir Map döndürür.
+
+```ks
+let customer = {"name": "Ali", "age": 42}
+let updated = customer.set("city", "Istanbul")
+let name = updated.get("name") or "bilinmiyor"
+let keys = updated.keys()
+let has_city = updated.contains("city")
+```
+
+Metotlar:
+
+| Metot | Sonuç |
+|---|---|
+| `get(key)` | Değer veya hata; `or` ile ele alınır |
+| `set(key, value)` | Anahtarı eklenmiş/değiştirilmiş yeni `Map` |
+| `keys()` | Ekleme sırasındaki anahtarları taşıyan `List` |
+| `contains(key)` | Anahtar varsa `true` |
+
+Capability değerleri Map içine konamaz. `Map.get()` öğe tipini henüz statik
+olarak korumadığı için compiler ve runtime bu yolu capability type-laundering'e
+karşı kapatır.
+
 ## Hata kodları
 
 | Kod | Anlamı |
@@ -83,7 +109,7 @@ let c = f() or { println("logla") }  // blokla ele al
 | KS1201 | Immutable değere atama |
 | KS1301 | Tip uyuşmazlığı (`"abc" + 5`, Bool olmayan `if` koşulu vb.) |
 | KS1401 | Ele alınmayan hata değeri (sonuç `let` ile bağlanmalı ya da `or` ile ele alınmalı) |
-| KS1501 | Struct literalinde alan hatası (eksik, bilinmeyen veya yinelenen) |
+| KS1501 | Struct alanı veya Map sabit anahtarı hatası (eksik, bilinmeyen veya yinelenen) |
 | KS1502 | Struct'ta böyle bir alan yok / desteklenmeyen metot |
 | KS1601 | Modül dosyası bulunamadı |
 | KS1602 | Döngüsel import |
@@ -186,7 +212,7 @@ ks build program.ks -o prog  # tek dosya binary (Go kurulu olmalı)
 okunabilirlik değil davranış eşliği hedeflenir. `build` çıktısı ile `run`
 çıktısının aynı olması CI'da her koşuda doğrulanır.
 
-**Aşama 1 kapsamı:** yetki (capability) içermeyen, struct/List/`for`/`import`
+**Aşama 1 kapsamı:** yetki (capability) içermeyen, struct/List/Map/`for`/`import`
 kullanmayan programlar. Desteklenmeyen yapılar sessizce yanlış çevrilmez, **KS4002** ile
 açıkça reddedilir; bunlar `run` ile çalıştırılır. Yetki taşıyan
 programlar bilinçli olarak reddedilir (KS4001) ve `run` ile çalıştırılır. Sıra
@@ -233,7 +259,8 @@ Tanı katalogu sabittir: yalnızca açıklama üretir, hiçbir denetimi gevşetm
 ## Bilinen sınırlar (v0.1)
 
 - Birleşik dönüş tipleri (`String or Error`) metin olarak taşınır; tam tip denetimi v0.2'de.
-- Enum/match, generics, Map ve fonksiyon çağrılarında argüman tipi denetimi yok.
+- Enum/match, generics ve genel fonksiyon çağrılarında tam argüman tipi denetimi yok.
+- Map anahtarları String'dir; generic `Map<K, V>` ve öğe tipi takibi henüz yoktur.
 - String interpolasyonu yalnızca değişken ve alan erişimi alır; `{liste.length()}`
   gibi metot çağrıları desteklenmez (önce bir değişkene bağlayın).
 - Yol/origin sınırları (`allow("/etc/app/")` kapsamı) statik olarak tip düzeyinde, dinamik olarak runtime aşamasında zorlanacaktır; runtime henüz yazılmadı.
