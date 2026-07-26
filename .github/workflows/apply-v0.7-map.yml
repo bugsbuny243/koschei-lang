@@ -6,15 +6,7 @@ on:
     branches:
       - agent/v0.7-map
     paths:
-      - .github/workflows/apply-v0.7-map.yml
-  pull_request:
-    branches:
-      - main
-    types:
-      - opened
-      - synchronize
-    paths:
-      - .github/workflows/apply-v0.7-map.yml
+      - .github/v0.7-map-trigger
 
 permissions:
   contents: write
@@ -37,6 +29,7 @@ jobs:
             set -euo pipefail
 
             patch_file="/tmp/v0.7-map.patch"
+            exact_base_b64="/tmp/v0.7-map-exact-base.b64"
             exact_base_archive="/tmp/v0.7-map-exact-base.tar.gz"
             exact_base_dir="/tmp/v0.7-map-exact-base"
             base_dir="/tmp/v0.7-map-base"
@@ -44,12 +37,28 @@ jobs:
 
             base64 --decode .github/v0.7-map.patch.gz.b64 \
               | gzip --decompress > "$patch_file"
+
             cat \
               .github/v0.7-map-base-00 \
-              .github/v0.7-map-base-01 \
-              .github/v0.7-map-base-02 \
-              | base64 --decode > "$exact_base_archive"
+              .github/v0.7-map-base-01-00 \
+              .github/v0.7-map-base-01-01 \
+              .github/v0.7-map-base-01-02 \
+              .github/v0.7-map-base-01-03 \
+              .github/v0.7-map-base-01-04 \
+              .github/v0.7-map-base-01-05 \
+              .github/v0.7-map-base-01-06 \
+              .github/v0.7-map-base-01-07 \
+              .github/v0.7-map-base-01-08 \
+              .github/v0.7-map-base-02 > "$exact_base_b64"
 
+            expected_base_sha="67fa4821e650a9b74dd70224f42b322b8858eb980add39b7422fe57b9339cb6c"
+            actual_base_sha="$(sha256sum "$exact_base_b64" | cut -d' ' -f1)"
+            if [ "$actual_base_sha" != "$expected_base_sha" ]; then
+              echo "Exact base SHA mismatch: $actual_base_sha"
+              exit 1
+            fi
+
+            base64 --decode "$exact_base_b64" > "$exact_base_archive"
             mkdir -p "$exact_base_dir" "$base_dir" "$patched_dir"
             tar -xzf "$exact_base_archive" -C "$exact_base_dir"
 
@@ -105,7 +114,17 @@ jobs:
               .github/v0.7-map.patch.gz.b64 \
               .github/v0.7-map-base-00 \
               .github/v0.7-map-base-01 \
+              .github/v0.7-map-base-01-00 \
+              .github/v0.7-map-base-01-01 \
+              .github/v0.7-map-base-01-02 \
+              .github/v0.7-map-base-01-03 \
+              .github/v0.7-map-base-01-04 \
+              .github/v0.7-map-base-01-05 \
+              .github/v0.7-map-base-01-06 \
+              .github/v0.7-map-base-01-07 \
+              .github/v0.7-map-base-01-08 \
               .github/v0.7-map-base-02 \
+              .github/v0.7-map-trigger \
               .github/map-merge.log \
               .github/workflows/apply-v0.7-map.yml
 
