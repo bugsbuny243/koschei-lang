@@ -39,8 +39,8 @@ Repository = "https://github.com/bugsbuny243/koschei-lang"
 Issues = "https://github.com/bugsbuny243/koschei-lang/issues"
 
 [project.scripts]
-koschei = "koschei.cli:main"
-ks = "koschei.cli:main"
+koschei = "koschei.cli_entry:main"
+ks = "koschei.cli_entry:main"
 ks-lsp = "koschei.lsp_v5:main"
 
 [tool.setuptools]
