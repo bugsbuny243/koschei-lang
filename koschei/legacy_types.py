@@ -13,10 +13,21 @@ from .ast_nodes import (
     TypeRef,
 )
 from .semantic import ImportedModule
-from .type_system import GenericType, TypeNode, UnionType, parse_type_text, render_type
+from .type_system import (
+    GenericType,
+    TypeNode,
+    TypeVariable,
+    UnionType,
+    UNKNOWN,
+    bind_type_variables,
+    parse_type_text,
+    render_type,
+)
 
 
 def erase_node(type_node: TypeNode) -> TypeNode:
+    if isinstance(type_node, TypeVariable):
+        return UNKNOWN
     if isinstance(type_node, GenericType):
         if type_node.name in {"List", "Map"}:
             from .type_system import NamedType
@@ -30,11 +41,19 @@ def erase_node(type_node: TypeNode) -> TypeNode:
     return type_node
 
 
-def erase_type_ref(type_ref: TypeRef | None) -> TypeRef | None:
+def erase_type_ref(
+    type_ref: TypeRef | None, type_parameters: tuple[str, ...] = ()
+) -> TypeRef | None:
     if type_ref is None:
         return None
+    names = frozenset(type_parameters)
     return TypeRef(
-        tuple(render_type(erase_node(parse_type_text(name))) for name in type_ref.names),
+        tuple(
+            render_type(
+                erase_node(bind_type_variables(parse_type_text(name), names))
+            )
+            for name in type_ref.names
+        ),
         type_ref.location,
     )
 
@@ -45,12 +64,12 @@ def erase_function(function: FunctionDeclaration) -> FunctionDeclaration:
         tuple(
             Parameter(
                 parameter.name,
-                erase_type_ref(parameter.type_ref),
+                erase_type_ref(parameter.type_ref, getattr(function, "type_parameters", ())),
                 parameter.location,
             )
             for parameter in function.parameters
         ),
-        erase_type_ref(function.return_type),
+        erase_type_ref(function.return_type, getattr(function, "type_parameters", ())),
         function.body,
         function.location,
     )
@@ -60,9 +79,7 @@ def erase_struct(declaration: StructDeclaration) -> StructDeclaration:
     return StructDeclaration(
         declaration.name,
         tuple(
-            StructField(
-                field.name, erase_type_ref(field.type_ref), field.location
-            )
+            StructField(field.name, erase_type_ref(field.type_ref), field.location)
             for field in declaration.fields
         ),
         declaration.location,
@@ -99,18 +116,9 @@ def erase_imports(
     return {
         name: ImportedModule(
             module.name,
-            {
-                key: erase_function(function)
-                for key, function in module.functions.items()
-            },
-            {
-                key: erase_struct(declaration)
-                for key, declaration in module.structs.items()
-            },
-            {
-                key: erase_enum(declaration)
-                for key, declaration in module.enums.items()
-            },
+            {key: erase_function(function) for key, function in module.functions.items()},
+            {key: erase_struct(declaration) for key, declaration in module.structs.items()},
+            {key: erase_enum(declaration) for key, declaration in module.enums.items()},
         )
         for name, module in imports.items()
     }
