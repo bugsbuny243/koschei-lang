@@ -9,6 +9,8 @@
 - Add an explicit binary-entrypoint contract (`KS1801`).
 - Add a zero-dependency LSP with diagnostics, formatting, hover, definitions,
   symbols and completion.
+- Expose the language server through `ks lsp` and `python -m koschei lsp` while
+  retaining `ks-lsp` as a compatibility alias.
 - Upgrade the official VS Code extension from save-time checks to live LSP.
 - Add immutable structural type nodes for named, generic, union and unknown types.
 - Add the first Typed HIR lowering pass with `List<T>` / `Map<String, V>` literal
