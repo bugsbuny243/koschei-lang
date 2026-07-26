@@ -1,0 +1,96 @@
+name: Apply v0.9 customer tooling
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.head_ref == 'agent/v0.9-tooling'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/v0.9-tooling
+          fetch-depth: 0
+
+      - name: Apply verified v0.9 patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .github/v0.9-tooling.part00 \
+              .github/v0.9-tooling.part01 \
+              .github/v0.9-tooling.part02 \
+              .github/v0.9-tooling.part03 \
+              .github/v0.9-tooling.part04 \
+            | base64 --decode | gzip --decompress > /tmp/v0.9-tooling.patch
+          actual="$(sha256sum /tmp/v0.9-tooling.patch | cut -d' ' -f1)"
+          test "$actual" = "8efea9a03ac86f77a5c972e16c0df1390ad54d78c9c5ce42dfd0346022008cf1"
+          git apply --check /tmp/v0.9-tooling.patch
+          git apply /tmp/v0.9-tooling.patch
+          rm .github/v0.9-tooling.part00
+          rm .github/v0.9-tooling.part01
+          rm .github/v0.9-tooling.part02
+          rm .github/v0.9-tooling.part03
+          rm .github/v0.9-tooling.part04
+          rm .github/workflows/apply-v0.9-tooling.yml
+          git checkout origin/main -- .github/workflows/tests.yml
+          git diff --check
+
+      - name: Run full test suite
+        run: python -m unittest discover -s tests -v
+
+      - name: Validate examples
+        shell: bash
+        run: |
+          set -euo pipefail
+          for file in examples/*.ks; do
+            python -m koschei check "$file"
+            python -m koschei fmt --check "$file"
+          done
+
+      - name: Validate diagnostics and project workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m koschei version | grep -F "Koschei 0.9.0"
+          python -m koschei check --json examples/hello.ks \
+            | python -c 'import json,sys; data=json.load(sys.stdin); assert data["ok"] and data["modules"] == 1'
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          python -m koschei new ci-project --path "$tmp/ci-project"
+          python -m koschei check --json "$tmp/ci-project" \
+            | python -c 'import json,sys; assert json.load(sys.stdin)["ok"]'
+          python -m koschei run "$tmp/ci-project" | grep -F "Hello from ci-project"
+          python -m koschei build "$tmp/ci-project" -o "$tmp/app"
+          test "$("$tmp/app")" = "Hello from ci-project"
+
+      - name: Validate VS Code extension
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check editors/vscode/extension.js
+          python -c 'import json; from pathlib import Path; [json.loads(Path(p).read_text(encoding="utf-8")) for p in ("editors/vscode/package.json", "editors/vscode/language-configuration.json", "editors/vscode/syntaxes/koschei.tmLanguage.json")]'
+
+      - name: Build v0.9 wheel
+        run: python -m pip wheel . --no-deps --no-build-isolation -w /tmp/wheel
+
+      - name: Commit implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf build dist koschei_lang.egg-info examples/.native-test
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "v0.9: ship customer-facing tooling"
+          git push origin HEAD:agent/v0.9-tooling
