@@ -102,11 +102,10 @@ class GoCodegenTests(unittest.TestCase):
         self.assertIn("ksTrim", generated)
         self.assertIn("ksAdd", generated)
 
-    def test_split_is_fail_closed_until_native_list_runtime(self) -> None:
-        with self.assertRaises(CodegenError) as context:
-            compile_source('fn main() { let parts = "a,b".split(",") }')
-        self.assertEqual(context.exception.code, "KS4002")
-        self.assertIn("native List desteği", context.exception.message)
+    def test_split_is_generated_by_native_list_runtime(self) -> None:
+        generated = compile_source('fn main() { let parts = "a,b".split(",") println(parts) }')
+        self.assertIn("ksSplit", generated)
+        self.assertIn("ksCallValueMethod", generated)
 
 
 class EmitGoCommandTests(unittest.TestCase):
