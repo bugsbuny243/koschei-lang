@@ -6,7 +6,7 @@ import re
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 
-from koschei.diagnostics import CATALOG, known_codes, lookup
+from koschei.diagnostics import CATALOG, ENGLISH_CATALOG, known_codes, lookup
 from koschei.cli import main
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -28,16 +28,18 @@ class DiagnosticsCatalogTests(unittest.TestCase):
         self.assertEqual(missing, [], f"Katalogda eksik hata kodları: {missing}")
 
     def test_catalog_entries_are_complete(self) -> None:
-        for code, diagnostic in CATALOG.items():
-            self.assertEqual(diagnostic.code, code)
-            for field in (
-                diagnostic.title,
-                diagnostic.summary,
-                diagnostic.why,
-                diagnostic.fix,
-                diagnostic.example,
-            ):
-                self.assertTrue(field.strip(), f"{code} için boş alan var")
+        self.assertEqual(set(CATALOG), set(ENGLISH_CATALOG))
+        for language_catalog in (CATALOG, ENGLISH_CATALOG):
+            for code, diagnostic in language_catalog.items():
+                self.assertEqual(diagnostic.code, code)
+                for field in (
+                    diagnostic.title,
+                    diagnostic.summary,
+                    diagnostic.why,
+                    diagnostic.fix,
+                    diagnostic.example,
+                ):
+                    self.assertTrue(field.strip(), f"{code} için boş alan var")
 
     def test_lookup_accepts_bare_code_and_full_error_text(self) -> None:
         self.assertIsNotNone(lookup("KS2403"))
@@ -64,8 +66,14 @@ class ExplainCommandTests(unittest.TestCase):
             exit_code = main(argv)
         return exit_code, output.getvalue(), error.getvalue()
 
-    def test_explain_prints_all_sections(self) -> None:
+    def test_explain_prints_english_sections_by_default(self) -> None:
         code, output, _ = self.run_cli(["explain", "KS1401"])
+        self.assertEqual(code, 0)
+        for section in ("WHAT HAPPENED", "WHY", "HOW TO FIX", "EXAMPLE"):
+            self.assertIn(section, output)
+
+    def test_explain_supports_turkish(self) -> None:
+        code, output, _ = self.run_cli(["--lang", "tr", "explain", "KS1401"])
         self.assertEqual(code, 0)
         for section in ("NE OLDU", "NEDEN", "NASIL DÜZELTİLİR", "ÖRNEK"):
             self.assertIn(section, output)
@@ -81,7 +89,7 @@ class ExplainCommandTests(unittest.TestCase):
         code, output, error = self.run_cli(["explain", "KS9999"])
         self.assertEqual(code, 1)
         self.assertEqual(output, "")
-        self.assertIn("bilinen bir hata kodu değil", error)
+        self.assertIn("is not a known error code", error)
 
     def test_failed_check_suggests_explain(self) -> None:
         source = REPO_ROOT / "tests" / "_tmp_rewiden.ks"
@@ -104,3 +112,36 @@ class ExplainCommandTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class JsonDiagnosticTests(unittest.TestCase):
+    def run_cli(self, argv: list[str]) -> tuple[int, str, str]:
+        output = io.StringIO()
+        error = io.StringIO()
+        with redirect_stdout(output), redirect_stderr(error):
+            exit_code = main(argv)
+        return exit_code, output.getvalue(), error.getvalue()
+
+    def test_failed_check_emits_stable_json(self) -> None:
+        source = REPO_ROOT / "tests" / "_tmp_json_error.ks"
+        source.write_text("fn main() { println(missing) }\n", encoding="utf-8")
+        try:
+            code, output, error = self.run_cli(["check", "--json", str(source)])
+        finally:
+            source.unlink(missing_ok=True)
+        self.assertEqual(code, 1)
+        self.assertEqual(error, "")
+        payload = __import__("json").loads(output)
+        self.assertFalse(payload["ok"])
+        self.assertEqual(payload["code"], "KS1101")
+        self.assertEqual(payload["line"], 1)
+        self.assertIsInstance(payload["message"], str)
+
+    def test_successful_check_emits_stable_json(self) -> None:
+        source = REPO_ROOT / "examples" / "hello.ks"
+        code, output, error = self.run_cli(["check", "--json", str(source)])
+        self.assertEqual(code, 0)
+        self.assertEqual(error, "")
+        payload = __import__("json").loads(output)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["modules"], 1)

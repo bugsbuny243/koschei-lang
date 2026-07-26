@@ -174,7 +174,7 @@ class FmtCommandTests(unittest.TestCase):
         path = self.temp_source("fn main(){let x=1}")
         code, _, error = self.run_cli(["fmt", "--check", str(path)])
         self.assertEqual(code, 1)
-        self.assertIn("kanonik biçimde değil", error)
+        self.assertIn("is not canonical", error)
 
     def test_check_passes_on_formatted_source(self) -> None:
         path = self.temp_source(format_source("fn main(){let x=1}"))

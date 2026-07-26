@@ -1,4 +1,4 @@
-# Koschei Language Core v0.8 alpha 1
+# Koschei Language Core v0.9
 
 > Çökmeyen, Hacklenemeyen, Ölümsüz Dil.
 
@@ -340,7 +340,7 @@ host dilden bağımsızdır (`true`/`false`, `4.0`).
 (yorumlayıcıda Python'un sınırsız tam sayıları kullanılır); çok büyük sayılarla
 çalışan programlarda iki hedef farklılaşabilir.
 
-## v0.8 alpha compiler hattı
+## v0.9 compiler hattı
 
 ```text
 .ks source
@@ -368,7 +368,7 @@ Tanı katalogu sabittir: yalnızca açıklama üretir, hiçbir denetimi gevşetm
 
 `check` komutu lexer, parser ve semantic güvenlik kontrollerini birlikte çalıştırır.
 
-## Bilinen sınırlar (v0.8)
+## Bilinen sınırlar (v0.9)
 
 - Generic sözdizimi yalnızca `Option<T>` ve `Result<T, E>` için açıktır; List/Map ve kullanıcı tanımlı generics henüz yoktur.
 - Map anahtarları yalnızca String'dir; List ve Map öğe tipi akış boyunca statik olarak korunmaz.
@@ -376,3 +376,36 @@ Tanı katalogu sabittir: yalnızca açıklama üretir, hiçbir denetimi gevşetm
 - Native disk ABI alpha yalnız Linux `openat`/`O_NOFOLLOW` hedefindedir. Güvenli eşdeğeri olmayan platformlarda **KS4001** üretilir.
 - Native process capability işlem başlatmaz; `run/spawn` hata değeri döndürür.
 - Tanı mesajları şimdilik Türkçedir; İngilizce yerelleştirme v0.9 kapsamındadır.
+
+
+## v0.9 diagnostics and project contract
+
+The CLI defaults to English diagnostics. Turkish remains available through
+`--lang tr` or `KOSCHEI_LANG=tr`; both catalogs contain the same stable KS error
+codes. `ks check --json` emits one object with these integration fields:
+
+```json
+{"ok": false, "code": "KS1101", "message": "...", "line": 1, "column": 18}
+```
+
+A Koschei project is rooted by `koschei.toml`:
+
+```toml
+[package]
+name = "demo"
+version = "0.1.0"
+entry = "src/main.ks"
+
+[capabilities]
+disk = []
+net = []
+env = []
+process = false
+```
+
+The entry must be a relative `.ks` path contained by the project root. `ks check
+.`, `ks run .`, and `ks build .` resolve this entry. A manifest cannot redirect
+the compiler outside the project directory.
+
+The official VS Code extension under `editors/vscode` consumes the JSON contract
+on save; it does not reimplement Koschei parsing or security rules.

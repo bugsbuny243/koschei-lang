@@ -62,19 +62,38 @@ Mevcut prototip şunları destekler:
 - Capability scope denetimi
 - Satır ve sütun bilgili compiler hataları
 
-## CLI
+## CLI ve proje araçları
 
 ```bash
-ks tokens examples/capability.ks
-ks ast examples/capability.ks
-ks check examples/capability.ks
+ks version
+ks new hello-koschei
+cd hello-koschei
+ks check .
+ks run .
+ks build . -o ./hello-koschei
 ```
 
-Örnek doğrulama çıktısı:
+`ks new`, `koschei.toml` ve `src/main.ks` içeren sıfır bağımlılıklı bir proje
+oluşturur. Kaynak dosyası yerine proje dizini veya doğrudan `koschei.toml`
+verilebilir.
 
-```text
-KOSCHEI CHECK: PASS
+Tanılar varsayılan olarak İngilizcedir; Türkçe katalog aynı hata kodlarıyla
+korunur:
+
+```bash
+ks explain KS2403
+ks --lang tr explain KS2403
+ks check --json src/main.ks
 ```
+
+`check --json`, editör ve CI entegrasyonları için sabit `code`, `message`, `line`
+ve `column` alanlarını üretir.
+
+## VS Code
+
+`editors/vscode` içindeki resmi uzantı `.ks` syntax highlighting, bracket/comment
+kuralları, `Koschei: Check Current File` komutu ve kaydette otomatik
+`ks check --json` tanıları sağlar. Dış npm bağımlılığı yoktur.
 
 ## Testler
 
@@ -86,38 +105,32 @@ GitHub Actions, her push ve pull request üzerinde compiler testlerini otomatik 
 
 ## Yol haritası
 
-`main` dalı şu anda **v0.8.0 — Derleyici verdiğimiz sözü tutsun**
-kararlı sürümündedir.
+`main` dalı şu anda **v0.9.0 — Müşteri karşısına çıkabilsin** kararlı ürün
+kapısındadır.
 
-Tamamlanan v0.8 dilimleri:
+Tamamlanan v0.9 dilimleri:
 
-- Enum + exhaustive `match`
-- Gerçek `Option<T>` ve `Result<T, E>` tipleri
-- `or` sonrası union/Option/Result daraltması
-- Mutable atamalarda ve fonksiyon sınırlarında tip sözleşmesi
-- Enumların modüller arasında taşınması
-- Native `SystemCaps` enjeksiyonu
-- Native environment kapsamı
-- Native HTTP GET: yalnız `http/https`, aynı-origin ve redirect sınırı
-- Native disk ABI (Linux): sabitlenen kök fd, `openat`/`O_NOFOLLOW`,
-  read/write/list/delete ve salt-okunur jeton savunması
-- Native enum constructor, exhaustive `match`, `Option<T>`, `Result<T, E>` ve
-  `or`/`or return` davranış eşliği
-- Native immutable List/Map literal ve metotları, String `split/join`, `for` döngüsü
-  ve insertion-order Map gösterimi
-- Native struct literal/alan erişimi, yapısal eşitlik ve capability containment
-- Çok dosyalı programların tek binary'ye güvenli flatten edilmesi; nested import
-  ad alanları ve modül içi yerel fonksiyonlar izole edilir
+- 33 hata kodunun merkezi Türkçe/İngilizce tanı kataloğu
+- İngilizce varsayılan CLI ve `--lang tr` / `KOSCHEI_LANG=tr` desteği
+- Editörler için kararlı `ks check --json` tanı sözleşmesi
+- Resmi VS Code uzantısı: syntax highlight, komut ve kaydette otomatik check
+- `ks new`, `ks version`, minimal `koschei.toml` ve proje dizininden
+  `check/run/build`
+- Manifest entry yolunun proje kökü dışına kaçmasını reddeden fail-closed çözümleme
 
-v0.8'in destek matrisi bilinçli olarak dar ve fail-closed'dur:
+v0.8'in native güvenlik sınırları aynen korunur:
 
 - Güvenli native disk ABI Linux `openat`/`O_NOFOLLOW` hedefindedir; güvenli eşdeğer
   bulunmayan platformda disk kullanan build **KS4001** ile durur.
-- Process capability `run/spawn` işlem başlatmaz ve hata değeri döndürür. Güvenli
-  process sözleşmesi ayrı bir sürüm kapısıdır; mevcut sürüm yetkiyi sessizce açmaz.
+- Process capability `run/spawn` işlem başlatmaz ve hata değeri döndürür.
 
-Sıradaki ürün kapısı **v0.9 — Müşteri karşısına çıkabilsin**: İngilizce tanılar,
-VS Code entegrasyonu, `ks new` ve minimal proje manifesti.
+Sıradaki ana kapı **v1.0 — İlk kararlı sürüm**:
+
+- Sözdizimi ve capability runtime ABI v1 dondurması
+- SemVer ve geriye dönük uyumluluk taahhüdü
+- En az `List<T>` ve `Option<T>` generic sözleşmesi
+- Basit paket/dependency çözümleme ve kilit dosyası
+- Migration/compatibility testleri ve 1.0 release belgeleri
 
 Static region inference, C backend ve Sentinel/Tarpit/Phantom katmanları henüz
 tasarım/spec aşamasındadır; tamamlanmış özellik olarak sunulmaz.

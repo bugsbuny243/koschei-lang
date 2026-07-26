@@ -22,13 +22,19 @@ class Diagnostic:
     fix: str
     example: str
 
-    def render(self) -> str:
+    def render(self, locale: str = "tr") -> str:
+        locale = normalize_locale(locale)
+        if locale == "en":
+            sections = ("WHAT HAPPENED", "WHY", "HOW TO FIX", "EXAMPLE")
+        else:
+            sections = ("NE OLDU", "NEDEN", "NASIL DÜZELTİLİR", "ÖRNEK")
+        happened, why, fix, example = sections
         return (
             f"{self.code} — {self.title}\n"
-            f"\nNE OLDU\n{self.summary}\n"
-            f"\nNEDEN\n{self.why}\n"
-            f"\nNASIL DÜZELTİLİR\n{self.fix}\n"
-            f"\nÖRNEK\n{self.example}\n"
+            f"\n{happened}\n{self.summary}\n"
+            f"\n{why}\n{self.why}\n"
+            f"\n{fix}\n{self.fix}\n"
+            f"\n{example}\n{self.example}\n"
         )
 
 
@@ -565,16 +571,322 @@ CATALOG: dict[str, Diagnostic] = {
     ),
 }
 
+ENGLISH_TEXT: dict[str, tuple[str, str, str, str]] = {
+    "KS1101": (
+        "Undefined name",
+        "The variable, parameter, or function is not defined in this scope.",
+        "Every name must be declared before use so spelling and scope mistakes fail during compilation.",
+        "Check the spelling, declare the value with 'let', pass it as a parameter, or move the use into the declaring scope.",
+    ),
+    "KS1102": (
+        "Duplicate definition",
+        "The name is already defined in the same scope.",
+        "Two definitions with the same name make ownership of the value ambiguous.",
+        "Rename the second definition, or declare the original value with 'let mut' and assign to it.",
+    ),
+    "KS1201": (
+        "Assignment to an immutable value",
+        "A value declared with 'let' was assigned a new value.",
+        "Koschei values are immutable by default so state changes stay explicit and reviewable.",
+        "Declare the value with 'let mut' only when mutation is required.",
+    ),
+    "KS1301": (
+        "Type mismatch",
+        "The operation cannot be applied to the supplied types.",
+        "Compile-time type checks prevent invalid operations and non-Bool conditions from reaching runtime.",
+        "Convert values explicitly, use interpolation for text, and handle fallible conversions with 'or'.",
+    ),
+    "KS1302": (
+        "Int literal outside the signed 64-bit range",
+        "The integer literal exceeds the bounds of Koschei Int.",
+        "Int is signed 64-bit on both the interpreter and native backend to preserve target parity.",
+        "Use a value between -9223372036854775808 and 9223372036854775807.",
+    ),
+    "KS1401": (
+        "Unhandled error value",
+        "A fallible result was neither bound nor handled with 'or'.",
+        "Errors are values in Koschei; silently discarding one would let the program continue in an invalid state.",
+        "Bind the result, use 'or return', provide a fallback with 'or value', or handle it in an 'or { ... }' block.",
+    ),
+    "KS1501": (
+        "Invalid structural literal",
+        "A struct field is missing, unknown, or repeated, or a Map contains a duplicate constant key.",
+        "Structural values must be complete and unambiguous at construction time.",
+        "Provide every declared struct field exactly once and keep Map keys unique.",
+    ),
+    "KS1502": (
+        "Unknown field or method",
+        "The field does not exist on the struct or the method is unsupported for the receiver value.",
+        "Field and method names are checked before execution so spelling mistakes do not become runtime failures.",
+        "Check the struct declaration or use a method supported by the receiver type.",
+    ),
+    "KS1601": (
+        "Module file not found",
+        "The .ks file requested by an import could not be found.",
+        "Module resolution is deterministic and relative to the importing source file.",
+        "Make the file name match the module name and place it in the expected directory.",
+    ),
+    "KS1602": (
+        "Import cycle",
+        "Modules import each other directly or indirectly.",
+        "A cycle has no deterministic initialization order.",
+        "Move shared declarations into a third module imported by both sides.",
+    ),
+    "KS1603": (
+        "Duplicate import",
+        "The same module is imported more than once in one source file.",
+        "A repeated import is usually a source error and is not silently ignored.",
+        "Remove the duplicate import statement.",
+    ),
+    "KS1604": (
+        "Conflicting struct name",
+        "Two reachable modules define the same unqualified struct name.",
+        "Unqualified imported type names must resolve to exactly one declaration.",
+        "Rename one of the structs so every imported type name is unique.",
+    ),
+    "KS1605": (
+        "Missing module member",
+        "The imported module does not export the requested function, struct, or enum.",
+        "Module boundaries are validated during compilation.",
+        "Check the member name and the declarations exposed by the imported module.",
+    ),
+    "KS1701": (
+        "Invalid enum or variant contract",
+        "The enum declaration or variant constructor call does not match its declared payload contract.",
+        "Variant names, payload arity, and payload types are part of the enum's type contract.",
+        "Use a declared variant and pass exactly the payload type it declares.",
+    ),
+    "KS1702": (
+        "Incomplete match contract",
+        "A match omits a variant, repeats a branch, or produces incompatible result types.",
+        "Exhaustive matching guarantees that adding or receiving a variant cannot fall through silently.",
+        "Handle every variant exactly once and make all branches produce compatible values.",
+    ),
+    "KS2401": (
+        "Required capability is unavailable in this scope",
+        "A disk, network, environment, or process operation was attempted without the corresponding capability token.",
+        "Authority must be passed explicitly so imports and callees cannot acquire ambient access.",
+        "Accept the required narrowed capability as a parameter and pass it from an authorized caller.",
+    ),
+    "KS2402": (
+        "Root capability cannot perform I/O directly",
+        "A root authority such as caps.disk or caps.net was used for an operation without narrowing it first.",
+        "Root capabilities exist only to derive auditable, least-authority tokens.",
+        "Call allow or allow_read_only with a concrete path, origin, or variable before performing the operation.",
+    ),
+    "KS2403": (
+        "A narrowed capability cannot be widened",
+        "allow was called on an already narrowed capability token.",
+        "Allowing re-widening would let a callee escape the scope granted by its caller.",
+        "Derive the required scope from the root capability instead of widening a child token.",
+    ),
+    "KS2404": (
+        "Capability type does not permit this operation",
+        "The token lacks the requested authority, such as writing through a read-only disk token.",
+        "Capability types encode the operations the holder is permitted to perform.",
+        "Use a token with the required authority or remove the operation.",
+    ),
+    "KS2405": (
+        "Network origin scheme rejected",
+        "NetRoot.allow received a non-HTTP(S) or invalid absolute origin.",
+        "Network authority must not become a bridge to local files or unsupported protocols.",
+        "Use an absolute http:// or https:// origin with a valid host.",
+    ),
+    "KS3101": (
+        "Runtime undefined name or invalid call",
+        "The interpreter encountered an unknown name, invalid constructor, duplicate Map key, or incompatible call.",
+        "The runtime keeps a defensive validation layer even when semantic checks have already run.",
+        "Correct the referenced name or call contract and run 'ks check' again.",
+    ),
+    "KS3105": (
+        "Call-depth limit exceeded",
+        "Function calls exceeded the 512-frame safety limit.",
+        "The limit prevents uncontrolled recursion from exhausting the host stack.",
+        "Add a terminating condition or rewrite the recursion as iteration.",
+    ),
+    "KS3201": (
+        "Runtime assignment to an immutable value",
+        "The runtime detected an assignment to a value that was not declared mutable.",
+        "Runtime immutability is a defense-in-depth mirror of the compiler rule.",
+        "Declare the value with 'let mut' or remove the assignment.",
+    ),
+    "KS3401": (
+        "Runtime capability type-integrity violation",
+        "A capability or capability-carrying value was disguised, stored, or returned as an ordinary value.",
+        "Capability laundering would bypass explicit authority flow and containment rules.",
+        "Keep capability values in capability-typed variables and never place them in structs, enums, Lists, or Maps.",
+    ),
+    "KS3402": (
+        "Out-of-scope access",
+        "A file path, network origin, or redirect crossed the boundary granted by the capability token.",
+        "The runtime enforces the exact authority scope rather than trusting path or URL text alone.",
+        "Request a separate token from the root for the required path or origin.",
+    ),
+    "KS3403": (
+        "Runtime capability widening attempt",
+        "A narrowed token was widened at runtime.",
+        "This defense-in-depth check prevents scope escalation even if compile-time validation is bypassed.",
+        "Derive the wider scope directly from the root capability.",
+    ),
+    "KS3404": (
+        "Runtime operation not permitted",
+        "The token type does not carry the requested operation.",
+        "Runtime checks preserve read-only and operation-specific authority boundaries.",
+        "Use a token that explicitly grants the operation or remove the operation.",
+    ),
+    "KS3405": (
+        "Symbolic links are not followed inside a disk scope",
+        "A path component inside the granted disk scope is a symbolic link.",
+        "Each component is opened with O_NOFOLLOW to prevent TOCTOU and symlink-swap escapes.",
+        "Use the real path or derive a separate capability for the target directory.",
+    ),
+    "KS3406": (
+        "Disk capability unsupported on this platform",
+        "Secure disk operations require openat/dir_fd and O_NOFOLLOW primitives.",
+        "Koschei refuses to fall back to weaker path-text validation on unsupported platforms.",
+        "Run on a supported platform or use interpreter features that do not require disk authority.",
+    ),
+    "KS3501": (
+        "Int overflow",
+        "An integer operation exceeded the signed 64-bit Int range.",
+        "Overflow behavior is checked so interpreter and native targets cannot diverge.",
+        "Keep the calculation within Int bounds or redesign it around smaller values.",
+    ),
+    "KS4001": (
+        "Native target cannot safely implement the capability contract",
+        "The requested capability cannot be preserved with equivalent security on the selected native target.",
+        "A weaker native implementation would make the same token mean different authority on different targets.",
+        "Build on a supported target or run the program with the interpreter runtime.",
+    ),
+    "KS4002": (
+        "Unsupported native construct",
+        "The Go backend does not yet support this language construct.",
+        "Failing closed is safer than emitting a binary with silently different behavior.",
+        "Run with 'ks run' or rewrite the construct using the currently supported native subset.",
+    ),
+    "KS4003": (
+        "Call argument count mismatch",
+        "The function was called with a different number of arguments than its declaration accepts.",
+        "Arity is part of the function contract and is checked before execution.",
+        "Pass exactly one argument for each declared parameter.",
+    ),
+}
+
+
+def normalize_locale(locale: str | None) -> str:
+    value = (locale or "en").strip().lower().replace("_", "-")
+    if value.startswith("tr"):
+        return "tr"
+    if value.startswith("en"):
+        return "en"
+    raise ValueError(f"Unsupported diagnostic language: {locale!r}. Use 'en' or 'tr'.")
+
+
+ENGLISH_CATALOG: dict[str, Diagnostic] = {
+    code: Diagnostic(
+        code=code,
+        title=fields[0],
+        summary=fields[1],
+        why=fields[2],
+        fix=fields[3],
+        example=CATALOG[code].example,
+    )
+    for code, fields in ENGLISH_TEXT.items()
+}
+
+if set(ENGLISH_CATALOG) != set(CATALOG):
+    missing = sorted(set(CATALOG) - set(ENGLISH_CATALOG))
+    extra = sorted(set(ENGLISH_CATALOG) - set(CATALOG))
+    raise RuntimeError(f"Diagnostic catalog mismatch: missing={missing}, extra={extra}")
+
+CATALOGS: dict[str, dict[str, Diagnostic]] = {
+    "tr": CATALOG,
+    "en": ENGLISH_CATALOG,
+}
+
 CODE_PATTERN = re.compile(r"KS\d{4}")
+LOCATION_PATTERN = re.compile(
+    r"KS\d{4}(?: \[(?:satır|line) (\d+), (?:sütun|column) (\d+)\])?",
+    re.IGNORECASE,
+)
 
 
-def lookup(code: str) -> Diagnostic | None:
-    """Verilen kodu (veya kod içeren bir hata metnini) kataloğa göre çözer."""
+def catalog(locale: str = "en") -> dict[str, Diagnostic]:
+    return CATALOGS[normalize_locale(locale)]
+
+
+def lookup(code: str, locale: str = "tr") -> Diagnostic | None:
+    """Resolve a bare code or an error string in the selected language catalog."""
     match = CODE_PATTERN.search(code.upper())
     if match is None:
         return None
-    return CATALOG.get(match.group(0))
+    return catalog(locale).get(match.group(0))
 
 
-def known_codes() -> list[str]:
+def diagnostic_payload(
+    message: str,
+    *,
+    locale: str = "en",
+    source: str | None = None,
+    error: BaseException | None = None,
+) -> dict[str, object]:
+    selected = normalize_locale(locale)
+    diagnostic = lookup(message, selected)
+    code_match = CODE_PATTERN.search(message.upper())
+    code = code_match.group(0) if code_match else None
+    line: int | None = None
+    column: int | None = None
+    location = getattr(error, "location", None)
+    if location is not None:
+        line = getattr(location, "line", None)
+        column = getattr(location, "column", None)
+    else:
+        match = LOCATION_PATTERN.search(message)
+        if match is not None:
+            line = int(match.group(1)) if match.group(1) else None
+            column = int(match.group(2)) if match.group(2) else None
+
+    if diagnostic is None:
+        title = "Compiler error" if selected == "en" else "Derleyici hatası"
+        summary = message
+    else:
+        title = diagnostic.title
+        summary = diagnostic.summary
+
+    return {
+        "ok": False,
+        "code": code,
+        "title": title,
+        "message": summary,
+        "source": source,
+        "line": line,
+        "column": column,
+    }
+
+
+def render_error(
+    message: str,
+    *,
+    locale: str = "en",
+    error: BaseException | None = None,
+) -> str:
+    payload = diagnostic_payload(message, locale=locale, error=error)
+    code = payload["code"]
+    title = payload["title"]
+    summary = payload["message"]
+    line = payload["line"]
+    column = payload["column"]
+    location = ""
+    if line is not None and column is not None:
+        if normalize_locale(locale) == "en":
+            location = f" [line {line}, column {column}]"
+        else:
+            location = f" [satır {line}, sütun {column}]"
+    prefix = f"{code}{location}: " if code else ""
+    return f"{prefix}{title} — {summary}"
+
+
+def known_codes(locale: str | None = None) -> list[str]:
+    if locale is not None:
+        normalize_locale(locale)
     return sorted(CATALOG)
