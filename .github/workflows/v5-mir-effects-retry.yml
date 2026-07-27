@@ -35,4 +35,7 @@ jobs:
           script = script.replace("assert payload['version'] == 3", "assert payload['version'] == 2")
           Path('/tmp/apply-effects.sh').write_text(script, encoding='utf-8')
           PY
-          bash /tmp/apply-effects.sh
+          if ! bash /tmp/apply-effects.sh >/tmp/effects.log 2>&1; then
+            tail -120 /tmp/effects.log
+            exit 1
+          fi
