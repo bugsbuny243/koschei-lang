@@ -1,7 +1,7 @@
 """Backend-independent MIR foundation for Koschei V5.
 
 This first slice deliberately keeps the executable AST nodes while sealing them
-with the structural types produced by Typed HIR.  Interpreter and native codegen
+with the structural types produced by Typed HIR. Interpreter and native codegen
 consume this checked graph instead of accepting a freshly loaded module graph.
 Later MIR waves can replace individual AST payloads without changing the public
 pipeline contract introduced here.
@@ -22,6 +22,8 @@ from .effects import infer_effects
 from .mir_ir import (
     MirAstFallback,
     MirBasicBlock,
+    MirBranch,
+    MirJump,
     block_contract,
     lower_function_blocks,
     validate_blocks,
@@ -30,7 +32,7 @@ from .type_contracts import function_type, type_parameters_of
 from .type_system import TypeNode, render_type
 from .typed_hir import TypedHIRReport
 
-MIR_VERSION = 2
+MIR_VERSION = 3
 
 
 class MirIntegrityError(Exception):
@@ -39,6 +41,17 @@ class MirIntegrityError(Exception):
         self.message = message
         self.location = SourceLocation(1, 1)
         super().__init__(f"{self.code}: {message}")
+
+
+@dataclass(frozen=True, slots=True)
+class MirResources:
+    """Deterministic static resource summary sealed into one MIR function."""
+
+    basic_blocks: int
+    instructions: int
+    ast_fallbacks: int
+    backward_edges: int
+    self_recursive: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,6 +67,7 @@ class MirFunction:
     return_type: TypeNode
     calls: tuple[str, ...]
     effects: tuple[str, ...]
+    resources: MirResources
     declaration: FunctionDeclaration
     blocks: tuple[MirBasicBlock, ...]
 
@@ -110,11 +124,23 @@ class MirGraph:
             for module in self.modules.values():
                 for function in module.functions:
                     validate_blocks(function.blocks)
+                    expected_resources = _resource_contract(
+                        function.name,
+                        function.calls,
+                        function.blocks,
+                    )
+                    if function.resources != expected_resources:
+                        raise ValueError(
+                            "resource contract mismatch for "
+                            f"{module.name}.{function.name}"
+                        )
                 expected_effects = infer_effects(module.program)
                 for function in module.functions:
                     expected_calls, expected = expected_effects[function.name]
                     if function.calls != expected_calls or function.effects != expected:
-                        raise ValueError(f"effect contract mismatch for {module.name}.{function.name}")
+                        raise ValueError(
+                            f"effect contract mismatch for {module.name}.{function.name}"
+                        )
             actual = _fingerprint(self.root, self.modules)
         except (KeyError, TypeError, ValueError) as error:
             raise MirIntegrityError(
@@ -171,6 +197,7 @@ def _module_contract(module: MirModule) -> dict[str, Any]:
                 "return": render_type(function.return_type),
                 "calls": list(function.calls),
                 "effects": list(function.effects),
+                "resources": asdict(function.resources),
                 "blocks": [block_contract(block) for block in function.blocks],
             }
             for function in module.functions
@@ -228,6 +255,37 @@ def _fingerprint(root: str, modules: Mapping[str, MirModule]) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _resource_contract(
+    name: str,
+    calls: tuple[str, ...],
+    blocks: tuple[MirBasicBlock, ...],
+) -> MirResources:
+    """Derive a path-independent static cost shape from sealed MIR blocks."""
+
+    ast_fallbacks = sum(
+        1
+        for block in blocks
+        for instruction in block.instructions
+        if isinstance(instruction, MirAstFallback)
+    )
+    backward_edges = 0
+    for block in blocks:
+        terminator = block.terminator
+        if isinstance(terminator, MirJump) and terminator.target <= block.id:
+            backward_edges += 1
+        elif isinstance(terminator, MirBranch):
+            backward_edges += int(terminator.then_block <= block.id)
+            backward_edges += int(terminator.else_block <= block.id)
+
+    return MirResources(
+        basic_blocks=len(blocks),
+        instructions=sum(len(block.instructions) for block in blocks),
+        ast_fallbacks=ast_fallbacks,
+        backward_edges=backward_edges,
+        self_recursive=name in calls,
+    )
+
+
 def lower_module(module: Any, typed_report: TypedHIRReport) -> MirModule:
     effect_contracts = infer_effects(module.program)
     functions = tuple(
@@ -243,10 +301,16 @@ def lower_module(module: Any, typed_report: TypedHIRReport) -> MirModule:
             function_type(declaration, declaration.return_type),
             effect_contracts[declaration.name][0],
             effect_contracts[declaration.name][1],
+            _resource_contract(
+                declaration.name,
+                effect_contracts[declaration.name][0],
+                blocks,
+            ),
             declaration,
-            lower_function_blocks(declaration, typed_report),
+            blocks,
         )
         for declaration in module.program.declarations
+        for blocks in (lower_function_blocks(declaration, typed_report),)
     )
     return MirModule(
         str(module.path),
@@ -304,19 +368,13 @@ def to_dict(mir: MirGraph) -> dict[str, Any]:
                         "return": render_type(function.return_type),
                         "calls": list(function.calls),
                         "effects": list(function.effects),
+                        "resources": asdict(function.resources),
                         "blocks": [
                             block_contract(block) for block in function.blocks
                         ],
-                        "basic_blocks": len(function.blocks),
-                        "instructions": sum(
-                            len(block.instructions) for block in function.blocks
-                        ),
-                        "ast_fallbacks": sum(
-                            1
-                            for block in function.blocks
-                            for instruction in block.instructions
-                            if isinstance(instruction, MirAstFallback)
-                        ),
+                        "basic_blocks": function.resources.basic_blocks,
+                        "instructions": function.resources.instructions,
+                        "ast_fallbacks": function.resources.ast_fallbacks,
                     }
                     for function in module.functions
                 ],
