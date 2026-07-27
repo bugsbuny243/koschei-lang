@@ -156,9 +156,10 @@ fn main() {
 }
 ```
 
-V5 hedefinde generic'ler MIR üzerinde monomorphize edilir. Bugünkü geçiş
-katmanında generic fonksiyon çağrıları uzmanlaştırılır; aggregate runtime etiketi
-ve tam backend birleştirmesi MIR kapısında tamamlanacaktır.
+V5 hedefinde generic'ler MIR üzerinde monomorphize edilir. İlk mühürlü MIR kapısı
+bugün çalışıyor; generic fonksiyon çağrıları geçiş katmanında uzmanlaştırılıyor.
+Normalize MIR talimatları, basic block’lar ve tam backend birleştirmesi henüz açık
+kapılardır.
 
 ---
 
@@ -500,6 +501,7 @@ ks audit
 ks new proje              # proje oluştur
 ks add json@1.4           # bağımlılık ekle
 ks check .                # tip, yetki, region denetimi
+ks mir .                  # mühürlü backend sözleşmesini göster
 ks run .                  # çalıştır
 ks test                   # birim + tablo + property testleri
 ks bench                  # istatistiksel ölçüm

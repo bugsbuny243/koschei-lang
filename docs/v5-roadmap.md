@@ -21,7 +21,7 @@ Koschei targets two goals at the same time:
 - Typed HIR and structural Type AST
 - Typed collections and generics
 - Capability/effect flow as part of the type contract
-- Backend-independent MIR
+- Sealed backend-independent MIR foundation (landed); normalized instructions, basic blocks and direct backend consumption remain open
 - Deterministic ownership/region memory model
 - Signed, capability-declared dependency ecosystem
 - Self-hosted and reproducibly bootstrapped compiler

@@ -44,6 +44,12 @@
   String and prevent capability values from binding to aggregate type parameters.
 - Preserve inferred aggregate arguments in the defensive interpreter runtime while
   the legacy semantic bridge receives an explicitly erased post-Typed-HIR view.
+- Lower every fully checked module graph into a versioned, sealed `MirGraph` and
+  require it for `run`, `build`, and `emit-go`.
+- Fingerprint the full immutable AST, imports, function/aggregate contracts, and
+  Typed HIR expression types; reject stale or forged backend input with `KS5002`.
+- Add `ks mir` plus MIR version/fingerprint fields to JSON check output, while
+  keeping the current AST-carrying adapter boundary explicit until normalized MIR.
 
 The V5 design principle is: **security beyond ambient-authority languages and a
 writing experience simpler than Python without hiding dangerous effects.**

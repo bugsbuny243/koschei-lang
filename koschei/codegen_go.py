@@ -2478,3 +2478,9 @@ def generate_go(program: Program, graph: object | None = None) -> str:
     if graph is not None:
         program = _flatten_module_graph(graph)
     return GoCodegen(program).generate()
+
+
+def generate_go_mir(mir_graph) -> str:
+    """Generate Go only from a sealed, checked MIR graph."""
+    mir_graph.assert_sealed()
+    return generate_go(mir_graph.root_module.program, mir_graph)

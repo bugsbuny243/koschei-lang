@@ -126,11 +126,12 @@ ks fmt --write src/           # canonical formatting
 ks caps src/main.ks           # capability manifest
 ks explain KS2401             # diagnostics, --lang tr for Turkish
 ks check --json src/main.ks   # stable code/message/line/column for editors
+ks mir src/main.ks           # sealed checked backend contract
 ks lsp                         # zero-dependency language server
 ks tokens / ks ast / ks emit-go
 ```
 
-The pipeline is `.ks` → lexer → parser → AST → type, capability and immutability checks → Go code generation → native binary. Diagnostics default to English; `--lang tr` or `KOSCHEI_LANG=tr` selects the Turkish catalog with identical error codes.
+The pipeline is `.ks` → lexer → parser → AST → Typed HIR, integrity and capability checks → sealed MIR → interpreter or Go native adapter. Diagnostics default to English; `--lang tr` or `KOSCHEI_LANG=tr` selects the Turkish catalog with identical error codes.
 
 ## Editor support
 
@@ -142,7 +143,7 @@ The pipeline is `.ks` → lexer → parser → AST → type, capability and immu
 python -m unittest discover -s tests -v
 ```
 
-The current CI suite runs 391 tests, plus native/interpreter parity, repository documentation examples, committed golden outputs, and a check that the malicious `examples/supply_chain/` package still fails to compile.
+The current CI suite runs 408 tests, plus native/interpreter parity, repository documentation examples, committed golden outputs, and a check that the malicious `examples/supply_chain/` package still fails to compile.
 
 ## Status
 
@@ -154,7 +155,7 @@ Security boundaries currently enforced in the native path:
 - The process capability's `run` / `spawn` does not start a process; it returns an error value.
 - At runtime, path traversal, symlink escape and out-of-scope paths give `KS3402`; a write through a read-only token gives `KS3404`; an HTTP redirect leaving the allowed origin is rejected; call depth is capped at 512 (`KS3105`).
 
-The next V5 gate is a backend-independent MIR that becomes the single checked input for the interpreter and native backends. The v1.0 release gate additionally requires frozen syntax and capability runtime ABI, a SemVer compatibility commitment, package resolution with a lock file, and migration tests.
+The first sealed backend-independent MIR gate is now in place. The next V5 gate replaces its AST payloads with normalized MIR instructions, explicit basic blocks, and direct backend consumption. The v1.0 release gate additionally requires frozen syntax and capability runtime ABI, a SemVer compatibility commitment, package resolution with a lock file, and migration tests.
 
 **Designed but not built**, and not presented as features: static region inference, the C backend, and the Sentinel / tarpit layers. Koschei enforces capabilities in its type system — it does not produce formal mathematical proofs, and it is not a memory-managed-by-region language today; the current backend generates Go and uses Go's garbage collector.
 
