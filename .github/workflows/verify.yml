@@ -55,3 +55,132 @@ jobs:
       - name: Enforce verification result
         shell: bash
         run: test "${{ steps.verify.outputs.status }}" = "0"
+
+  bootstrap-resource-contracts:
+    if: github.event_name == 'push' && github.ref_name == 'agent/v5-resource-contracts'
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout resource branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/v5-resource-contracts
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.21"
+
+      - name: Apply and validate resource contracts once
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! -f tools/v5-resource-contracts.patch ]]; then
+            echo "Resource bootstrap already completed."
+            exit 0
+          fi
+
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("tools/v5-resource-contracts.patch")
+          text = path.read_text(encoding="utf-8")
+          old = '''            _resource_contract(
+                  declaration.name,
+                  effect_contracts[declaration.name][0],
+                  lower_function_blocks(declaration, typed_report),
+              ),
+              declaration,
+              lower_function_blocks(declaration, typed_report),
+          )
+          for declaration in module.program.declarations
+'''
+          new = '''            _resource_contract(
+                  declaration.name,
+                  effect_contracts[declaration.name][0],
+                  blocks,
+              ),
+              declaration,
+              blocks,
+          )
+          for declaration in module.program.declarations
+          for blocks in (lower_function_blocks(declaration, typed_report),)
+'''
+          if old not in text:
+              raise SystemExit("resource patch lower-once guard did not match")
+          path.write_text(text.replace(old, new), encoding="utf-8")
+          PY
+
+          git apply --check tools/v5-resource-contracts.patch
+          git apply tools/v5-resource-contracts.patch
+          python -m pip install -e .
+          python -m unittest discover -s tests -q
+
+          output="$(ks run examples/resource_contracts.ks)"
+          test "$output" = "resource contract ready"
+
+          ks mir examples/resource_contracts.ks > /tmp/resource-mir.json
+          python - <<'PY'
+          import json
+
+          with open('/tmp/resource-mir.json', encoding='utf-8') as handle:
+              data = json.load(handle)
+          assert data['version'] == 3
+          functions = {item['name']: item for item in data['modules'][0]['functions']}
+          assert functions['countdown']['resources']['self_recursive'] is True
+          assert functions['main']['resources']['backward_edges'] > 0
+          assert functions['main']['resources']['instructions'] > 0
+          PY
+
+          python - <<'PY'
+          from dataclasses import replace
+          from pathlib import Path
+          from tempfile import TemporaryDirectory
+
+          from koschei.mir import MirIntegrityError, require_mir
+          from koschei.modules import check_graph, load_graph
+
+          source = Path('examples/resource_contracts.ks').read_text(encoding='utf-8')
+          with TemporaryDirectory() as directory:
+              path = Path(directory) / 'main.ks'
+              path.write_text(source, encoding='utf-8')
+              graph = load_graph(path)
+              check_graph(graph)
+              mir = require_mir(graph)
+              module = mir.root_module
+              function = module.functions[0]
+              forged = replace(function.resources, instructions=999999)
+              changed = replace(function, resources=forged)
+              changed_module = replace(module, functions=(changed,) + module.functions[1:])
+              modules = dict(mir.modules)
+              modules[mir.root] = changed_module
+              attack = replace(mir, modules=modules)
+              try:
+                  attack.assert_sealed()
+              except MirIntegrityError as error:
+                  assert error.code == 'KS5002'
+              else:
+                  raise SystemExit('forged resource contract was accepted')
+          PY
+
+          if ks check examples/supply_chain/main.ks > /tmp/resource-attack.out 2>&1; then
+            echo "Supply-chain attack unexpectedly compiled" >&2
+            exit 1
+          fi
+          grep -q KS2401 /tmp/resource-attack.out
+
+          git rm .github/workflows/v5-resource-snapshot.yml tools/v5-resource-contracts.patch
+          git checkout origin/main -- .github/workflows/verify.yml
+          git config user.name 'Koschei CI'
+          git config user.email 'actions@users.noreply.github.com'
+          git add koschei/mir.py tests/test_resource_contracts_v5.py examples/resource_contracts.ks
+          git commit -m 'v5: seal static resource contracts in MIR'
+          git push origin HEAD:agent/v5-resource-contracts
