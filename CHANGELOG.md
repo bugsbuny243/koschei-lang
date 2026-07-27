@@ -50,8 +50,18 @@
   Typed HIR expression types; reject stale or forged backend input with `KS5002`.
 - Add `ks mir` plus MIR version/fingerprint fields to JSON check output, while
   keeping the current AST-carrying adapter boundary explicit until normalized MIR.
-- Upgrade to MIR schema 2 with typed normalized values, bindings, stores, unary/binary operations, calls, explicit basic blocks, and branch/jump/return terminators.
-- Represent unsupported constructs as visible `ast_fallback` instructions; validate block targets and temporary definitions, and include the CFG in the integrity seal.
+- Upgrade to MIR schema 2 with typed normalized values, bindings, stores,
+  unary/binary operations, calls, explicit basic blocks, and branch/jump/return
+  terminators.
+- Represent unsupported constructs as visible `ast_fallback` instructions; validate
+  block targets and temporary definitions, and include the CFG in the integrity seal.
+- Infer direct and transitive capability effects across local call graphs, including
+  recursion, and seal deterministic `calls` / `effects` contracts into each MIR
+  function.
+- Upgrade to MIR schema 3 with deterministic static resource summaries for basic
+  blocks, instructions, AST fallbacks, backward edges, and direct self-recursion.
+- Include resource summaries in the fingerprint and independently re-derive them
+  during seal validation, so forged or stale metadata fails closed with `KS5002`.
 
 The V5 design principle is: **security beyond ambient-authority languages and a
 writing experience simpler than Python without hiding dangerous effects.**
