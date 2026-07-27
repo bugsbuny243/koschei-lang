@@ -76,6 +76,7 @@ ks run .
 
 ## Example
 
+<!-- verify: compile — requires an external HTTPS origin at runtime -->
 ```ks
 fn fetch_data(net: NetCaps, url: String) -> String or Error {
     let response = net.get(url) or return Error("request failed")
@@ -131,7 +132,7 @@ ks lsp                         # zero-dependency language server
 ks tokens / ks ast / ks emit-go
 ```
 
-The pipeline is `.ks` → lexer → parser → AST → Typed HIR, integrity and capability checks → sealed MIR → interpreter or Go native adapter. Diagnostics default to English; `--lang tr` or `KOSCHEI_LANG=tr` selects the Turkish catalog with identical error codes.
+The pipeline is `.ks` → lexer → parser → AST → Typed HIR, integrity and capability checks → sealed MIR v2 with normalized instructions/basic blocks → interpreter or Go native adapter. Diagnostics default to English; `--lang tr` or `KOSCHEI_LANG=tr` selects the Turkish catalog with identical error codes.
 
 ## Editor support
 
@@ -143,7 +144,7 @@ The pipeline is `.ks` → lexer → parser → AST → Typed HIR, integrity and 
 python -m unittest discover -s tests -v
 ```
 
-The current CI suite runs 408 tests, plus native/interpreter parity, repository documentation examples, committed golden outputs, and a check that the malicious `examples/supply_chain/` package still fails to compile.
+The current CI suite runs 421 tests, plus native/interpreter parity, repository documentation examples, committed golden outputs, and a check that the malicious `examples/supply_chain/` package still fails to compile.
 
 ## Status
 
@@ -155,7 +156,7 @@ Security boundaries currently enforced in the native path:
 - The process capability's `run` / `spawn` does not start a process; it returns an error value.
 - At runtime, path traversal, symlink escape and out-of-scope paths give `KS3402`; a write through a read-only token gives `KS3404`; an HTTP redirect leaving the allowed origin is rejected; call depth is capped at 512 (`KS3105`).
 
-The first sealed backend-independent MIR gate is now in place. The next V5 gate replaces its AST payloads with normalized MIR instructions, explicit basic blocks, and direct backend consumption. The v1.0 release gate additionally requires frozen syntax and capability runtime ABI, a SemVer compatibility commitment, package resolution with a lock file, and migration tests.
+MIR schema 2 now contains normalized core instructions, explicit basic blocks, and terminators, with unsupported constructs exposed as `ast_fallback`. The next V5 gate makes backends execute these nodes directly and removes fallback construct by construct. The v1.0 release gate additionally requires frozen syntax and capability runtime ABI, a SemVer compatibility commitment, package resolution with a lock file, and migration tests.
 
 **Designed but not built**, and not presented as features: static region inference, the C backend, and the Sentinel / tarpit layers. Koschei enforces capabilities in its type system — it does not produce formal mathematical proofs, and it is not a memory-managed-by-region language today; the current backend generates Go and uses Go's garbage collector.
 

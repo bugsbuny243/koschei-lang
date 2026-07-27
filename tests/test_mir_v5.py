@@ -31,7 +31,7 @@ class MirLoweringTests(unittest.TestCase):
         mir = require_mir(graph)
 
         self.assertIsInstance(mir, MirGraph)
-        self.assertEqual(mir.version, 1)
+        self.assertEqual(mir.version, 2)
         self.assertRegex(mir.fingerprint, r"^[0-9a-f]{64}$")
         self.assertEqual(mir.root_module.name, "hello")
         mir.assert_sealed()
@@ -224,7 +224,7 @@ class MirCliTests(unittest.TestCase):
 
         self.assertEqual(code, 0, error)
         payload = json.loads(output)
-        self.assertEqual(payload["version"], 1)
+        self.assertEqual(payload["version"], 2)
         self.assertEqual(payload["root"], "hello")
         self.assertRegex(payload["fingerprint"], r"^[0-9a-f]{64}$")
 
@@ -235,7 +235,7 @@ class MirCliTests(unittest.TestCase):
 
         self.assertEqual(code, 0, error)
         payload = json.loads(output)
-        self.assertEqual(payload["mir_version"], 1)
+        self.assertEqual(payload["mir_version"], 2)
         self.assertRegex(payload["mir_fingerprint"], r"^[0-9a-f]{64}$")
 
     def test_explain_knows_mir_integrity_diagnostic(self) -> None:
