@@ -77,7 +77,7 @@ import json, re, sys
 mir = json.loads(sys.argv[1])
 checked = json.loads(sys.argv[2])
 fingerprint = mir.get("fingerprint", "")
-assert mir.get("version") == 2
+assert mir.get("version") == 3
 assert re.fullmatch(r"[0-9a-f]{64}", fingerprint)
 assert checked.get("mir_version") == mir["version"]
 assert checked.get("mir_fingerprint") == fingerprint
@@ -87,6 +87,12 @@ assert functions and functions[0]["basic_blocks"] >= 1
 assert functions[0]["instructions"] >= 1
 assert functions[0]["ast_fallbacks"] == 0
 assert all(block.get("terminator") for block in functions[0]["blocks"])
+resources = functions[0]["resources"]
+assert resources["basic_blocks"] == functions[0]["basic_blocks"]
+assert resources["instructions"] == functions[0]["instructions"]
+assert resources["ast_fallbacks"] == functions[0]["ast_fallbacks"]
+assert resources["backward_edges"] >= 0
+assert isinstance(resources["self_recursive"], bool)
 PY_MIR
   then
     pass "check and backend input share one sealed MIR fingerprint"
