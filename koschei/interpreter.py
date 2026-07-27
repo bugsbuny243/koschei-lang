@@ -1774,3 +1774,18 @@ def run(
         print(f"KOSCHEI RUNTIME ERROR: {result.message}", file=sys.stderr)
         return 1
     return 0
+
+
+def run_mir(mir_graph, argv: list[str] | None = None) -> int:
+    """Execute only a sealed, checked MIR graph."""
+    mir_graph.assert_sealed()
+    root = mir_graph.root_module
+    return run(
+        root.program,
+        list(argv or []),
+        namespaces=mir_graph.namespaces(),
+        imports=dict(root.imports),
+        enums=mir_graph.enums(),
+        module_imports=mir_graph.module_imports(),
+        structs=mir_graph.structs(),
+    )

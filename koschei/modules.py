@@ -19,6 +19,7 @@ from pathlib import Path
 from .ast_nodes import Program, SourceLocation
 from .integrity import check_program_integrity
 from .legacy_generics import prepare_legacy_analysis
+from .mir import lower_graph as lower_mir_graph
 from .lexer import LexerError
 from .parser import ParserError, parse
 from .semantic import ImportedModule, SemanticError, SemanticReport, check as semantic_check
@@ -49,6 +50,7 @@ class Module:
 class ModuleGraph:
     root: str
     modules: dict[str, Module]
+    mir: object | None = None
 
     def module_of(self, key: str) -> Module:
         return self.modules[key]
@@ -155,12 +157,17 @@ def imported_modules(graph: ModuleGraph, module: Module) -> dict[str, ImportedMo
 
 
 def check_graph(graph: ModuleGraph) -> SemanticReport:
+    # Fail closed: a new check invalidates any previously attached MIR before
+    # analysis starts, so a failed re-check can never leave a stale backend input.
+    graph.mir = None
     report: SemanticReport | None = None
+    typed_reports = {}
     for module in graph.in_dependency_order():
         try:
             imports = imported_modules(graph, module)
             check_program_integrity(module.program)
             typed_report = check_typed_hir(module.program, imports)
+            typed_reports[str(module.path)] = typed_report
             legacy_program, legacy_imports = prepare_legacy_analysis(
                 module.program, imports, typed_report
             )
@@ -171,6 +178,7 @@ def check_graph(graph: ModuleGraph) -> SemanticReport:
         if module.path == graph.root_module.path:
             report = result
     assert report is not None
+    graph.mir = lower_mir_graph(graph, typed_reports)
     return report
 
 

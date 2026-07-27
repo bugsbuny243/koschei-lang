@@ -17,7 +17,7 @@ from . import __version__
 from .capabilities import DOMAIN_ORDER, analyze_graph
 from .capabilities import render as render_manifest
 from .capabilities import to_dict as manifest_to_dict
-from .codegen_go import CodegenError, generate_go
+from .codegen_go import CodegenError, generate_go_mir
 from .diagnostics import (
     diagnostic_payload,
     known_codes,
@@ -26,17 +26,10 @@ from .diagnostics import (
     render_error,
 )
 from .formatter import format_source
-from .interpreter import KoscheiRuntimeError, run as interpret
+from .interpreter import KoscheiRuntimeError, run_mir as interpret_mir
 from .lexer import LexerError, tokenize
-from .modules import (
-    ModuleError,
-    check_graph,
-    enum_declarations,
-    load_graph,
-    module_imports,
-    namespaces,
-    struct_declarations,
-)
+from .mir import MirIntegrityError, require_mir, to_dict as mir_to_dict
+from .modules import ModuleError, check_graph, load_graph
 from .parser import ParserError, parse
 from .project import ProjectError, create_project, resolve_source
 from .semantic import SemanticError
@@ -86,6 +79,8 @@ def command_check(path: str, as_json: bool, locale: str) -> int:
                     "variables": report.variables,
                     "capability_values": report.capability_values,
                     "modules": module_count,
+                    "mir_version": require_mir(graph).version,
+                    "mir_fingerprint": require_mir(graph).fingerprint,
                 },
                 ensure_ascii=False,
             )
@@ -112,16 +107,14 @@ def command_check(path: str, as_json: bool, locale: str) -> int:
 def command_run(path: str) -> int:
     graph = open_graph(path)
     check_graph(graph)
-    root = graph.root_module
-    return interpret(
-        root.program,
-        [],
-        namespaces=namespaces(graph),
-        imports=root.imports,
-        enums=enum_declarations(graph),
-        module_imports=module_imports(graph),
-        structs=struct_declarations(graph),
-    )
+    return interpret_mir(require_mir(graph), [])
+
+
+def command_mir(path: str) -> int:
+    graph = open_graph(path)
+    check_graph(graph)
+    print(json.dumps(mir_to_dict(require_mir(graph)), ensure_ascii=False, indent=2))
+    return 0
 
 
 def command_fmt(path: str, write: bool, check_only: bool, locale: str) -> int:
@@ -201,7 +194,7 @@ def command_caps(path: str, as_json: bool, denied: list[str] | None) -> int:
 def command_emit_go(path: str) -> int:
     graph = open_graph(path)
     check_graph(graph)
-    print(generate_go(graph.root_module.program, graph), end="")
+    print(generate_go_mir(require_mir(graph)), end="")
     return 0
 
 
@@ -209,7 +202,7 @@ def command_build(path: str, output: str | None, locale: str) -> int:
     source_path = require_ks_extension(path)
     graph = load_graph(source_path)
     check_graph(graph)
-    go_source = generate_go(graph.root_module.program, graph)
+    go_source = generate_go_mir(require_mir(graph))
 
     go_binary = shutil.which("go")
     if go_binary is None:
@@ -355,6 +348,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Emit one stable JSON result for editor and CI integrations",
     )
     _source_command(subcommands, "run", "Run a Koschei program")
+    _source_command(subcommands, "mir", "Print the sealed backend-independent MIR")
     _source_command(subcommands, "emit-go", "Print generated Go source")
 
     formatter = _source_command(
@@ -425,6 +419,8 @@ def main(argv: list[str] | None = None) -> int:
             return command_check(args.source, args.json, locale)
         if args.command == "run":
             return command_run(args.source)
+        if args.command == "mir":
+            return command_mir(args.source)
         if args.command == "fmt":
             return command_fmt(args.source, args.write, args.check, locale)
         if args.command == "caps":
@@ -469,6 +465,7 @@ def main(argv: list[str] | None = None) -> int:
         SemanticError,
         CodegenError,
         ModuleError,
+        MirIntegrityError,
     ) as error:
         if args.command == "check" and getattr(args, "json", False):
             print(

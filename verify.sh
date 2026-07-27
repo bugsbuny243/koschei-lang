@@ -62,7 +62,35 @@ else
   printf '%s\n' "$out" | tail -15 | sed 's/^/        /'
 fi
 
-# ------------------------------------------------ 2. examples vs golden output
+# --------------------------------------------------------- 2. sealed MIR identity
+
+head_ "Sealed MIR"
+mir_json=$($KS mir examples/hello.ks 2>&1)
+mir_status=$?
+check_json=$($KS check --json examples/hello.ks 2>&1)
+check_status=$?
+if [ $mir_status -ne 0 ] || [ $check_status -ne 0 ]; then
+  fail "MIR/check JSON generation failed"
+else
+  if python3 - "$mir_json" "$check_json" <<'PY_MIR'
+import json, re, sys
+mir = json.loads(sys.argv[1])
+checked = json.loads(sys.argv[2])
+fingerprint = mir.get("fingerprint", "")
+assert mir.get("version") == 1
+assert re.fullmatch(r"[0-9a-f]{64}", fingerprint)
+assert checked.get("mir_version") == mir["version"]
+assert checked.get("mir_fingerprint") == fingerprint
+assert mir.get("root") == "hello"
+PY_MIR
+  then
+    pass "check and backend input share one sealed MIR fingerprint"
+  else
+    fail "MIR identity is missing, malformed, or inconsistent"
+  fi
+fi
+
+# ----------------------------------------------- 3. examples vs golden output
 #
 # Each entry: <path>|<mode>
 #   run   — must run successfully; stdout is compared against the golden file
@@ -138,7 +166,7 @@ for entry in "${EXAMPLES[@]}"; do
   esac
 done
 
-# ------------------------------------------------------ 3. documentation code
+# ------------------------------------------------------ 4. documentation code
 #
 # Every ```ks block that contains a top-level declaration (fn / struct / enum /
 # import) must compile. Blocks without one are treated as illustrative
