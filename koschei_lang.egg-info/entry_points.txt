@@ -1,4 +1,0 @@
-[console_scripts]
-koschei = koschei.cli_entry:main
-ks = koschei.cli_entry:main
-ks-lsp = koschei.lsp_v5:main
