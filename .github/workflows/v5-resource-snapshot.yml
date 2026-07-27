@@ -1,24 +1,48 @@
-name: V5 Resource Contract Snapshot
+name: V5 Resource Contract Bootstrap
 
 on:
   pull_request:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  snapshot:
-    if: github.event.pull_request.head.ref == 'agent/v5-resource-contracts'
+  apply:
+    if: github.event.pull_request.head.ref == 'agent/v5-resource-contracts' && hashFiles('tools/v5-resource-contracts.patch') != ''
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           ref: agent/v5-resource-contracts
-      - uses: actions/upload-artifact@v4
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
         with:
-          name: koschei-resource-source
-          path: |
-            .
-            !.git
-          include-hidden-files: true
-          if-no-files-found: error
+          python-version: '3.12'
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+      - name: Apply and validate resource contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          git apply --check tools/v5-resource-contracts.patch
+          git apply tools/v5-resource-contracts.patch
+          python -m pip install -e .
+          python -m unittest discover -s tests -q
+          ks run examples/resource_contracts.ks | grep -Fx 'resource contract ready'
+          ks mir examples/resource_contracts.ks > /tmp/resource-mir.json
+          python - <<'PY'
+          import json
+          data = json.load(open('/tmp/resource-mir.json', encoding='utf-8'))
+          funcs = {f['name']: f for f in data['modules'][0]['functions']}
+          assert funcs['countdown']['resources']['self_recursive'] is True
+          assert funcs['main']['resources']['backward_edges'] > 0
+          PY
+          ks check examples/supply_chain/main.ks > /tmp/attack.out 2>&1 && exit 1 || true
+          grep -q KS2401 /tmp/attack.out
+          git rm .github/workflows/v5-resource-snapshot.yml tools/v5-resource-contracts.patch
+          git config user.name 'Koschei CI'
+          git config user.email 'actions@users.noreply.github.com'
+          git add koschei/mir.py tests/test_resource_contracts_v5.py examples/resource_contracts.ks
+          git commit -m 'v5: seal static resource contracts in MIR'
+          git push origin HEAD:agent/v5-resource-contracts
