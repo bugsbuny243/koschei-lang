@@ -18,6 +18,7 @@ from typing import Any, Mapping
 
 from .ast_nodes import Expression, FunctionDeclaration, Program, SourceLocation
 from .diagnostics import CATALOG, ENGLISH_CATALOG, Diagnostic
+from .effects import infer_effects
 from .mir_ir import (
     MirAstFallback,
     MirBasicBlock,
@@ -51,6 +52,8 @@ class MirFunction:
     name: str
     parameters: tuple[MirParameter, ...]
     return_type: TypeNode
+    calls: tuple[str, ...]
+    effects: tuple[str, ...]
     declaration: FunctionDeclaration
     blocks: tuple[MirBasicBlock, ...]
 
@@ -107,6 +110,11 @@ class MirGraph:
             for module in self.modules.values():
                 for function in module.functions:
                     validate_blocks(function.blocks)
+                expected_effects = infer_effects(module.program)
+                for function in module.functions:
+                    expected_calls, expected = expected_effects[function.name]
+                    if function.calls != expected_calls or function.effects != expected:
+                        raise ValueError(f"effect contract mismatch for {module.name}.{function.name}")
             actual = _fingerprint(self.root, self.modules)
         except (KeyError, TypeError, ValueError) as error:
             raise MirIntegrityError(
@@ -161,6 +169,8 @@ def _module_contract(module: MirModule) -> dict[str, Any]:
                     for parameter in function.parameters
                 ],
                 "return": render_type(function.return_type),
+                "calls": list(function.calls),
+                "effects": list(function.effects),
                 "blocks": [block_contract(block) for block in function.blocks],
             }
             for function in module.functions
@@ -219,6 +229,7 @@ def _fingerprint(root: str, modules: Mapping[str, MirModule]) -> str:
 
 
 def lower_module(module: Any, typed_report: TypedHIRReport) -> MirModule:
+    effect_contracts = infer_effects(module.program)
     functions = tuple(
         MirFunction(
             declaration.name,
@@ -230,6 +241,8 @@ def lower_module(module: Any, typed_report: TypedHIRReport) -> MirModule:
                 for parameter in declaration.parameters
             ),
             function_type(declaration, declaration.return_type),
+            effect_contracts[declaration.name][0],
+            effect_contracts[declaration.name][1],
             declaration,
             lower_function_blocks(declaration, typed_report),
         )
@@ -289,6 +302,8 @@ def to_dict(mir: MirGraph) -> dict[str, Any]:
                             for parameter in function.parameters
                         ],
                         "return": render_type(function.return_type),
+                        "calls": list(function.calls),
+                        "effects": list(function.effects),
                         "blocks": [
                             block_contract(block) for block in function.blocks
                         ],
