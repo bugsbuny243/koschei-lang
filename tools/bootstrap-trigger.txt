@@ -1,1 +1,1 @@
-resource-contract-bootstrap-reopen
+resource-contract-bootstrap-final
