@@ -7,6 +7,7 @@ import unittest
 from koschei.mir import MirIntegrityError, require_mir, to_dict
 from koschei.modules import check_graph, load_graph
 
+
 class MirEffectTests(unittest.TestCase):
     def mir_for(self, source: str):
         directory = tempfile.TemporaryDirectory()
@@ -60,7 +61,7 @@ fn main() { println("safe") }
             payload = to_dict(mir)
             inspect = next(item for item in payload['modules'][0]['functions'] if item['name'] == 'inspect')
             self.assertEqual(inspect['effects'], ['env.read'])
-            self.assertEqual(payload['version'], 2)
+            self.assertEqual(payload['version'], 3)
         finally:
             directory.cleanup()
 
@@ -91,6 +92,7 @@ fn main() { println("cycle") }
             self.assertEqual(functions['b'].effects, ('disk.read',))
         finally:
             directory.cleanup()
+
 
 if __name__ == '__main__':
     unittest.main()
