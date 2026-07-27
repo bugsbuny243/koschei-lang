@@ -1,0 +1,38 @@
+name: V5 MIR Effects Retry
+
+on:
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.event.pull_request.head.ref == 'agent/v5-mir-effects' && github.event.pull_request.draft == true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/v5-mir-effects
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+      - name: Reuse bootstrap with additive MIR v2 metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          source = Path('.github/workflows/v5-mir-effects-bootstrap.yml').read_text(encoding='utf-8').splitlines()
+          start = next(i for i, line in enumerate(source) if line.strip() == 'run: |') + 1
+          script = '\n'.join(line[10:] if line.startswith('          ') else line for line in source[start:]) + '\n'
+          script = script.replace("text = text.replace('MIR_VERSION = 2', 'MIR_VERSION = 3')", "# additive metadata keeps MIR schema 2")
+          script = script.replace("self.assertEqual(payload['version'], 3)", "self.assertEqual(payload['version'], 2)")
+          script = script.replace("assert payload['version'] == 3", "assert payload['version'] == 2")
+          Path('/tmp/apply-effects.sh').write_text(script, encoding='utf-8')
+          PY
+          bash /tmp/apply-effects.sh
