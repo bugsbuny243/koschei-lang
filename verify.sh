@@ -77,11 +77,16 @@ import json, re, sys
 mir = json.loads(sys.argv[1])
 checked = json.loads(sys.argv[2])
 fingerprint = mir.get("fingerprint", "")
-assert mir.get("version") == 1
+assert mir.get("version") == 2
 assert re.fullmatch(r"[0-9a-f]{64}", fingerprint)
 assert checked.get("mir_version") == mir["version"]
 assert checked.get("mir_fingerprint") == fingerprint
 assert mir.get("root") == "hello"
+functions = mir["modules"][0]["functions"]
+assert functions and functions[0]["basic_blocks"] >= 1
+assert functions[0]["instructions"] >= 1
+assert functions[0]["ast_fallbacks"] == 0
+assert all(block.get("terminator") for block in functions[0]["blocks"])
 PY_MIR
   then
     pass "check and backend input share one sealed MIR fingerprint"
@@ -174,6 +179,10 @@ done
 # immediately before it in the markdown:
 #
 #   <!-- verify: skip -->
+#
+# To compile a runnable block without executing host/network effects:
+#
+#   <!-- verify: compile -->
 
 head_ "Documentation code blocks"
 
@@ -198,6 +207,7 @@ for name in roots:
     lines = path.read_text(encoding="utf-8").splitlines()
     inside = False
     skip_next = False
+    compile_next = False
     expect_next = ""
     buffer, start = [], 0
     for number, line in enumerate(lines, 1):
@@ -205,6 +215,9 @@ for name in roots:
         low = stripped.lower()
         if not inside and low.startswith("<!-- verify: skip"):
             skip_next = True
+            continue
+        if not inside and low.startswith("<!-- verify: compile"):
+            compile_next = True
             continue
         if not inside and low.startswith("<!-- verify: future"):
             expect_next = "FUTURE"
@@ -221,14 +234,22 @@ for name in roots:
             body = "\n".join(buffer)
             if skip_next:
                 index.append(f"{name}\t{start}\tSKIPMARK\t")
-                skip_next = expect_next = ""
                 skip_next = False
+                compile_next = False
+                expect_next = ""
                 continue
             if expect_next:
                 target = out / f"{name.replace('/', '_')}__{start}.ks"
                 target.write_text(body + "\n", encoding="utf-8")
                 index.append(f"{name}\t{start}\tEXPECT:{expect_next}\t{target}")
                 expect_next = ""
+                compile_next = False
+                continue
+            if compile_next:
+                target = out / f"{name.replace('/', '_')}__{start}.ks"
+                target.write_text(body + "\n", encoding="utf-8")
+                index.append(f"{name}\t{start}\tCOMPILE\t{target}")
+                compile_next = False
                 continue
             skip_next = False
             has_decl = any(
@@ -251,6 +272,7 @@ for name in roots:
             buffer.append(line)
         elif stripped and not stripped.startswith("```"):
             skip_next = False
+            compile_next = False
 
 (out / "index.tsv").write_text("\n".join(index) + "\n", encoding="utf-8")
 PY
@@ -332,7 +354,8 @@ done < "$DOC_TMP/index.tsv"
 if [ $doc_failures -gt 0 ]; then
   printf "\n  ${D}A documented example that does not compile is a promise the\n"
   printf "  project is not keeping. Fix the code, fix the doc, or mark the\n"
-  printf "  block with <!-- verify: skip --> and say why.${N}\n"
+  printf "  block with <!-- verify: skip --> and say why, or use\n"
+  printf "  <!-- verify: compile --> for host/network-dependent runtime code.${N}\n"
 fi
 
 # ------------------------------------------------------------------- summary

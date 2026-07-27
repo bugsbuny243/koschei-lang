@@ -1,3 +1,25 @@
+Metadata-Version: 2.4
+Name: koschei-lang
+Version: 0.9.0
+Summary: Koschei — a capability-secure programming language where an imported package cannot touch the disk or network without a token
+Author: Onur Sel
+License: MIT
+Project-URL: Homepage, https://github.com/bugsbuny243/koschei-lang
+Project-URL: Repository, https://github.com/bugsbuny243/koschei-lang
+Project-URL: Issues, https://github.com/bugsbuny243/koschei-lang/issues
+Keywords: programming-language,compiler,capability-security,object-capability,supply-chain-security,sandbox
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Classifier: Topic :: Software Development :: Compilers
+Classifier: Topic :: Security
+Requires-Python: >=3.12
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Dynamic: license-file
+
 # Koschei (`.ks`)
 
 **A capability-secure programming language. An imported package cannot touch your disk, network, or environment unless you hand it a token.**

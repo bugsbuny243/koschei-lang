@@ -76,6 +76,7 @@ ks run .
 
 ## Örnek
 
+<!-- verify: compile — çalışma anında dış HTTPS origin gerektirir -->
 ```ks
 fn fetch_data(net: NetCaps, url: String) -> String or Error {
     let response = net.get(url) or return Error("istek başarısız")
@@ -131,7 +132,7 @@ ks lsp                         # sıfır bağımlılıklı language server
 ks tokens / ks ast / ks emit-go
 ```
 
-Hat şöyle: `.ks` → lexer → parser → AST → Typed HIR, bütünlük ve capability denetimleri → mühürlü MIR → interpreter veya Go native adapter. Tanılar varsayılan olarak İngilizcedir; `--lang tr` veya `KOSCHEI_LANG=tr` aynı hata kodlarıyla Türkçe kataloğu seçer.
+Hat şöyle: `.ks` → lexer → parser → AST → Typed HIR, bütünlük ve capability denetimleri → normalize talimat/basic block içeren mühürlü MIR v2 → interpreter veya Go native adapter. Tanılar varsayılan olarak İngilizcedir; `--lang tr` veya `KOSCHEI_LANG=tr` aynı hata kodlarıyla Türkçe kataloğu seçer.
 
 ## Editör desteği
 
@@ -143,7 +144,7 @@ Hat şöyle: `.ks` → lexer → parser → AST → Typed HIR, bütünlük ve ca
 python -m unittest discover -s tests -v
 ```
 
-Güncel CI paketi 408 testin yanında native/interpreter çıktı eşliğini, doküman kod bloklarını, sabitlenmiş golden çıktıları ve zararlı `examples/supply_chain/` paketinin hâlâ derlenemediğini doğrular.
+Güncel CI paketi 421 testin yanında native/interpreter çıktı eşliğini, doküman kod bloklarını, sabitlenmiş golden çıktıları ve zararlı `examples/supply_chain/` paketinin hâlâ derlenemediğini doğrular.
 
 ## Durum
 
@@ -155,7 +156,7 @@ Native tarafta şu anda uygulanan güvenlik sınırları:
 - Process capability'sinin `run` / `spawn`'ı process başlatmaz; hata değeri döndürür.
 - Çalışma anında path traversal, symlink kaçışı ve kapsam dışı yollar `KS3402` verir; salt-okunur jetonla yazma `KS3404` verir; izin verilen origin'den çıkan HTTP redirect reddedilir; çağrı derinliği 512 ile sınırlıdır (`KS3105`).
 
-İlk mühürlü backend bağımsız MIR kapısı artık çalışıyor. Sıradaki V5 kapısı AST yüklerini normalize MIR talimatları ve açık basic block’larla değiştirip backend’lerin MIR düğümlerini doğrudan tüketmesidir. v1.0 kapısı ayrıca dondurulmuş sözdizimi ve capability runtime ABI, SemVer uyumluluk taahhüdü, kilit dosyalı paket çözümleme ve migration testleri ister.
+MIR şema 2 artık normalize çekirdek talimatlar, açık basic block’lar ve terminator’lar içeriyor; desteklenmeyen yapılar `ast_fallback` olarak görünür. Sıradaki V5 kapısı backend’lerin bu düğümleri doğrudan çalıştırması ve fallback’in yapı yapı kaldırılmasıdır. v1.0 kapısı ayrıca dondurulmuş sözdizimi ve capability runtime ABI, SemVer uyumluluk taahhüdü, kilit dosyalı paket çözümleme ve migration testleri ister.
 
 **Tasarlandı ama yapılmadı** — ve tamamlanmış özellik olarak sunulmuyor: static region inference, C backend, Sentinel / tarpit katmanları. Koschei yetkileri tip sisteminde zorunlu kılar; formel matematiksel kanıt üretmez ve bugün region tabanlı bellek yönetimi kullanan bir dil değildir — mevcut backend Go üretir ve Go'nun çöp toplayıcısını kullanır.
 

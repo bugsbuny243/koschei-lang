@@ -158,8 +158,9 @@ fn main() {
 
 V5 hedefinde generic'ler MIR üzerinde monomorphize edilir. İlk mühürlü MIR kapısı
 bugün çalışıyor; generic fonksiyon çağrıları geçiş katmanında uzmanlaştırılıyor.
-Normalize MIR talimatları, basic block’lar ve tam backend birleştirmesi henüz açık
-kapılardır.
+Normalize çekirdek MIR talimatları ve basic block’lar şema 2 ile indi. Backend’lerin
+bu düğümleri doğrudan çalıştırması, `ast_fallback` kalemlerinin kaldırılması ve
+generic monomorphization hâlâ açık kapılardır.
 
 ---
 

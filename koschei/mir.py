@@ -18,11 +18,18 @@ from typing import Any, Mapping
 
 from .ast_nodes import Expression, FunctionDeclaration, Program, SourceLocation
 from .diagnostics import CATALOG, ENGLISH_CATALOG, Diagnostic
+from .mir_ir import (
+    MirAstFallback,
+    MirBasicBlock,
+    block_contract,
+    lower_function_blocks,
+    validate_blocks,
+)
 from .type_contracts import function_type, type_parameters_of
 from .type_system import TypeNode, render_type
 from .typed_hir import TypedHIRReport
 
-MIR_VERSION = 1
+MIR_VERSION = 2
 
 
 class MirIntegrityError(Exception):
@@ -45,6 +52,7 @@ class MirFunction:
     parameters: tuple[MirParameter, ...]
     return_type: TypeNode
     declaration: FunctionDeclaration
+    blocks: tuple[MirBasicBlock, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,7 +103,15 @@ class MirGraph:
         return ordered
 
     def assert_sealed(self) -> None:
-        actual = _fingerprint(self.root, self.modules)
+        try:
+            for module in self.modules.values():
+                for function in module.functions:
+                    validate_blocks(function.blocks)
+            actual = _fingerprint(self.root, self.modules)
+        except (KeyError, TypeError, ValueError) as error:
+            raise MirIntegrityError(
+                f"MIR kontrol akışı yapısal olarak geçersiz: {error}"
+            ) from error
         if actual != self.fingerprint:
             raise MirIntegrityError(
                 "MIR mührü kaynak ağacıyla uyuşmuyor; doğrulanmış ara temsil "
@@ -145,6 +161,7 @@ def _module_contract(module: MirModule) -> dict[str, Any]:
                     for parameter in function.parameters
                 ],
                 "return": render_type(function.return_type),
+                "blocks": [block_contract(block) for block in function.blocks],
             }
             for function in module.functions
         ],
@@ -214,6 +231,7 @@ def lower_module(module: Any, typed_report: TypedHIRReport) -> MirModule:
             ),
             function_type(declaration, declaration.return_type),
             declaration,
+            lower_function_blocks(declaration, typed_report),
         )
         for declaration in module.program.declarations
     )
@@ -271,6 +289,19 @@ def to_dict(mir: MirGraph) -> dict[str, Any]:
                             for parameter in function.parameters
                         ],
                         "return": render_type(function.return_type),
+                        "blocks": [
+                            block_contract(block) for block in function.blocks
+                        ],
+                        "basic_blocks": len(function.blocks),
+                        "instructions": sum(
+                            len(block.instructions) for block in function.blocks
+                        ),
+                        "ast_fallbacks": sum(
+                            1
+                            for block in function.blocks
+                            for instruction in block.instructions
+                            if isinstance(instruction, MirAstFallback)
+                        ),
                     }
                     for function in module.functions
                 ],
