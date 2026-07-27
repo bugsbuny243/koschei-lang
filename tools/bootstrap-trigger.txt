@@ -1,1 +1,1 @@
-resource-contract-bootstrap
+resource-contract-bootstrap-2
