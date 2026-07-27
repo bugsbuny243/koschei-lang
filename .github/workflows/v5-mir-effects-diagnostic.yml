@@ -43,6 +43,17 @@ jobs:
           name: mir-effects-diagnostic
           path: /tmp/effects.log
           if-no-files-found: error
+      - name: Persist failure summary
+        if: steps.run.outcome != 'success'
+        shell: bash
+        run: |
+          mkdir -p tools
+          tail -120 /tmp/effects.log > tools/mir-effects-failure.log
+          git config user.name 'Koschei CI'
+          git config user.email 'actions@users.noreply.github.com'
+          git add tools/mir-effects-failure.log
+          git commit -m 'ci: capture MIR effects failure'
+          git push origin HEAD:agent/v5-mir-effects
       - name: Enforce result
         if: steps.run.outcome != 'success'
         run: exit 1
