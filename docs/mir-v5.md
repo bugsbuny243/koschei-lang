@@ -79,8 +79,9 @@ resource summary make that remaining migration debt machine-visible.
 
 This remains a transition architecture: normalized CFG is generated, validated,
 and included in the seal, but the interpreter and Go adapter still execute the
-immutable AST compatibility payload. Direct backend execution of MIR
-instructions and enforceable runtime budgets remain later gates.
+immutable AST compatibility payload. `ks run` now enforces dynamic step and
+call-depth budgets around that checked payload; direct MIR execution and native
+user-budget parity remain later gates.
 
 ## Inspecting the contract
 
@@ -122,7 +123,7 @@ the seal.
 
 ## Next gate
 
-The next wave turns static shape into enforceable policy: user-visible resource
-budgets, transitive call-graph cost summaries, and runtime counters that fail
-closed. In parallel, one backend begins executing normalized blocks directly so
-`ast_fallback` can be eliminated construct by construct.
+Interpreter step and call-depth budgets now fail closed through `ks run`. The
+next wave propagates costs across module call graphs, brings the same selected
+policy to native binaries, and makes one backend execute normalized blocks
+directly so `ast_fallback` can be eliminated construct by construct.
