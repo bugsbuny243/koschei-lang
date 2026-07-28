@@ -62,6 +62,10 @@
   blocks, instructions, AST fallbacks, backward edges, and direct self-recursion.
 - Include resource summaries in the fingerprint and independently re-derive them
   during seal validation, so forged or stale metadata fails closed with `KS5002`.
+- Add fail-closed interpreter runtime budgets to `ks run`: a secure default step
+  meter (`KS3601`) plus a user-selectable call-depth ceiling (`KS3602`).
+- Count every statement and expression evaluation so empty infinite loops cannot
+  evade fuel; keep the existing 512-frame language ceiling as a hard maximum.
 
 The V5 design principle is: **security beyond ambient-authority languages and a
 writing experience simpler than Python without hiding dangerous effects.**
