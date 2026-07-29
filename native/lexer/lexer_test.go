@@ -175,7 +175,7 @@ func TestDeterministicOutput(t *testing.T) {
 }
 
 func TestMalformedInputsFail(t *testing.T) {
-	cases := []string{"&", "|", `"unterminated`, `"{}`, `"bad \q"`, `"bad }"`, `"{value"`}
+	cases := []string{"&", "|", `"unterminated`, `"{}"`, `"bad \q"`, `"bad }"`, `"{value"`}
 	for _, source := range cases {
 		t.Run(source, func(t *testing.T) {
 			if _, err := Tokenize(source, Config{}); err == nil {
