@@ -19,10 +19,32 @@ _ERROR_LOCATION = re.compile(
 )
 
 
-def _number_value(text: str) -> tuple[str, int | float]:
-    if "." in text:
-        return ("float", float(text))
-    return ("int", int(text))
+def _number_lexeme(source: str, line: int, column: int) -> str:
+    lines = source.splitlines(keepends=True)
+    if line < 1 or line > len(lines):
+        raise AssertionError(f"number token points outside source: {line}:{column}")
+    text = lines[line - 1]
+    start = column - 1
+    end = start
+    while end < len(text) and text[end].isdigit():
+        end += 1
+    if (
+        end < len(text)
+        and text[end] == "."
+        and end + 1 < len(text)
+        and text[end + 1].isdigit()
+    ):
+        end += 1
+        while end < len(text) and text[end].isdigit():
+            end += 1
+    value = text[start:end]
+    if not value:
+        raise AssertionError(f"number token has no source lexeme at {line}:{column}")
+    return value
+
+
+def _normalized_number(text: str) -> tuple[str, str]:
+    return ("float" if "." in text else "int", text)
 
 
 def _normalize_python(source: str, *, keep_comments: bool) -> list[tuple[object, ...]]:
@@ -31,10 +53,12 @@ def _normalize_python(source: str, *, keep_comments: bool) -> list[tuple[object,
         kind = token.type.name
         value: object = token.value
         if kind == "NUMBER":
-            number_kind = "float" if isinstance(token.value, float) else "int"
-            value = (number_kind, token.value)
+            value = _normalized_number(_number_lexeme(source, token.line, token.column))
         elif kind == "STRING_INTERP":
-            value = tuple((segment_kind, segment_value) for segment_kind, segment_value in token.value)
+            value = tuple(
+                (segment_kind, segment_value)
+                for segment_kind, segment_value in token.value
+            )
         result.append((kind, value, token.line, token.column))
     return result
 
@@ -44,8 +68,12 @@ def _normalize_native(payload: str) -> list[tuple[object, ...]]:
     for token in json.loads(payload):
         kind = token["kind"]
         value: object = token.get("value")
-        if kind == "NUMBER":
-            value = _number_value(token["value"])
+        if kind == "EOF":
+            value = None
+        elif kind == "STRING":
+            value = token.get("value", "")
+        elif kind == "NUMBER":
+            value = _normalized_number(token["value"])
         elif kind == "STRING_INTERP":
             value = tuple(
                 (segment["kind"], segment["value"])
@@ -127,9 +155,20 @@ class NativeLexerParityV5Tests(unittest.TestCase):
             )
             return
 
+        self.assertNotIn(
+            "panic:",
+            native.stderr.lower(),
+            f"native lexer panicked for source={source!r}",
+        )
         python_location = _failure_location(python_failure or "")
         native_location = _failure_location(native.stderr)
-        if python_location is not None and native_location is not None:
+        if python_location is not None:
+            self.assertIsNotNone(
+                native_location,
+                "native rejection was not a controlled located lexer error\n"
+                f"source={source!r}\n"
+                f"native_stderr={native.stderr!r}",
+            )
             self.assertEqual(
                 native_location,
                 python_location,
@@ -154,11 +193,17 @@ class NativeLexerParityV5Tests(unittest.TestCase):
     def test_curated_edge_contract_matches(self) -> None:
         cases = [
             "",
+            'let text = ""',
             "// yalnızca yorum",
             "let sayı_1 = 000123",
             "let Büyük = 1",
+            "let a² = 1",
+            "let aⅣ = 2",
+            "let a¼ = 3",
             "let value = 99999999999999999999999999999999999999999999999999",
             "let value = 00000000000000000000000000000000000000000000000001.2500",
+            "let value = 1.0000000000000001",
+            "let value = 999999999999999999999999999999999.1234567890123456789",
             'let text = "satır\\nsekme\\t\\{güvenli\\}"',
             'let text = "değer={Map { anahtar: \"}\" }}"',
             'let text = "liste={[1, 2, 3].length()}"',
@@ -166,6 +211,8 @@ class NativeLexerParityV5Tests(unittest.TestCase):
             "&",
             "|",
             '"{}"',
+            '"{\x1c}"',
+            '"{\x1f}"',
             '"kapanmadı',
             '"geçersiz \\q"',
             '"tek }"',
