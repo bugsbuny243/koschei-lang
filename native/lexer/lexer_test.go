@@ -1,6 +1,7 @@
 package lexer
 
 import (
+	"encoding/json"
 	"errors"
 	"reflect"
 	"strings"
@@ -86,6 +87,20 @@ func TestUnicodeColumnsCountCharactersNotBytes(t *testing.T) {
 	}
 }
 
+func TestIdentifierContinuationMatchesPythonAlnum(t *testing.T) {
+	tokens, err := Tokenize("let a² = 1\nlet aⅣ = 2\nlet a¼ = 3", Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"a²", "aⅣ", "a¼"}
+	for index, tokenIndex := range []int{1, 5, 9} {
+		token := tokens[tokenIndex]
+		if token.Kind != IDENTIFIER || token.Value != want[index] {
+			t.Fatalf("token %d = %#v; want identifier %q", tokenIndex, token, want[index])
+		}
+	}
+}
+
 func TestExactLargeIntegerDoesNotOverflowLexer(t *testing.T) {
 	raw := strings.Repeat("9", 200)
 	tokens, err := Tokenize(raw, Config{})
@@ -94,6 +109,42 @@ func TestExactLargeIntegerDoesNotOverflowLexer(t *testing.T) {
 	}
 	if tokens[0].Kind != NUMBER || tokens[0].Value != raw {
 		t.Fatalf("number changed: %#v", tokens[0])
+	}
+}
+
+func TestExactDecimalTextDoesNotLosePrecision(t *testing.T) {
+	raw := "1.0000000000000001"
+	tokens, err := Tokenize(raw, Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tokens[0].Kind != NUMBER || tokens[0].Value != raw {
+		t.Fatalf("decimal changed: %#v", tokens[0])
+	}
+}
+
+func TestEmptyStringJSONPreservesValue(t *testing.T) {
+	tokens, err := Tokenize(`""`, Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(tokens[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(encoded), `"value":""`) {
+		t.Fatalf("empty string value disappeared from JSON: %s", encoded)
+	}
+}
+
+func TestInterpolationUsesPythonWhitespace(t *testing.T) {
+	_, err := Tokenize("\"{\x1c}\"", Config{})
+	if err == nil {
+		t.Fatal("expected Python-empty interpolation to be rejected")
+	}
+	var located *Error
+	if !errors.As(err, &located) || located.Line != 1 || located.Column != 1 {
+		t.Fatalf("expected located failure at 1:1, got %v", err)
 	}
 }
 
@@ -124,7 +175,7 @@ func TestDeterministicOutput(t *testing.T) {
 }
 
 func TestMalformedInputsFail(t *testing.T) {
-	cases := []string{"&", "|", `"unterminated`, `"{}"`, `"bad \q"`, `"bad }"`, `"{value"`}
+	cases := []string{"&", "|", `"unterminated`, `"{}`, `"bad \q"`, `"bad }"`, `"{value"`}
 	for _, source := range cases {
 		t.Run(source, func(t *testing.T) {
 			if _, err := Tokenize(source, Config{}); err == nil {
@@ -135,7 +186,7 @@ func TestMalformedInputsFail(t *testing.T) {
 }
 
 func FuzzLexerNeverPanics(f *testing.F) {
-	for _, seed := range []string{"", "fn main() {}", `"{Map { a: 1 }}"`, "// x\nlet y = 3", "\xff"} {
+	for _, seed := range []string{"", "fn main() {}", `"{Map { a: 1 }}"`, "// x\nlet y = 3", "\xff", "let a² = 1", "\"{\x1c}\""} {
 		f.Add(seed)
 	}
 	f.Fuzz(func(t *testing.T, source string) {
