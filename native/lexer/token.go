@@ -63,13 +63,12 @@ type Segment struct {
 	Value string `json:"value"`
 }
 
-// Token deliberately keeps numeric values as exact source text. This avoids
-// host integer overflow in the lexer; the typed compiler decides whether a
-// number fits Koschei's Int contract later.
+// Token deliberately keeps numeric values as exact source text. Value is always
+// emitted in JSON because an empty string is a meaningful STRING token value.
 type Token struct {
 	Kind     Kind      `json:"kind"`
 	Lexeme   string    `json:"lexeme,omitempty"`
-	Value    string    `json:"value,omitempty"`
+	Value    string    `json:"value"`
 	Segments []Segment `json:"segments,omitempty"`
 	Line     int       `json:"line"`
 	Column   int       `json:"column"`
