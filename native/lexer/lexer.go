@@ -200,8 +200,14 @@ func (lexer *Lexer) scan() error {
 	return lexer.failure(fmt.Sprintf("invalid character: %q", char), nil)
 }
 
+// isPythonAlnum mirrors Python str.isalnum for identifier continuations:
+// Unicode letters plus every Unicode numeric category (Nd, Nl, and No).
+func isPythonAlnum(char rune) bool {
+	return unicode.IsLetter(char) || unicode.IsNumber(char)
+}
+
 func (lexer *Lexer) identifier() error {
-	for unicode.IsLetter(lexer.peek()) || unicode.IsDigit(lexer.peek()) || lexer.peek() == '_' {
+	for isPythonAlnum(lexer.peek()) || lexer.peek() == '_' {
 		lexer.advance()
 	}
 	text := lexer.slice()
@@ -327,13 +333,19 @@ func (lexer *Lexer) interpolationExpression() (string, error) {
 	return "", lexer.failure("interpolation must close with '}'", nil)
 }
 
+// isPythonSpace mirrors the whitespace set used by Python str.strip. Go's
+// unicode.IsSpace matches it except for the four information separators below.
+func isPythonSpace(char rune) bool {
+	return unicode.IsSpace(char) || (char >= '\u001c' && char <= '\u001f')
+}
+
 func trimSpace(value string) string {
 	runes := []rune(value)
 	start, end := 0, len(runes)
-	for start < end && unicode.IsSpace(runes[start]) {
+	for start < end && isPythonSpace(runes[start]) {
 		start++
 	}
-	for end > start && unicode.IsSpace(runes[end-1]) {
+	for end > start && isPythonSpace(runes[end-1]) {
 		end--
 	}
 	return string(runes[start:end])
