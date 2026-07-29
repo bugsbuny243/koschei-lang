@@ -20,7 +20,10 @@ _ERROR_LOCATION = re.compile(
 
 
 def _number_lexeme(source: str, line: int, column: int) -> str:
-    lines = source.splitlines(keepends=True)
+    # Koschei's lexer advances source lines only for '\n'. A bare '\r' is
+    # whitespace but remains on the same source line, so splitlines() would
+    # corrupt the lexer's line/column contract for adversarial input.
+    lines = source.split("\n")
     if line < 1 or line > len(lines):
         raise AssertionError(f"number token points outside source: {line}:{column}")
     text = lines[line - 1]
