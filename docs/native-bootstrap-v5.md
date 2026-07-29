@@ -27,19 +27,33 @@ go run ./cmd/ksc-native ../examples/showcase.ks
 - Interpolation scanning tracks nested braces and quoted strings deterministically.
 - Fuzz seeds exercise malformed input and the lexer API is required not to panic.
 
+## Differential parity gate
+
+`tests/test_native_lexer_parity_v5.py` builds `ksc-native` once and treats the
+Python lexer as the temporary compatibility oracle. CI compares token kind, value,
+interpolation segments, and Unicode line/column positions for every checked-in
+`.ks` source, both with comments discarded and preserved.
+
+The same gate runs curated edge cases and deterministic generated adversarial
+sources. Valid input must produce the same normalized token stream. Malformed input
+must be accepted or rejected by both implementations, and located failures must
+point at the same source position. A native lexer change cannot silently alter the
+language contract while the bootstrap migration is in progress.
+
 ## Honest boundary
 
 This is not yet the default compiler and it does not make a claim of immunity to
-all attacks. The Python frontend remains the compatibility oracle while native
-lexer parity expands. Parser, typed HIR, sealed MIR verification, code generation,
-and the capability runtime still need independent native implementations before
-Python can be removed from installation.
+all attacks. The Python frontend remains the compatibility oracle while the native
+parser is built. Typed HIR, sealed MIR verification, code generation, and the
+capability runtime still need independent native implementations before Python can
+be removed from installation.
 
 ## Exit sequence
 
-1. Differential-token tests compare Python and native token streams on the full
-   corpus and generated adversarial sources.
-2. A native parser consumes only the stable token contract.
+1. **Complete:** differential-token tests compare Python and native token streams
+   on the full checked-in corpus and generated adversarial sources.
+2. A bounded native parser consumes only the stable token contract and emits a
+   versioned, language-neutral syntax tree.
 3. Typed HIR and sealed MIR validation move behind a language-neutral schema.
 4. One native backend executes normalized MIR directly, without AST fallback.
 5. The compiler is rebuilt by the previous trusted compiler and reproducible
