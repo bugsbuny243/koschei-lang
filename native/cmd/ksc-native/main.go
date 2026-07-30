@@ -97,14 +97,16 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 }
 
 func printFailure(stderr io.Writer, err error) int {
-	var lexerFailure *lexer.Error
-	if errors.As(err, &lexerFailure) {
-		fmt.Fprintln(stderr, "KOSCHEI NATIVE ERROR:", lexerFailure)
-		return 1
-	}
+	// Parser failures may wrap a nested interpolation lexer failure. Prefer the
+	// outer parser location so diagnostics still point into the original source.
 	var parserFailure *nativeparser.Error
 	if errors.As(err, &parserFailure) {
 		fmt.Fprintln(stderr, "KOSCHEI NATIVE ERROR:", parserFailure)
+		return 1
+	}
+	var lexerFailure *lexer.Error
+	if errors.As(err, &lexerFailure) {
+		fmt.Fprintln(stderr, "KOSCHEI NATIVE ERROR:", lexerFailure)
 		return 1
 	}
 	fmt.Fprintln(stderr, "KOSCHEI NATIVE ERROR:", err)
