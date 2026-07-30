@@ -423,11 +423,11 @@ func (parser *Parser) interpolatedString(start lexer.Token, depth int) (syntax.E
 		case "expr":
 			remainingBytes := parser.budget.config.MaxInterpolationBytes - parser.budget.interpolationBytes
 			if remainingBytes < 1 || len(segment.Value) > remainingBytes {
-				return syntax.Expression{}, parser.failure(start, fmt.Sprintf("total interpolation byte budget exhausted at %d bytes", parser.budget.config.MaxInterpolationBytes), ErrNodeBudget)
+				return syntax.Expression{}, parser.failure(start, fmt.Sprintf("total interpolation byte budget exhausted at %d bytes", parser.budget.config.MaxInterpolationBytes), ErrInterpolationBudget)
 			}
 			remainingTokens := parser.budget.config.MaxInterpolationTokens - parser.budget.interpolationTokens
 			if remainingTokens < 1 {
-				return syntax.Expression{}, parser.failure(start, fmt.Sprintf("total interpolation token budget exhausted at %d tokens", parser.budget.config.MaxInterpolationTokens), ErrNodeBudget)
+				return syntax.Expression{}, parser.failure(start, fmt.Sprintf("total interpolation token budget exhausted at %d tokens", parser.budget.config.MaxInterpolationTokens), ErrInterpolationBudget)
 			}
 			tokens, err := lexer.Tokenize(segment.Value, lexer.Config{
 				MaxSourceBytes: remainingBytes,
