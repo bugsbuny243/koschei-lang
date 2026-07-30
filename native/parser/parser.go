@@ -17,10 +17,11 @@ const (
 )
 
 var (
-	ErrNodeBudget  = errors.New("parser node budget exhausted")
-	ErrDepthBudget = errors.New("parser depth budget exhausted")
-	ErrTokenStream = errors.New("invalid parser token stream")
-	ErrConfig      = errors.New("invalid parser configuration")
+	ErrNodeBudget          = errors.New("parser node budget exhausted")
+	ErrDepthBudget         = errors.New("parser depth budget exhausted")
+	ErrInterpolationBudget = errors.New("parser interpolation budget exhausted")
+	ErrTokenStream         = errors.New("invalid parser token stream")
+	ErrConfig              = errors.New("invalid parser configuration")
 )
 
 type Config struct {
