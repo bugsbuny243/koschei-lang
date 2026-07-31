@@ -105,7 +105,14 @@ func Parse(tokens []lexer.Token, config Config) (syntax.Document, error) {
 		}
 	}
 	machine := &Parser{tokens: tokens, budget: &budget{config: config}}
-	return machine.program()
+	document, err := machine.program()
+	if err != nil {
+		return syntax.Document{}, err
+	}
+	if err := validateExpressionDepth(document, config.MaxDepth); err != nil {
+		return syntax.Document{}, err
+	}
+	return document, nil
 }
 
 func (parser *Parser) program() (syntax.Document, error) {
