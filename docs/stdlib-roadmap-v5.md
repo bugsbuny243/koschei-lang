@@ -1,38 +1,43 @@
-# Koschei V5 standard-library contract and backend roadmap
+# Koschei V5 standard-library security contract
 
-Koschei targets secure backend services without cloning the surface or trust model
-of an existing language. The standard library therefore starts from security
-properties rather than from a list of familiar package names.
+Koschei targets secure backend services without cloning the syntax, library
+surface, or trust model of another language. Its standard library therefore
+starts from machine-enforced security properties rather than familiar package
+names.
 
-The machine-readable source of truth is `koschei/stdlib_catalog.py` with schema
-`koschei.stdlib/v1`. Run it with:
+The executable source of truth is `koschei/stdlib_catalog.py` with schema
+`koschei.stdlib/v2`:
 
 ```bash
 ks-stdlib
 ks-stdlib --json
 ```
 
-The catalog uses three operation states:
+## What the catalog means
 
-- **supported** — implemented by both the Python bootstrap interpreter and the
-  generated native Go runtime used by current parity tests;
-- **reserved** — a name or method is visible in the bootstrap surface, but its
-  implementation is intentionally unavailable and must not be treated as a
-  usable backend feature;
-- **planned** — roadmap only; no implementation claim.
+Each operation has one of three states:
 
-Family maturity is separate. `bootstrap` means the current operation slice is
-usable but not yet a production-complete library. `partial` means important
-operations or security budgets remain missing. `planned` means the family has
-not been implemented.
+- **supported** — present in both bootstrap execution paths and allowed by the
+  current security gate;
+- **reserved** — a name or partial implementation exists, but programs must not
+  rely on it as a secure standard-library feature;
+- **planned** — roadmap only, with no implementation claim.
+
+Resource limits are deliberately split into two fields:
+
+- `required_budgets` describes every resource dimension needed before the
+  operation can be considered secure;
+- `enforced_budgets` lists only limits implemented in both bootstrap backends.
+
+A security-sensitive operation cannot be `supported` unless every required
+budget is enforced. Partial defenses remain visible without being promoted to a
+false support claim. For example, outbound HTTP GET currently enforces a deadline
+and redirect limit, but not a response-body byte limit, so it remains `reserved`.
 
 ## Current truth
 
-The compiler package has zero third-party runtime dependencies. Koschei does not
-yet ship a directory of independent `.ks` standard-library modules. Its current
-public API is embedded in the bootstrap interpreter and generated runtime.
-
-The target catalog contains **32 families**:
+The compiler package still has zero third-party runtime dependencies. The target
+catalog contains 32 families:
 
 | Phase | Families |
 |---|---|
@@ -41,114 +46,101 @@ The target catalog contains **32 families**:
 | V2 production services | `task`, `channel`, `stream`, `tls`, `cache`, `queue`, `metrics`, `trace`, `health`, `compress`, `dns` |
 | V3 persistent sessions | `websocket` |
 
-`data.parse_json`, outbound HTTP `post`/`put`/`delete`/generic `request`, and
-`process.run`/`spawn` are explicitly **reserved**, not supported. This distinction
-prevents a type checker declaration or placeholder runtime method from being
-mistaken for a completed standard-library feature.
+The following operations are explicitly reserved until their security contracts
+are complete:
 
-## Non-negotiable library rules
+- `core.print` and `core.println`: capability values are not yet rejected or
+  identically redacted across both backends;
+- `text.to_int`: the Python bootstrap does not yet match native signed 64-bit
+  overflow behavior;
+- `data.parse_json`: bounded interpreter/native execution does not exist yet;
+- `request.get`: response bytes are not capped;
+- HTTP `post`, `put`, `delete`, and generic `request`: execution is unavailable;
+- disk read/write/list operations: content, entry, or deadline budgets are not
+  enforced identically in both backends;
+- `env.get`: no cross-backend value-size limit;
+- `process.run` and `process.spawn`: intentionally fail closed.
 
-Every Koschei standard-library operation must satisfy the rules below before it
-can move to `supported`:
+This is not a regression in honesty. The runtime may contain partial bootstrap
+implementations, but the secure standard-library contract does not promote them
+until all required guarantees are enforced.
 
-1. **No ambient authority.** Disk, network, environment, process, clock, random,
-   database, server, queue, telemetry, DNS and similar effects require an explicit
-   narrow capability value.
-2. **No backend split.** An operation cannot be advertised as supported when only
-   the interpreter or only the native runtime implements it.
-3. **Fail closed.** Missing OS primitives, unsafe fallbacks or unsupported targets
-   produce a located error; they never silently weaken the contract.
-4. **Bounded work.** Input bytes, output bytes, collection size, tree depth,
-   redirects, rows, tasks, messages, deadlines or other relevant resources have
-   explicit budgets.
-5. **No capability laundering.** Generic containers, serialization, logging,
-   errors and asynchronous messages cannot hide or duplicate authority values.
-6. **Deterministic output.** Data encoding, maps, diagnostics and build artifacts
-   have canonical behavior where reproducibility matters.
-7. **Secret-safe by construction.** Future `Secret<T>` values are non-printable,
-   redacted in diagnostics and rejected by ordinary serialization.
-8. **No shell by default.** Process execution uses an exact executable and an
-   argument vector; a shell is not an implicit parsing layer.
-9. **Protocol policy is explicit.** TLS versions, trust roots, redirect behavior,
-   DNS/private-range rules and server limits are values, not hidden globals.
-10. **Tests precede support status.** Unit tests, interpreter/native parity tests,
-    resource-exhaustion tests and malformed-input tests must pass before the
-    catalog state changes.
+## Non-negotiable rules
 
-## Delivery gates
+1. **No ambient authority.** Effects require explicit narrow capabilities.
+2. **No backend split.** `supported` requires interpreter and native parity.
+3. **Fail closed.** Unsupported targets never silently weaken behavior.
+4. **Bounded attacker-controlled work.** Network, disk, parsing, database,
+   concurrency, compression, telemetry, and similar workloads require enforceable
+   limits.
+5. **No capability laundering.** Containers, serialization, output, errors, logs,
+   and messages cannot hide or duplicate authority.
+6. **Deterministic output.** Encoding, diagnostics, maps, and artifacts are
+   canonical where reproducibility matters.
+7. **Secret-safe by construction.** Future secret values are non-printable and
+   rejected by ordinary serialization.
+8. **No shell by default.** Process execution uses an exact executable and
+   argument vector.
+9. **Protocol policy is explicit.** TLS, redirects, DNS, private ranges, trust
+   roots, and server limits are values rather than hidden globals.
+10. **Tests precede status.** Adversarial, parity, malformed-input, and resource
+    exhaustion tests must pass before a status changes to `supported`.
 
-### Gate 1 — truthful bootstrap surface
+## Delivery order
 
-- Machine-readable catalog and deterministic CLI.
-- CI rejects duplicate families, duplicate operations and one-backend-only
-  `supported` claims.
-- Reserved operations remain visible as debt but are never counted as completed.
-- Semantic/runtime/native declarations are progressively generated from or checked
-  against the catalog so they cannot drift independently.
+### Gate 1 — truthful catalog
+
+- Separate required limits from enforced limits.
+- Reject one-backend-only support.
+- Reject security-sensitive support with missing enforced budgets.
+- Keep partial protections visible without overstating completion.
 
 ### Gate 2 — bounded `data`
 
 - Deterministic JSON decode and encode.
-- Maximum input/output bytes, nodes and depth.
+- Maximum input/output bytes, nodes, and depth.
 - Duplicate object keys rejected.
-- Integer overflow and non-finite floats rejected.
+- Integer overflow and non-finite numbers rejected.
 - Capability and secret values cannot be encoded.
 - Interpreter/native structural parity.
 
-### Gate 3 — complete outbound `request`
+### Gate 3 — bounded output and scalar parity
 
-- GET, POST, PUT, DELETE and generic request share one policy engine.
+- `print` and `println` reject capabilities and secrets before formatting.
+- Output byte budgets are enforced identically.
+- `to_int` accepts only signed 64-bit results in both backends.
+
+### Gate 4 — bounded disk and outbound HTTP
+
+- Exact file, directory-entry, request, and response limits.
+- Mandatory deadlines.
 - Origin confinement survives redirects and DNS changes.
-- Request/response size limits and deadlines are mandatory.
-- Headers are validated and secrets are not reflected into diagnostics.
-- Private-network policy is explicit rather than inferred.
+- No partial output or partial file commit after budget failure.
 
-### Gate 4 — first Koschei backend server
+### Gate 5 — first secure backend service
 
-- `serve` accepts only an explicit listener capability.
-- Connection, request-body, response-body, header and deadline budgets.
-- Structured handlers return values rather than mutating global response state.
-- A complete example serves an API, decodes bounded JSON, calls a capability-
-  scoped database and emits redacted structured logs.
+- Capability-bound HTTP server.
+- Bounded request/response bodies, headers, connections, and deadlines.
+- Bounded JSON, capability-scoped database access, and redacted structured logs.
 
-### Gate 5 — database, configuration and secrets
+### Gate 6 — production services
 
-- Typed query parameters; no string-built SQL path in the safe API.
-- Result row/byte/deadline limits.
-- Transaction authority cannot escape its scope.
-- Configuration is assembled only from explicitly granted sources.
-- `Secret<T>` cannot be printed, serialized, compared with ordinary equality or
-  stored in unrestricted containers.
-
-### Gate 6 — structured concurrency and production operations
-
-- Child tasks cannot outlive their lexical task scope.
-- Channels and streams are bounded and provide back pressure.
-- Metrics reject untrusted-cardinality label explosions.
-- Traces and logs bound attributes and redact secrets.
-- Queue retries, cache memory and decompression ratios are bounded.
+- Structured concurrency and bounded channels/streams.
+- Database row/byte/deadline limits.
+- TLS and DNS policy values.
+- Bounded caches, queues, telemetry, and decompression ratios.
 
 ### Gate 7 — independent `.ks` standard library
 
-The long-term standard library should be implemented primarily in Koschei itself.
-Only the smallest audited native syscall/cryptographic boundary remains in the
-runtime. Modules are versioned, reproducibly built and governed by the same
-capability rules as third-party code. Importing a standard module grants no power;
-capabilities still arrive only through explicit parameters.
+The long-term standard library is implemented primarily in Koschei itself. Only
+the smallest audited native syscall and cryptographic boundary remains in the
+runtime. Importing a standard module grants no authority; capabilities still
+arrive only through explicit parameters.
 
-## Definition of a production-ready family
+## Production-ready definition
 
-A family is production-ready only when all of the following are true:
-
-- its public contract is versioned;
-- interpreter and native behavior are structurally equivalent;
-- every effect has a narrow capability;
-- every attacker-controlled workload has an enforceable budget;
-- malformed and adversarial inputs do not panic or partially commit output;
-- no placeholder or host-language exception leaks through the public ABI;
-- documentation includes at least one secure example and one denied attack;
-- the catalog, implementation and tests change in the same pull request.
-
-This roadmap deliberately avoids claiming that a familiar API name makes Koschei
-backend-ready. Koschei becomes backend-ready when the security properties are
-machine-enforced across the whole implementation.
+A family is production-ready only when its contract is versioned, both backends
+are structurally equivalent, every effect has a narrow capability, every
+attacker-controlled workload is bounded, malformed inputs cannot panic or
+partially commit output, and the catalog, implementation, tests, and secure
+examples change together.
