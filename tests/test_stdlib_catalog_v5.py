@@ -130,7 +130,6 @@ class StandardLibraryCatalogTests(unittest.TestCase):
             ("core", "println"),
             ("text", "to_int"),
             ("request", "get"),
-            ("data", "parse_json"),
             ("disk", "read"),
             ("disk", "read_file"),
             ("disk", "write"),
@@ -143,6 +142,15 @@ class StandardLibraryCatalogTests(unittest.TestCase):
             with self.subTest(family=family_name, operation=operation_name):
                 self.assertEqual(
                     operation(family_name, operation_name).status, "reserved"
+                )
+
+    def test_bounded_data_operations_are_supported(self) -> None:
+        for operation_name in ("parse_json", "encode_json"):
+            item = operation("data", operation_name)
+            with self.subTest(operation=operation_name):
+                self.assertEqual(item.status, "supported")
+                self.assertEqual(
+                    set(item.required_budgets), set(item.enforced_budgets)
                 )
 
     def test_partial_enforcement_is_visible_without_claiming_support(self) -> None:
