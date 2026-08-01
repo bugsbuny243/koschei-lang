@@ -1,18 +1,23 @@
-"""Public diagnostic boundary for the opaque Data language ABI.
-
-The lower-level data-json/v1 cores predate the runtime-budget diagnostics and use
-internal KS360x parser codes. The language ABI maps those implementation codes to
-the dedicated KS370x range so one public code has exactly one meaning.
-"""
+"""Public diagnostic and fallibility boundary for the opaque Data ABI."""
 
 from __future__ import annotations
 
 from . import interpreter as _runtime
 from . import semantic as _semantic
+from .ast_nodes import CallExpression, Identifier, LetStatement
 
 _INSTALLED = False
 _ORIGINAL_CHECK_EXPRESSION = None
+_ORIGINAL_CHECK_STATEMENT = None
 _ORIGINAL_INVOKE = None
+
+
+def _is_data_call(expression) -> bool:
+    return (
+        isinstance(expression, CallExpression)
+        and isinstance(expression.callee, Identifier)
+        and expression.callee.name in {"parse_json", "encode_json"}
+    )
 
 
 def _public_code(text: str) -> str:
@@ -22,6 +27,21 @@ def _public_code(text: str) -> str:
 
 
 def _check_expression(self, expression):
+    if _is_data_call(expression):
+        name = expression.callee.name
+        if len(expression.arguments) != 1:
+            raise _semantic.SemanticError(
+                "KS1301",
+                f"{name}() 1 argüman bekler, {len(expression.arguments)} verildi.",
+                expression.location,
+            )
+        actual = self._check_expression(expression.arguments[0])
+        expected = "String" if name == "parse_json" else "Data"
+        self._require_assignable(
+            (expected,), actual, f"{name}() argümanı", expression.location
+        )
+        return "Data or Error" if name == "parse_json" else "String or Error"
+
     try:
         return _ORIGINAL_CHECK_EXPRESSION(self, expression)
     except _semantic.SemanticError as error:
@@ -32,10 +52,26 @@ def _check_expression(self, expression):
         ) from error
 
 
+def _check_statement(self, statement):
+    # Unlike legacy fallible APIs, Data does not allow an unchecked Error union
+    # to be hidden in a local variable. The caller must choose an `or` policy.
+    if isinstance(statement, LetStatement) and _is_data_call(statement.value):
+        self._check_expression(statement.value)
+        raise _semantic.SemanticError(
+            "KS1401",
+            "Data çağrısı hata döndürebilir; 'or return', 'or varsayılan' "
+            "veya 'or { ... }' ile açıkça ele alınmalıdır.",
+            statement.location,
+        )
+    return _ORIGINAL_CHECK_STATEMENT(self, statement)
+
+
 def _invoke(self, callee, arguments, location):
     result = _ORIGINAL_INVOKE(self, callee, arguments, location)
-    if callee in {"parse_json", "encode_json"} and isinstance(
-        result, _runtime.KsError
+    if (
+        isinstance(callee, str)
+        and callee in ("parse_json", "encode_json")
+        and isinstance(result, _runtime.KsError)
     ):
         return _runtime.KsError(_public_code(result.message))
     return result
@@ -46,9 +82,8 @@ def _register_public_diagnostics() -> None:
     from .diagnostics import CATALOG, ENGLISH_CATALOG, Diagnostic
 
     # Data was installed before runtime_budget during package import. Restore the
-    # established execution-budget meanings of KS3601 and KS3602. The remaining
-    # KS360x entries describe the internal codec core and stay documented for
-    # compiler-source integrity checks; user programs receive KS370x instead.
+    # established execution-budget meanings of KS3601 and KS3602. Other KS360x
+    # entries document the internal codec core; user programs receive KS370x.
     for code in ("KS3601", "KS3602"):
         CATALOG.pop(code, None)
         ENGLISH_CATALOG.pop(code, None)
@@ -86,12 +121,15 @@ def _register_public_diagnostics() -> None:
 
 
 def install_data_public_abi_v1() -> None:
-    global _INSTALLED, _ORIGINAL_CHECK_EXPRESSION, _ORIGINAL_INVOKE
+    global _INSTALLED, _ORIGINAL_CHECK_EXPRESSION, _ORIGINAL_CHECK_STATEMENT
+    global _ORIGINAL_INVOKE
     if _INSTALLED:
         return
     _ORIGINAL_CHECK_EXPRESSION = _semantic.SemanticChecker._check_expression
+    _ORIGINAL_CHECK_STATEMENT = _semantic.SemanticChecker._check_statement
     _ORIGINAL_INVOKE = _runtime.Interpreter._invoke
     _semantic.SemanticChecker._check_expression = _check_expression
+    _semantic.SemanticChecker._check_statement = _check_statement
     _runtime.Interpreter._invoke = _invoke
     _register_public_diagnostics()
     _INSTALLED = True
