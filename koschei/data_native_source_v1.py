@@ -53,14 +53,22 @@ type KsData struct {
 	Value any
 }
 
+func ksDataPublicError(err error) any {
+	message := err.Error()
+	if strings.HasPrefix(message, "KS36") {
+		message = "KS37" + message[4:]
+	}
+	return ksErrorf(message)
+}
+
 func ksDataParse(raw any) any {
 	text, ok := raw.(string)
 	if !ok {
-		return ksErrorf("KS3608 [byte 0]: parse_json() expects String")
+		return ksErrorf("KS3708 [byte 0]: parse_json() expects String")
 	}
 	value, err := Decode(text, DefaultLimits)
 	if err != nil {
-		return ksErrorf(err.Error())
+		return ksDataPublicError(err)
 	}
 	return &KsData{Value: value}
 }
@@ -68,11 +76,11 @@ func ksDataParse(raw any) any {
 func ksDataEncode(raw any) any {
 	data, ok := raw.(*KsData)
 	if !ok {
-		return ksErrorf("KS3608 [byte 0]: encode_json() expects Data")
+		return ksErrorf("KS3708 [byte 0]: encode_json() expects Data")
 	}
 	text, err := Encode(data.Value, DefaultLimits)
 	if err != nil {
-		return ksErrorf(err.Error())
+		return ksDataPublicError(err)
 	}
 	return text
 }
