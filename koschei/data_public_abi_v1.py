@@ -46,16 +46,13 @@ def _register_public_diagnostics() -> None:
     from .diagnostics import CATALOG, ENGLISH_CATALOG, Diagnostic
 
     # Data was installed before runtime_budget during package import. Restore the
-    # already-established execution-budget meanings of KS3601 and KS3602.
+    # established execution-budget meanings of KS3601 and KS3602. The remaining
+    # KS360x entries describe the internal codec core and stay documented for
+    # compiler-source integrity checks; user programs receive KS370x instead.
     for code in ("KS3601", "KS3602"):
         CATALOG.pop(code, None)
         ENGLISH_CATALOG.pop(code, None)
     runtime_budget._register_diagnostics()
-
-    # Internal parser codes are not public explain codes.
-    for code in ("KS3603", "KS3604", "KS3605", "KS3607", "KS3608"):
-        CATALOG.pop(code, None)
-        ENGLISH_CATALOG.pop(code, None)
 
     descriptions = {
         "KS3701": ("JSON girdi boyutu aşıldı", "JSON input byte limit exceeded"),
