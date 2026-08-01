@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from . import interpreter as _runtime
 from . import semantic as _semantic
-from .ast_nodes import CallExpression, Identifier, LetStatement
+from .ast_nodes import CallExpression, Identifier, InterpolatedString, LetStatement
 
 _INSTALLED = False
 _ORIGINAL_CHECK_EXPRESSION = None
@@ -41,6 +41,18 @@ def _check_expression(self, expression):
             (expected,), actual, f"{name}() argümanı", expression.location
         )
         return "Data or Error" if name == "parse_json" else "String or Error"
+
+    if isinstance(expression, InterpolatedString):
+        for part in expression.parts:
+            if isinstance(part, str):
+                continue
+            actual = self._check_expression(part)
+            if "Data" in self._type_names(actual):
+                raise _semantic.SemanticError(
+                    "KS3708",
+                    "Data değeri interpolasyona giremez; önce encode_json(data) kullanın.",
+                    part.location,
+                )
 
     try:
         return _ORIGINAL_CHECK_EXPRESSION(self, expression)
