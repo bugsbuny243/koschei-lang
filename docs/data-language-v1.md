@@ -11,6 +11,13 @@ let canonical = encode_json(value) or return
 `parse_json(String)` returns `Data or Error`. `encode_json(Data)` returns
 `String or Error`. Both calls must use Koschei's `or` handling model.
 
+JSON object braces inside a Koschei string are escaped because `{...}` is the
+language's interpolation syntax:
+
+```ks
+let value = parse_json("\{\"enabled\":true\}") or return
+```
+
 ## Why Data is opaque
 
 Decoded values are not exposed as Python dictionaries, Go maps, binary floats,
@@ -43,15 +50,16 @@ first create an unbounded host object and inspect it afterwards.
 
 ## Errors
 
-The ABI returns explicit KS360x error values:
+The public ABI returns explicit KS370x error values. KS3601 and KS3602 remain
+reserved for execution step and call-depth budgets.
 
-- `KS3601` input byte limit
-- `KS3602` depth limit
-- `KS3603` node limit
-- `KS3604` duplicate object key
-- `KS3605` malformed JSON or invalid Unicode
-- `KS3607` output byte limit
-- `KS3608` invalid Data encoding boundary
+- `KS3701` input byte limit
+- `KS3702` depth limit
+- `KS3703` node limit
+- `KS3704` duplicate object key
+- `KS3705` malformed JSON or invalid Unicode
+- `KS3707` output byte limit
+- `KS3708` invalid Data encoding boundary
 
 These are ordinary fallible values and use the same `or return`, `or value`, or
 `or { ... }` handling model as the rest of Koschei.
@@ -61,7 +69,7 @@ These are ordinary fallible values and use the same `or return`, `or value`, or
 Both execution paths consume the `koschei.data-json/v1` contract. Generated
 binaries embed the audited native Go core and do not import a third-party JSON
 library. Shared fixtures and language-level tests require identical canonical
-output and the same KS360x error class.
+output and the same KS370x public error class.
 
 Run the example with:
 
