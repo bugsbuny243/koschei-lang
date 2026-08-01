@@ -49,3 +49,8 @@ packages = ["koschei"]
 
 [tool.setuptools.package-data]
 koschei = ["py.typed"]
+
+# Generated native binaries embed the single audited data-json/v1 Go core.
+# Keep that source in wheels instead of maintaining a second copied runtime.
+[tool.setuptools.data-files]
+"share/koschei/native/datajson" = ["native/datajson/json.go"]
