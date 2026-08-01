@@ -20,8 +20,8 @@ GO_BINARY = shutil.which("go")
 
 SOURCE = r'''
 fn main() {
-    let value = parse_json("\{\"b\":1.00,\"a\":[true,null],\"emoji\":\"\\ud83d\\ude00\"\}") or return
-    let encoded = encode_json(value) or return
+    let value = parse_json("\{\"b\":1.00,\"a\":[true,null],\"emoji\":\"\\ud83d\\ude00\"\}") or return Error("parse failed")
+    let encoded = encode_json(value) or return Error("encode failed")
     println(encoded)
 }
 '''
@@ -42,7 +42,7 @@ class DataLanguageV1Tests(unittest.TestCase):
             'fn main() { let value = parse_json("null") }',
             '''
 fn main() {
-    let parsed = parse_json("null") or return
+    let parsed = parse_json("null") or return Error("parse failed")
     let value = encode_json(parsed)
 }
 ''',
@@ -55,8 +55,8 @@ fn main() {
 
     def test_wrong_argument_types_are_rejected(self) -> None:
         cases = (
-            "fn main() { let value = parse_json(1) or return }",
-            'fn main() { let value = encode_json("not-data") or return }',
+            'fn main() { let value = parse_json(1) or return Error("bad") }',
+            'fn main() { let value = encode_json("not-data") or return Error("bad") }',
         )
         for source in cases:
             with self.subTest(source=source):
@@ -67,7 +67,7 @@ fn main() {
     def test_data_must_be_encoded_before_output(self) -> None:
         source = r'''
 fn main() {
-    let value = parse_json("null") or return
+    let value = parse_json("null") or return Error("parse failed")
     println(value)
 }
 '''
@@ -86,7 +86,7 @@ fn main() {
     def test_invalid_json_is_a_ks370x_error_value(self) -> None:
         source = r'''
 fn main() {
-    let value = parse_json("\{\"x\":1,\"x\":2\}") or return
+    parse_json("\{\"x\":1,\"x\":2\}") or return
 }
 '''
         program = parse(source)
@@ -151,7 +151,7 @@ class DataLanguageNativeParityTests(unittest.TestCase):
     def test_native_and_interpreter_reject_duplicate_keys_with_same_code(self) -> None:
         source = r'''
 fn main() {
-    let value = parse_json("\{\"x\":1,\"x\":2\}") or return
+    parse_json("\{\"x\":1,\"x\":2\}") or return
 }
 '''
         generated = compile_source(source)
