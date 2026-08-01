@@ -9,4 +9,8 @@ from .runtime_alignment import install_runtime_alignment
 
 install_runtime_alignment()
 
+from .data_language_v1 import install_data_language_v1
+
+install_data_language_v1()
+
 __all__ = ["main"]
