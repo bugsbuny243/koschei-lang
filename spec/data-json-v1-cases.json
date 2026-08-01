@@ -1,0 +1,55 @@
+{
+  "schema": "koschei.data-json-tests/v1",
+  "canonical": [
+    {
+      "source": "null",
+      "encoded": "null"
+    },
+    {
+      "source": "true",
+      "encoded": "true"
+    },
+    {
+      "source": "{\"b\":2,\"a\":1}",
+      "encoded": "{\"a\":1,\"b\":2}"
+    },
+    {
+      "source": "[1.00,-0,1e0,1e21,1e-7,0.0000010]",
+      "encoded": "[1,0,1,1e21,1e-7,0.000001]"
+    },
+    {
+      "source": "{\"emoji\":\"\\ud83d\\ude00\",\"raw\":\"<&>\"}",
+      "encoded": "{\"emoji\":\"😀\",\"raw\":\"<&>\"}"
+    },
+    {
+      "source": "\"line\\nfeed\"",
+      "encoded": "\"line\\nfeed\""
+    }
+  ],
+  "errors": [
+    {
+      "source": "{\"a\":1,\"a\":2}",
+      "code": "KS3604"
+    },
+    {
+      "source": "[1,]",
+      "code": "KS3605"
+    },
+    {
+      "source": "01",
+      "code": "KS3605"
+    },
+    {
+      "source": "\"\\ud800\"",
+      "code": "KS3605"
+    },
+    {
+      "source": "1e1000001",
+      "code": "KS3605"
+    },
+    {
+      "source": "1٢",
+      "code": "KS3605"
+    }
+  ]
+}
