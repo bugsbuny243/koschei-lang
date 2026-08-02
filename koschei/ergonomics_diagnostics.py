@@ -14,14 +14,48 @@ def _with_details(error, *, en: str, tr: str):
     return error
 
 
+def _annotation_error(statement, actual):
+    expected = str(statement.annotation)
+    error = semantic.SemanticError(
+        "KS1301",
+        f"Beklenen {expected}, bulunan {actual or 'bilinmiyor'}.",
+        statement.location,
+    )
+    return _with_details(
+        error,
+        en=f"Expected {expected}, found {actual or 'unknown'}.",
+        tr=f"Beklenen {expected}, bulunan {actual or 'bilinmiyor'}.",
+    )
+
+
 def _statement(self, statement):
     if isinstance(statement, ast.LetStatement) and statement.annotation is not None:
         actual = self._check_expression(statement.value)
+        expected = str(statement.annotation)
+        base = expected.split("<", 1)[0]
+
+        # The legacy semantic checker represents collections coarsely as List or
+        # Map. Typed HIR runs immediately afterwards and retains the complete
+        # List<T>/Map<String,V> contract. Storing the generic spelling here would
+        # make legacy `.get()` look like an unscoped capability call.
+        if base in {"List", "Map"}:
+            if actual not in {base, None, "_"}:
+                raise _annotation_error(statement, actual)
+            self._declare(
+                semantic.Symbol(
+                    statement.name,
+                    base,
+                    statement.is_mutable,
+                    statement.location,
+                )
+            )
+            self.variable_count += 1
+            return
+
         try:
             return _statement.original(self, statement)
         except semantic.SemanticError as error:
             if error.code == "KS1301":
-                expected = str(statement.annotation)
                 raise _with_details(
                     error,
                     en=f"Expected {expected}, found {actual or 'unknown'}.",
