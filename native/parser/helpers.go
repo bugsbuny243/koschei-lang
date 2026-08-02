@@ -71,7 +71,8 @@ func stringPointer(value string) *string { return &value }
 func orReturnStop(kind lexer.Kind) bool {
 	switch kind {
 	case lexer.RIGHTBRACE, lexer.SEMICOLON, lexer.LET, lexer.RETURN, lexer.IF,
-		lexer.WHILE, lexer.FOR, lexer.FN, lexer.STRUCT, lexer.ENUM, lexer.IMPORT, lexer.EOF:
+		lexer.WHILE, lexer.FOR, lexer.BREAK, lexer.CONTINUE, lexer.FN, lexer.STRUCT,
+		lexer.ENUM, lexer.IMPORT, lexer.EOF:
 		return true
 	default:
 		return false
@@ -107,6 +108,8 @@ func operatorText(token lexer.Token) string {
 		return "*"
 	case lexer.SLASH:
 		return "/"
+	case lexer.PERCENT:
+		return "%"
 	case lexer.BANG:
 		return "!"
 	default:

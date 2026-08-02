@@ -68,6 +68,7 @@ type Lexer struct {
 var keywords = map[string]Kind{
 	"fn": FN, "let": LET, "mut": MUT, "or": OR, "return": RETURN,
 	"if": IF, "else": ELSE, "while": WHILE, "for": FOR, "in": IN,
+	"break": BREAK, "continue": CONTINUE,
 	"struct": STRUCT, "enum": ENUM, "match": MATCH, "import": IMPORT,
 	"true": TRUE, "false": FALSE,
 }
@@ -82,7 +83,7 @@ var builtinTypes = map[string]struct{}{
 
 var single = map[rune]Kind{
 	'(': LEFTPAREN, ')': RIGHTPAREN, '{': LEFTBRACE, '}': RIGHTBRACE,
-	',': COMMA, ':': COLON, '.': DOT, '+': PLUS, '*': STAR,
+	',': COMMA, ':': COLON, '.': DOT, '+': PLUS, '*': STAR, '%': PERCENT,
 	';': SEMICOLON, '[': LEFTBRACKET, ']': RIGHTBRACKET,
 }
 

@@ -105,6 +105,7 @@ type Statement struct {
 	Location   Location    `json:"location"`
 	Name       string      `json:"name,omitempty"`
 	Mutable    *bool       `json:"mutable,omitempty"`
+	Annotation *TypeRef    `json:"annotation,omitempty"`
 	Value      *Expression `json:"value,omitempty"`
 	Expression *Expression `json:"expression,omitempty"`
 	Condition  *Expression `json:"condition,omitempty"`
