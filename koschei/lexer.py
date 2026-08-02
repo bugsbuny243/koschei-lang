@@ -1,16 +1,4 @@
-"""Koschei (.ks) sözcük çözümleyicisi.
-
-Kaynak kodu Token nesnelerine dönüştürür. Boşluklar ve // yorumları
-atlanır; anahtar kelimeler, tip isimleri, semboller, metinler ve sayılar
-ayrı token türleri olarak üretilir.
-
-Kurallar:
-- Büyük harfle başlayan isimler TYPE olarak sınıflandırılır; bu yüzden
-  değişken ve fonksiyon adları küçük harfle başlamalıdır.
-- "Selam {name}" biçimindeki metinler STRING_INTERP token'ı üretir.
-  Süslü parantezin içi normal Koschei ifade sözdizimiyle yeniden ayrıştırılır;
-  çağrılar, işleçler, liste/Map ve struct ifadeleri kullanılabilir.
-"""
+"""Koschei (.ks) lexical scanner."""
 
 from __future__ import annotations
 
@@ -20,7 +8,7 @@ from typing import Any
 
 
 class TokenType(Enum):
-    # Anahtar kelimeler
+    # Keywords
     FN = auto()
     LET = auto()
     MUT = auto()
@@ -31,6 +19,8 @@ class TokenType(Enum):
     WHILE = auto()
     FOR = auto()
     IN = auto()
+    BREAK = auto()
+    CONTINUE = auto()
     STRUCT = auto()
     ENUM = auto()
     MATCH = auto()
@@ -38,46 +28,44 @@ class TokenType(Enum):
     TRUE = auto()
     FALSE = auto()
 
-    # İsimler ve değerler
+    # Names and values
     TYPE = auto()
     IDENTIFIER = auto()
     STRING = auto()
     STRING_INTERP = auto()
     NUMBER = auto()
-
-    # Yalnızca keep_comments=True iken üretilir. Derleyici hattı yorumları
-    # görmez; bu token biçimlendirici (ks fmt) gibi araçlar içindir.
     COMMENT = auto()
 
-    # Tek karakterli semboller
-    LEFT_PAREN = auto()       # (
-    RIGHT_PAREN = auto()      # )
-    LEFT_BRACE = auto()       # {
-    RIGHT_BRACE = auto()      # }
-    COMMA = auto()            # ,
-    COLON = auto()            # :
-    DOT = auto()              # .
-    EQUAL = auto()            # =
-    PLUS = auto()             # +
-    MINUS = auto()            # -
-    STAR = auto()             # *
-    SLASH = auto()            # /
-    SEMICOLON = auto()        # ;
-    BANG = auto()             # !
-    LEFT_BRACKET = auto()     # [
-    RIGHT_BRACKET = auto()    # ]
+    # Single-character symbols
+    LEFT_PAREN = auto()
+    RIGHT_PAREN = auto()
+    LEFT_BRACE = auto()
+    RIGHT_BRACE = auto()
+    COMMA = auto()
+    COLON = auto()
+    DOT = auto()
+    EQUAL = auto()
+    PLUS = auto()
+    MINUS = auto()
+    STAR = auto()
+    SLASH = auto()
+    PERCENT = auto()
+    SEMICOLON = auto()
+    BANG = auto()
+    LEFT_BRACKET = auto()
+    RIGHT_BRACKET = auto()
 
-    # Çok karakterli semboller
-    ARROW = auto()            # ->
-    FAT_ARROW = auto()        # =>
-    EQUAL_EQUAL = auto()      # ==
-    BANG_EQUAL = auto()       # !=
-    LESS = auto()             # <
-    LESS_EQUAL = auto()       # <=
-    GREATER = auto()          # >
-    GREATER_EQUAL = auto()    # >=
-    AMP_AMP = auto()          # &&
-    PIPE_PIPE = auto()        # ||
+    # Multi-character symbols
+    ARROW = auto()
+    FAT_ARROW = auto()
+    EQUAL_EQUAL = auto()
+    BANG_EQUAL = auto()
+    LESS = auto()
+    LESS_EQUAL = auto()
+    GREATER = auto()
+    GREATER_EQUAL = auto()
+    AMP_AMP = auto()
+    PIPE_PIPE = auto()
 
     EOF = auto()
 
@@ -97,7 +85,7 @@ class Token:
 
 
 class LexerError(SyntaxError):
-    """Koschei kaynak kodu tokenize edilemediğinde yükseltilir."""
+    """Raised when Koschei source cannot be tokenized."""
 
 
 class Lexer:
@@ -112,6 +100,8 @@ class Lexer:
         "while": TokenType.WHILE,
         "for": TokenType.FOR,
         "in": TokenType.IN,
+        "break": TokenType.BREAK,
+        "continue": TokenType.CONTINUE,
         "struct": TokenType.STRUCT,
         "enum": TokenType.ENUM,
         "match": TokenType.MATCH,
@@ -120,8 +110,6 @@ class Lexer:
         "false": TokenType.FALSE,
     }
 
-    # Yerleşik tipler burada açıkça tanımlıdır. Ayrıca büyük harfle başlayan
-    # kullanıcı tipleri de TYPE olarak sınıflandırılır.
     BUILTIN_TYPES = {
         "SystemCaps",
         "NetRoot",
@@ -155,6 +143,7 @@ class Lexer:
         ".": TokenType.DOT,
         "+": TokenType.PLUS,
         "*": TokenType.STAR,
+        "%": TokenType.PERCENT,
         ";": TokenType.SEMICOLON,
         "[": TokenType.LEFT_BRACKET,
         "]": TokenType.RIGHT_BRACKET,
@@ -164,7 +153,7 @@ class Lexer:
         "n": "\n",
         "r": "\r",
         "t": "\t",
-        "\"": "\"",
+        '"': '"',
         "\\": "\\",
         "{": "{",
         "}": "}",
@@ -187,19 +176,14 @@ class Lexer:
             self.start_line = self.line
             self.start_column = self.column
             self._scan_token()
-
         self.tokens.append(Token(TokenType.EOF, None, self.line, self.column))
         return self.tokens
 
     def _scan_token(self) -> None:
         char = self._advance()
-
-        # Boşluklar token üretmez.
         if char in {" ", "\r", "\t", "\n"}:
             return
 
-        # // yorumları satır sonuna kadar atlanır.
-        # keep_comments açıksa atılmaz, COMMENT token'ı olarak korunur.
         if char == "/":
             if self._match("/"):
                 while self._peek() not in {"\n", "\0"}:
@@ -215,11 +199,9 @@ class Lexer:
         if char == '"':
             self._string()
             return
-
         if char.isdigit():
             self._number()
             return
-
         if char.isalpha() or char == "_":
             self._identifier()
             return
@@ -230,7 +212,6 @@ class Lexer:
             else:
                 self._add_token(TokenType.MINUS, "-")
             return
-
         if char == "=":
             if self._match(">"):
                 self._add_token(TokenType.FAT_ARROW, "=>")
@@ -239,33 +220,28 @@ class Lexer:
             else:
                 self._add_token(TokenType.EQUAL, "=")
             return
-
         if char == "!":
             if self._match("="):
                 self._add_token(TokenType.BANG_EQUAL, "!=")
             else:
                 self._add_token(TokenType.BANG, "!")
             return
-
         if char == "&":
             if self._match("&"):
                 self._add_token(TokenType.AMP_AMP, "&&")
                 return
             self._error("Beklenmeyen '&'. Mantıksal ve için '&&' kullanın.")
-
         if char == "|":
             if self._match("|"):
                 self._add_token(TokenType.PIPE_PIPE, "||")
                 return
             self._error("Beklenmeyen '|'. Mantıksal veya için '||' kullanın.")
-
         if char == "<":
             if self._match("="):
                 self._add_token(TokenType.LESS_EQUAL, "<=")
             else:
                 self._add_token(TokenType.LESS, "<")
             return
-
         if char == ">":
             if self._match("="):
                 self._add_token(TokenType.GREATER_EQUAL, ">=")
@@ -277,41 +253,34 @@ class Lexer:
         if token_type is not None:
             self._add_token(token_type, char)
             return
-
         self._error(f"Geçersiz karakter: {char!r}")
 
     def _identifier(self) -> None:
         while self._peek().isalnum() or self._peek() == "_":
             self._advance()
-
         text = self.source[self.start:self.current]
         token_type = self.KEYWORDS.get(text)
-
         if token_type is None:
-            if text in self.BUILTIN_TYPES or text[:1].isupper():
-                token_type = TokenType.TYPE
-            else:
-                token_type = TokenType.IDENTIFIER
-
+            token_type = (
+                TokenType.TYPE
+                if text in self.BUILTIN_TYPES or text[:1].isupper()
+                else TokenType.IDENTIFIER
+            )
         self._add_token(token_type, text)
 
     def _number(self) -> None:
         while self._peek().isdigit():
             self._advance()
-
         is_float = False
         if self._peek() == "." and self._peek_next().isdigit():
             is_float = True
             self._advance()
             while self._peek().isdigit():
                 self._advance()
-
         text = self.source[self.start:self.current]
-        value: int | float = float(text) if is_float else int(text)
-        self._add_token(TokenType.NUMBER, value)
+        self._add_token(TokenType.NUMBER, float(text) if is_float else int(text))
 
     def _string(self) -> None:
-        # Segmentler: ("text", "...") veya ("expr", "user.email")
         segments: list[tuple[str, str]] = []
         text_parts: list[str] = []
 
@@ -322,16 +291,15 @@ class Lexer:
 
         while not self._is_at_end():
             char = self._advance()
-
             if char == '"':
                 flush_text()
                 if any(kind == "expr" for kind, _ in segments):
                     self._add_token(TokenType.STRING_INTERP, tuple(segments))
                 else:
-                    value = segments[0][1] if segments else ""
-                    self._add_token(TokenType.STRING, value)
+                    self._add_token(
+                        TokenType.STRING, segments[0][1] if segments else ""
+                    )
                 return
-
             if char == "\\":
                 if self._is_at_end():
                     self._error("Tamamlanmamış kaçış dizisi.")
@@ -340,7 +308,6 @@ class Lexer:
                     self._error(f"Geçersiz kaçış dizisi: \\{escaped}")
                 text_parts.append(self.ESCAPES[escaped])
                 continue
-
             if char == "{":
                 expr_source = self._interpolation_expression()
                 if not expr_source:
@@ -348,29 +315,18 @@ class Lexer:
                 flush_text()
                 segments.append(("expr", expr_source))
                 continue
-
             if char == "}":
                 self._error("Metin içinde tek '}' geçersizdir; '\\}' kullanın.")
-
             text_parts.append(char)
-
         self._error("Kapatılmamış metin değeri.")
 
     def _interpolation_expression(self) -> str:
-        """Açılmış bir ``{`` sonrasındaki dengeli Koschei ifadesini oku.
-
-        Map/struct literalindeki iç içe süslüler ve ifade içindeki metinler
-        doğru eşleştirilir. İfadenin geçerliliği parser tarafından denetlenir;
-        lexer yalnızca sınırı güvenli biçimde bulur.
-        """
         depth = 1
         expression: list[str] = []
         in_string = False
         escaped = False
-
         while not self._is_at_end():
             char = self._advance()
-
             if in_string:
                 expression.append(char)
                 if escaped:
@@ -382,7 +338,6 @@ class Lexer:
                 elif char == "\n":
                     self._error("İnterpolasyon içindeki metin satır sonuna taşamaz.")
                 continue
-
             if char == '"':
                 in_string = True
                 expression.append(char)
@@ -400,7 +355,6 @@ class Lexer:
             if char == "\n":
                 self._error("İnterpolasyon '}' ile aynı satırda kapatılmalıdır.")
             expression.append(char)
-
         self._error("İnterpolasyon '}' ile kapatılmalıdır.")
         raise AssertionError("unreachable")
 
@@ -412,13 +366,11 @@ class Lexer:
     def _advance(self) -> str:
         char = self.source[self.current]
         self.current += 1
-
         if char == "\n":
             self.line += 1
             self.column = 1
         else:
             self.column += 1
-
         return char
 
     def _match(self, expected: str) -> bool:
@@ -445,31 +397,4 @@ class Lexer:
 
 
 def tokenize(source: str, *, keep_comments: bool = False) -> list[Token]:
-    """Kolay kullanım için yardımcı fonksiyon.
-
-    keep_comments varsayılan olarak kapalıdır: derleyici hattı (parser, semantic,
-    interpreter, codegen) yorumları görmez ve davranışı değişmez. Biçimlendirici
-    gibi kaynak metni yeniden üreten araçlar bunu açar.
-    """
     return Lexer(source, keep_comments=keep_comments).tokenize()
-
-
-if __name__ == "__main__":
-    sample_code = r'''
-// Kısıtlı ağ fonksiyonu
-fn fetch_data(net: NetCaps, url: String) -> String or Error {
-    let mut retry_count = 3
-    let response = net.get(url) or return Error("Veri alınamadı: {url}")
-    return response.text()
-}
-
-fn main(caps: SystemCaps) {
-    // Yetki yalnızca bu domaine açıktır.
-    let allowed_net = caps.net.allow("https://api.example.com")
-    let result = fetch_data(allowed_net, "https://api.example.com/v1")
-}
-'''
-
-    print("KOSCHEI LEXER TEST\n" + "=" * 60)
-    for token in tokenize(sample_code):
-        print(token)
