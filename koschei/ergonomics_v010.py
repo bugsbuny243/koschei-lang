@@ -7,6 +7,7 @@ from .ergonomics_integration import install_integration_v010
 from .ergonomics_diagnostics import install_diagnostics_v010
 from .ergonomics_collections_v0101 import install_collections_v0101
 from .ergonomics_search_v0102 import install_search_v0102
+from .ergonomics_daily_collections_v0103 import install_daily_collections_v0103
 
 _INSTALLED = False
 
@@ -23,4 +24,5 @@ def install_ergonomics_v010() -> None:
     install_diagnostics_v010()
     install_collections_v0101()
     install_search_v0102()
+    install_daily_collections_v0103()
     _INSTALLED = True
