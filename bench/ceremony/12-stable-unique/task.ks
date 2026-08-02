@@ -5,5 +5,5 @@ fn main() {
         if unique.contains(value) { continue }
         unique = unique.push(value)
     }
-    println(unique.join(","))
+    println(",".join(unique))
 }
