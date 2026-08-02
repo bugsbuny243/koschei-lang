@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.10.0 — Language ergonomics
+
+- Add checked `Int % Int` with interpreter/native parity, truncation-toward-zero semantics, zero-divisor handling, and compile-time Float rejection.
+- Add `break` and `continue` for `for` and `while`, `KS1901` outside loops, labelled Go lowering where required, and explicit MIR control-flow edges without changing ordinary-loop fallback contracts.
+- Add optional local annotations such as `let value: Int = 5` while keeping inference as the default.
+- Add block-bodied exhaustive `match` arms with tail-expression values and function-level `return` behavior.
+- Allow direct struct field mutation only through `let mut` bindings; keep immutable bindings and nested field assignment closed with `KS3201`.
+- Repair the `List<T>.get()` runtime ABI so valid indices return `Some(value)` and invalid indices return `None()` in both interpreter and native binaries, closing generic `Option<T>` return failures.
+- Add stable localized parser diagnostic families `KS1001`–`KS1005` and loop/field diagnostics `KS1901` / `KS3201`.
+- Add a ten-task `bench/ceremony/` corpus with equivalent Koschei, Python, and Go programs plus report-only CI measurement of `KS/Python` and `KS/Go` source-line ratios.
+- Keep the release intentionally free of native-parser migration, Data ABI expansion, new budget infrastructure, lambdas, traits, `impl`, labelled loop control, concurrency, and region-memory work.
+
 ## Unreleased — V5 foundation
 
 - Reject duplicate top-level declarations before interpreter/native backends.
