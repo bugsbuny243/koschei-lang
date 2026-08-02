@@ -82,7 +82,7 @@ class ProjectCliTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(error, "")
         payload = json.loads(output)
-        self.assertEqual(payload["version"], "0.9.0")
+        self.assertEqual(payload["version"], "0.10.0")
 
     def test_new_rejects_non_empty_destination(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -49,6 +49,12 @@ func (parser *Parser) statement(depth int) (syntax.Statement, error) {
 	if parser.match(lexer.FOR) {
 		return parser.forStatement(parser.previous(), depth+1)
 	}
+	if parser.match(lexer.BREAK) {
+		return parser.loopControlStatement(parser.previous(), "BreakStatement")
+	}
+	if parser.match(lexer.CONTINUE) {
+		return parser.loopControlStatement(parser.previous(), "ContinueStatement")
+	}
 	value, err := parser.expression(depth + 1)
 	if err != nil {
 		return syntax.Statement{}, err
@@ -67,6 +73,14 @@ func (parser *Parser) letStatement(start lexer.Token, depth int) (syntax.Stateme
 	if err != nil {
 		return syntax.Statement{}, err
 	}
+	var annotation *syntax.TypeRef
+	if parser.match(lexer.COLON) {
+		value, err := parser.typeRef(depth + 1)
+		if err != nil {
+			return syntax.Statement{}, err
+		}
+		annotation = &value
+	}
 	if _, err := parser.consume(lexer.EQUAL, "expected '=' in variable declaration"); err != nil {
 		return syntax.Statement{}, err
 	}
@@ -78,7 +92,18 @@ func (parser *Parser) letStatement(start lexer.Token, depth int) (syntax.Stateme
 	if err := parser.claim(start); err != nil {
 		return syntax.Statement{}, err
 	}
-	return syntax.Statement{Kind: "LetStatement", Location: location(start), Name: name.Value, Mutable: boolPointer(mutable), Value: &value}, nil
+	return syntax.Statement{
+		Kind: "LetStatement", Location: location(start), Name: name.Value,
+		Mutable: boolPointer(mutable), Annotation: annotation, Value: &value,
+	}, nil
+}
+
+func (parser *Parser) loopControlStatement(start lexer.Token, kind string) (syntax.Statement, error) {
+	parser.match(lexer.SEMICOLON)
+	if err := parser.claim(start); err != nil {
+		return syntax.Statement{}, err
+	}
+	return syntax.Statement{Kind: kind, Location: location(start)}, nil
 }
 
 func (parser *Parser) returnStatement(start lexer.Token, depth int) (syntax.Statement, error) {

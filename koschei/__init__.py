@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-__version__ = "0.9.0"
+__version__ = "0.10.0"
 
 from .cli import main
 from .runtime_alignment import install_runtime_alignment
@@ -20,5 +20,9 @@ install_data_public_abi_v1()
 from .data_native_source_v1 import install_packaged_native_source
 
 install_packaged_native_source()
+
+from .ergonomics_v010 import install_ergonomics_v010
+
+install_ergonomics_v010()
 
 __all__ = ["main"]

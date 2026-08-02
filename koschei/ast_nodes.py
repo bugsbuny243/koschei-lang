@@ -176,7 +176,7 @@ class OrBlockExpression:
 class MatchArm:
     variant: str
     binding: str | None
-    body: "Expression"
+    body: "Expression | Block"
     location: SourceLocation
 
 
@@ -212,6 +212,7 @@ class LetStatement:
     is_mutable: bool
     value: Expression
     location: SourceLocation
+    annotation: TypeRef | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -251,6 +252,16 @@ class ForStatement:
     location: SourceLocation
 
 
+@dataclass(frozen=True, slots=True)
+class BreakStatement:
+    location: SourceLocation
+
+
+@dataclass(frozen=True, slots=True)
+class ContinueStatement:
+    location: SourceLocation
+
+
 Statement: TypeAlias = (
     LetStatement
     | ReturnStatement
@@ -258,6 +269,8 @@ Statement: TypeAlias = (
     | IfStatement
     | WhileStatement
     | ForStatement
+    | BreakStatement
+    | ContinueStatement
 )
 
 

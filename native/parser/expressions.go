@@ -106,7 +106,7 @@ func (parser *Parser) term(depth int) (syntax.Expression, error) {
 }
 
 func (parser *Parser) factor(depth int) (syntax.Expression, error) {
-	return parser.leftAssociative(depth, parser.unary, []lexer.Kind{lexer.STAR, lexer.SLASH})
+	return parser.leftAssociative(depth, parser.unary, []lexer.Kind{lexer.STAR, lexer.SLASH, lexer.PERCENT})
 }
 
 type expressionParser func(int) (syntax.Expression, error)
@@ -385,9 +385,19 @@ func (parser *Parser) matchExpression(start lexer.Token, depth int) (syntax.Expr
 		if _, err := parser.consume(lexer.FATARROW, "expected '=>' in match arm"); err != nil {
 			return syntax.Expression{}, err
 		}
-		body, err := parser.expression(depth + 1)
-		if err != nil {
-			return syntax.Expression{}, err
+		var body syntax.Expression
+		if parser.check(lexer.LEFTBRACE) {
+			block, err := parser.block(depth + 1)
+			if err != nil {
+				return syntax.Expression{}, err
+			}
+			body = syntax.Expression{Kind: "BlockExpression", Location: block.Location, Handler: &block}
+		} else {
+			parsed, err := parser.expression(depth + 1)
+			if err != nil {
+				return syntax.Expression{}, err
+			}
+			body = parsed
 		}
 		if err := parser.claim(variant); err != nil {
 			return syntax.Expression{}, err
