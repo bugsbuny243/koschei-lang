@@ -22,6 +22,36 @@ from .type_system import (
 _INSTALLED = False
 
 
+def _element_type_from_annotation(annotation):
+    spelling = str(annotation)
+    if not spelling.startswith("List<") or not spelling.endswith(">"):
+        return None
+    return spelling[5:-1].strip() or None
+
+
+def _iterable_item_type(checker, expression):
+    if isinstance(expression, ast.ListLiteral):
+        if not expression.items:
+            return None
+        inferred = [checker._check_expression(item) for item in expression.items]
+        first = inferred[0]
+        return first if all(item == first for item in inferred) else None
+    if isinstance(expression, ast.Identifier):
+        return getattr(checker, "_v010_element_types", {}).get(expression.name)
+    if isinstance(expression, ast.CallExpression) and isinstance(
+        expression.callee, ast.MemberExpression
+    ):
+        receiver = checker._check_expression(expression.callee.object)
+        member = expression.callee.member
+        if receiver == "String" and member == "split":
+            return "String"
+        if receiver == "Map" and member == "keys":
+            return "String"
+        if receiver == "List" and member in {"push", "sort", "filter"}:
+            return _iterable_item_type(checker, expression.callee.object)
+    return None
+
+
 def _coarse_collection(expected, actual):
     if actual not in {"List", "Map"} or len(expected) != 1:
         return False
@@ -68,6 +98,15 @@ def _statement(self, statement):
                 statement.location,
             )
         )
+        element_type = (
+            _element_type_from_annotation(statement.annotation)
+            if statement.annotation is not None
+            else _iterable_item_type(self, statement.value)
+        )
+        if element_type is not None:
+            if not hasattr(self, "_v010_element_types"):
+                self._v010_element_types = {}
+            self._v010_element_types[statement.name] = element_type
         self.variable_count += 1
         return
     if isinstance(statement, (BreakStatement, ContinueStatement)):
@@ -79,7 +118,33 @@ def _statement(self, statement):
                 statement.location,
             )
         return
-    if isinstance(statement, (ast.WhileStatement, ast.ForStatement)):
+    if isinstance(statement, ast.ForStatement):
+        iterable_type = self._check_expression(statement.iterable)
+        if iterable_type is not None and iterable_type != "List":
+            raise semantic.SemanticError(
+                "KS1301",
+                f"'for ... in' yalnızca List üzerinde çalışır, {iterable_type} bulundu.",
+                statement.location,
+            )
+        item_type = _iterable_item_type(self, statement.iterable)
+        self._v010_loop_depth = getattr(self, "_v010_loop_depth", 0) + 1
+        self.scopes.append({})
+        try:
+            self._declare(
+                semantic.Symbol(
+                    statement.variable,
+                    item_type,
+                    False,
+                    statement.location,
+                )
+            )
+            self.variable_count += 1
+            self._check_statements(statement.body)
+        finally:
+            self.scopes.pop()
+            self._v010_loop_depth -= 1
+        return
+    if isinstance(statement, ast.WhileStatement):
         self._v010_loop_depth = getattr(self, "_v010_loop_depth", 0) + 1
         try:
             return _statement.original(self, statement)
