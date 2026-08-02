@@ -71,11 +71,11 @@ jobs:
             *) echo "HATA: native capability runtime beklenen env çıktısını vermedi" >&2; exit 1 ;;
           esac
 
-      - name: Validate v0.9 diagnostics and project tools
+      - name: Validate v0.10 diagnostics and project tools
         shell: bash
         run: |
           set -euo pipefail
-          python -m koschei version | grep -F "Koschei 0.9.0"
+          python -m koschei version | grep -F "Koschei 0.10.0"
           python -m koschei check --json examples/hello.ks \
             | python -c 'import json,sys; data=json.load(sys.stdin); assert data["ok"] and data["modules"] == 1'
           tmp="$(mktemp -d)"
