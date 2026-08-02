@@ -2,8 +2,9 @@
 
 The compiler CLI historically lived in :mod:`koschei.cli`, while the language
 server was installed only as the separate ``ks-lsp`` executable. This adapter
-keeps the existing CLI implementation stable, exposes ``ks lsp``, and attaches
-V5 interpreter runtime budgets to the public ``ks run`` path.
+keeps the existing CLI implementation stable, exposes ``ks lsp``, attaches V5
+interpreter runtime budgets to the public ``ks run`` path, and hosts the sealed
+foreign-contract validation commands.
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ import argparse
 import sys
 
 from . import cli as _cli
+from .foreign_cli import add_foreign_parser, command_foreign
 from .mir import require_mir
 from .modules import check_graph
 from .runtime_budget import (
@@ -53,6 +55,8 @@ def build_parser() -> argparse.ArgumentParser:
         default=argparse.SUPPRESS,
         help="Diagnostic language: en or tr",
     )
+
+    add_foreign_parser(subcommands)
 
     run = subcommands.choices["run"]
     run.add_argument(
@@ -105,6 +109,8 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(arguments)
     if args.command == "lsp":
         return command_lsp()
+    if args.command == "foreign":
+        return command_foreign(args)
     if args.command == "run":
         return _run_with_public_budget(args)
     return _cli.main(arguments)
