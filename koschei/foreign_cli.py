@@ -18,6 +18,12 @@ def add_foreign_parser(subcommands: argparse._SubParsersAction) -> None:
             "the foreign artifact."
         ),
     )
+    foreign.add_argument(
+        "--lang",
+        choices=("en", "tr"),
+        default=argparse.SUPPRESS,
+        help="Diagnostic language: en or tr",
+    )
     commands = foreign.add_subparsers(dest="foreign_command", required=True)
 
     validate = commands.add_parser(
