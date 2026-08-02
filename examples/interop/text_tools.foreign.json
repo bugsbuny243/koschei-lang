@@ -1,0 +1,30 @@
+{
+  "schema": "koschei.foreign/v1",
+  "module": "text.tools",
+  "adapter": {
+    "language": "python",
+    "isolation": "process",
+    "protocol": "koschei-json/v1"
+  },
+  "artifact": {
+    "path": "text_worker.py",
+    "sha256": "40b6a86bee0dab23f1c621d15cdb03a12203a6de14f3b5d7b59302df9d7140fe"
+  },
+  "limits": {
+    "max_request_bytes": 65536,
+    "max_response_bytes": 65536,
+    "max_millis": 1000,
+    "max_memory_bytes": 67108864,
+    "max_calls": 1000
+  },
+  "functions": [
+    {
+      "name": "normalize",
+      "parameters": [
+        {"name": "value", "type": "String"}
+      ],
+      "returns": "String",
+      "effects": []
+    }
+  ]
+}
