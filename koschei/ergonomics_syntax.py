@@ -5,7 +5,7 @@ from . import _parser_v09 as p09
 from . import ast_nodes as ast
 from . import diagnostics
 from . import lexer
-from .ergonomics_nodes import BreakStatement, ContinueStatement, LetStatement, MatchArm, TokenKind
+from .ergonomics_nodes import BreakStatement, ContinueStatement, LetStatement, MatchArm
 
 _INSTALLED = False
 
@@ -83,10 +83,6 @@ def _register_diagnostics() -> None:
 def install_syntax_v010() -> None:
     global _INSTALLED
     if _INSTALLED: return
-    for name in ("PERCENT", "BREAK", "CONTINUE"):
-        if not hasattr(lexer.TokenType, name): setattr(lexer.TokenType, name, TokenKind(name))
-    lexer.Lexer.KEYWORDS.update({"break": lexer.TokenType.BREAK, "continue": lexer.TokenType.CONTINUE})
-    lexer.Lexer.SINGLE_CHAR_TOKENS["%"] = lexer.TokenType.PERCENT
     p09._OR_RETURN_STOP.update({lexer.TokenType.BREAK, lexer.TokenType.CONTINUE})
     fmt.SPACED_OPERATORS.add(lexer.TokenType.PERCENT)
     fmt.STATEMENT_STARTERS.update({lexer.TokenType.BREAK, lexer.TokenType.CONTINUE})
