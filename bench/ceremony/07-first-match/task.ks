@@ -1,10 +1,6 @@
+fn is_even(value: Int) -> Bool { return value % 2 == 0 }
 fn main() {
-    let mut found: Option<Int> = None()
-    for value in [1, 3, 6, 8] {
-        if value % 2 != 0 { continue }
-        found = Some(value)
-        break
-    }
+    let found = [1, 3, 6, 8].find(is_even)
     match found {
         Some(value) => println("{value}"),
         None => println("none"),
