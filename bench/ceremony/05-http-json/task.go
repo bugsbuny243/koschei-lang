@@ -1,8 +1,8 @@
 package main
 
 import (
-    "encoding/json"
     "fmt"
+    "io"
     "net/http"
 )
 
@@ -12,13 +12,9 @@ func main() {
         panic(err)
     }
     defer response.Body.Close()
-    var value any
-    if err := json.NewDecoder(response.Body).Decode(&value); err != nil {
-        panic(err)
-    }
-    canonical, err := json.Marshal(value)
+    body, err := io.ReadAll(response.Body)
     if err != nil {
         panic(err)
     }
-    fmt.Println(string(canonical))
+    fmt.Println(string(body))
 }
