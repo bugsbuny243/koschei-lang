@@ -4,6 +4,7 @@ from .ergonomics_syntax import install_syntax_v010
 from .ergonomics_semantics import install_semantics_v010
 from .ergonomics_runtime import install_runtime_v010
 from .ergonomics_integration import install_integration_v010
+from .ergonomics_diagnostics import install_diagnostics_v010
 
 _INSTALLED = False
 
@@ -17,4 +18,5 @@ def install_ergonomics_v010() -> None:
     install_semantics_v010()
     install_runtime_v010()
     install_integration_v010()
+    install_diagnostics_v010()
     _INSTALLED = True
