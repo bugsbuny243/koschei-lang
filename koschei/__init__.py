@@ -21,4 +21,8 @@ from .data_native_source_v1 import install_packaged_native_source
 
 install_packaged_native_source()
 
+from .ergonomics_v010 import install_ergonomics_v010
+
+install_ergonomics_v010()
+
 __all__ = ["main"]
