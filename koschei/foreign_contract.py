@@ -55,6 +55,7 @@ CAPABILITY_NAMES = frozenset(
 IDENTIFIER = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 MODULE_NAME = re.compile(r"^[a-z][a-z0-9_]{0,63}(?:\.[a-z][a-z0-9_]{0,63})*$")
 SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
+ARTIFACT_PART = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 RESERVED_FUNCTIONS = frozenset({"main", "init", "__init__", "__main__"})
 
 _LIMITS = {
@@ -250,6 +251,11 @@ def _safe_artifact_path(contract_path: Path, raw: Any) -> Path:
         raise _error("KS3806", "artifact.path sözleşmeye göre göreli bir yol olmalıdır.")
     if "\\" in value or any(part in {"", ".", ".."} for part in path.parts):
         raise _error("KS3806", "artifact.path '.', '..' veya ters bölü içeremez.")
+    if any(not ARTIFACT_PART.fullmatch(part) for part in path.parts):
+        raise _error(
+            "KS3806",
+            "artifact.path yalnızca taşınabilir ASCII harf, sayı, nokta, alt çizgi ve tire içerebilir.",
+        )
 
     root = contract_path.parent.resolve()
     current = root
