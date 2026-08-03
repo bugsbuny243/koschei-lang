@@ -63,6 +63,19 @@ fn main() {
             "[[1, 2, 3], [4, 5, 6], [7]]\n[1, 2, 3, 4, 5, 6, 7]\n",
         )
 
+    def test_chunks_fallback_union_can_feed_for_loop(self):
+        source = """
+fn main() {
+    let values = [1, 2, 3, 4, 5, 6, 7]
+    let batches = values.chunks(3) or []
+    for batch in batches { println(batch) }
+}
+"""
+        self.assert_native_parity(
+            source,
+            "[1, 2, 3]\n[4, 5, 6]\n[7]\n",
+        )
+
     def test_chunks_preserve_generic_and_nested_generic_contracts(self):
         source = """
 fn chunk<T>(values: List<T>, size: Int) -> Result<List<List<T>>, Error> {
@@ -98,6 +111,17 @@ fn main() {
 }
 """
         self.assert_native_parity(source, "[[9]]\n[[8]]\n")
+
+    def test_for_rejects_union_with_a_non_list_branch(self):
+        source = """
+fn main() {
+    let groups = [1, 2].chunks(1) or 0
+    for group in groups { println(group) }
+}
+"""
+        code, _, stderr = self.run_cli(source, "--lang", "en", "check")
+        self.assertEqual(code, 1)
+        self.assertIn("KS1301", stderr)
 
     def test_chunks_reject_wrong_arity_and_size_type(self):
         cases = (
