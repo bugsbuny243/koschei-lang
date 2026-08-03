@@ -105,8 +105,10 @@ def _statement(self, statement):
         return _statement.original(self, statement)
 
     iterable_type = self._check_expression(statement.iterable)
+    item_node = _list_item(_evidence_type(self, statement.iterable))
     if (
-        iterable_type is not None
+        item_node is None
+        and iterable_type is not None
         and iterable_type != "List"
         and not iterable_type.startswith("List<")
     ):
@@ -116,7 +118,6 @@ def _statement(self, statement):
             statement.location,
         )
 
-    item_node = _list_item(_evidence_type(self, statement.iterable))
     item_type = _legacy_item_name(item_node)
     if item_type is None:
         item_type = _fallback_item_type(self, statement.iterable)
