@@ -129,31 +129,31 @@ def _invoke_member(self, member, arguments):
 def _patch_native_runtime() -> None:
     helper = r'''
 func ksListAny(value any, predicate any) any {
-\tlist, ok := value.([]any)
-\tif !ok {
-\t\treturn ksErrorf("List.any() bir List bekler")
-\t}
-\tif ksContainsCapability(list) {
-\t\treturn ksErrorf("KS3401: Capability taşıyan List üzerinde any() çalıştırılamaz")
-\t}
-\tfunction, ok := predicate.(func(any) any)
-\tif !ok {
-\t\treturn ksErrorf("List.any() yerel, adlandırılmış ve tek parametreli bir predicate bekler")
-\t}
-\tfor _, item := range list {
-\t\tdecision := function(item)
-\t\tif failure, ok := decision.(*KsError); ok {
-\t\t\treturn failure
-\t\t}
-\t\tmatch, ok := decision.(bool)
-\t\tif !ok {
-\t\t\treturn ksErrorf("List.any() predicate'i Bool döndürmelidir")
-\t\t}
-\t\tif match {
-\t\t\treturn true
-\t\t}
-\t}
-\treturn false
+	list, ok := value.([]any)
+	if !ok {
+		return ksErrorf("List.any() bir List bekler")
+	}
+	if ksContainsCapability(list) {
+		return ksErrorf("KS3401: Capability taşıyan List üzerinde any() çalıştırılamaz")
+	}
+	function, ok := predicate.(func(any) any)
+	if !ok {
+		return ksErrorf("List.any() yerel, adlandırılmış ve tek parametreli bir predicate bekler")
+	}
+	for _, item := range list {
+		decision := function(item)
+		if failure, ok := decision.(*KsError); ok {
+			return failure
+		}
+		match, ok := decision.(bool)
+		if !ok {
+			return ksErrorf("List.any() predicate'i Bool döndürmelidir")
+		}
+		if match {
+			return true
+		}
+	}
+	return false
 }
 
 '''
