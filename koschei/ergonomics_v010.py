@@ -13,6 +13,7 @@ from .ergonomics_numeric_reductions_v0105 import install_numeric_reductions_v010
 from .ergonomics_stable_unique_v0106 import install_stable_unique_v0106
 from .ergonomics_list_flatten_v0107 import install_list_flatten_v0107
 from .ergonomics_list_chunks_v0108 import install_list_chunks_v0108
+from .ergonomics_list_map_v0109 import install_list_map_v0109
 
 _INSTALLED = False
 
@@ -35,4 +36,5 @@ def install_ergonomics_v010() -> None:
     install_stable_unique_v0106()
     install_list_flatten_v0107()
     install_list_chunks_v0108()
+    install_list_map_v0109()
     _INSTALLED = True
