@@ -11,6 +11,7 @@ from .ergonomics_daily_collections_v0103 import install_daily_collections_v0103
 from .ergonomics_nested_generics_v0104 import install_nested_generics_v0104
 from .ergonomics_numeric_reductions_v0105 import install_numeric_reductions_v0105
 from .ergonomics_stable_unique_v0106 import install_stable_unique_v0106
+from .ergonomics_list_flatten_v0107 import install_list_flatten_v0107
 
 _INSTALLED = False
 
@@ -31,4 +32,5 @@ def install_ergonomics_v010() -> None:
     install_nested_generics_v0104()
     install_numeric_reductions_v0105()
     install_stable_unique_v0106()
+    install_list_flatten_v0107()
     _INSTALLED = True
