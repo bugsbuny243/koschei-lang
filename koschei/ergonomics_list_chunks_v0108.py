@@ -46,8 +46,8 @@ def _semantic_method(
             ("Int",), values[0], "List.chunks() parça boyutu", location
         )
         # Typed HIR owns the exact nested generic result.  The compatibility
-        # checker deliberately carries only the erased collection shape.
-        return "Result<List, Error>"
+        # checker carries a wildcard and cannot invent the element type.
+        return "Result<_, Error>"
     return _semantic_method.original(
         self,
         receiver_type,
@@ -105,7 +105,10 @@ def _invoke_member(self, member, arguments):
             return _result_error(
                 "List.chunks() parça boyutu sıfırdan büyük olmalıdır"
             )
-        result = [list(receiver[start : start + size]) for start in range(0, len(receiver), size)]
+        result = [
+            list(receiver[start : start + size])
+            for start in range(0, len(receiver), size)
+        ]
         return _result_ok(result)
     return _invoke_member.original(self, member, arguments)
 
