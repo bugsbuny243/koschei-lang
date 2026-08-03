@@ -1,14 +1,14 @@
-"""Preserve structural List<T> evidence through legacy ``for`` checking.
+"""Preserve structural List<T> evidence through ``for`` checking.
 
-Typed HIR already knows the exact iterable and item types.  The compatibility
-semantic pass intentionally erases collection generics, so nested loops used to
-lose the inner List element type.  This bridge carries the already-validated
-Typed HIR evidence into that pass without weakening any type or capability
-check.
+Typed HIR owns exact collection evidence.  The compatibility semantic pass
+intentionally erases collection generics, so this bridge carries the already-
+validated evidence without weakening type or capability checks.  It also lets
+Typed HIR iterate a union only when every union branch is a List, combining the
+branch item evidence structurally.
 """
 from __future__ import annotations
 
-from . import modules, semantic
+from . import modules, semantic, typed_hir
 from . import ast_nodes as ast
 from .type_system import (
     GenericType,
@@ -65,6 +65,18 @@ def _list_item(type_node: TypeNode | None) -> TypeNode | None:
             items.append(item)
         return union_type(*items)
     return None
+
+
+def _typed_list_item(type_node: TypeNode) -> TypeNode | None:
+    if isinstance(type_node, UnionType):
+        items: list[TypeNode] = []
+        for option in alternatives(type_node):
+            item = _typed_list_item.original(option)
+            if item is None:
+                return None
+            items.append(item)
+        return union_type(*items)
+    return _typed_list_item.original(type_node)
 
 
 def _legacy_item_name(type_node: TypeNode | None) -> str | None:
@@ -138,6 +150,9 @@ def install_nested_generics_v0104() -> None:
 
     _checker_init.original = semantic.SemanticChecker.__init__
     semantic.SemanticChecker.__init__ = _checker_init
+
+    _typed_list_item.original = typed_hir.TypedHIRChecker.list_item
+    typed_hir.TypedHIRChecker.list_item = staticmethod(_typed_list_item)
 
     _statement.original = semantic.SemanticChecker._check_statement
     semantic.SemanticChecker._check_statement = _statement
