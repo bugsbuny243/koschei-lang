@@ -86,6 +86,14 @@ def _typed_add(
             location,
         )
 
+    for type_node in (key_type, value_type, key, delta):
+        if contains_named(type_node, set(semantic.CAPABILITY_TYPES)):
+            raise semantic.SemanticError(
+                "KS2402",
+                "Map.add() capability taşıyan anahtar veya değer kabul etmez.",
+                location,
+            )
+
     require_assignable(STRING, key_type, "Map.add() Map anahtar tipi", location)
     require_assignable(STRING, key, "Map.add() anahtar tipi", location)
 
@@ -99,14 +107,6 @@ def _typed_add(
             "Map.add() delta tipi",
             location,
         )
-
-    for type_node in (key_type, value_type, key, delta):
-        if contains_named(type_node, set(semantic.CAPABILITY_TYPES)):
-            raise semantic.SemanticError(
-                "KS2402",
-                "Map.add() capability taşıyan anahtar veya değer kabul etmez.",
-                location,
-            )
     return generic("Map", STRING, value_type)
 
 
