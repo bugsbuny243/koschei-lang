@@ -16,6 +16,7 @@ from .ergonomics_list_chunks_v0108 import install_list_chunks_v0108
 from .ergonomics_list_map_v0109 import install_list_map_v0109
 from .ergonomics_typed_callbacks_v0109 import install_typed_callbacks_v0109
 from .ergonomics_list_any_v0110 import install_list_any_v0110
+from .ergonomics_list_partition_v0111 import install_list_partition_v0111
 
 _INSTALLED = False
 
@@ -41,4 +42,5 @@ def install_ergonomics_v010() -> None:
     install_list_map_v0109()
     install_typed_callbacks_v0109()
     install_list_any_v0110()
+    install_list_partition_v0111()
     _INSTALLED = True
