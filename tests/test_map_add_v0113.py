@@ -136,35 +136,17 @@ fn main() {
             )
         self.assertEqual(raised.exception.code, "KS2402")
 
-    def test_int_overflow_fails_with_same_code_in_both_runtimes(self):
-        if shutil.which("go") is None:
-            self.skipTest("Go toolchain is unavailable")
+    def test_int_overflow_is_same_error_value_in_both_runtimes(self):
         source = """
 fn main() {
     let values: Map<String, Int> = {"max": 9223372036854775807}
     println(values.add("max", 1))
 }
 """
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            path = root / "main.ks"
-            binary = root / "app"
-            path.write_text(source, encoding="utf-8")
-
-            run_code, _, run_err = self.run_cli(source, "run")
-            self.assertEqual(run_code, 1)
-            self.assertIn("KS3501", run_err)
-
-            build_out = io.StringIO()
-            build_err = io.StringIO()
-            with redirect_stdout(build_out), redirect_stderr(build_err):
-                build_code = main(["build", str(path), "-o", str(binary)])
-            self.assertEqual(build_code, 0, build_err.getvalue())
-            completed = subprocess.run(
-                [str(binary)], capture_output=True, text=True, check=False
-            )
-            self.assertEqual(completed.returncode, 1)
-            self.assertIn("KS3501", completed.stderr)
+        self.assert_native_parity(
+            source,
+            "KS3501: Int taşması: '+' işlemi işaretli 64-bit aralığın dışına çıktı.\n",
+        )
 
 
 if __name__ == "__main__":
