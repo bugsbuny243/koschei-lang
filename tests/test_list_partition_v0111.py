@@ -70,11 +70,12 @@ fn main() {
 
     def test_partition_handles_empty_generic_and_nested_inputs(self):
         source = """
+fn positive(value: Int) -> Bool { return value > 0 }
 fn identity<T>(value: T) -> T { return value }
 fn non_empty(values: List<Int>) -> Bool { return values.length() > 0 }
 fn main() {
     let empty: List<Int> = []
-    println(empty.partition(identity))
+    println(empty.partition(positive))
     println([true, false, true].partition(identity))
     println([[], [4], []].partition(non_empty))
 }
