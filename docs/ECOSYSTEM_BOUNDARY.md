@@ -2,6 +2,8 @@
 
 Koschei is an independent capability-secure programming language. It belongs to the wider Koschei ecosystem, but its compiler, type system and runtime security rules are not controlled by a token, an AI model or the Web3 product.
 
+Current Web3 status: `incubation_only`. Koschei language is not a production dependency of Koschei Web3 Hub. Web3 may supply offline fixtures and benchmark cases, but no production component is rewritten or executed in Koschei until the maturity gates in [`WEB3_INTEGRATION_GATES.md`](WEB3_INTEGRATION_GATES.md) pass and the owner separately approves an integration.
+
 ## Mission
 
 Build a genuinely new language that makes powerful software easier to write while making hidden authority harder to obtain.
@@ -53,14 +55,14 @@ Foreign code is not automatically trusted. An adapter must declare which authori
 
 Repository: `https://github.com/bugsbuny243/Koschei-Web3-Hub`
 
-Web3 Hub is a reference customer and stress test for the language, not the owner of language semantics. Future integration may include:
+Web3 Hub is currently an offline reference customer and stress-test source for the language, not the owner of language semantics and not a production integration target. Incubation work may include:
 
-- writing bounded evidence-processing components in `.ks`;
-- generating SDK or service adapters;
-- using `ks caps` in CI to prove allowed authority;
+- writing standalone bounded evidence-processing examples in `.ks`;
+- generating experimental SDK or service adapters outside production;
+- using `ks caps` in CI fixtures to prove allowed authority;
 - comparing Koschei and existing implementations for security ceremony and behavior parity.
 
-No production Web3 component should be rewritten in Koschei until the required language feature, backend and runtime boundary is implemented and tested. Integration must be incremental and reversible.
+No production Web3 component should be rewritten in Koschei until the required language feature, backend, runtime boundary and all integration gates are implemented, tested and separately approved. Integration must be incremental, reversible and optional.
 
 ## Relationship to Koschei Sentinel
 
@@ -83,7 +85,8 @@ KOSCH is an ecosystem asset. Holdings must never:
 - unlock an unsafe backend path;
 - alter package integrity checks;
 - change test or release requirements;
-- buy a security certification.
+- buy a security certification;
+- authorize premature Web3 integration.
 
 Permitted relationships are external to compiler correctness, such as community coordination, transparent contribution programs or access to separately operated ecosystem services.
 
@@ -100,4 +103,4 @@ Before Koschei can honestly claim broad language interoperability, it needs:
 7. documented unsupported and unsafe cases;
 8. a benchmark suite comparing security and ceremony against multiple languages.
 
-The ecosystem vision is ambitious. The implementation rule remains simple: no feature is presented as real until the repository can execute and test it.
+The ecosystem vision is ambitious. The implementation rule remains simple: no feature is presented as real until the repository can execute and test it, and no passing test automatically authorizes Web3 production integration.
