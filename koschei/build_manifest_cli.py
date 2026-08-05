@@ -6,14 +6,10 @@ import argparse
 import json
 import sys
 
-from .build_manifest import (
-    BuildManifestError,
-    load_native_manifest,
-    verify_native_manifest,
-)
+from .build_manifest import load_native_manifest, verify_native_manifest
 from .lexer import LexerError
 from .mir import MirIntegrityError
-from .module_lock import ModuleLockError, load_module_lock
+from .module_lock import load_module_lock
 from .modules import ModuleError
 from .parser import ParserError
 from .semantic import SemanticError
@@ -48,8 +44,6 @@ def command_build_verify(args: argparse.Namespace) -> int:
     except (
         OSError,
         ValueError,
-        BuildManifestError,
-        ModuleLockError,
         ModuleError,
         MirIntegrityError,
         LexerError,
