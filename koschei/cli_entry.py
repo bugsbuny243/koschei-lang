@@ -4,16 +4,24 @@ The compiler CLI historically lived in :mod:`koschei.cli`, while the language
 server was installed only as the separate ``ks-lsp`` executable. This adapter
 keeps the existing CLI implementation stable, exposes ``ks lsp``, attaches V5
 interpreter runtime budgets to the public ``ks run`` path, enforces optional
-locked native builds, and hosts the sealed foreign-contract, maturity, and
-module-lock validation commands.
+locked native builds and manifests, and hosts the sealed foreign-contract,
+maturity, and module-lock validation commands.
 """
 
 from __future__ import annotations
 
 import argparse
+import shutil
+import subprocess
 import sys
+from pathlib import Path
 
 from . import cli as _cli
+from .build_manifest import (
+    BuildManifestError,
+    build_native_manifest,
+    write_native_manifest,
+)
 from .foreign_cli import add_foreign_parser, command_foreign
 from .lock_cli import add_lock_parser, command_lock
 from .maturity_cli import add_maturity_parser, command_maturity
@@ -88,6 +96,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--lockfile",
         help="Lockfile path; defaults to koschei.lock.json beside the entry source",
     )
+    build.add_argument(
+        "--build-manifest",
+        help=(
+            "Write a SHA-256 build manifest binding the lock, MIR, toolchain, "
+            "and native artifact; requires --locked"
+        ),
+    )
     return parser
 
 
@@ -122,18 +137,62 @@ def _run_with_public_budget(args: argparse.Namespace) -> int:
 
 
 def _build_with_public_lock(args: argparse.Namespace) -> int:
-    """Verify the lock before any native build work while reusing CLI diagnostics."""
+    """Verify the lock before native build work and optionally attest the artifact."""
 
     original = _cli.command_build
 
     def command(path: str, output: str | None, locale: str) -> int:
         if args.lockfile and not args.locked:
             raise ValueError("--lockfile requires --locked")
+        if args.build_manifest and not args.locked:
+            raise ValueError("--build-manifest requires --locked")
+
         source = _cli.require_ks_extension(path)
+        verified_lock = None
         if args.locked:
             lock_path = args.lockfile or str(source.parent / "koschei.lock.json")
-            verify_module_lock(source, load_module_lock(lock_path))
-        return original(path, output, locale)
+            verified_lock = verify_module_lock(source, load_module_lock(lock_path))
+
+        manifest_path = Path(args.build_manifest) if args.build_manifest else None
+        if manifest_path is not None and manifest_path.exists():
+            raise BuildManifestError(
+                "KS1911",
+                f"build manifest already exists: {manifest_path}",
+            )
+
+        graph = _cli.open_graph(path)
+        check_graph(graph)
+        mir = require_mir(graph)
+        result = original(path, output, locale)
+        if result != 0 or manifest_path is None:
+            return result
+        if verified_lock is None:
+            raise BuildManifestError("KS1910", "verified module lock is missing")
+
+        go_binary = shutil.which("go")
+        if go_binary is None:
+            raise BuildManifestError("KS1910", "Go toolchain identity is unavailable")
+        toolchain = subprocess.run(
+            [go_binary, "version"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if toolchain.returncode != 0 or not toolchain.stdout.strip():
+            raise BuildManifestError("KS1910", "could not read Go toolchain identity")
+
+        target = (Path(output) if output else source.with_suffix("")).resolve()
+        manifest = build_native_manifest(
+            target,
+            module_lock_digest=verified_lock.lock_digest,
+            mir_version=str(mir.version),
+            mir_fingerprint=mir.fingerprint,
+            backend_toolchain=toolchain.stdout,
+        )
+        write_native_manifest(manifest, manifest_path)
+        print(f"KOSCHEI BUILD MANIFEST: {manifest_path}")
+        print(f"ARTIFACT SHA256: {manifest.artifact_sha256}")
+        return 0
 
     forwarded = ["--lang", args.lang, "build", args.source]
     if args.output:
