@@ -5,7 +5,7 @@ server was installed only as the separate ``ks-lsp`` executable. This adapter
 keeps the existing CLI implementation stable, exposes ``ks lsp``, attaches V5
 interpreter runtime budgets to the public ``ks run`` path, enforces optional
 locked native builds and manifests, and hosts the sealed foreign-contract,
-maturity, and module-lock validation commands.
+maturity, module-lock, and native-build verification commands.
 """
 
 from __future__ import annotations
@@ -22,6 +22,7 @@ from .build_manifest import (
     build_native_manifest,
     write_native_manifest,
 )
+from .build_manifest_cli import add_build_verify_parser, command_build_verify
 from .foreign_cli import add_foreign_parser, command_foreign
 from .lock_cli import add_lock_parser, command_lock
 from .maturity_cli import add_maturity_parser, command_maturity
@@ -71,6 +72,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_foreign_parser(subcommands)
     add_maturity_parser(subcommands)
     add_lock_parser(subcommands)
+    add_build_verify_parser(subcommands)
 
     run = subcommands.choices["run"]
     run.add_argument(
@@ -216,6 +218,8 @@ def main(argv: list[str] | None = None) -> int:
         return command_maturity(args)
     if args.command == "lock":
         return command_lock(args)
+    if args.command == "build-verify":
+        return command_build_verify(args)
     if args.command == "run":
         return _run_with_public_budget(args)
     if args.command == "build":
