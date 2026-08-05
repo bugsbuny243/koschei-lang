@@ -3,8 +3,9 @@
 The compiler CLI historically lived in :mod:`koschei.cli`, while the language
 server was installed only as the separate ``ks-lsp`` executable. This adapter
 keeps the existing CLI implementation stable, exposes ``ks lsp``, attaches V5
-interpreter runtime budgets to the public ``ks run`` path, and hosts the sealed
-foreign-contract, maturity, and module-lock validation commands.
+interpreter runtime budgets to the public ``ks run`` path, enforces optional
+locked native builds, and hosts the sealed foreign-contract, maturity, and
+module-lock validation commands.
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from .foreign_cli import add_foreign_parser, command_foreign
 from .lock_cli import add_lock_parser, command_lock
 from .maturity_cli import add_maturity_parser, command_maturity
 from .mir import require_mir
+from .module_lock import load_module_lock, verify_module_lock
 from .modules import check_graph
 from .runtime_budget import (
     DEFAULT_MAX_STEPS,
@@ -75,6 +77,17 @@ def build_parser() -> argparse.ArgumentParser:
         default=HARD_MAX_CALL_DEPTH,
         help=f"Koschei call-frame budget (1..{HARD_MAX_CALL_DEPTH})",
     )
+
+    build = subcommands.choices["build"]
+    build.add_argument(
+        "--locked",
+        action="store_true",
+        help="Verify the complete module graph against a lockfile before compiling",
+    )
+    build.add_argument(
+        "--lockfile",
+        help="Lockfile path; defaults to koschei.lock.json beside the entry source",
+    )
     return parser
 
 
@@ -108,6 +121,31 @@ def _run_with_public_budget(args: argparse.Namespace) -> int:
         _cli.command_run = original
 
 
+def _build_with_public_lock(args: argparse.Namespace) -> int:
+    """Verify the lock before any native build work while reusing CLI diagnostics."""
+
+    original = _cli.command_build
+
+    def command(path: str, output: str | None, locale: str) -> int:
+        if args.lockfile and not args.locked:
+            raise ValueError("--lockfile requires --locked")
+        source = _cli.require_ks_extension(path)
+        if args.locked:
+            lock_path = args.lockfile or str(source.parent / "koschei.lock.json")
+            verify_module_lock(source, load_module_lock(lock_path))
+        return original(path, output, locale)
+
+    forwarded = ["--lang", args.lang, "build", args.source]
+    if args.output:
+        forwarded.extend(["--output", args.output])
+
+    _cli.command_build = command
+    try:
+        return _cli.main(forwarded)
+    finally:
+        _cli.command_build = original
+
+
 def main(argv: list[str] | None = None) -> int:
     arguments = sys.argv[1:] if argv is None else argv
     args = build_parser().parse_args(arguments)
@@ -121,6 +159,8 @@ def main(argv: list[str] | None = None) -> int:
         return command_lock(args)
     if args.command == "run":
         return _run_with_public_budget(args)
+    if args.command == "build":
+        return _build_with_public_lock(args)
     return _cli.main(arguments)
 
 
