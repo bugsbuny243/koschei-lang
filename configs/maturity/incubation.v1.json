@@ -1,0 +1,20 @@
+{
+  "schema_version": "koschei.maturity-evidence.v1",
+  "checks": {
+    "adversarial_capability_tests": false,
+    "capability_security": true,
+    "compiler_tests": true,
+    "foreign_boundary_parity": false,
+    "fuzzing": false,
+    "interpreter_native_parity": false,
+    "owner_approval": false,
+    "package_integrity": false,
+    "real_programs": false,
+    "repository_truth": true,
+    "reproducible_builds": false,
+    "rollback_reference_component": false,
+    "runtime_abi_stability": false,
+    "syntax_stability": false,
+    "type_system_stability": false
+  }
+}
