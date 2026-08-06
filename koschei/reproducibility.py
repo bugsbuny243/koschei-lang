@@ -1,4 +1,4 @@
-"""Compare two independently verified Koschei native builds."""
+"""Compare and verify independently attested Koschei native builds."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ import os
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from .build_manifest import NativeBuildManifest
 
@@ -20,6 +21,21 @@ _INPUT_FIELDS = (
     "backend",
     "backend_toolchain",
 )
+_REPORT_FIELDS = {
+    "schema_version",
+    "status",
+    "comparable",
+    "byte_reproducible",
+    "input_mismatches",
+    "artifact_name_match",
+    "left_manifest_digest",
+    "right_manifest_digest",
+    "left_artifact_sha256",
+    "right_artifact_sha256",
+    "shared_input_digest",
+    "report_digest",
+}
+_STATUSES = {"byte_identical", "artifact_mismatch", "not_comparable"}
 
 
 class ReproducibilityError(ValueError):
@@ -107,6 +123,32 @@ def compare_verified_builds(
     )
 
 
+def load_reproducibility_report(path: str | Path) -> ReproducibilityReport:
+    try:
+        payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    except json.JSONDecodeError as error:
+        raise ReproducibilityError(
+            "KS1924",
+            "reproducibility report is not valid JSON",
+        ) from error
+    return _parse_report(payload)
+
+
+def verify_reproducibility_report(
+    report: ReproducibilityReport,
+    left: NativeBuildManifest,
+    right: NativeBuildManifest,
+) -> ReproducibilityReport:
+    verified = _parse_report(report.to_dict())
+    expected = compare_verified_builds(left, right)
+    if verified.to_dict() != expected.to_dict():
+        raise ReproducibilityError(
+            "KS1925",
+            "reproducibility report does not match the supplied verified builds",
+        )
+    return verified
+
+
 def write_reproducibility_report(
     report: ReproducibilityReport,
     destination: str | Path,
@@ -135,6 +177,120 @@ def write_reproducibility_report(
         except FileNotFoundError:
             pass
         raise
+
+
+def _parse_report(payload: Any) -> ReproducibilityReport:
+    if not isinstance(payload, dict):
+        raise ReproducibilityError("KS1924", "reproducibility report must be an object")
+    if set(payload) != _REPORT_FIELDS:
+        raise ReproducibilityError(
+            "KS1924",
+            "reproducibility report contains unsupported fields",
+        )
+    if payload["schema_version"] != _SCHEMA:
+        raise ReproducibilityError("KS1924", "unsupported reproducibility report schema")
+
+    status = payload["status"]
+    if not isinstance(status, str) or status not in _STATUSES:
+        raise ReproducibilityError("KS1924", "invalid reproducibility status")
+    comparable = _bool(payload["comparable"], "comparable")
+    byte_reproducible = _bool(payload["byte_reproducible"], "byte_reproducible")
+    artifact_name_match = _bool(payload["artifact_name_match"], "artifact_name_match")
+
+    raw_mismatches = payload["input_mismatches"]
+    if not isinstance(raw_mismatches, list) or any(
+        not isinstance(item, str) for item in raw_mismatches
+    ):
+        raise ReproducibilityError("KS1924", "input_mismatches must be a string array")
+    mismatches = tuple(raw_mismatches)
+    if len(mismatches) != len(set(mismatches)):
+        raise ReproducibilityError("KS1924", "input_mismatches contains duplicates")
+    if any(item not in _INPUT_FIELDS for item in mismatches):
+        raise ReproducibilityError("KS1924", "input_mismatches contains unknown fields")
+    expected_order = tuple(field for field in _INPUT_FIELDS if field in mismatches)
+    if mismatches != expected_order:
+        raise ReproducibilityError("KS1924", "input_mismatches is not canonical")
+
+    left_manifest_digest = _digest_field(
+        payload["left_manifest_digest"],
+        "left_manifest_digest",
+    )
+    right_manifest_digest = _digest_field(
+        payload["right_manifest_digest"],
+        "right_manifest_digest",
+    )
+    left_artifact_sha256 = _digest_field(
+        payload["left_artifact_sha256"],
+        "left_artifact_sha256",
+    )
+    right_artifact_sha256 = _digest_field(
+        payload["right_artifact_sha256"],
+        "right_artifact_sha256",
+    )
+    shared_raw = payload["shared_input_digest"]
+    if shared_raw is not None and not _is_digest(shared_raw):
+        raise ReproducibilityError("KS1924", "shared_input_digest must be SHA-256 or null")
+    shared_input_digest = shared_raw
+    report_digest = _digest_field(payload["report_digest"], "report_digest")
+
+    if status == "byte_identical":
+        valid_state = comparable and byte_reproducible and not mismatches
+        valid_state = valid_state and shared_input_digest is not None
+        valid_state = valid_state and left_artifact_sha256 == right_artifact_sha256
+    elif status == "artifact_mismatch":
+        valid_state = comparable and not byte_reproducible and not mismatches
+        valid_state = valid_state and shared_input_digest is not None
+        valid_state = valid_state and left_artifact_sha256 != right_artifact_sha256
+    else:
+        valid_state = not comparable and not byte_reproducible and bool(mismatches)
+        valid_state = valid_state and shared_input_digest is None
+    if not valid_state:
+        raise ReproducibilityError(
+            "KS1924",
+            "reproducibility report state is internally inconsistent",
+        )
+
+    unsigned = dict(payload)
+    unsigned.pop("report_digest")
+    if report_digest != _digest(unsigned):
+        raise ReproducibilityError(
+            "KS1924",
+            "reproducibility report digest does not match contents",
+        )
+
+    return ReproducibilityReport(
+        status=status,
+        comparable=comparable,
+        byte_reproducible=byte_reproducible,
+        input_mismatches=mismatches,
+        artifact_name_match=artifact_name_match,
+        left_manifest_digest=left_manifest_digest,
+        right_manifest_digest=right_manifest_digest,
+        left_artifact_sha256=left_artifact_sha256,
+        right_artifact_sha256=right_artifact_sha256,
+        shared_input_digest=shared_input_digest,
+        report_digest=report_digest,
+    )
+
+
+def _bool(value: object, field: str) -> bool:
+    if not isinstance(value, bool):
+        raise ReproducibilityError("KS1924", f"{field} must be boolean")
+    return value
+
+
+def _digest_field(value: object, field: str) -> str:
+    if not isinstance(value, str) or not _is_digest(value):
+        raise ReproducibilityError("KS1924", f"{field} must be SHA-256")
+    return value
+
+
+def _is_digest(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
 
 
 def _input_digest(manifest: NativeBuildManifest) -> str:
