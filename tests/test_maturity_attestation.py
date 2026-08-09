@@ -93,6 +93,9 @@ def _ci_artifact(
     include_supply_chain: bool = True,
     include_parity: bool = True,
     parity_cases: int = 7,
+    include_fuzz: bool = True,
+    fuzz_cases: int = 16,
+    fuzz_seed: int = 20260809,
 ) -> Path:
     supply_chain = (
         "  PASS  examples/supply_chain/main.ks — correctly rejected with KS2401\n"
@@ -105,6 +108,12 @@ def _ci_artifact(
         if include_parity
         else ""
     )
+    fuzz = (
+        f"  PASS  differential fuzz: {fuzz_cases} cases seed {fuzz_seed} — "
+        f"FUZZ SHA256: {'a' * 64} — CORPUS SHA256: {'b' * 64}\n\n"
+        if include_fuzz
+        else ""
+    )
     report = (
         "Koschei verify — Koschei 0.10.0\n\n"
         "==> Test suite\n"
@@ -113,6 +122,8 @@ def _ci_artifact(
         "  PASS  check and backend input share one sealed MIR fingerprint\n\n"
         "==> Interpreter/native parity\n"
         f"{parity}"
+        "==> Differential fuzzing\n"
+        f"{fuzz}"
         "==> Examples\n"
         "  PASS  examples/capability.ks\n"
         f"{supply_chain}\n"
@@ -136,12 +147,13 @@ class MaturityAttestationTests(unittest.TestCase):
                             "package_integrity": True,
                             "reproducible_builds": True,
                             "interpreter_native_parity": True,
+                            "fuzzing": True,
                         },
                     }
                 ),
                 encoding="utf-8",
             )
-            with self.assertRaisesRegex(ValueError, "attested v2, v3, or v4"):
+            with self.assertRaisesRegex(ValueError, "protected maturity checks"):
                 load_maturity_evidence(path)
 
     def test_attested_json_alone_cannot_satisfy_reference_trust(self) -> None:
@@ -160,18 +172,24 @@ class MaturityAttestationTests(unittest.TestCase):
             evidence = load_maturity_evidence(output)
             report = evaluate_maturity(evidence, "reference")
 
-            self.assertEqual(evidence.schema_version, "koschei.maturity-evidence.v4")
+            self.assertEqual(evidence.schema_version, "koschei.maturity-evidence.v5")
             self.assertTrue(evidence.checks["interpreter_native_parity"])
+            self.assertTrue(evidence.checks["fuzzing"])
             self.assertTrue(evidence.checks["package_integrity"])
             self.assertTrue(evidence.checks["reproducible_builds"])
             self.assertEqual(payload["ci_test_count"], 600)
             self.assertEqual(payload["ci_warning_count"], 1)
             self.assertEqual(payload["ci_parity_case_count"], 7)
             self.assertEqual(payload["ci_parity_evidence_sha256"], "9" * 64)
+            self.assertEqual(payload["ci_fuzz_case_count"], 16)
+            self.assertEqual(payload["ci_fuzz_seed"], 20260809)
+            self.assertEqual(payload["ci_fuzz_evidence_sha256"], "a" * 64)
+            self.assertEqual(payload["ci_fuzz_corpus_sha256"], "b" * 64)
             self.assertTrue(payload["ci_repository_truth_observed"])
             self.assertTrue(payload["ci_sealed_mir_observed"])
             self.assertTrue(payload["ci_capability_security_observed"])
             self.assertTrue(payload["ci_interpreter_native_parity_observed"])
+            self.assertTrue(payload["ci_differential_fuzzing_observed"])
             self.assertFalse(report.ready)
             self.assertIn("compiler_tests", report.missing_checks)
             self.assertIn("interpreter_native_parity", report.missing_checks)
@@ -196,8 +214,22 @@ class MaturityAttestationTests(unittest.TestCase):
             root = Path(directory)
             base = load_maturity_evidence(_base(root / "base.json"))
             for kwargs in ({"include_parity": False}, {"parity_cases": 4}):
-                ci_zip = _ci_artifact(root / f"truth-{len(kwargs)}-{kwargs}.zip", **kwargs)
+                ci_zip = _ci_artifact(root / f"truth-parity-{len(kwargs)}.zip", **kwargs)
                 with self.assertRaisesRegex(MaturityAttestationError, "parity cases"):
+                    build_attested_maturity_evidence(
+                        base,
+                        _proof(),
+                        ci_artifact_path=ci_zip,
+                        ci_head_sha="b" * 40,
+                    )
+
+    def test_ci_artifact_without_sufficient_fuzzing_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            base = load_maturity_evidence(_base(root / "base.json"))
+            for kwargs in ({"include_fuzz": False}, {"fuzz_cases": 15}):
+                ci_zip = _ci_artifact(root / f"truth-fuzz-{len(kwargs)}.zip", **kwargs)
+                with self.assertRaisesRegex(MaturityAttestationError, "fuzz cases"):
                     build_attested_maturity_evidence(
                         base,
                         _proof(),
@@ -221,7 +253,7 @@ class MaturityAttestationTests(unittest.TestCase):
                 write_attested_maturity_evidence(payload, output)
 
             changed = json.loads(output.read_text(encoding="utf-8"))
-            changed["ci_parity_case_count"] = 999
+            changed["ci_fuzz_case_count"] = 999
             output.write_text(json.dumps(changed), encoding="utf-8")
             with self.assertRaises(ValueError):
                 load_maturity_evidence(output)
