@@ -4,9 +4,8 @@ import hashlib
 import json
 import subprocess
 import tempfile
+import unittest
 from pathlib import Path
-
-import pytest
 
 from koschei.foundation_export import (
     FoundationExportError,
@@ -67,97 +66,113 @@ def _rehash(payload: dict[str, object]) -> None:
     ).hexdigest()
 
 
-def test_git_replace_objects_cannot_substitute_pinned_source_bytes() -> None:
-    with tempfile.TemporaryDirectory() as temporary:
-        root = Path(temporary)
-        _make_repo(root)
-        original_commit = _init_git(root)
-        original_text = (root / "README.md").read_text(encoding="utf-8")
+class FoundationExportProvenanceTests(unittest.TestCase):
+    def test_git_replace_objects_cannot_substitute_pinned_source_bytes(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _make_repo(root)
+            original_commit = _init_git(root)
+            original_text = (root / "README.md").read_text(encoding="utf-8")
 
-        (root / "README.md").write_text("# replacement bytes\n", encoding="utf-8")
-        subprocess.run(["git", "add", "README.md"], cwd=root, check=True)
-        subprocess.run(
-            ["git", "commit", "-q", "-m", "replacement"],
-            cwd=root,
-            check=True,
-        )
-        replacement_commit = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            cwd=root,
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout.strip()
-        subprocess.run(["git", "checkout", "-q", original_commit], cwd=root, check=True)
-        subprocess.run(
-            ["git", "replace", original_commit, replacement_commit],
-            cwd=root,
-            check=True,
-        )
+            (root / "README.md").write_text("# replacement bytes\n", encoding="utf-8")
+            subprocess.run(["git", "add", "README.md"], cwd=root, check=True)
+            subprocess.run(
+                ["git", "commit", "-q", "-m", "replacement"],
+                cwd=root,
+                check=True,
+            )
+            replacement_commit = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=root,
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+            subprocess.run(
+                ["git", "checkout", "-q", original_commit],
+                cwd=root,
+                check=True,
+            )
+            subprocess.run(
+                ["git", "replace", original_commit, replacement_commit],
+                cwd=root,
+                check=True,
+            )
 
-        corpus = build_foundation_corpus(root, source_commit=original_commit)
-        readme = next(item for item in corpus.documents if item.path == "README.md")
-        assert readme.text == original_text
-        assert readme.text != "# replacement bytes\n"
+            corpus = build_foundation_corpus(root, source_commit=original_commit)
+            readme = next(item for item in corpus.documents if item.path == "README.md")
+            self.assertEqual(readme.text, original_text)
+            self.assertNotEqual(readme.text, "# replacement bytes\n")
+
+    def test_oversized_json_integer_is_a_controlled_verification_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "corpus.json"
+            path.write_text(
+                '{"document_count":' + ("9" * 5000) + "}",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(FoundationExportError, "not valid JSON"):
+                load_foundation_corpus(path)
+
+    def test_verified_paths_reject_embedded_nul_even_when_rehashed(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _make_repo(root)
+            corpus = build_foundation_corpus(
+                root,
+                source_commit="a" * 40,
+                verify_checkout=False,
+            )
+            payload = corpus.to_dict()
+            changed = payload["documents"][0]
+            changed["path"] = "docs/a\x00.md"
+            changed["family"] = "reference:docs/a\x00.md"
+            changed["document_id"] = hashlib.sha256(
+                (
+                    f"{changed['kind']}\0{changed['family']}\0{changed['path']}\0"
+                    f"{changed['source_sha256']}"
+                ).encode()
+            ).hexdigest()
+            payload["documents"].sort(key=lambda item: item["path"])
+            _rehash(payload)
+            with self.assertRaisesRegex(
+                FoundationExportError,
+                "unsafe foundation document path",
+            ):
+                verify_foundation_corpus(payload)
+
+    def test_verifier_rejects_document_above_builder_size_limit(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _make_repo(root)
+            corpus = build_foundation_corpus(
+                root,
+                source_commit="b" * 40,
+                verify_checkout=False,
+            )
+            payload = corpus.to_dict()
+            changed = next(
+                item
+                for item in payload["documents"]
+                if item["path"] == "docs/capabilities.md"
+            )
+            changed["text"] = "x" * (512 * 1024 + 1)
+            changed["source_sha256"] = hashlib.sha256(
+                changed["text"].encode()
+            ).hexdigest()
+            changed["document_id"] = hashlib.sha256(
+                (
+                    f"{changed['kind']}\0{changed['family']}\0{changed['path']}\0"
+                    f"{changed['source_sha256']}"
+                ).encode()
+            ).hexdigest()
+            _rehash(payload)
+            with self.assertRaisesRegex(
+                FoundationExportError,
+                "exceeds size limit",
+            ):
+                verify_foundation_corpus(payload)
 
 
-def test_oversized_json_integer_is_a_controlled_verification_failure() -> None:
-    with tempfile.TemporaryDirectory() as temporary:
-        path = Path(temporary) / "corpus.json"
-        path.write_text(
-            '{"document_count":' + ("9" * 5000) + "}",
-            encoding="utf-8",
-        )
-        with pytest.raises(FoundationExportError, match="not valid JSON"):
-            load_foundation_corpus(path)
-
-
-def test_verified_paths_reject_embedded_nul_even_when_rehashed() -> None:
-    with tempfile.TemporaryDirectory() as temporary:
-        root = Path(temporary)
-        _make_repo(root)
-        corpus = build_foundation_corpus(
-            root,
-            source_commit="a" * 40,
-            verify_checkout=False,
-        )
-        payload = corpus.to_dict()
-        changed = payload["documents"][0]
-        changed["path"] = "docs/a\x00.md"
-        changed["family"] = "reference:docs/a\x00.md"
-        changed["document_id"] = hashlib.sha256(
-            (
-                f"{changed['kind']}\0{changed['family']}\0{changed['path']}\0"
-                f"{changed['source_sha256']}"
-            ).encode()
-        ).hexdigest()
-        payload["documents"].sort(key=lambda item: item["path"])
-        _rehash(payload)
-        with pytest.raises(FoundationExportError, match="unsafe foundation document path"):
-            verify_foundation_corpus(payload)
-
-
-def test_verifier_rejects_document_above_builder_size_limit() -> None:
-    with tempfile.TemporaryDirectory() as temporary:
-        root = Path(temporary)
-        _make_repo(root)
-        corpus = build_foundation_corpus(
-            root,
-            source_commit="b" * 40,
-            verify_checkout=False,
-        )
-        payload = corpus.to_dict()
-        changed = next(
-            item for item in payload["documents"] if item["path"] == "docs/capabilities.md"
-        )
-        changed["text"] = "x" * (512 * 1024 + 1)
-        changed["source_sha256"] = hashlib.sha256(changed["text"].encode()).hexdigest()
-        changed["document_id"] = hashlib.sha256(
-            (
-                f"{changed['kind']}\0{changed['family']}\0{changed['path']}\0"
-                f"{changed['source_sha256']}"
-            ).encode()
-        ).hexdigest()
-        _rehash(payload)
-        with pytest.raises(FoundationExportError, match="exceeds size limit"):
-            verify_foundation_corpus(payload)
+if __name__ == "__main__":
+    unittest.main()
