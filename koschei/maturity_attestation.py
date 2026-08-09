@@ -11,14 +11,17 @@ import tempfile
 import zipfile
 from pathlib import Path, PurePosixPath
 
-from .maturity import (
-    MaturityEvidence,
-    PROTECTED_ATTESTED_CHECKS,
-    canonical_v1_payload,
-)
+from .maturity import MaturityEvidence, PROTECTED_ATTESTED_CHECKS, canonical_v1_payload
 from .release_proof import ReleaseProof
 
-_SCHEMA = "koschei.maturity-evidence.v2"
+_SCHEMA = "koschei.maturity-evidence.v3"
+_DERIVED_CHECKS = [
+    "capability_security",
+    "compiler_tests",
+    "package_integrity",
+    "repository_truth",
+    "reproducible_builds",
+]
 _MAX_CI_ARTIFACT_BYTES = 16 * 1024 * 1024
 _MAX_CI_REPORT_BYTES = 2 * 1024 * 1024
 
@@ -57,13 +60,13 @@ def build_attested_maturity_evidence(
     observation = _parse_truth_report(report_raw)
 
     checks = dict(base.checks)
-    checks["package_integrity"] = True
-    checks["reproducible_builds"] = True
+    for name in _DERIVED_CHECKS:
+        checks[name] = True
     manual_payload = canonical_v1_payload(base)
     payload: dict[str, object] = {
         "schema_version": _SCHEMA,
         "checks": checks,
-        "derived_checks": ["package_integrity", "reproducible_builds"],
+        "derived_checks": list(_DERIVED_CHECKS),
         "manual_evidence_digest": _digest(manual_payload),
         "release_proof_digest": proof.proof_digest,
         "release_artifact_sha256": proof.release_artifact_sha256,
