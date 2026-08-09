@@ -192,7 +192,8 @@ def _load_v1(payload: dict[str, object]) -> MaturityEvidence:
     )
     if forbidden:
         raise ValueError(
-            "protected maturity checks require attested evidence: " + ", ".join(forbidden)
+            "protected maturity checks require attested v2 or v3 evidence: "
+            + ", ".join(forbidden)
         )
     return MaturityEvidence(checks=checks)
 
