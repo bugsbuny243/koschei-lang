@@ -31,7 +31,13 @@ SUPPORTED_CHECKS = frozenset(
 )
 PROTECTED_ATTESTED_CHECKS = frozenset({"package_integrity", "reproducible_builds"})
 REFERENCE_ATTESTED_CHECKS = frozenset(
-    {"compiler_tests", "repository_truth", "capability_security"}
+    {
+        "compiler_tests",
+        "repository_truth",
+        "capability_security",
+        "package_integrity",
+        "reproducible_builds",
+    }
 )
 _ATTESTED_FIELDS = {
     "schema_version",
@@ -149,9 +155,15 @@ def load_maturity_evidence(path: str | Path) -> MaturityEvidence:
 def evaluate_maturity(
     evidence: MaturityEvidence,
     target: MaturityTarget,
+    *,
+    attestation_verified: bool = False,
 ) -> MaturityReport:
     required = TARGET_REQUIREMENTS[target]
-    passed = tuple(name for name in required if _trusted_check(evidence, target, name))
+    passed = tuple(
+        name
+        for name in required
+        if _trusted_check(evidence, target, name, attestation_verified=attestation_verified)
+    )
     missing = tuple(name for name in required if name not in passed)
     digest = hashlib.sha256(_canonical_evidence(evidence).encode("utf-8")).hexdigest()
     return MaturityReport(
@@ -175,11 +187,17 @@ def canonical_v1_payload(evidence: MaturityEvidence) -> dict[str, object]:
     }
 
 
-def _trusted_check(evidence: MaturityEvidence, target: MaturityTarget, name: str) -> bool:
+def _trusted_check(
+    evidence: MaturityEvidence,
+    target: MaturityTarget,
+    name: str,
+    *,
+    attestation_verified: bool,
+) -> bool:
     if evidence.checks.get(name) is not True:
         return False
     if target != "incubation" and name in REFERENCE_ATTESTED_CHECKS:
-        return evidence.schema_version == "koschei.maturity-evidence.v3"
+        return evidence.schema_version == "koschei.maturity-evidence.v3" and attestation_verified
     return True
 
 
