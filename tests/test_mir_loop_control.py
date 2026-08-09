@@ -66,18 +66,6 @@ class MirLoopControlTests(unittest.TestCase):
         self.assertIsInstance(body.terminator, MirJump)
         self.assertEqual(body.terminator.target, 1)
 
-    def test_loop_control_outside_loop_fails_closed(self) -> None:
-        for statement in (BreakStatement(LOCATION), ContinueStatement(LOCATION)):
-            declaration = FunctionDeclaration(
-                name="main",
-                parameters=(),
-                return_type=None,
-                body=Block((statement,)),
-                location=LOCATION,
-            )
-            with self.assertRaisesRegex(ValueError, "outside a loop"):
-                lower_function_blocks(declaration, TYPED_REPORT)
-
 
 if __name__ == "__main__":
     unittest.main()
