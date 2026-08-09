@@ -90,8 +90,8 @@ def command_maturity_attest(args: argparse.Namespace) -> int:
             verified = False
         else:
             observed = load_maturity_evidence(args.attested_evidence)
-            if observed.schema_version != "koschei.maturity-evidence.v2":
-                raise MaturityAttestationError("KS1944", "evidence is not attested v2")
+            if observed.schema_version != "koschei.maturity-evidence.v3":
+                raise MaturityAttestationError("KS1944", "evidence is not attested v3")
             if observed.canonical_payload != expected:
                 raise MaturityAttestationError(
                     "KS1944",
