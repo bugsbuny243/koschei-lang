@@ -107,8 +107,8 @@ def command_maturity_attest(args: argparse.Namespace) -> int:
             verified = False
         else:
             observed = load_maturity_evidence(args.attested_evidence)
-            if observed.schema_version != "koschei.maturity-evidence.v4":
-                raise MaturityAttestationError("KS1944", "evidence is not attested v4")
+            if observed.schema_version != "koschei.maturity-evidence.v5":
+                raise MaturityAttestationError("KS1944", "evidence is not attested v5")
             if observed.canonical_payload != expected:
                 raise MaturityAttestationError(
                     "KS1944",
@@ -137,6 +137,10 @@ def command_maturity_attest(args: argparse.Namespace) -> int:
         "ci_warning_count": expected["ci_warning_count"],
         "ci_parity_case_count": expected["ci_parity_case_count"],
         "ci_parity_evidence_sha256": expected["ci_parity_evidence_sha256"],
+        "ci_fuzz_case_count": expected["ci_fuzz_case_count"],
+        "ci_fuzz_seed": expected["ci_fuzz_seed"],
+        "ci_fuzz_evidence_sha256": expected["ci_fuzz_evidence_sha256"],
+        "ci_fuzz_corpus_sha256": expected["ci_fuzz_corpus_sha256"],
         "derived_checks": expected["derived_checks"],
         "attestation_digest": expected["attestation_digest"],
     }
@@ -155,6 +159,12 @@ def command_maturity_attest(args: argparse.Namespace) -> int:
             f"{expected['ci_parity_case_count']} cases / "
             f"{expected['ci_parity_evidence_sha256']}"
         )
+        print(
+            "DIFFERENTIAL FUZZ: "
+            f"{expected['ci_fuzz_case_count']} cases seed {expected['ci_fuzz_seed']} / "
+            f"{expected['ci_fuzz_evidence_sha256']}"
+        )
+        print(f"FUZZ CORPUS: {expected['ci_fuzz_corpus_sha256']}")
         print(f"ATTESTATION: {expected['attestation_digest']}")
         if maturity_report is not None:
             state = "READY" if maturity_report.ready else "BLOCKED"
