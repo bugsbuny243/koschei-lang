@@ -15,7 +15,9 @@ from .ast_nodes import (
     AssignmentExpression,
     BinaryExpression,
     Block,
+    BreakStatement,
     CallExpression,
+    ContinueStatement,
     Expression,
     ExpressionStatement,
     ForStatement,
@@ -174,6 +176,7 @@ class _FunctionLowerer:
         self.current = 0
         self.next_block = 1
         self.next_value = 0
+        self.loop_targets: list[tuple[int, int]] = []
 
     def lower(self) -> tuple[MirBasicBlock, ...]:
         self._lower_block(self.declaration.body)
@@ -258,6 +261,18 @@ class _FunctionLowerer:
         if isinstance(statement, WhileStatement):
             self._lower_while(statement)
             return
+        if isinstance(statement, BreakStatement):
+            if not self.loop_targets:
+                raise ValueError("break cannot be lowered outside a loop")
+            break_target, _ = self.loop_targets[-1]
+            self._terminate(MirJump(break_target))
+            return
+        if isinstance(statement, ContinueStatement):
+            if not self.loop_targets:
+                raise ValueError("continue cannot be lowered outside a loop")
+            _, continue_target = self.loop_targets[-1]
+            self._terminate(MirJump(continue_target))
+            return
         if isinstance(statement, ForStatement):
             self._emit(
                 MirAstFallback(
@@ -310,7 +325,11 @@ class _FunctionLowerer:
         self._terminate(MirBranch(condition, body_block, exit_block))
 
         self.current = body_block
-        self._lower_block(statement.body)
+        self.loop_targets.append((exit_block, condition_block))
+        try:
+            self._lower_block(statement.body)
+        finally:
+            self.loop_targets.pop()
         if self.blocks[self.current].terminator is None:
             self._terminate(MirJump(condition_block))
 
