@@ -14,16 +14,18 @@ from pathlib import Path, PurePosixPath
 from .maturity import MaturityEvidence, PROTECTED_ATTESTED_CHECKS, canonical_v1_payload
 from .release_proof import ReleaseProof
 
-_SCHEMA = "koschei.maturity-evidence.v4"
+_SCHEMA = "koschei.maturity-evidence.v5"
 _DERIVED_CHECKS = [
     "capability_security",
     "compiler_tests",
+    "fuzzing",
     "interpreter_native_parity",
     "package_integrity",
     "repository_truth",
     "reproducible_builds",
 ]
 _MIN_PARITY_CASES = 5
+_MIN_FUZZ_CASES = 16
 _MAX_CI_ARTIFACT_BYTES = 16 * 1024 * 1024
 _MAX_CI_REPORT_BYTES = 2 * 1024 * 1024
 
@@ -47,7 +49,7 @@ def build_attested_maturity_evidence(
     if any(base.checks.get(name) is True for name in PROTECTED_ATTESTED_CHECKS):
         raise MaturityAttestationError(
             "KS1940",
-            "base evidence must not self-assert protected reproducibility or parity checks",
+            "base evidence must not self-assert protected reproducibility, parity, or fuzz checks",
         )
     _verify_release_proof_identity(proof)
     _require_commit_sha(ci_head_sha)
@@ -81,10 +83,15 @@ def build_attested_maturity_evidence(
         "ci_warning_count": observation["warning_count"],
         "ci_parity_evidence_sha256": observation["parity_evidence_sha256"],
         "ci_parity_case_count": observation["parity_case_count"],
+        "ci_fuzz_evidence_sha256": observation["fuzz_evidence_sha256"],
+        "ci_fuzz_corpus_sha256": observation["fuzz_corpus_sha256"],
+        "ci_fuzz_case_count": observation["fuzz_case_count"],
+        "ci_fuzz_seed": observation["fuzz_seed"],
         "ci_repository_truth_observed": True,
         "ci_sealed_mir_observed": True,
         "ci_capability_security_observed": True,
         "ci_interpreter_native_parity_observed": True,
+        "ci_differential_fuzzing_observed": True,
     }
     return {**payload, "attestation_digest": _digest(payload)}
 
@@ -188,6 +195,18 @@ def _parse_truth_report(raw: bytes) -> dict[str, object]:
             "KS1942",
             f"CI verify report needs at least {_MIN_PARITY_CASES} passing parity cases",
         )
+
+    fuzz = re.search(
+        r"PASS\s+differential fuzz:\s+(\d+)\s+cases seed\s+(-?\d+)\s+—\s+"
+        r"FUZZ SHA256:\s*([a-f0-9]{64})\s+—\s+CORPUS SHA256:\s*([a-f0-9]{64})",
+        text,
+    )
+    if fuzz is None or int(fuzz.group(1)) < _MIN_FUZZ_CASES:
+        raise MaturityAttestationError(
+            "KS1942",
+            f"CI verify report needs at least {_MIN_FUZZ_CASES} passing differential fuzz cases",
+        )
+
     if re.search(r"PASS\s+examples/capability\.ks", text) is None:
         raise MaturityAttestationError("KS1942", "CI verify report lacks capability example")
     if re.search(
@@ -204,6 +223,10 @@ def _parse_truth_report(raw: bytes) -> dict[str, object]:
         "warning_count": int(summary.group(1)),
         "parity_case_count": int(parity.group(1)),
         "parity_evidence_sha256": parity.group(2),
+        "fuzz_case_count": int(fuzz.group(1)),
+        "fuzz_seed": int(fuzz.group(2)),
+        "fuzz_evidence_sha256": fuzz.group(3),
+        "fuzz_corpus_sha256": fuzz.group(4),
     }
 
 
