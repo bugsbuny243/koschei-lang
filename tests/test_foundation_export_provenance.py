@@ -104,6 +104,33 @@ class FoundationExportProvenanceTests(unittest.TestCase):
             self.assertEqual(readme.text, original_text)
             self.assertNotEqual(readme.text, "# replacement bytes\n")
 
+    def test_trusted_export_requires_head_to_be_a_commit(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _make_repo(root)
+            commit = _init_git(root)
+            tree = subprocess.run(
+                ["git", "rev-parse", f"{commit}^{{tree}}"],
+                cwd=root,
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+            symbolic_ref = subprocess.run(
+                ["git", "symbolic-ref", "HEAD"],
+                cwd=root,
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+            subprocess.run(
+                ["git", "update-ref", symbolic_ref, tree],
+                cwd=root,
+                check=True,
+            )
+            with self.assertRaisesRegex(FoundationExportError, "readable commit"):
+                build_foundation_corpus(root, source_commit=tree)
+
     def test_oversized_json_integer_is_a_controlled_verification_failure(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "corpus.json"
@@ -111,6 +138,13 @@ class FoundationExportProvenanceTests(unittest.TestCase):
                 '{"document_count":' + ("9" * 5000) + "}",
                 encoding="utf-8",
             )
+            with self.assertRaisesRegex(FoundationExportError, "not valid JSON"):
+                load_foundation_corpus(path)
+
+    def test_deeply_recursive_json_is_a_controlled_verification_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "corpus.json"
+            path.write_text("[" * 2000 + "0" + "]" * 2000, encoding="utf-8")
             with self.assertRaisesRegex(FoundationExportError, "not valid JSON"):
                 load_foundation_corpus(path)
 
@@ -137,7 +171,38 @@ class FoundationExportProvenanceTests(unittest.TestCase):
             _rehash(payload)
             with self.assertRaisesRegex(
                 FoundationExportError,
-                "unsafe foundation document path",
+                "unsafe or non-canonical foundation document path",
+            ):
+                verify_foundation_corpus(payload)
+
+    def test_verified_paths_reject_noncanonical_aliases(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _make_repo(root)
+            corpus = build_foundation_corpus(
+                root,
+                source_commit="c" * 40,
+                verify_checkout=False,
+            )
+            payload = corpus.to_dict()
+            changed = next(
+                item
+                for item in payload["documents"]
+                if item["path"] == "docs/capabilities.md"
+            )
+            changed["path"] = "docs/./capabilities.md"
+            changed["family"] = "reference:docs/./capabilities.md"
+            changed["document_id"] = hashlib.sha256(
+                (
+                    f"{changed['kind']}\0{changed['family']}\0{changed['path']}\0"
+                    f"{changed['source_sha256']}"
+                ).encode()
+            ).hexdigest()
+            payload["documents"].sort(key=lambda item: item["path"])
+            _rehash(payload)
+            with self.assertRaisesRegex(
+                FoundationExportError,
+                "non-canonical foundation document path",
             ):
                 verify_foundation_corpus(payload)
 
