@@ -2,10 +2,11 @@
 #
 # verify.sh — Koschei release gate.
 #
-# Answers three questions before a release:
+# Answers four questions before a release:
 #   1. Does every example still produce the output it produced last time?
-#   2. Does every code block in the docs actually compile?
-#   3. Does the malicious supply-chain package still fail to compile?
+#   2. Do representative programs match between interpreter and native binary?
+#   3. Does every code block in the docs actually compile?
+#   4. Does the malicious supply-chain package still fail to compile?
 #
 # No dependencies. Run from the repository root:
 #
@@ -28,7 +29,7 @@ for arg in "$@"; do
   case "$arg" in
     --update-golden) UPDATE_GOLDEN=1 ;;
     --soft-docs)     SOFT_DOCS=1 ;;
-    -h|--help)       sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help)       sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown option: $arg" >&2; exit 64 ;;
   esac
 done
@@ -101,7 +102,63 @@ PY_MIR
   fi
 fi
 
-# ----------------------------------------------- 3. examples vs golden output
+# ----------------------------------------------- 3. interpreter/native parity
+
+head_ "Interpreter/native parity"
+PARITY_CASES=(
+  "examples/hello.ks"
+  "examples/control_flow.ks"
+  "examples/daily.ks"
+  "examples/holders.ks"
+  "examples/maps.ks"
+  "examples/v08_types.ks"
+  "examples/app.ks"
+)
+PARITY_TMP=$(mktemp -d)
+PARITY_EVIDENCE="$PARITY_TMP/evidence.tsv"
+: > "$PARITY_EVIDENCE"
+parity_failures=0
+
+for path in "${PARITY_CASES[@]}"; do
+  interpreted=$($KS run "$path" 2>&1)
+  interpreted_status=$?
+  binary="$PARITY_TMP/$(basename "${path%.ks}")"
+  build_output=$($KS build "$path" --output "$binary" 2>&1)
+  build_status=$?
+  if [ $interpreted_status -ne 0 ] || [ $build_status -ne 0 ]; then
+    fail "$path — interpreter/native parity setup failed"
+    parity_failures=$((parity_failures + 1))
+    if [ $build_status -ne 0 ]; then
+      printf '%s\n' "$build_output" | head -3 | sed 's/^/        /'
+    fi
+    continue
+  fi
+  native=$($binary 2>&1)
+  native_status=$?
+  if [ $native_status -ne 0 ] || [ "$interpreted" != "$native" ]; then
+    fail "$path — interpreter/native output mismatch"
+    parity_failures=$((parity_failures + 1))
+    continue
+  fi
+  output_sha=$(printf '%s' "$interpreted" | python3 -c \
+    'import hashlib,sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())')
+  printf '%s\t%s\n' "$path" "$output_sha" >> "$PARITY_EVIDENCE"
+done
+
+if [ $parity_failures -eq 0 ]; then
+  parity_sha=$(python3 - "$PARITY_EVIDENCE" <<'PY_PARITY'
+import hashlib
+import pathlib
+import sys
+
+print(hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest())
+PY_PARITY
+  )
+  pass "interpreter/native parity: ${#PARITY_CASES[@]} cases — PARITY SHA256: $parity_sha"
+fi
+rm -rf "$PARITY_TMP"
+
+# ----------------------------------------------- 4. examples vs golden output
 #
 # Each entry: <path>|<mode>
 #   run   — must run successfully; stdout is compared against the golden file
@@ -177,7 +234,7 @@ for entry in "${EXAMPLES[@]}"; do
   esac
 done
 
-# ------------------------------------------------------ 4. documentation code
+# ------------------------------------------------------ 5. documentation code
 #
 # Every ```ks block that contains a top-level declaration (fn / struct / enum /
 # import) must compile. Blocks without one are treated as illustrative
