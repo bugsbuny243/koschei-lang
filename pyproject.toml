@@ -43,6 +43,7 @@ koschei = "koschei.cli_entry:main"
 ks = "koschei.cli_entry:main"
 ks-lsp = "koschei.lsp_v5:main"
 ks-stdlib = "koschei.stdlib_catalog:main"
+ks-differential-fuzz = "koschei.differential_fuzz_cli:main"
 
 [tool.setuptools]
 packages = ["koschei"]
