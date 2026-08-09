@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from koschei.foundation_export import (
     FoundationExportError,
@@ -50,6 +52,59 @@ class FoundationExportTests(unittest.TestCase):
             source_commit=commit,
             verify_checkout=False,
         )
+
+    def init_git_repo(self, root: Path) -> str:
+        subprocess.run(
+            ["git", "init", "-q"],
+            cwd=root,
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.email", "tests@koschei.invalid"],
+            cwd=root,
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Koschei Tests"],
+            cwd=root,
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "add", "."],
+            cwd=root,
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "commit", "-q", "-m", "fixture"],
+            cwd=root,
+            check=True,
+            capture_output=True,
+        )
+        head = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=root,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return head.stdout.strip()
+
+    def rehash_payload(self, payload: dict[str, object]) -> None:
+        documents = payload["documents"]
+        payload["document_count"] = len(documents)
+        payload["family_count"] = len({item["family"] for item in documents})
+        payload["total_bytes"] = sum(
+            len(item["text"].encode()) for item in documents
+        )
+        digest_payload = dict(payload)
+        digest_payload.pop("corpus_sha256", None)
+        payload["corpus_sha256"] = hashlib.sha256(
+            canonical_json(digest_payload).encode()
+        ).hexdigest()
 
     def test_build_is_deterministic_and_groups_program_families(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -110,6 +165,26 @@ class FoundationExportTests(unittest.TestCase):
             with self.assertRaisesRegex(FoundationExportError, "Git checkout"):
                 build_foundation_corpus(root, source_commit="a" * 40)
 
+    def test_trusted_export_reads_pinned_blob_despite_assume_unchanged(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.make_repo(root)
+            commit = self.init_git_repo(root)
+            original = (root / "README.md").read_text(encoding="utf-8")
+            subprocess.run(
+                ["git", "update-index", "--assume-unchanged", "README.md"],
+                cwd=root,
+                check=True,
+                capture_output=True,
+            )
+            (root / "README.md").write_text(
+                "# worktree mutation that status may hide\n",
+                encoding="utf-8",
+            )
+            corpus = build_foundation_corpus(root, source_commit=commit)
+            readme = next(item for item in corpus.documents if item.path == "README.md")
+            self.assertEqual(readme.text, original)
+
     def test_tampered_text_is_rejected_even_if_json_is_well_formed(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -132,11 +207,36 @@ class FoundationExportTests(unittest.TestCase):
             with self.assertRaises(FileExistsError):
                 write_foundation_corpus(corpus, output)
 
+    def test_failed_directory_sync_removes_published_output(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.make_repo(root)
+            corpus = self.build(root, "7" * 40)
+            output = root / "build" / "foundation.json"
+            with mock.patch(
+                "koschei.foundation_export.os.fsync",
+                side_effect=[None, OSError("directory sync unsupported")],
+            ):
+                with self.assertRaises(OSError):
+                    write_foundation_corpus(corpus, output)
+            self.assertFalse(output.exists())
+
     def test_non_utf8_artifact_is_a_controlled_verification_failure(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "corpus.json"
             path.write_bytes(b"\xff\xfe")
             with self.assertRaisesRegex(FoundationExportError, "valid UTF-8"):
+                load_foundation_corpus(path)
+
+    def test_escaped_lone_surrogate_is_a_controlled_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.make_repo(root)
+            payload = self.build(root, "8" * 40).to_dict()
+            payload["documents"][0]["text"] = "\ud800"
+            path = root / "surrogate.json"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(FoundationExportError, "valid UTF-8 text"):
                 load_foundation_corpus(path)
 
     def test_duplicate_json_members_are_rejected(self) -> None:
@@ -165,6 +265,25 @@ class FoundationExportTests(unittest.TestCase):
         ).hexdigest()
         with self.assertRaisesRegex(FoundationExportError, "must contain documents"):
             verify_foundation_corpus(payload)
+
+    def test_verifier_enforces_v1_path_allowlist(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.make_repo(root)
+            payload = self.build(root, "6" * 40).to_dict()
+            changed = payload["documents"][0]
+            changed["path"] = "pyproject.toml"
+            changed["family"] = "reference:pyproject.toml"
+            changed["document_id"] = hashlib.sha256(
+                (
+                    f"{changed['kind']}\0{changed['family']}\0{changed['path']}\0"
+                    f"{changed['source_sha256']}"
+                ).encode()
+            ).hexdigest()
+            payload["documents"].sort(key=lambda item: item["path"])
+            self.rehash_payload(payload)
+            with self.assertRaisesRegex(FoundationExportError, "v1 allowlist"):
+                verify_foundation_corpus(payload)
 
     def test_unknown_fields_fail_closed(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
