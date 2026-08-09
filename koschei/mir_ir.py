@@ -1,9 +1,11 @@
 """Normalized MIR nodes and control-flow lowering for Koschei V5.
 
 The lowering is intentionally incremental. Core scalar expressions and structured
-`if`/`while` statements become explicit instructions and basic blocks. Language
-constructs that still need semantic design are represented by an explicit
-`MirAstFallback` node instead of being silently erased or misrepresented.
+`if`/`while` statements become explicit instructions and basic blocks. Lexical
+local bindings are resolved to stable function-unique MIR names during lowering,
+so backends do not need to rediscover source-language scope. Language constructs
+that still need semantic design are represented by an explicit `MirAstFallback`
+node instead of being silently erased or misrepresented.
 """
 
 from __future__ import annotations
@@ -176,10 +178,16 @@ class _FunctionLowerer:
         self.current = 0
         self.next_block = 1
         self.next_value = 0
+        self.next_binding = 0
         self.loop_targets: list[tuple[int, int]] = []
+        parameter_scope = {
+            parameter.name: parameter.name for parameter in declaration.parameters
+        }
+        self.scopes: list[dict[str, str]] = [parameter_scope]
+        self.used_binding_names: set[str] = set(parameter_scope.values())
 
     def lower(self) -> tuple[MirBasicBlock, ...]:
-        self._lower_block(self.declaration.body)
+        self._lower_block(self.declaration.body, scoped=False)
         current = self.blocks[self.current]
         if current.terminator is None:
             current.terminator = MirReturn(None)
@@ -213,6 +221,26 @@ class _FunctionLowerer:
         self.blocks[block] = _MutableBlock(block, [])
         return block
 
+    def _new_binding_name(self, source_name: str) -> str:
+        if source_name not in self.used_binding_names:
+            internal = source_name
+        else:
+            while True:
+                internal = f"{source_name}$mir{self.next_binding}"
+                self.next_binding += 1
+                if internal not in self.used_binding_names:
+                    break
+        self.used_binding_names.add(internal)
+        self.scopes[-1][source_name] = internal
+        return internal
+
+    def _resolve_binding_name(self, source_name: str) -> str | None:
+        for scope in reversed(self.scopes):
+            resolved = scope.get(source_name)
+            if resolved is not None:
+                return resolved
+        return None
+
     def _emit(self, instruction: MirInstruction) -> None:
         block = self.blocks[self.current]
         if block.terminator is not None:
@@ -225,18 +253,25 @@ class _FunctionLowerer:
             raise ValueError(f"MIR block {block.id} already has a terminator")
         block.terminator = terminator
 
-    def _lower_block(self, block: Block) -> None:
-        for statement in block.statements:
-            if self.blocks[self.current].terminator is not None:
-                break
-            self._lower_statement(statement)
+    def _lower_block(self, block: Block, *, scoped: bool = True) -> None:
+        if scoped:
+            self.scopes.append({})
+        try:
+            for statement in block.statements:
+                if self.blocks[self.current].terminator is not None:
+                    break
+                self._lower_statement(statement)
+        finally:
+            if scoped:
+                self.scopes.pop()
 
     def _lower_statement(self, statement: Statement) -> None:
         if isinstance(statement, LetStatement):
             value = self._lower_expression(statement.value)
+            binding_name = self._new_binding_name(statement.name)
             self._emit(
                 MirBind(
-                    statement.name,
+                    binding_name,
                     value,
                     statement.is_mutable,
                     self._type_of(statement.value),
@@ -343,7 +378,8 @@ class _FunctionLowerer:
             return target
         if isinstance(expression, Identifier):
             target = self._new_value()
-            self._emit(MirLoad(target, expression.name, result_type, expression.location))
+            name = self._resolve_binding_name(expression.name) or expression.name
+            self._emit(MirLoad(target, name, result_type, expression.location))
             return target
         if isinstance(expression, UnaryExpression):
             operand = self._lower_expression(expression.operand)
@@ -399,9 +435,12 @@ class _FunctionLowerer:
         if isinstance(expression, AssignmentExpression):
             value = self._lower_expression(expression.value)
             if isinstance(expression.target, Identifier):
+                name = self._resolve_binding_name(expression.target.name)
+                if name is None:
+                    name = expression.target.name
                 self._emit(
                     MirStore(
-                        expression.target.name,
+                        name,
                         value,
                         result_type,
                         expression.location,
