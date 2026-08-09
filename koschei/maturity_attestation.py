@@ -14,14 +14,16 @@ from pathlib import Path, PurePosixPath
 from .maturity import MaturityEvidence, PROTECTED_ATTESTED_CHECKS, canonical_v1_payload
 from .release_proof import ReleaseProof
 
-_SCHEMA = "koschei.maturity-evidence.v3"
+_SCHEMA = "koschei.maturity-evidence.v4"
 _DERIVED_CHECKS = [
     "capability_security",
     "compiler_tests",
+    "interpreter_native_parity",
     "package_integrity",
     "repository_truth",
     "reproducible_builds",
 ]
+_MIN_PARITY_CASES = 5
 _MAX_CI_ARTIFACT_BYTES = 16 * 1024 * 1024
 _MAX_CI_REPORT_BYTES = 2 * 1024 * 1024
 
@@ -45,7 +47,7 @@ def build_attested_maturity_evidence(
     if any(base.checks.get(name) is True for name in PROTECTED_ATTESTED_CHECKS):
         raise MaturityAttestationError(
             "KS1940",
-            "base evidence must not self-assert protected reproducibility checks",
+            "base evidence must not self-assert protected reproducibility or parity checks",
         )
     _verify_release_proof_identity(proof)
     _require_commit_sha(ci_head_sha)
@@ -77,9 +79,12 @@ def build_attested_maturity_evidence(
         "ci_test_artifact_sha256": observation["test_artifact_sha256"],
         "ci_test_count": observation["test_count"],
         "ci_warning_count": observation["warning_count"],
+        "ci_parity_evidence_sha256": observation["parity_evidence_sha256"],
+        "ci_parity_case_count": observation["parity_case_count"],
         "ci_repository_truth_observed": True,
         "ci_sealed_mir_observed": True,
         "ci_capability_security_observed": True,
+        "ci_interpreter_native_parity_observed": True,
     }
     return {**payload, "attestation_digest": _digest(payload)}
 
@@ -172,6 +177,17 @@ def _parse_truth_report(raw: bytes) -> dict[str, object]:
         raise MaturityAttestationError("KS1942", "CI verify report has no passing test suite")
     if "PASS  check and backend input share one sealed MIR fingerprint" not in text:
         raise MaturityAttestationError("KS1942", "CI verify report lacks sealed MIR proof")
+
+    parity = re.search(
+        r"PASS\s+interpreter/native parity:\s+(\d+)\s+cases\s+—\s+"
+        r"PARITY SHA256:\s*([a-f0-9]{64})",
+        text,
+    )
+    if parity is None or int(parity.group(1)) < _MIN_PARITY_CASES:
+        raise MaturityAttestationError(
+            "KS1942",
+            f"CI verify report needs at least {_MIN_PARITY_CASES} passing parity cases",
+        )
     if re.search(r"PASS\s+examples/capability\.ks", text) is None:
         raise MaturityAttestationError("KS1942", "CI verify report lacks capability example")
     if re.search(
@@ -186,6 +202,8 @@ def _parse_truth_report(raw: bytes) -> dict[str, object]:
         "test_count": int(tests.group(1)),
         "test_artifact_sha256": tests.group(2),
         "warning_count": int(summary.group(1)),
+        "parity_case_count": int(parity.group(1)),
+        "parity_evidence_sha256": parity.group(2),
     }
 
 
