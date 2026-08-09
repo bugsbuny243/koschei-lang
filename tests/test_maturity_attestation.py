@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 import tempfile
 import unittest
 import zipfile
 from pathlib import Path
 
+from koschei.cli_entry import main
 from koschei.maturity import evaluate_maturity, load_maturity_evidence
 from koschei.maturity_attestation import (
     MaturityAttestationError,
@@ -184,6 +186,120 @@ class MaturityAttestationTests(unittest.TestCase):
             output.write_text(json.dumps(changed), encoding="utf-8")
             with self.assertRaises(ValueError):
                 load_maturity_evidence(output)
+
+    @unittest.skipUnless(shutil.which("go"), "Go is required for native build tests")
+    def test_cli_attests_real_release_proof_chain(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "main.ks"
+            lockfile = root / "koschei.lock.json"
+            artifact = root / "app"
+            manifest = root / "app.build.json"
+            witness_dir = root / "witness"
+            witness_dir.mkdir()
+            witness_artifact = witness_dir / "app"
+            report = root / "reproducibility.json"
+            proof = root / "release-proof.json"
+            attested = root / "maturity.attested.json"
+            base = _base(root / "base.json")
+            ci_zip = _ci_artifact(root / "truth.zip")
+            source.write_text("fn main() {\n    return\n}\n", encoding="utf-8")
+
+            self.assertEqual(main(["lock", "create", str(source), "--output", str(lockfile)]), 0)
+            self.assertEqual(
+                main(
+                    [
+                        "build",
+                        str(source),
+                        "--locked",
+                        "--lockfile",
+                        str(lockfile),
+                        "--output",
+                        str(artifact),
+                        "--build-manifest",
+                        str(manifest),
+                    ]
+                ),
+                0,
+            )
+            shutil.copyfile(artifact, witness_artifact)
+            compare_inputs = [
+                "--left-source",
+                str(source),
+                "--left-artifact",
+                str(artifact),
+                "--left-manifest",
+                str(manifest),
+                "--left-lockfile",
+                str(lockfile),
+                "--right-source",
+                str(source),
+                "--right-artifact",
+                str(witness_artifact),
+                "--right-manifest",
+                str(manifest),
+                "--right-lockfile",
+                str(lockfile),
+            ]
+            self.assertEqual(
+                main(["build-compare", *compare_inputs, "--output", str(report)]),
+                0,
+            )
+            release_inputs = [
+                "--release-source",
+                str(source),
+                "--release-artifact",
+                str(artifact),
+                "--release-manifest",
+                str(manifest),
+                "--release-lockfile",
+                str(lockfile),
+                "--witness-source",
+                str(source),
+                "--witness-artifact",
+                str(witness_artifact),
+                "--witness-manifest",
+                str(manifest),
+                "--witness-lockfile",
+                str(lockfile),
+                "--report",
+                str(report),
+            ]
+            self.assertEqual(
+                main(["release-proof", "create", *release_inputs, "--output", str(proof)]),
+                0,
+            )
+            attest_inputs = [
+                "--base-evidence",
+                str(base),
+                *release_inputs,
+                "--proof",
+                str(proof),
+                "--ci-artifact",
+                str(ci_zip),
+                "--ci-head-sha",
+                "d" * 40,
+            ]
+            self.assertEqual(
+                main(["maturity-attest", "create", *attest_inputs, "--output", str(attested)]),
+                0,
+            )
+            self.assertEqual(
+                main(
+                    [
+                        "maturity-attest",
+                        "verify",
+                        *attest_inputs,
+                        "--attested-evidence",
+                        str(attested),
+                    ]
+                ),
+                0,
+            )
+            self.assertEqual(
+                main(["maturity", "--evidence", str(attested), "--target", "reference"]),
+                0,
+            )
 
 
 if __name__ == "__main__":
