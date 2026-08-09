@@ -107,8 +107,8 @@ def command_maturity_attest(args: argparse.Namespace) -> int:
             verified = False
         else:
             observed = load_maturity_evidence(args.attested_evidence)
-            if observed.schema_version != "koschei.maturity-evidence.v3":
-                raise MaturityAttestationError("KS1944", "evidence is not attested v3")
+            if observed.schema_version != "koschei.maturity-evidence.v4":
+                raise MaturityAttestationError("KS1944", "evidence is not attested v4")
             if observed.canonical_payload != expected:
                 raise MaturityAttestationError(
                     "KS1944",
@@ -135,6 +135,8 @@ def command_maturity_attest(args: argparse.Namespace) -> int:
         "ci_head_sha": expected["ci_head_sha"],
         "ci_test_count": expected["ci_test_count"],
         "ci_warning_count": expected["ci_warning_count"],
+        "ci_parity_case_count": expected["ci_parity_case_count"],
+        "ci_parity_evidence_sha256": expected["ci_parity_evidence_sha256"],
         "derived_checks": expected["derived_checks"],
         "attestation_digest": expected["attestation_digest"],
     }
@@ -148,6 +150,11 @@ def command_maturity_attest(args: argparse.Namespace) -> int:
         print(f"KOSCHEI MATURITY ATTESTATION: {label}")
         print(f"RELEASE PROOF: {expected['release_proof_digest']}")
         print(f"CI ARTIFACT: {expected['ci_artifact_sha256']}")
+        print(
+            "INTERPRETER/NATIVE PARITY: "
+            f"{expected['ci_parity_case_count']} cases / "
+            f"{expected['ci_parity_evidence_sha256']}"
+        )
         print(f"ATTESTATION: {expected['attestation_digest']}")
         if maturity_report is not None:
             state = "READY" if maturity_report.ready else "BLOCKED"
