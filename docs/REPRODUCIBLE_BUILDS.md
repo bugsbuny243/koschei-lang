@@ -60,4 +60,23 @@ The report uses `koschei.reproducibility-report.v1` and contains:
 
 Existing reports are never overwritten silently.
 
+## Verify a saved report
+
+A report can later be checked against the exact two source trees, lockfiles, manifests, and native artifacts it claims to describe:
+
+```bash
+ks build-compare-verify \
+  --report build/reproducibility/app.report.json \
+  --left-source build-a/src/main.ks \
+  --left-lockfile build-a/koschei.lock.json \
+  --left-manifest build-a/app.build.json \
+  --left-artifact build-a/app \
+  --right-source build-b/src/main.ks \
+  --right-lockfile build-b/koschei.lock.json \
+  --right-manifest build-b/app.build.json \
+  --right-artifact build-b/app
+```
+
+Verification strictly parses the report, rejects unknown fields and inconsistent status combinations, checks its digest, independently re-verifies both builds, recomputes the expected reproducibility result, and requires the complete report payload to match. A valid report from a different build pair is rejected.
+
 This command measures reproducibility honestly. It does not claim two builds are equivalent when their source graph, MIR, compiler, backend, or toolchain differs.

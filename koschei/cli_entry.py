@@ -29,7 +29,12 @@ from .maturity_cli import add_maturity_parser, command_maturity
 from .mir import require_mir
 from .module_lock import load_module_lock, verify_module_lock
 from .modules import check_graph
-from .reproducibility_cli import add_build_compare_parser, command_build_compare
+from .reproducibility_cli import (
+    add_build_compare_parser,
+    add_build_compare_verify_parser,
+    command_build_compare,
+    command_build_compare_verify,
+)
 from .runtime_budget import (
     DEFAULT_MAX_STEPS,
     HARD_MAX_CALL_DEPTH,
@@ -75,6 +80,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_lock_parser(subcommands)
     add_build_verify_parser(subcommands)
     add_build_compare_parser(subcommands)
+    add_build_compare_verify_parser(subcommands)
 
     run = subcommands.choices["run"]
     run.add_argument(
@@ -224,6 +230,8 @@ def main(argv: list[str] | None = None) -> int:
         return command_build_verify(args)
     if args.command == "build-compare":
         return command_build_compare(args)
+    if args.command == "build-compare-verify":
+        return command_build_compare_verify(args)
     if args.command == "run":
         return _run_with_public_budget(args)
     if args.command == "build":
