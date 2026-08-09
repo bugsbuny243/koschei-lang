@@ -1,8 +1,8 @@
-# Attested Maturity Evidence v4
+# Attested Maturity Evidence v5
 
 `ks maturity` still accepts manually-authored core evidence for the **incubation** target, but reference and production maturity require stronger provenance and live re-verification of the bound artifacts.
 
-The following checks are derived from verified release and CI artifacts in `koschei.maturity-evidence.v4`:
+The following checks are derived from verified release and CI artifacts in `koschei.maturity-evidence.v5`:
 
 ```text
 compiler_tests
@@ -11,13 +11,14 @@ capability_security
 package_integrity
 reproducible_builds
 interpreter_native_parity
+fuzzing
 ```
 
-`interpreter_native_parity` is no longer accepted as a manually asserted v1 maturity check. Legacy v2/v3 evidence remains readable for history, but it cannot satisfy current attested reference or production trust. Incubation compatibility for the non-protected core checks is preserved.
+`interpreter_native_parity` and `fuzzing` are not accepted as manually asserted v1 maturity checks. Legacy v2/v3/v4 evidence remains readable for history, but current fuzzing trust requires live-reverified v5 evidence. Incubation compatibility for non-protected core checks is preserved.
 
-## Explicit parity evidence
+## Explicit fixed-corpus parity evidence
 
-The repository-truth gate now runs representative Koschei programs through both execution paths:
+The repository-truth gate runs representative Koschei programs through both execution paths:
 
 ```text
 Koschei source bytes
@@ -27,17 +28,61 @@ Koschei source bytes
 → cmp byte-for-byte equality
 ```
 
-The passing cases cover multiple language surfaces, including control flow, collections, structs, algebraic types and modules. stdout is captured to files rather than shell variables, so trailing newlines and all other bytes remain part of the comparison. A non-zero exit, unexpected stderr, build failure or any stdout-byte difference fails the parity case.
+The fixed passing cases cover multiple language surfaces, including control flow, collections, structs, algebraic types and modules. stdout is captured to files rather than shell variables, so trailing newlines and all other bytes remain part of the comparison. A non-zero exit, unexpected stderr, build failure or any stdout-byte difference fails the parity case.
 
-For each passing case the gate records the source-file SHA-256 together with the SHA-256 of the interpreter/native-identical stdout bytes. Those deterministic `(path, source SHA-256, output SHA-256)` records are hashed into a single parity evidence digest.
+For each passing fixed case the gate records the source-file SHA-256 together with the SHA-256 of the interpreter/native-identical stdout bytes. Those deterministic records are hashed into one parity evidence digest.
 
-`verify-report.txt` therefore contains an explicit line of the form:
+`verify-report.txt` contains a line of the form:
 
 ```text
 PASS  interpreter/native parity: 7 cases — PARITY SHA256: <sha256>
 ```
 
-Maturity v4 requires at least five passing parity cases and binds both the case count and parity evidence SHA-256 into the attestation. A report with no parity evidence, too few cases, a malformed digest, or any interpreter/native mismatch fails closed.
+v5 requires at least five passing fixed parity cases and binds their case count and evidence SHA-256 into the attestation.
+
+## Deterministic differential fuzz evidence
+
+The release gate also runs a deterministic grammar-generated corpus through both execution paths. The current v1 generator uses an explicit seed and bounded templates for arithmetic, branching, loops and ordinary functions.
+
+```text
+seed + generator version
+→ generated Koschei source bytes
+→ interpreter raw stdout bytes
+→ native build
+→ native raw stdout bytes
+→ byte-identical comparison
+→ per-case source/output SHA-256
+→ canonical corpus SHA-256
+→ fuzz report SHA-256
+```
+
+The repository-truth gate currently requires 16 generated cases with seed `20260809`. Each generated case fails closed on an interpreter error, native build error, native execution error, unexpected runtime stderr, timeout, or stdout-byte difference.
+
+The gate emits:
+
+```text
+PASS  differential fuzz: 16 cases seed 20260809 — FUZZ SHA256: <sha256> — CORPUS SHA256: <sha256>
+```
+
+Maturity v5 requires at least 16 passing generated cases and binds the case count, seed, fuzz report SHA-256 and corpus SHA-256 into the attestation. A standalone evidence JSON cannot self-assert this check.
+
+This is a bounded differential corpus, not a proof of exhaustive semantic equivalence. The separate `adversarial_capability_tests` maturity check is **not** derived from this fuzz result and remains an independent production requirement.
+
+## Run the differential corpus directly
+
+```bash
+ks differential-fuzz \
+  --seed 20260809 \
+  --cases 16 \
+  --output build/fuzz/differential.json
+```
+
+The report uses `koschei.differential-fuzz-report.v1` and records the generator version, seed, per-case source/output hashes, corpus digest and report digest. It always states:
+
+```text
+adversarial_capability_tests_observed = false
+production_integration_allowed = false
+```
 
 ## Create attested evidence
 
@@ -59,22 +104,23 @@ ks maturity-attest create \
   --output build/maturity/reference.attested.json
 ```
 
-The command re-verifies both native builds, both locks, both manifests, sealed MIR identity, the reproducibility report, and the release proof. It also hashes and structurally validates `koschei-verify-report.zip` and requires its `verify-report.txt` to contain:
+The command re-verifies both native builds, both locks, both manifests, sealed MIR identity, the reproducibility report and the release proof. It also hashes and structurally validates `koschei-verify-report.zip` and requires its `verify-report.txt` to contain:
 
 - a passing non-empty unit-test suite;
 - a sealed MIR identity check;
-- explicit interpreter/native parity evidence for at least five cases;
+- explicit interpreter/native parity evidence for at least five fixed cases;
+- deterministic differential fuzz evidence for at least 16 generated cases;
 - a passing capability example;
 - the KS2401 supply-chain rejection;
 - a `no failures` summary.
 
-Only after those checks does v4 derive the six protected/reference maturity checks above.
+Only after those checks does v5 derive the protected checks above.
 
-The attestation binds the manual evidence digest, release-proof digest, native artifact SHA-256, module-lock digest, CI artifact SHA-256, CI head SHA, verify-report SHA-256, test artifact SHA-256, test count, warning count, parity case count, parity evidence SHA-256, observed security signals, and a canonical attestation digest.
+The attestation binds the manual evidence digest, release-proof digest, native artifact SHA-256, module-lock digest, CI artifact SHA-256, CI head SHA, verify-report SHA-256, test artifact SHA-256, test count, warning count, parity case count/digest, fuzz case count/seed/report digest/corpus digest, observed security signals and a canonical attestation digest.
 
 ## Re-verify and decide reference/production maturity
 
-A saved v4 JSON file is **not** trusted merely because its unkeyed SHA-256 digest is internally consistent. Reference and production decisions must re-verify every bound artifact in the same command:
+A saved v5 JSON file is **not** trusted merely because its unkeyed SHA-256 digest is internally consistent. Reference and production decisions must re-verify every bound artifact in the same command:
 
 ```bash
 ks maturity-attest verify \
@@ -84,7 +130,7 @@ ks maturity-attest verify \
   --target reference
 ```
 
-Verification recomputes the complete v4 payload from the supplied source trees, locks, build manifests, native artifact bytes, reproducibility report, release proof and CI ZIP. Only after the observed v4 payload matches that recomputed evidence does the command call the maturity gate with verified provenance.
+Verification recomputes the complete v5 payload from the supplied source trees, locks, build manifests, native artifact bytes, reproducibility report, release proof and CI ZIP. Only after the observed v5 payload matches that recomputed evidence does the command call the maturity gate with verified provenance.
 
 Plain:
 
@@ -98,6 +144,6 @@ is intentionally rejected for attested reference/production decisions because a 
 
 The current CI ZIP is hash-bound and structurally validated, but is not yet GitHub OIDC/provider-signed provenance. `ci_head_sha` is bound into the evidence rather than cryptographically vouched for inside the artifact.
 
-Parity evidence proves the selected release-gate programs produced byte-identical raw stdout in the interpreter and native backend on that CI run. It does **not** claim exhaustive semantic equivalence for every possible Koschei program; broader fuzzing and adversarial parity remain separate maturity requirements.
+Fixed parity evidence proves the selected release-gate programs produced byte-identical raw stdout in the interpreter and native backend on that CI run. Differential fuzz evidence expands that coverage with deterministic generated programs, but it still does **not** prove every possible Koschei program or every security-sensitive capability path.
 
-A maturity attestation does not grant owner approval, publish packages, or authorize production integration.
+A maturity attestation does not grant owner approval, publish packages, satisfy `adversarial_capability_tests`, or authorize production integration.
