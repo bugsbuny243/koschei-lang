@@ -5,7 +5,8 @@ server was installed only as the separate ``ks-lsp`` executable. This adapter
 keeps the existing CLI implementation stable, exposes ``ks lsp``, attaches V5
 interpreter runtime budgets to the public ``ks run`` path, enforces optional
 locked native builds and manifests, and hosts the sealed foreign-contract,
-maturity, module-lock, native-build verification, and reproducibility commands.
+maturity, module-lock, native-build verification, reproducibility, and release
+proof commands.
 """
 
 from __future__ import annotations
@@ -29,6 +30,7 @@ from .maturity_cli import add_maturity_parser, command_maturity
 from .mir import require_mir
 from .module_lock import load_module_lock, verify_module_lock
 from .modules import check_graph
+from .release_proof_cli import add_release_proof_parser, command_release_proof
 from .reproducibility_cli import (
     add_build_compare_parser,
     add_build_compare_verify_parser,
@@ -81,6 +83,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_build_verify_parser(subcommands)
     add_build_compare_parser(subcommands)
     add_build_compare_verify_parser(subcommands)
+    add_release_proof_parser(subcommands)
 
     run = subcommands.choices["run"]
     run.add_argument(
@@ -232,6 +235,8 @@ def main(argv: list[str] | None = None) -> int:
         return command_build_compare(args)
     if args.command == "build-compare-verify":
         return command_build_compare_verify(args)
+    if args.command == "release-proof":
+        return command_release_proof(args)
     if args.command == "run":
         return _run_with_public_budget(args)
     if args.command == "build":
