@@ -29,7 +29,9 @@ SUPPORTED_CHECKS = frozenset(
         "owner_approval",
     }
 )
-PROTECTED_ATTESTED_CHECKS = frozenset({"package_integrity", "reproducible_builds"})
+PROTECTED_ATTESTED_CHECKS = frozenset(
+    {"package_integrity", "reproducible_builds", "interpreter_native_parity"}
+)
 REFERENCE_ATTESTED_CHECKS = frozenset(
     {
         "compiler_tests",
@@ -37,9 +39,10 @@ REFERENCE_ATTESTED_CHECKS = frozenset(
         "capability_security",
         "package_integrity",
         "reproducible_builds",
+        "interpreter_native_parity",
     }
 )
-_ATTESTED_FIELDS = {
+_ATTESTED_FIELDS_V23 = {
     "schema_version",
     "checks",
     "derived_checks",
@@ -58,10 +61,23 @@ _ATTESTED_FIELDS = {
     "ci_capability_security_observed",
     "attestation_digest",
 }
+_ATTESTED_FIELDS_V4 = _ATTESTED_FIELDS_V23 | {
+    "ci_parity_evidence_sha256",
+    "ci_parity_case_count",
+    "ci_interpreter_native_parity_observed",
+}
 _V2_DERIVED = ["package_integrity", "reproducible_builds"]
 _V3_DERIVED = [
     "capability_security",
     "compiler_tests",
+    "package_integrity",
+    "repository_truth",
+    "reproducible_builds",
+]
+_V4_DERIVED = [
+    "capability_security",
+    "compiler_tests",
+    "interpreter_native_parity",
     "package_integrity",
     "repository_truth",
     "reproducible_builds",
@@ -146,9 +162,11 @@ def load_maturity_evidence(path: str | Path) -> MaturityEvidence:
     if schema == "koschei.maturity-evidence.v1":
         return _load_v1(payload)
     if schema == "koschei.maturity-evidence.v2":
-        return _load_attested(payload, schema, _V2_DERIVED)
+        return _load_attested(payload, schema, _V2_DERIVED, _ATTESTED_FIELDS_V23)
     if schema == "koschei.maturity-evidence.v3":
-        return _load_attested(payload, schema, _V3_DERIVED)
+        return _load_attested(payload, schema, _V3_DERIVED, _ATTESTED_FIELDS_V23)
+    if schema == "koschei.maturity-evidence.v4":
+        return _load_attested(payload, schema, _V4_DERIVED, _ATTESTED_FIELDS_V4)
     raise ValueError("unsupported maturity evidence schema")
 
 
@@ -197,7 +215,7 @@ def _trusted_check(
     if evidence.checks.get(name) is not True:
         return False
     if target != "incubation" and name in REFERENCE_ATTESTED_CHECKS:
-        return evidence.schema_version == "koschei.maturity-evidence.v3" and attestation_verified
+        return evidence.schema_version == "koschei.maturity-evidence.v4" and attestation_verified
     return True
 
 
@@ -210,7 +228,7 @@ def _load_v1(payload: dict[str, object]) -> MaturityEvidence:
     )
     if forbidden:
         raise ValueError(
-            "protected maturity checks require attested v2 or v3 evidence: "
+            "protected maturity checks require attested v2, v3, or v4 evidence: "
             + ", ".join(forbidden)
         )
     return MaturityEvidence(checks=checks)
@@ -220,8 +238,9 @@ def _load_attested(
     payload: dict[str, object],
     schema: str,
     expected_derived: list[str],
+    expected_fields: set[str],
 ) -> MaturityEvidence:
-    if set(payload) != _ATTESTED_FIELDS:
+    if set(payload) != expected_fields:
         raise ValueError("attested maturity evidence contains unsupported fields")
     checks = _validate_checks(payload["checks"])
     if payload["derived_checks"] != expected_derived:
@@ -229,7 +248,7 @@ def _load_attested(
     if any(checks.get(name) is not True for name in expected_derived):
         raise ValueError("attested maturity evidence must prove every derived check")
 
-    for field in (
+    digest_fields = [
         "manual_evidence_digest",
         "release_proof_digest",
         "release_artifact_sha256",
@@ -238,9 +257,13 @@ def _load_attested(
         "ci_report_sha256",
         "ci_test_artifact_sha256",
         "attestation_digest",
-    ):
+    ]
+    if schema == "koschei.maturity-evidence.v4":
+        digest_fields.append("ci_parity_evidence_sha256")
+    for field in digest_fields:
         if not _is_digest(payload[field]):
             raise ValueError(f"{field} must be SHA-256")
+
     head_sha = payload["ci_head_sha"]
     if not isinstance(head_sha, str) or len(head_sha) != 40 or any(
         character not in "0123456789abcdef" for character in head_sha
@@ -252,11 +275,18 @@ def _load_attested(
             raise ValueError(f"{field} must be a non-negative integer")
     if payload["ci_test_count"] == 0:
         raise ValueError("ci_test_count must be positive")
-    for field in (
+
+    required_true = [
         "ci_repository_truth_observed",
         "ci_sealed_mir_observed",
         "ci_capability_security_observed",
-    ):
+    ]
+    if schema == "koschei.maturity-evidence.v4":
+        parity_count = payload["ci_parity_case_count"]
+        if not isinstance(parity_count, int) or isinstance(parity_count, bool) or parity_count < 5:
+            raise ValueError("ci_parity_case_count must be an integer of at least 5")
+        required_true.append("ci_interpreter_native_parity_observed")
+    for field in required_true:
         if payload[field] is not True:
             raise ValueError(f"{field} must be true")
 

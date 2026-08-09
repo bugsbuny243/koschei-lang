@@ -2,10 +2,11 @@
 #
 # verify.sh — Koschei release gate.
 #
-# Answers three questions before a release:
+# Answers four questions before a release:
 #   1. Does every example still produce the output it produced last time?
-#   2. Does every code block in the docs actually compile?
-#   3. Does the malicious supply-chain package still fail to compile?
+#   2. Do representative programs match between interpreter and native binary?
+#   3. Does every code block in the docs actually compile?
+#   4. Does the malicious supply-chain package still fail to compile?
 #
 # No dependencies. Run from the repository root:
 #
@@ -28,7 +29,7 @@ for arg in "$@"; do
   case "$arg" in
     --update-golden) UPDATE_GOLDEN=1 ;;
     --soft-docs)     SOFT_DOCS=1 ;;
-    -h|--help)       sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help)       sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown option: $arg" >&2; exit 64 ;;
   esac
 done
@@ -101,7 +102,100 @@ PY_MIR
   fi
 fi
 
-# ----------------------------------------------- 3. examples vs golden output
+# ----------------------------------------------- 3. interpreter/native parity
+
+head_ "Interpreter/native parity"
+PARITY_CASES=(
+  "examples/hello.ks"
+  "examples/control_flow.ks"
+  "examples/daily.ks"
+  "examples/holders.ks"
+  "examples/maps.ks"
+  "examples/v08_types.ks"
+  "examples/app.ks"
+)
+PARITY_TMP=$(mktemp -d)
+PARITY_EVIDENCE="$PARITY_TMP/evidence.tsv"
+: > "$PARITY_EVIDENCE"
+parity_failures=0
+
+for path in "${PARITY_CASES[@]}"; do
+  stem=$(basename "${path%.ks}")
+  interpreted_out="$PARITY_TMP/${stem}.interpreter.out"
+  interpreted_err="$PARITY_TMP/${stem}.interpreter.err"
+  native_out="$PARITY_TMP/${stem}.native.out"
+  native_err="$PARITY_TMP/${stem}.native.err"
+  binary="$PARITY_TMP/$stem"
+  build_err="$PARITY_TMP/${stem}.build.err"
+
+  $KS run "$path" > "$interpreted_out" 2> "$interpreted_err"
+  interpreted_status=$?
+  $KS build "$path" --output "$binary" > /dev/null 2> "$build_err"
+  build_status=$?
+  if [ $interpreted_status -ne 0 ] || [ $build_status -ne 0 ]; then
+    fail "$path — interpreter/native parity setup failed"
+    parity_failures=$((parity_failures + 1))
+    if [ $interpreted_status -ne 0 ]; then
+      head -3 "$interpreted_err" | sed 's/^/        /'
+    fi
+    if [ $build_status -ne 0 ]; then
+      head -3 "$build_err" | sed 's/^/        /'
+    fi
+    continue
+  fi
+
+  "$binary" > "$native_out" 2> "$native_err"
+  native_status=$?
+  if [ $native_status -ne 0 ]; then
+    fail "$path — native parity binary failed"
+    parity_failures=$((parity_failures + 1))
+    head -3 "$native_err" | sed 's/^/        /'
+    continue
+  fi
+  if [ -s "$interpreted_err" ] || [ -s "$native_err" ]; then
+    fail "$path — parity run emitted unexpected stderr"
+    parity_failures=$((parity_failures + 1))
+    continue
+  fi
+  if ! cmp -s "$interpreted_out" "$native_out"; then
+    fail "$path — interpreter/native stdout bytes differ"
+    parity_failures=$((parity_failures + 1))
+    continue
+  fi
+
+  source_sha=$(python3 - "$path" <<'PY_SOURCE_SHA'
+import hashlib
+import pathlib
+import sys
+
+print(hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest())
+PY_SOURCE_SHA
+  )
+  output_sha=$(python3 - "$interpreted_out" <<'PY_OUTPUT_SHA'
+import hashlib
+import pathlib
+import sys
+
+print(hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest())
+PY_OUTPUT_SHA
+  )
+  printf '%s\t%s\t%s\n' "$path" "$source_sha" "$output_sha" >> "$PARITY_EVIDENCE"
+done
+
+if [ $parity_failures -eq 0 ]; then
+  parity_sha=$(python3 - "$PARITY_EVIDENCE" <<'PY_PARITY'
+import hashlib
+import pathlib
+import sys
+
+print(hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest())
+PY_PARITY
+  )
+  pass "interpreter/native parity: ${#PARITY_CASES[@]} cases — PARITY SHA256: $parity_sha"
+fi
+rm -rf "$PARITY_TMP"
+
+# ----------------------------------------------- 4. examples vs golden output
 #
 # Each entry: <path>|<mode>
 #   run   — must run successfully; stdout is compared against the golden file
@@ -177,7 +271,7 @@ for entry in "${EXAMPLES[@]}"; do
   esac
 done
 
-# ------------------------------------------------------ 4. documentation code
+# ------------------------------------------------------ 5. documentation code
 #
 # Every ```ks block that contains a top-level declaration (fn / struct / enum /
 # import) must compile. Blocks without one are treated as illustrative

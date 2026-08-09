@@ -21,13 +21,16 @@ def add_maturity_parser(subcommands: argparse._SubParsersAction) -> None:
             "Evaluate strict Koschei maturity evidence against incubation, reference, "
             "or production requirements. Incubation may use manual v1 evidence. "
             "Reference/production attested decisions must use `ks maturity-attest "
-            "verify --target ...` so bound release and CI artifacts are re-verified."
+            "verify --target ...` so bound release, CI, and parity artifacts are re-verified."
         ),
     )
     parser.add_argument(
         "--evidence",
         required=True,
-        help="Path to Koschei maturity evidence JSON (v1, attested v2, or attested v3)",
+        help=(
+            "Path to Koschei maturity evidence JSON "
+            "(v1 or legacy/attested v2-v4 evidence)"
+        ),
     )
     parser.add_argument(
         "--target",
@@ -43,6 +46,7 @@ def command_maturity(args: argparse.Namespace) -> int:
         if args.target != "incubation" and evidence.schema_version in {
             "koschei.maturity-evidence.v2",
             "koschei.maturity-evidence.v3",
+            "koschei.maturity-evidence.v4",
         }:
             raise ValueError(
                 "attested reference/production evidence must be re-verified with "
