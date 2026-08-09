@@ -10,16 +10,29 @@ from .differential_fuzz import (
 )
 
 
-def add_differential_fuzz_parser(subcommands: argparse._SubParsersAction) -> None:
-    parser = subcommands.add_parser(
-        "differential-fuzz",
-        help="Run deterministic grammar-generated interpreter/native differential fuzzing",
-    )
+def _add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--seed", type=int, default=20260809)
     parser.add_argument("--cases", type=int, default=16)
     parser.add_argument("--timeout-seconds", type=int, default=20)
     parser.add_argument("--output", required=True)
     parser.add_argument("--json", action="store_true")
+
+
+def add_differential_fuzz_parser(subcommands: argparse._SubParsersAction) -> None:
+    parser = subcommands.add_parser(
+        "differential-fuzz",
+        help="Run deterministic grammar-generated interpreter/native differential fuzzing",
+    )
+    _add_arguments(parser)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="ks-differential-fuzz",
+        description="Run deterministic grammar-generated interpreter/native differential fuzzing",
+    )
+    _add_arguments(parser)
+    return parser
 
 
 def command_differential_fuzz(args: argparse.Namespace) -> int:
@@ -56,3 +69,11 @@ def command_differential_fuzz(args: argparse.Namespace) -> int:
         print(f"CORPUS SHA256: {report['corpus_sha256']}")
         print(f"REPORT SHA256: {report['report_digest']}")
     return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    return command_differential_fuzz(build_parser().parse_args(argv))
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
