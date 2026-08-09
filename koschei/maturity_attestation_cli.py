@@ -6,9 +6,14 @@ import argparse
 import json
 import sys
 
-from .build_manifest import BuildManifestError, NativeBuildManifest, load_native_manifest, verify_native_manifest
+from .build_manifest import (
+    BuildManifestError,
+    NativeBuildManifest,
+    load_native_manifest,
+    verify_native_manifest,
+)
 from .lexer import LexerError
-from .maturity import load_maturity_evidence
+from .maturity import TARGET_REQUIREMENTS, evaluate_maturity, load_maturity_evidence
 from .maturity_attestation import (
     MaturityAttestationError,
     build_attested_maturity_evidence,
@@ -54,13 +59,25 @@ def add_maturity_attest_parser(subcommands: argparse._SubParsersAction) -> None:
     create.add_argument("--output", required=True)
     create.add_argument("--json", action="store_true")
 
-    verify = actions.add_parser("verify", help="Recompute and verify attested maturity evidence")
+    verify = actions.add_parser(
+        "verify",
+        help="Recompute attestation and optionally decide a maturity target",
+    )
     _add_inputs(verify)
     verify.add_argument("--attested-evidence", required=True)
+    verify.add_argument(
+        "--target",
+        choices=tuple(TARGET_REQUIREMENTS),
+        help=(
+            "After re-verifying all bound artifacts, evaluate this maturity target. "
+            "Use this path for reference or production decisions."
+        ),
+    )
     verify.add_argument("--json", action="store_true")
 
 
 def command_maturity_attest(args: argparse.Namespace) -> int:
+    maturity_report = None
     try:
         base = load_maturity_evidence(args.base_evidence)
         if base.schema_version != "koschei.maturity-evidence.v1":
@@ -90,8 +107,8 @@ def command_maturity_attest(args: argparse.Namespace) -> int:
             verified = False
         else:
             observed = load_maturity_evidence(args.attested_evidence)
-            if observed.schema_version != "koschei.maturity-evidence.v2":
-                raise MaturityAttestationError("KS1944", "evidence is not attested v2")
+            if observed.schema_version != "koschei.maturity-evidence.v3":
+                raise MaturityAttestationError("KS1944", "evidence is not attested v3")
             if observed.canonical_payload != expected:
                 raise MaturityAttestationError(
                     "KS1944",
@@ -99,10 +116,16 @@ def command_maturity_attest(args: argparse.Namespace) -> int:
                 )
             path = args.attested_evidence
             verified = True
+            if args.target is not None:
+                maturity_report = evaluate_maturity(
+                    observed,
+                    args.target,
+                    attestation_verified=True,
+                )
     except _ERRORS as error:
         return _render_error(args, error)
 
-    result = {
+    result: dict[str, object] = {
         "ok": True,
         "verified": verified,
         "path": path,
@@ -115,6 +138,9 @@ def command_maturity_attest(args: argparse.Namespace) -> int:
         "derived_checks": expected["derived_checks"],
         "attestation_digest": expected["attestation_digest"],
     }
+    if maturity_report is not None:
+        result["maturity"] = maturity_report.as_dict()
+
     if args.json:
         print(json.dumps(result, ensure_ascii=False, sort_keys=True))
     else:
@@ -123,6 +149,14 @@ def command_maturity_attest(args: argparse.Namespace) -> int:
         print(f"RELEASE PROOF: {expected['release_proof_digest']}")
         print(f"CI ARTIFACT: {expected['ci_artifact_sha256']}")
         print(f"ATTESTATION: {expected['attestation_digest']}")
+        if maturity_report is not None:
+            state = "READY" if maturity_report.ready else "BLOCKED"
+            print(f"MATURITY {maturity_report.target.upper()}: {state}")
+            if maturity_report.missing_checks:
+                print("MISSING: " + ", ".join(maturity_report.missing_checks))
+
+    if maturity_report is not None and not maturity_report.ready:
+        return 3
     return 0
 
 

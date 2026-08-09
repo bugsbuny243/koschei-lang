@@ -30,6 +30,15 @@ SUPPORTED_CHECKS = frozenset(
     }
 )
 PROTECTED_ATTESTED_CHECKS = frozenset({"package_integrity", "reproducible_builds"})
+REFERENCE_ATTESTED_CHECKS = frozenset(
+    {
+        "compiler_tests",
+        "repository_truth",
+        "capability_security",
+        "package_integrity",
+        "reproducible_builds",
+    }
+)
 _ATTESTED_FIELDS = {
     "schema_version",
     "checks",
@@ -49,6 +58,14 @@ _ATTESTED_FIELDS = {
     "ci_capability_security_observed",
     "attestation_digest",
 }
+_V2_DERIVED = ["package_integrity", "reproducible_builds"]
+_V3_DERIVED = [
+    "capability_security",
+    "compiler_tests",
+    "package_integrity",
+    "repository_truth",
+    "reproducible_builds",
+]
 
 TARGET_REQUIREMENTS: dict[MaturityTarget, tuple[str, ...]] = {
     "incubation": (
@@ -129,17 +146,25 @@ def load_maturity_evidence(path: str | Path) -> MaturityEvidence:
     if schema == "koschei.maturity-evidence.v1":
         return _load_v1(payload)
     if schema == "koschei.maturity-evidence.v2":
-        return _load_v2(payload)
+        return _load_attested(payload, schema, _V2_DERIVED)
+    if schema == "koschei.maturity-evidence.v3":
+        return _load_attested(payload, schema, _V3_DERIVED)
     raise ValueError("unsupported maturity evidence schema")
 
 
 def evaluate_maturity(
     evidence: MaturityEvidence,
     target: MaturityTarget,
+    *,
+    attestation_verified: bool = False,
 ) -> MaturityReport:
     required = TARGET_REQUIREMENTS[target]
-    passed = tuple(name for name in required if evidence.checks.get(name) is True)
-    missing = tuple(name for name in required if evidence.checks.get(name) is not True)
+    passed = tuple(
+        name
+        for name in required
+        if _trusted_check(evidence, target, name, attestation_verified=attestation_verified)
+    )
+    missing = tuple(name for name in required if name not in passed)
     digest = hashlib.sha256(_canonical_evidence(evidence).encode("utf-8")).hexdigest()
     return MaturityReport(
         target=target,
@@ -162,6 +187,20 @@ def canonical_v1_payload(evidence: MaturityEvidence) -> dict[str, object]:
     }
 
 
+def _trusted_check(
+    evidence: MaturityEvidence,
+    target: MaturityTarget,
+    name: str,
+    *,
+    attestation_verified: bool,
+) -> bool:
+    if evidence.checks.get(name) is not True:
+        return False
+    if target != "incubation" and name in REFERENCE_ATTESTED_CHECKS:
+        return evidence.schema_version == "koschei.maturity-evidence.v3" and attestation_verified
+    return True
+
+
 def _load_v1(payload: dict[str, object]) -> MaturityEvidence:
     if set(payload) != {"schema_version", "checks"}:
         raise ValueError("maturity evidence contains unsupported top-level fields")
@@ -171,20 +210,24 @@ def _load_v1(payload: dict[str, object]) -> MaturityEvidence:
     )
     if forbidden:
         raise ValueError(
-            "protected maturity checks require attested v2 evidence: " + ", ".join(forbidden)
+            "protected maturity checks require attested v2 or v3 evidence: "
+            + ", ".join(forbidden)
         )
     return MaturityEvidence(checks=checks)
 
 
-def _load_v2(payload: dict[str, object]) -> MaturityEvidence:
+def _load_attested(
+    payload: dict[str, object],
+    schema: str,
+    expected_derived: list[str],
+) -> MaturityEvidence:
     if set(payload) != _ATTESTED_FIELDS:
         raise ValueError("attested maturity evidence contains unsupported fields")
     checks = _validate_checks(payload["checks"])
-    derived = payload["derived_checks"]
-    if derived != ["package_integrity", "reproducible_builds"]:
+    if payload["derived_checks"] != expected_derived:
         raise ValueError("attested maturity derived checks are not canonical")
-    if any(checks.get(name) is not True for name in PROTECTED_ATTESTED_CHECKS):
-        raise ValueError("attested maturity evidence must prove protected checks")
+    if any(checks.get(name) is not True for name in expected_derived):
+        raise ValueError("attested maturity evidence must prove every derived check")
 
     for field in (
         "manual_evidence_digest",
@@ -221,11 +264,10 @@ def _load_v2(payload: dict[str, object]) -> MaturityEvidence:
     claimed = unsigned.pop("attestation_digest")
     if claimed != _digest(unsigned):
         raise ValueError("attested maturity evidence digest does not match contents")
-    canonical = dict(payload)
     return MaturityEvidence(
         checks=checks,
-        schema_version="koschei.maturity-evidence.v2",
-        canonical_payload=canonical,
+        schema_version=schema,
+        canonical_payload=dict(payload),
     )
 
 

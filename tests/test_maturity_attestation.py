@@ -127,7 +127,7 @@ class MaturityAttestationTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "attested v2"):
                 load_maturity_evidence(path)
 
-    def test_release_proof_and_ci_artifact_derive_protected_checks(self) -> None:
+    def test_attested_json_alone_cannot_satisfy_reference_trust(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             base = load_maturity_evidence(_base(root / "base.json"))
@@ -150,7 +150,10 @@ class MaturityAttestationTests(unittest.TestCase):
             self.assertTrue(payload["ci_repository_truth_observed"])
             self.assertTrue(payload["ci_sealed_mir_observed"])
             self.assertTrue(payload["ci_capability_security_observed"])
-            self.assertTrue(report.ready)
+            self.assertFalse(report.ready)
+            self.assertIn("compiler_tests", report.missing_checks)
+            self.assertIn("package_integrity", report.missing_checks)
+            self.assertIn("reproducible_builds", report.missing_checks)
             self.assertFalse(report.as_dict()["production_integration_allowed"])
 
     def test_ci_artifact_without_supply_chain_rejection_fails_closed(self) -> None:
@@ -292,13 +295,15 @@ class MaturityAttestationTests(unittest.TestCase):
                         *attest_inputs,
                         "--attested-evidence",
                         str(attested),
+                        "--target",
+                        "reference",
                     ]
                 ),
                 0,
             )
             self.assertEqual(
                 main(["maturity", "--evidence", str(attested), "--target", "reference"]),
-                0,
+                2,
             )
 
 
