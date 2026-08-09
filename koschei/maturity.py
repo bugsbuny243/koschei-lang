@@ -30,7 +30,7 @@ SUPPORTED_CHECKS = frozenset(
     }
 )
 PROTECTED_ATTESTED_CHECKS = frozenset(
-    {"package_integrity", "reproducible_builds", "interpreter_native_parity"}
+    {"package_integrity", "reproducible_builds", "interpreter_native_parity", "fuzzing"}
 )
 REFERENCE_ATTESTED_CHECKS = frozenset(
     {
@@ -40,6 +40,7 @@ REFERENCE_ATTESTED_CHECKS = frozenset(
         "package_integrity",
         "reproducible_builds",
         "interpreter_native_parity",
+        "fuzzing",
     }
 )
 _ATTESTED_FIELDS_V23 = {
@@ -66,6 +67,13 @@ _ATTESTED_FIELDS_V4 = _ATTESTED_FIELDS_V23 | {
     "ci_parity_case_count",
     "ci_interpreter_native_parity_observed",
 }
+_ATTESTED_FIELDS_V5 = _ATTESTED_FIELDS_V4 | {
+    "ci_fuzz_evidence_sha256",
+    "ci_fuzz_corpus_sha256",
+    "ci_fuzz_case_count",
+    "ci_fuzz_seed",
+    "ci_differential_fuzzing_observed",
+}
 _V2_DERIVED = ["package_integrity", "reproducible_builds"]
 _V3_DERIVED = [
     "capability_security",
@@ -77,6 +85,15 @@ _V3_DERIVED = [
 _V4_DERIVED = [
     "capability_security",
     "compiler_tests",
+    "interpreter_native_parity",
+    "package_integrity",
+    "repository_truth",
+    "reproducible_builds",
+]
+_V5_DERIVED = [
+    "capability_security",
+    "compiler_tests",
+    "fuzzing",
     "interpreter_native_parity",
     "package_integrity",
     "repository_truth",
@@ -167,6 +184,8 @@ def load_maturity_evidence(path: str | Path) -> MaturityEvidence:
         return _load_attested(payload, schema, _V3_DERIVED, _ATTESTED_FIELDS_V23)
     if schema == "koschei.maturity-evidence.v4":
         return _load_attested(payload, schema, _V4_DERIVED, _ATTESTED_FIELDS_V4)
+    if schema == "koschei.maturity-evidence.v5":
+        return _load_attested(payload, schema, _V5_DERIVED, _ATTESTED_FIELDS_V5)
     raise ValueError("unsupported maturity evidence schema")
 
 
@@ -215,7 +234,14 @@ def _trusted_check(
     if evidence.checks.get(name) is not True:
         return False
     if target != "incubation" and name in REFERENCE_ATTESTED_CHECKS:
-        return evidence.schema_version == "koschei.maturity-evidence.v4" and attestation_verified
+        if not attestation_verified:
+            return False
+        if name == "fuzzing":
+            return evidence.schema_version == "koschei.maturity-evidence.v5"
+        return evidence.schema_version in {
+            "koschei.maturity-evidence.v4",
+            "koschei.maturity-evidence.v5",
+        }
     return True
 
 
@@ -228,8 +254,7 @@ def _load_v1(payload: dict[str, object]) -> MaturityEvidence:
     )
     if forbidden:
         raise ValueError(
-            "protected maturity checks require attested v2, v3, or v4 evidence: "
-            + ", ".join(forbidden)
+            "protected maturity checks require attested evidence: " + ", ".join(forbidden)
         )
     return MaturityEvidence(checks=checks)
 
@@ -258,8 +283,10 @@ def _load_attested(
         "ci_test_artifact_sha256",
         "attestation_digest",
     ]
-    if schema == "koschei.maturity-evidence.v4":
+    if schema in {"koschei.maturity-evidence.v4", "koschei.maturity-evidence.v5"}:
         digest_fields.append("ci_parity_evidence_sha256")
+    if schema == "koschei.maturity-evidence.v5":
+        digest_fields.extend(["ci_fuzz_evidence_sha256", "ci_fuzz_corpus_sha256"])
     for field in digest_fields:
         if not _is_digest(payload[field]):
             raise ValueError(f"{field} must be SHA-256")
@@ -281,11 +308,19 @@ def _load_attested(
         "ci_sealed_mir_observed",
         "ci_capability_security_observed",
     ]
-    if schema == "koschei.maturity-evidence.v4":
+    if schema in {"koschei.maturity-evidence.v4", "koschei.maturity-evidence.v5"}:
         parity_count = payload["ci_parity_case_count"]
         if not isinstance(parity_count, int) or isinstance(parity_count, bool) or parity_count < 5:
             raise ValueError("ci_parity_case_count must be an integer of at least 5")
         required_true.append("ci_interpreter_native_parity_observed")
+    if schema == "koschei.maturity-evidence.v5":
+        fuzz_count = payload["ci_fuzz_case_count"]
+        if not isinstance(fuzz_count, int) or isinstance(fuzz_count, bool) or fuzz_count < 16:
+            raise ValueError("ci_fuzz_case_count must be an integer of at least 16")
+        fuzz_seed = payload["ci_fuzz_seed"]
+        if not isinstance(fuzz_seed, int) or isinstance(fuzz_seed, bool):
+            raise ValueError("ci_fuzz_seed must be an integer")
+        required_true.append("ci_differential_fuzzing_observed")
     for field in required_true:
         if payload[field] is not True:
             raise ValueError(f"{field} must be true")
