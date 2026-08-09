@@ -15,7 +15,7 @@ import subprocess
 import tempfile
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 SCHEMA_VERSION = "koschei.language-foundation-corpus.v1"
@@ -234,7 +234,7 @@ def load_foundation_corpus(path: str | Path) -> FoundationCorpus:
         payload = _strict_json_loads(text)
     except FoundationExportError:
         raise
-    except (json.JSONDecodeError, ValueError) as exc:
+    except (json.JSONDecodeError, ValueError, RecursionError) as exc:
         raise FoundationExportError(
             "foundation corpus is not valid JSON"
         ) from exc
@@ -458,15 +458,17 @@ def _relative_path(root: Path, path: Path) -> str:
 def _validate_relative_string(value: str) -> None:
     _require_utf8(value, "foundation document path")
     path = Path(value)
+    canonical = PurePosixPath(value).as_posix()
     if (
         path.is_absolute()
         or ".." in path.parts
         or "\\" in value
         or "\x00" in value
         or value.startswith("~")
+        or canonical != value
     ):
         raise FoundationExportError(
-            f"unsafe foundation document path: {value}"
+            f"unsafe or non-canonical foundation document path: {value}"
         )
 
 
@@ -490,7 +492,7 @@ def _verify_source_checkout(root: Path, source_commit: str) -> None:
                 str(root),
                 "rev-parse",
                 "--verify",
-                "HEAD",
+                "HEAD^{commit}",
             ],
             capture_output=True,
             text=True,
@@ -502,11 +504,11 @@ def _verify_source_checkout(root: Path, source_commit: str) -> None:
         ) from exc
     if head.returncode != 0:
         raise FoundationExportError(
-            "repository root is not a readable Git checkout"
+            "Git checkout HEAD is not a readable commit"
         )
     if head.stdout.strip() != source_commit:
         raise FoundationExportError(
-            "source_commit does not match the checked-out Git HEAD"
+            "source_commit does not match the checked-out Git HEAD commit"
         )
 
     status = subprocess.run(
