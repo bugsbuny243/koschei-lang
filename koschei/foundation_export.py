@@ -13,6 +13,7 @@ import os
 import re
 import subprocess
 import tempfile
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -75,7 +76,7 @@ def build_foundation_corpus(
 
     if verify_checkout:
         _verify_source_checkout(root, source_commit)
-        candidates = _tracked_candidates(root)
+        candidates = _tracked_candidates(root, source_commit)
     else:
         candidates = _filesystem_candidates(root)
 
@@ -87,9 +88,12 @@ def build_foundation_corpus(
     documents: list[FoundationDocument] = []
     total_bytes = 0
     for relative, kind in sorted(candidates.items()):
-        path = root / relative
-        _reject_symlink_path(root, path)
-        raw = path.read_bytes()
+        if verify_checkout:
+            raw = _read_git_blob(root, source_commit, relative)
+        else:
+            path = root / relative
+            _reject_symlink_path(root, path)
+            raw = path.read_bytes()
         if len(raw) > _MAX_DOCUMENT_BYTES:
             raise FoundationExportError(
                 f"foundation document exceeds size limit: {relative}"
@@ -163,12 +167,23 @@ def verify_foundation_corpus(
 
     total_bytes = 0
     for item in corpus.documents:
+        _require_utf8(item.document_id, f"document id for {item.path!r}")
+        _require_utf8(item.family, f"family for {item.path!r}")
+        _require_utf8(item.kind, f"kind for {item.path!r}")
+        _require_utf8(item.path, "foundation document path")
+        _require_utf8(item.source_sha256, f"source hash for {item.path!r}")
+        raw = _require_utf8(item.text, f"document text for {item.path!r}")
+
         if item.kind not in {"reference", "koschei_source"}:
             raise FoundationExportError(
                 f"unsupported foundation document kind: {item.kind}"
             )
         _validate_relative_string(item.path)
-        raw = item.text.encode()
+        classified_kind = _classify_candidate_names([item.path]).get(item.path)
+        if classified_kind != item.kind:
+            raise FoundationExportError(
+                f"foundation document path is outside the v1 allowlist: {item.path}"
+            )
         total_bytes += len(raw)
         if hashlib.sha256(raw).hexdigest() != item.source_sha256:
             raise FoundationExportError(f"source hash mismatch: {item.path}")
@@ -257,6 +272,15 @@ def _unique_object_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return result
 
 
+def _require_utf8(value: str, label: str) -> bytes:
+    try:
+        return value.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise FoundationExportError(
+            f"{label} is not valid UTF-8 text"
+        ) from exc
+
+
 def _digest_payload(
     *,
     source_commit: str,
@@ -301,14 +325,16 @@ def _reference_family_path(relative: str) -> str:
     return relative
 
 
-def _tracked_candidates(root: Path) -> dict[str, str]:
+def _tracked_candidates(root: Path, source_commit: str) -> dict[str, str]:
     result = subprocess.run(
         [
             "git",
             "-C",
             str(root),
-            "ls-files",
+            "ls-tree",
+            "-r",
             "-z",
+            source_commit,
             "--",
             "README.md",
             "README.tr.md",
@@ -320,15 +346,52 @@ def _tracked_candidates(root: Path) -> dict[str, str]:
     )
     if result.returncode != 0:
         raise FoundationExportError(
-            "could not enumerate tracked foundation source files"
+            "could not enumerate pinned foundation source files"
         )
     try:
-        names = result.stdout.decode("utf-8").split("\0")
+        records = result.stdout.decode("utf-8").split("\0")
     except UnicodeDecodeError as exc:
         raise FoundationExportError(
             "tracked foundation paths are not valid UTF-8"
         ) from exc
-    return _classify_candidate_names(name for name in names if name)
+
+    names: list[str] = []
+    for record in records:
+        if not record:
+            continue
+        try:
+            metadata, relative = record.split("\t", 1)
+            mode, object_type, _object_sha = metadata.split(" ", 2)
+        except ValueError as exc:
+            raise FoundationExportError(
+                "could not parse pinned foundation tree entry"
+            ) from exc
+        if object_type != "blob" or mode not in {"100644", "100755"}:
+            raise FoundationExportError(
+                f"foundation source must be a regular tracked file: {relative}"
+            )
+        names.append(relative)
+    return _classify_candidate_names(names)
+
+
+def _read_git_blob(root: Path, source_commit: str, relative: str) -> bytes:
+    result = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(root),
+            "cat-file",
+            "blob",
+            f"{source_commit}:{relative}",
+        ],
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise FoundationExportError(
+            f"could not read foundation source from pinned Git tree: {relative}"
+        )
+    return result.stdout
 
 
 def _filesystem_candidates(root: Path) -> dict[str, str]:
@@ -353,7 +416,7 @@ def _filesystem_candidates(root: Path) -> dict[str, str]:
     return _classify_candidate_names(names)
 
 
-def _classify_candidate_names(names: Any) -> dict[str, str]:
+def _classify_candidate_names(names: Iterable[str]) -> dict[str, str]:
     candidates: dict[str, str] = {}
     for relative in names:
         _validate_relative_string(relative)
@@ -385,6 +448,7 @@ def _relative_path(root: Path, path: Path) -> str:
 
 
 def _validate_relative_string(value: str) -> None:
+    _require_utf8(value, "foundation document path")
     path = Path(value)
     if (
         path.is_absolute()
@@ -535,6 +599,7 @@ def _atomic_no_replace(path: Path, payload: str) -> None:
         prefix=f".{path.name}.",
         dir=path.parent,
     )
+    published = False
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
             handle.write(payload)
@@ -546,13 +611,26 @@ def _atomic_no_replace(path: Path, payload: str) -> None:
             raise FileExistsError(
                 f"foundation corpus already exists: {path}"
             ) from None
-        directory_fd = os.open(path.parent, os.O_RDONLY)
+        published = True
         try:
-            os.fsync(directory_fd)
-        finally:
-            os.close(directory_fd)
+            directory_fd = os.open(path.parent, os.O_RDONLY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+        except BaseException:
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                pass
+            published = False
+            raise
     finally:
         try:
             os.unlink(temporary_name)
         except FileNotFoundError:
             pass
+        if not published and path.exists() and path.is_symlink():
+            raise FoundationExportError(
+                f"unexpected symlink at foundation corpus destination: {path}"
+            )
