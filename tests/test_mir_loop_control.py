@@ -1,6 +1,5 @@
+import unittest
 from types import SimpleNamespace
-
-import pytest
 
 from koschei.ast_nodes import (
     Block,
@@ -28,50 +27,57 @@ def lower_loop(statement):
     return lower_function_blocks(declaration, TYPED_REPORT)
 
 
-def test_break_lowers_to_exit_jump_without_ast_fallback() -> None:
-    blocks = lower_loop(
-        WhileStatement(
-            condition=Literal(True, LOCATION),
-            body=Block((BreakStatement(LOCATION),)),
-            location=LOCATION,
+class MirLoopControlTests(unittest.TestCase):
+    def test_break_lowers_to_exit_jump_without_ast_fallback(self) -> None:
+        blocks = lower_loop(
+            WhileStatement(
+                condition=Literal(True, LOCATION),
+                body=Block((BreakStatement(LOCATION),)),
+                location=LOCATION,
+            )
         )
-    )
-    assert not any(
-        isinstance(instruction, MirAstFallback)
-        for block in blocks
-        for instruction in block.instructions
-    )
-    body = blocks[2]
-    assert isinstance(body.terminator, MirJump)
-    assert body.terminator.target == 3
-
-
-def test_continue_lowers_to_condition_jump_without_ast_fallback() -> None:
-    blocks = lower_loop(
-        WhileStatement(
-            condition=Literal(True, LOCATION),
-            body=Block((ContinueStatement(LOCATION),)),
-            location=LOCATION,
+        self.assertFalse(
+            any(
+                isinstance(instruction, MirAstFallback)
+                for block in blocks
+                for instruction in block.instructions
+            )
         )
-    )
-    assert not any(
-        isinstance(instruction, MirAstFallback)
-        for block in blocks
-        for instruction in block.instructions
-    )
-    body = blocks[2]
-    assert isinstance(body.terminator, MirJump)
-    assert body.terminator.target == 1
+        body = blocks[2]
+        self.assertIsInstance(body.terminator, MirJump)
+        self.assertEqual(body.terminator.target, 3)
 
-
-def test_loop_control_outside_loop_fails_closed() -> None:
-    for statement in (BreakStatement(LOCATION), ContinueStatement(LOCATION)):
-        declaration = FunctionDeclaration(
-            name="main",
-            parameters=(),
-            return_type=None,
-            body=Block((statement,)),
-            location=LOCATION,
+    def test_continue_lowers_to_condition_jump_without_ast_fallback(self) -> None:
+        blocks = lower_loop(
+            WhileStatement(
+                condition=Literal(True, LOCATION),
+                body=Block((ContinueStatement(LOCATION),)),
+                location=LOCATION,
+            )
         )
-        with pytest.raises(ValueError, match="outside a loop"):
-            lower_function_blocks(declaration, TYPED_REPORT)
+        self.assertFalse(
+            any(
+                isinstance(instruction, MirAstFallback)
+                for block in blocks
+                for instruction in block.instructions
+            )
+        )
+        body = blocks[2]
+        self.assertIsInstance(body.terminator, MirJump)
+        self.assertEqual(body.terminator.target, 1)
+
+    def test_loop_control_outside_loop_fails_closed(self) -> None:
+        for statement in (BreakStatement(LOCATION), ContinueStatement(LOCATION)):
+            declaration = FunctionDeclaration(
+                name="main",
+                parameters=(),
+                return_type=None,
+                body=Block((statement,)),
+                location=LOCATION,
+            )
+            with self.assertRaisesRegex(ValueError, "outside a loop"):
+                lower_function_blocks(declaration, TYPED_REPORT)
+
+
+if __name__ == "__main__":
+    unittest.main()
