@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import tempfile
 import unittest
@@ -8,6 +9,7 @@ from pathlib import Path
 from koschei.foundation_export import (
     FoundationExportError,
     build_foundation_corpus,
+    canonical_json,
     load_foundation_corpus,
     verify_foundation_corpus,
     write_foundation_corpus,
@@ -62,12 +64,43 @@ class FoundationExportTests(unittest.TestCase):
                 for item in first.documents
                 if item.path.startswith("examples/supply_chain/")
             ]
-            self.assertEqual({item.family for item in supply_chain}, {"example:supply_chain"})
-            readmes = [item for item in first.documents if item.path.startswith("README")]
-            self.assertEqual({item.family for item in readmes}, {"reference:README"})
+            self.assertEqual(
+                {item.family for item in supply_chain},
+                {"example:supply_chain"},
+            )
+            readmes = [
+                item for item in first.documents if item.path.startswith("README")
+            ]
+            self.assertEqual(
+                {item.family for item in readmes},
+                {"reference:README"},
+            )
             self.assertEqual(
                 [item.path for item in first.documents],
                 sorted(item.path for item in first.documents),
+            )
+
+    def test_top_level_imported_examples_share_a_safe_family(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.make_repo(root)
+            (root / "examples" / "app.ks").write_text(
+                "import risk\nfn main() { risk.label(1) }\n",
+                encoding="utf-8",
+            )
+            (root / "examples" / "risk.ks").write_text(
+                "fn label(value: Int) -> Int { return value }\n",
+                encoding="utf-8",
+            )
+            corpus = self.build(root, "f" * 40)
+            top_level = [
+                item
+                for item in corpus.documents
+                if item.path in {"examples/app.ks", "examples/risk.ks"}
+            ]
+            self.assertEqual(
+                {item.family for item in top_level},
+                {"example:top-level"},
             )
 
     def test_trusted_export_requires_a_git_checkout(self) -> None:
@@ -98,6 +131,40 @@ class FoundationExportTests(unittest.TestCase):
             self.assertEqual(loaded.corpus_sha256, corpus.corpus_sha256)
             with self.assertRaises(FileExistsError):
                 write_foundation_corpus(corpus, output)
+
+    def test_non_utf8_artifact_is_a_controlled_verification_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "corpus.json"
+            path.write_bytes(b"\xff\xfe")
+            with self.assertRaisesRegex(FoundationExportError, "valid UTF-8"):
+                load_foundation_corpus(path)
+
+    def test_duplicate_json_members_are_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "corpus.json"
+            path.write_text(
+                '{"schema_version":"one","schema_version":"two"}',
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(FoundationExportError, "duplicate JSON"):
+                load_foundation_corpus(path)
+
+    def test_empty_corpus_is_rejected_even_with_a_matching_digest(self) -> None:
+        payload = {
+            "schema_version": "koschei.language-foundation-corpus.v1",
+            "generator_version": "koschei-foundation-export/v1",
+            "source_repository": "bugsbuny243/koschei-lang",
+            "source_commit": "9" * 40,
+            "document_count": 0,
+            "family_count": 0,
+            "total_bytes": 0,
+            "documents": [],
+        }
+        payload["corpus_sha256"] = hashlib.sha256(
+            canonical_json(payload).encode()
+        ).hexdigest()
+        with self.assertRaisesRegex(FoundationExportError, "must contain documents"):
+            verify_foundation_corpus(payload)
 
     def test_unknown_fields_fail_closed(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
