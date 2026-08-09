@@ -184,6 +184,10 @@ def verify_foundation_corpus(
             raise FoundationExportError(
                 f"foundation document path is outside the v1 allowlist: {item.path}"
             )
+        if len(raw) > _MAX_DOCUMENT_BYTES:
+            raise FoundationExportError(
+                f"foundation document exceeds size limit: {item.path}"
+            )
         total_bytes += len(raw)
         if hashlib.sha256(raw).hexdigest() != item.source_sha256:
             raise FoundationExportError(f"source hash mismatch: {item.path}")
@@ -228,7 +232,9 @@ def load_foundation_corpus(path: str | Path) -> FoundationCorpus:
         ) from exc
     try:
         payload = _strict_json_loads(text)
-    except json.JSONDecodeError as exc:
+    except FoundationExportError:
+        raise
+    except (json.JSONDecodeError, ValueError) as exc:
         raise FoundationExportError(
             "foundation corpus is not valid JSON"
         ) from exc
@@ -329,6 +335,7 @@ def _tracked_candidates(root: Path, source_commit: str) -> dict[str, str]:
     result = subprocess.run(
         [
             "git",
+            "--no-replace-objects",
             "-C",
             str(root),
             "ls-tree",
@@ -378,6 +385,7 @@ def _read_git_blob(root: Path, source_commit: str, relative: str) -> bytes:
     result = subprocess.run(
         [
             "git",
+            "--no-replace-objects",
             "-C",
             str(root),
             "cat-file",
@@ -454,6 +462,7 @@ def _validate_relative_string(value: str) -> None:
         path.is_absolute()
         or ".." in path.parts
         or "\\" in value
+        or "\x00" in value
         or value.startswith("~")
     ):
         raise FoundationExportError(
@@ -474,7 +483,15 @@ def _reject_symlink_path(root: Path, path: Path) -> None:
 def _verify_source_checkout(root: Path, source_commit: str) -> None:
     try:
         head = subprocess.run(
-            ["git", "-C", str(root), "rev-parse", "--verify", "HEAD"],
+            [
+                "git",
+                "--no-replace-objects",
+                "-C",
+                str(root),
+                "rev-parse",
+                "--verify",
+                "HEAD",
+            ],
             capture_output=True,
             text=True,
             check=False,
@@ -495,6 +512,7 @@ def _verify_source_checkout(root: Path, source_commit: str) -> None:
     status = subprocess.run(
         [
             "git",
+            "--no-replace-objects",
             "-C",
             str(root),
             "status",
@@ -630,7 +648,3 @@ def _atomic_no_replace(path: Path, payload: str) -> None:
             os.unlink(temporary_name)
         except FileNotFoundError:
             pass
-        if not published and path.exists() and path.is_symlink():
-            raise FoundationExportError(
-                f"unexpected symlink at foundation corpus destination: {path}"
-            )
