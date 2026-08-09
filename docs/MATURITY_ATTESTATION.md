@@ -1,6 +1,6 @@
 # Attested Maturity Evidence v3
 
-`ks maturity` still accepts manually-authored core evidence for the **incubation** target, but reference and production maturity now require stronger provenance for several checks.
+`ks maturity` still accepts manually-authored core evidence for the **incubation** target, but reference and production maturity now require stronger provenance and live re-verification of the bound artifacts.
 
 The following checks are derived from verified release and CI artifacts in `koschei.maturity-evidence.v3`:
 
@@ -12,7 +12,7 @@ package_integrity
 reproducible_builds
 ```
 
-Legacy v1 evidence cannot self-assert `package_integrity` or `reproducible_builds`. Legacy v2 evidence remains readable, but manually supplied `compiler_tests`, `repository_truth`, and `capability_security` are not trusted for `reference` or `production` evaluation. Incubation compatibility is preserved.
+Legacy v1 evidence cannot self-assert `package_integrity` or `reproducible_builds`. Legacy v2 evidence remains readable, but it cannot satisfy the attested checks for reference or production. Incubation compatibility is preserved.
 
 ## Create attested evidence
 
@@ -46,22 +46,27 @@ Only after those checks does v3 derive the five protected maturity checks above.
 
 The attestation binds the manual evidence digest, release-proof digest, native artifact SHA-256, module-lock digest, CI artifact SHA-256, CI head SHA, verify-report SHA-256, test artifact SHA-256, test count, warning count, observed security signals, and a canonical attestation digest.
 
-## Re-verify
+## Re-verify and decide reference/production maturity
+
+A saved v3 JSON file is **not** trusted merely because its unkeyed SHA-256 digest is internally consistent. Reference and production decisions must re-verify every bound artifact in the same command:
 
 ```bash
 ks maturity-attest verify \
   --base-evidence configs/maturity/manual-reference.json \
   <same release/witness/report/proof/CI inputs> \
-  --attested-evidence build/maturity/reference.attested.json
-```
-
-Verification recomputes the complete v3 payload and requires semantic byte-equivalent content.
-
-```bash
-ks maturity \
-  --evidence build/maturity/reference.attested.json \
+  --attested-evidence build/maturity/reference.attested.json \
   --target reference
 ```
+
+Verification recomputes the complete v3 payload from the supplied source trees, locks, build manifests, native artifact bytes, reproducibility report, release proof and CI ZIP. Only after the observed v3 payload matches that recomputed evidence does the command call the maturity gate with verified provenance.
+
+Plain:
+
+```bash
+ks maturity --evidence build/maturity/reference.attested.json --target reference
+```
+
+is intentionally rejected for attested reference/production decisions because a standalone JSON file cannot prove its own provenance. `ks maturity` remains the direct path for incubation evidence.
 
 ## Trust boundary
 
