@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 import re
+import subprocess
 import tempfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -59,6 +60,7 @@ def build_foundation_corpus(
     repo_root: str | Path,
     *,
     source_commit: str,
+    verify_checkout: bool = True,
 ) -> FoundationCorpus:
     """Build a deterministic corpus from checked-in language docs and examples."""
 
@@ -68,6 +70,8 @@ def build_foundation_corpus(
     root = Path(repo_root).resolve()
     if not root.is_dir():
         raise FoundationExportError(f"repository root does not exist: {root}")
+    if verify_checkout:
+        _verify_source_checkout(root, source_commit)
 
     candidates: dict[str, str] = {}
     for name in ("README.md", "README.tr.md"):
@@ -105,7 +109,7 @@ def build_foundation_corpus(
         source_sha = hashlib.sha256(raw).hexdigest()
         family = _family_for(relative, kind)
         document_id = hashlib.sha256(
-            f"{kind}\0{family}\0{relative}\0{source_sha}".encode("utf-8")
+            f"{kind}\0{family}\0{relative}\0{source_sha}".encode()
         ).hexdigest()
         documents.append(
             FoundationDocument(
@@ -124,7 +128,7 @@ def build_foundation_corpus(
         documents=documents,
         total_bytes=total_bytes,
     )
-    corpus_sha = hashlib.sha256(canonical_json(payload_without_digest).encode("utf-8")).hexdigest()
+    corpus_sha = hashlib.sha256(canonical_json(payload_without_digest).encode()).hexdigest()
     return FoundationCorpus(
         schema_version=SCHEMA_VERSION,
         generator_version=GENERATOR_VERSION,
@@ -161,7 +165,7 @@ def verify_foundation_corpus(value: FoundationCorpus | dict[str, Any]) -> Founda
             raise FoundationExportError(f"unsupported foundation document kind: {item.kind}")
         if item.path.startswith("/") or ".." in Path(item.path).parts or "\\" in item.path:
             raise FoundationExportError(f"unsafe foundation document path: {item.path}")
-        raw = item.text.encode("utf-8")
+        raw = item.text.encode()
         total_bytes += len(raw)
         if hashlib.sha256(raw).hexdigest() != item.source_sha256:
             raise FoundationExportError(f"source hash mismatch: {item.path}")
@@ -169,7 +173,7 @@ def verify_foundation_corpus(value: FoundationCorpus | dict[str, Any]) -> Founda
         if item.family != expected_family:
             raise FoundationExportError(f"family mismatch: {item.path}")
         expected_id = hashlib.sha256(
-            f"{item.kind}\0{item.family}\0{item.path}\0{item.source_sha256}".encode("utf-8")
+            f"{item.kind}\0{item.family}\0{item.path}\0{item.source_sha256}".encode()
         ).hexdigest()
         if item.document_id != expected_id:
             raise FoundationExportError(f"document id mismatch: {item.path}")
@@ -189,7 +193,7 @@ def verify_foundation_corpus(value: FoundationCorpus | dict[str, Any]) -> Founda
                 documents=list(corpus.documents),
                 total_bytes=total_bytes,
             )
-        ).encode("utf-8")
+        ).encode()
     ).hexdigest()
     if corpus.corpus_sha256 != expected_digest:
         raise FoundationExportError("foundation corpus digest mismatch")
@@ -243,19 +247,34 @@ def _family_for(relative: str, kind: str) -> str:
     path = Path(relative)
     if kind == "koschei_source":
         parts = path.parts
-        if len(parts) >= 3 and parts[0] == "examples":
-            return f"example:{parts[1]}"
         if len(parts) >= 2 and parts[0] == "examples":
             return f"example:{parts[1]}"
         raise FoundationExportError(f"Koschei source is outside examples/: {relative}")
-    return f"reference:{relative}"
+    return f"reference:{_reference_family_path(relative)}"
+
+
+def _reference_family_path(relative: str) -> str:
+    if relative in {"README.md", "README.tr.md"}:
+        return "README"
+    path = Path(relative)
+    name = path.name
+    for suffix in (".tr.md", ".en.md"):
+        if name.endswith(suffix):
+            base = name[: -len(suffix)] + ".md"
+            return path.with_name(base).as_posix()
+    return relative
 
 
 def _relative_path(root: Path, path: Path) -> str:
+    try:
+        relative = path.relative_to(root)
+    except ValueError as exc:
+        raise FoundationExportError("foundation path escapes repository root") from exc
+    _reject_symlink_path(root, path)
     resolved = path.resolve()
     if resolved != root and root not in resolved.parents:
         raise FoundationExportError("foundation path escapes repository root")
-    return resolved.relative_to(root).as_posix()
+    return relative.as_posix()
 
 
 def _reject_symlink_path(root: Path, path: Path) -> None:
@@ -264,6 +283,47 @@ def _reject_symlink_path(root: Path, path: Path) -> None:
         if current.is_symlink():
             raise FoundationExportError(f"foundation path contains symlink: {path}")
         current = current.parent
+
+
+def _verify_source_checkout(root: Path, source_commit: str) -> None:
+    try:
+        head = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "--verify", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError as exc:
+        raise FoundationExportError("git is required for trusted foundation export") from exc
+    if head.returncode != 0:
+        raise FoundationExportError("repository root is not a readable Git checkout")
+    if head.stdout.strip() != source_commit:
+        raise FoundationExportError("source_commit does not match the checked-out Git HEAD")
+
+    status = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(root),
+            "status",
+            "--porcelain=v1",
+            "--untracked-files=all",
+            "--",
+            "README.md",
+            "README.tr.md",
+            "docs",
+            "examples",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if status.returncode != 0:
+        raise FoundationExportError("could not verify foundation source checkout state")
+    if status.stdout.strip():
+        raise FoundationExportError(
+            "foundation source files are dirty or untracked; commit them before export"
+        )
 
 
 def _parse_corpus(payload: dict[str, Any]) -> FoundationCorpus:
@@ -289,7 +349,9 @@ def _parse_corpus(payload: dict[str, Any]) -> FoundationCorpus:
         if not isinstance(raw, dict) or set(raw) != document_fields:
             raise FoundationExportError(f"invalid foundation document at index {index}")
         if not all(isinstance(raw[key], str) for key in document_fields):
-            raise FoundationExportError(f"foundation document fields must be strings at index {index}")
+            raise FoundationExportError(
+                f"foundation document fields must be strings at index {index}"
+            )
         documents.append(FoundationDocument(**raw))
     scalar_fields = (
         "schema_version",
