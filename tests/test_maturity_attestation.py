@@ -78,7 +78,6 @@ def _base(path: Path) -> Path:
         "capability_security": True,
         "syntax_stability": True,
         "type_system_stability": True,
-        "interpreter_native_parity": True,
         "real_programs": True,
     }
     path.write_text(
@@ -88,10 +87,22 @@ def _base(path: Path) -> Path:
     return path
 
 
-def _ci_artifact(path: Path, *, include_supply_chain: bool = True) -> Path:
+def _ci_artifact(
+    path: Path,
+    *,
+    include_supply_chain: bool = True,
+    include_parity: bool = True,
+    parity_cases: int = 7,
+) -> Path:
     supply_chain = (
         "  PASS  examples/supply_chain/main.ks — correctly rejected with KS2401\n"
         if include_supply_chain
+        else ""
+    )
+    parity = (
+        f"  PASS  interpreter/native parity: {parity_cases} cases — "
+        f"PARITY SHA256: {'9' * 64}\n\n"
+        if include_parity
         else ""
     )
     report = (
@@ -100,6 +111,8 @@ def _ci_artifact(path: Path, *, include_supply_chain: bool = True) -> Path:
         f"  PASS  Ran 600 tests — ARTIFACT SHA256: {'8' * 64}\n\n"
         "==> Sealed MIR\n"
         "  PASS  check and backend input share one sealed MIR fingerprint\n\n"
+        "==> Interpreter/native parity\n"
+        f"{parity}"
         "==> Examples\n"
         "  PASS  examples/capability.ks\n"
         f"{supply_chain}\n"
@@ -119,12 +132,16 @@ class MaturityAttestationTests(unittest.TestCase):
                 json.dumps(
                     {
                         "schema_version": "koschei.maturity-evidence.v1",
-                        "checks": {"package_integrity": True, "reproducible_builds": True},
+                        "checks": {
+                            "package_integrity": True,
+                            "reproducible_builds": True,
+                            "interpreter_native_parity": True,
+                        },
                     }
                 ),
                 encoding="utf-8",
             )
-            with self.assertRaisesRegex(ValueError, "attested v2"):
+            with self.assertRaisesRegex(ValueError, "attested v2, v3, or v4"):
                 load_maturity_evidence(path)
 
     def test_attested_json_alone_cannot_satisfy_reference_trust(self) -> None:
@@ -143,17 +160,22 @@ class MaturityAttestationTests(unittest.TestCase):
             evidence = load_maturity_evidence(output)
             report = evaluate_maturity(evidence, "reference")
 
+            self.assertEqual(evidence.schema_version, "koschei.maturity-evidence.v4")
+            self.assertTrue(evidence.checks["interpreter_native_parity"])
             self.assertTrue(evidence.checks["package_integrity"])
             self.assertTrue(evidence.checks["reproducible_builds"])
             self.assertEqual(payload["ci_test_count"], 600)
             self.assertEqual(payload["ci_warning_count"], 1)
+            self.assertEqual(payload["ci_parity_case_count"], 7)
+            self.assertEqual(payload["ci_parity_evidence_sha256"], "9" * 64)
             self.assertTrue(payload["ci_repository_truth_observed"])
             self.assertTrue(payload["ci_sealed_mir_observed"])
             self.assertTrue(payload["ci_capability_security_observed"])
+            self.assertTrue(payload["ci_interpreter_native_parity_observed"])
             self.assertFalse(report.ready)
             self.assertIn("compiler_tests", report.missing_checks)
+            self.assertIn("interpreter_native_parity", report.missing_checks)
             self.assertIn("package_integrity", report.missing_checks)
-            self.assertIn("reproducible_builds", report.missing_checks)
             self.assertFalse(report.as_dict()["production_integration_allowed"])
 
     def test_ci_artifact_without_supply_chain_rejection_fails_closed(self) -> None:
@@ -168,6 +190,20 @@ class MaturityAttestationTests(unittest.TestCase):
                     ci_artifact_path=ci_zip,
                     ci_head_sha="b" * 40,
                 )
+
+    def test_ci_artifact_without_sufficient_parity_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            base = load_maturity_evidence(_base(root / "base.json"))
+            for kwargs in ({"include_parity": False}, {"parity_cases": 4}):
+                ci_zip = _ci_artifact(root / f"truth-{len(kwargs)}-{kwargs}.zip", **kwargs)
+                with self.assertRaisesRegex(MaturityAttestationError, "parity cases"):
+                    build_attested_maturity_evidence(
+                        base,
+                        _proof(),
+                        ci_artifact_path=ci_zip,
+                        ci_head_sha="b" * 40,
+                    )
 
     def test_attestation_tamper_and_overwrite_fail_closed(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -185,7 +221,7 @@ class MaturityAttestationTests(unittest.TestCase):
                 write_attested_maturity_evidence(payload, output)
 
             changed = json.loads(output.read_text(encoding="utf-8"))
-            changed["checks"]["reproducible_builds"] = False
+            changed["ci_parity_case_count"] = 999
             output.write_text(json.dumps(changed), encoding="utf-8")
             with self.assertRaises(ValueError):
                 load_maturity_evidence(output)
