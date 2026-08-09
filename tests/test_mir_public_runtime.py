@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 from koschei.interpreter import KoscheiRuntimeError
 from koschei.mir import require_mir
+from koschei.mir_scope_safety import inspect_mir_scope_safety
 from koschei.modules import check_graph, load_graph
 from koschei.runtime_budget import runtime_execution_mode, run_mir_with_budget
 
@@ -58,6 +59,30 @@ fn main() {
             code = run_mir_with_budget(mir)
         self.assertEqual(code, 0)
         self.assertEqual(output.getvalue(), "1\n2\n3\n")
+
+    def test_lexical_shadowing_fails_closed_to_compatibility_mode(self) -> None:
+        mir = self.checked_mir(
+            """
+fn main() {
+    let x = 1
+    if true {
+        let x = 2
+        println(x)
+    }
+    println(x)
+}
+"""
+        )
+        scope = inspect_mir_scope_safety(mir)
+        self.assertFalse(scope.safe)
+        self.assertTrue(any("shadowed binding" in reason for reason in scope.reasons))
+        self.assertEqual(runtime_execution_mode(mir), "ast_compat_v1")
+
+        output = io.StringIO()
+        with redirect_stdout(output):
+            code = run_mir_with_budget(mir)
+        self.assertEqual(code, 0)
+        self.assertEqual(output.getvalue(), "2\n1\n")
 
     def test_native_mir_obeys_public_step_budget(self) -> None:
         mir = self.checked_mir(

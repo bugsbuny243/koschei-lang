@@ -23,6 +23,7 @@ from .mir_native_runtime import (
     inspect_native_mir_support,
     run_mir_native,
 )
+from .mir_scope_safety import inspect_mir_scope_safety
 
 DEFAULT_MAX_STEPS = 1_000_000
 HARD_MAX_CALL_DEPTH = Interpreter.MAX_CALL_DEPTH
@@ -110,11 +111,9 @@ class BudgetedInterpreter(Interpreter):
 def runtime_execution_mode(mir_graph) -> RuntimeExecutionMode:
     """Report which checked runtime lane will execute this sealed graph."""
 
-    return (
-        "mir_native_v1"
-        if inspect_native_mir_support(mir_graph).supported
-        else "ast_compat_v1"
-    )
+    native = inspect_native_mir_support(mir_graph)
+    scope = inspect_mir_scope_safety(mir_graph)
+    return "mir_native_v1" if native.supported and scope.safe else "ast_compat_v1"
 
 
 def run_mir_with_budget(
