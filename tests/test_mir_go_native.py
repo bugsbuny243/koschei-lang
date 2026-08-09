@@ -65,6 +65,42 @@ class MirGoNativeTests(unittest.TestCase):
             self.assertEqual(completed.returncode, 0)
             self.assertEqual(completed.stdout, "Koschei\n1\n")
 
+    @unittest.skipUnless(shutil.which("go"), "Go toolchain is required")
+    def test_shadowed_bindings_compile_directly_from_mir_go(self) -> None:
+        source, mir = self.checked_mir(
+            """
+fn main() {
+    let x = 1
+    if true {
+        let x = 2
+        println(x)
+    }
+    println(x)
+}
+"""
+        )
+        support = inspect_mir_go_support(mir)
+        self.assertTrue(support.supported, support.reasons)
+        self.assertEqual(native_build_mode(mir), "mir_go_v1")
+
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "shadow-native"
+            with patch.object(
+                legacy_cli,
+                "command_build",
+                side_effect=AssertionError("legacy AST-Go path must not run"),
+            ):
+                code = cli_main(["build", str(source), "-o", str(target)])
+            self.assertEqual(code, 0)
+            completed = subprocess.run(
+                [str(target)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(completed.returncode, 0)
+            self.assertEqual(completed.stdout, "2\n1\n")
+
     def test_for_loop_stays_on_explicit_ast_go_compatibility_lane(self) -> None:
         _, mir = self.checked_mir(
             """
