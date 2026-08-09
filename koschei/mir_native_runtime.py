@@ -277,11 +277,15 @@ class _MirExecutor:
                 raise MirNativeRuntimeError(f"unknown MIR load name {instruction.name!r}")
             return
         if isinstance(instruction, MirBind):
-            if instruction.name in environment:
-                raise MirNativeRuntimeError(f"duplicate MIR binding {instruction.name!r}")
+            # A MirBind is one static lexical slot. Re-entering its block in a loop
+            # reinitializes that slot for the new iteration; it is not a second
+            # source declaration. Shadowed source names are already resolved to
+            # distinct MIR names by lowering.
             environment[instruction.name] = self._value(values, instruction.source)
             if instruction.is_mutable:
                 mutable.add(instruction.name)
+            else:
+                mutable.discard(instruction.name)
             return
         if isinstance(instruction, MirStore):
             if instruction.name not in environment:
