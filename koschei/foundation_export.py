@@ -65,34 +65,24 @@ def build_foundation_corpus(
     """Build a deterministic corpus from checked-in language docs and examples."""
 
     if not _COMMIT_RE.fullmatch(source_commit):
-        raise FoundationExportError("source_commit must be a lowercase 40-character git SHA")
+        raise FoundationExportError(
+            "source_commit must be a lowercase 40-character git SHA"
+        )
 
     root = Path(repo_root).resolve()
     if not root.is_dir():
         raise FoundationExportError(f"repository root does not exist: {root}")
+
     if verify_checkout:
         _verify_source_checkout(root, source_commit)
-
-    candidates: dict[str, str] = {}
-    for name in ("README.md", "README.tr.md"):
-        path = root / name
-        if path.is_file():
-            candidates[name] = "reference"
-
-    docs_root = root / "docs"
-    if docs_root.is_dir():
-        for path in docs_root.rglob("*.md"):
-            if path.is_file():
-                candidates[_relative_path(root, path)] = "reference"
-
-    examples_root = root / "examples"
-    if examples_root.is_dir():
-        for path in examples_root.rglob("*.ks"):
-            if path.is_file():
-                candidates[_relative_path(root, path)] = "koschei_source"
+        candidates = _tracked_candidates(root)
+    else:
+        candidates = _filesystem_candidates(root)
 
     if not candidates:
-        raise FoundationExportError("no authoritative Koschei docs or example sources were found")
+        raise FoundationExportError(
+            "no authoritative Koschei docs or example sources were found"
+        )
 
     documents: list[FoundationDocument] = []
     total_bytes = 0
@@ -101,11 +91,15 @@ def build_foundation_corpus(
         _reject_symlink_path(root, path)
         raw = path.read_bytes()
         if len(raw) > _MAX_DOCUMENT_BYTES:
-            raise FoundationExportError(f"foundation document exceeds size limit: {relative}")
+            raise FoundationExportError(
+                f"foundation document exceeds size limit: {relative}"
+            )
         try:
             text = raw.decode("utf-8")
         except UnicodeDecodeError as exc:
-            raise FoundationExportError(f"foundation document is not UTF-8: {relative}") from exc
+            raise FoundationExportError(
+                f"foundation document is not UTF-8: {relative}"
+            ) from exc
         source_sha = hashlib.sha256(raw).hexdigest()
         family = _family_for(relative, kind)
         document_id = hashlib.sha256(
@@ -123,12 +117,12 @@ def build_foundation_corpus(
         )
         total_bytes += len(raw)
 
-    payload_without_digest = _digest_payload(
+    digest_payload = _digest_payload(
         source_commit=source_commit,
         documents=documents,
         total_bytes=total_bytes,
     )
-    corpus_sha = hashlib.sha256(canonical_json(payload_without_digest).encode()).hexdigest()
+    corpus_sha = hashlib.sha256(canonical_json(digest_payload).encode()).hexdigest()
     return FoundationCorpus(
         schema_version=SCHEMA_VERSION,
         generator_version=GENERATOR_VERSION,
@@ -142,7 +136,9 @@ def build_foundation_corpus(
     )
 
 
-def verify_foundation_corpus(value: FoundationCorpus | dict[str, Any]) -> FoundationCorpus:
+def verify_foundation_corpus(
+    value: FoundationCorpus | dict[str, Any],
+) -> FoundationCorpus:
     """Strictly verify hashes, IDs, ordering, grouping and top-level digest."""
 
     corpus = value if isinstance(value, FoundationCorpus) else _parse_corpus(value)
@@ -151,20 +147,27 @@ def verify_foundation_corpus(value: FoundationCorpus | dict[str, Any]) -> Founda
     if corpus.generator_version != GENERATOR_VERSION:
         raise FoundationExportError("unsupported foundation corpus generator")
     if corpus.source_repository != SOURCE_REPOSITORY:
-        raise FoundationExportError("foundation corpus source repository is not Koschei language")
+        raise FoundationExportError(
+            "foundation corpus source repository is not Koschei language"
+        )
     if not _COMMIT_RE.fullmatch(corpus.source_commit):
         raise FoundationExportError("foundation corpus source commit is invalid")
+    if not corpus.documents:
+        raise FoundationExportError("foundation corpus must contain documents")
 
     paths = [item.path for item in corpus.documents]
     if paths != sorted(paths) or len(paths) != len(set(paths)):
-        raise FoundationExportError("foundation document paths must be unique and sorted")
+        raise FoundationExportError(
+            "foundation document paths must be unique and sorted"
+        )
 
     total_bytes = 0
     for item in corpus.documents:
         if item.kind not in {"reference", "koschei_source"}:
-            raise FoundationExportError(f"unsupported foundation document kind: {item.kind}")
-        if item.path.startswith("/") or ".." in Path(item.path).parts or "\\" in item.path:
-            raise FoundationExportError(f"unsafe foundation document path: {item.path}")
+            raise FoundationExportError(
+                f"unsupported foundation document kind: {item.kind}"
+            )
+        _validate_relative_string(item.path)
         raw = item.text.encode()
         total_bytes += len(raw)
         if hashlib.sha256(raw).hexdigest() != item.source_sha256:
@@ -202,9 +205,18 @@ def verify_foundation_corpus(value: FoundationCorpus | dict[str, Any]) -> Founda
 
 def load_foundation_corpus(path: str | Path) -> FoundationCorpus:
     try:
-        payload = json.loads(Path(path).read_text(encoding="utf-8"))
+        raw = Path(path).read_bytes()
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise FoundationExportError(
+            "foundation corpus is not valid UTF-8"
+        ) from exc
+    try:
+        payload = _strict_json_loads(text)
     except json.JSONDecodeError as exc:
-        raise FoundationExportError("foundation corpus is not valid JSON") from exc
+        raise FoundationExportError(
+            "foundation corpus is not valid JSON"
+        ) from exc
     if not isinstance(payload, dict):
         raise FoundationExportError("foundation corpus must be a JSON object")
     return verify_foundation_corpus(payload)
@@ -222,7 +234,27 @@ def write_foundation_corpus(corpus: FoundationCorpus, path: str | Path) -> None:
 
 
 def canonical_json(value: object) -> str:
-    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+
+def _strict_json_loads(text: str) -> object:
+    return json.loads(text, object_pairs_hook=_unique_object_pairs)
+
+
+def _unique_object_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise FoundationExportError(
+                f"duplicate JSON object member: {key}"
+            )
+        result[key] = value
+    return result
 
 
 def _digest_payload(
@@ -247,9 +279,13 @@ def _family_for(relative: str, kind: str) -> str:
     path = Path(relative)
     if kind == "koschei_source":
         parts = path.parts
-        if len(parts) >= 2 and parts[0] == "examples":
+        if len(parts) >= 3 and parts[0] == "examples":
             return f"example:{parts[1]}"
-        raise FoundationExportError(f"Koschei source is outside examples/: {relative}")
+        if len(parts) == 2 and parts[0] == "examples":
+            return "example:top-level"
+        raise FoundationExportError(
+            f"Koschei source is outside examples/: {relative}"
+        )
     return f"reference:{_reference_family_path(relative)}"
 
 
@@ -265,23 +301,109 @@ def _reference_family_path(relative: str) -> str:
     return relative
 
 
+def _tracked_candidates(root: Path) -> dict[str, str]:
+    result = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(root),
+            "ls-files",
+            "-z",
+            "--",
+            "README.md",
+            "README.tr.md",
+            "docs",
+            "examples",
+        ],
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise FoundationExportError(
+            "could not enumerate tracked foundation source files"
+        )
+    try:
+        names = result.stdout.decode("utf-8").split("\0")
+    except UnicodeDecodeError as exc:
+        raise FoundationExportError(
+            "tracked foundation paths are not valid UTF-8"
+        ) from exc
+    return _classify_candidate_names(name for name in names if name)
+
+
+def _filesystem_candidates(root: Path) -> dict[str, str]:
+    names: list[str] = []
+    for name in ("README.md", "README.tr.md"):
+        if (root / name).is_file():
+            names.append(name)
+    docs_root = root / "docs"
+    if docs_root.is_dir():
+        names.extend(
+            _relative_path(root, path)
+            for path in docs_root.rglob("*.md")
+            if path.is_file()
+        )
+    examples_root = root / "examples"
+    if examples_root.is_dir():
+        names.extend(
+            _relative_path(root, path)
+            for path in examples_root.rglob("*.ks")
+            if path.is_file()
+        )
+    return _classify_candidate_names(names)
+
+
+def _classify_candidate_names(names: Any) -> dict[str, str]:
+    candidates: dict[str, str] = {}
+    for relative in names:
+        _validate_relative_string(relative)
+        if relative in {"README.md", "README.tr.md"}:
+            candidates[relative] = "reference"
+        elif relative.startswith("docs/") and relative.endswith(".md"):
+            candidates[relative] = "reference"
+        elif relative.startswith("examples/") and relative.endswith(".ks"):
+            candidates[relative] = "koschei_source"
+    return candidates
+
+
 def _relative_path(root: Path, path: Path) -> str:
     try:
         relative = path.relative_to(root)
     except ValueError as exc:
-        raise FoundationExportError("foundation path escapes repository root") from exc
+        raise FoundationExportError(
+            "foundation path escapes repository root"
+        ) from exc
     _reject_symlink_path(root, path)
     resolved = path.resolve()
     if resolved != root and root not in resolved.parents:
-        raise FoundationExportError("foundation path escapes repository root")
-    return relative.as_posix()
+        raise FoundationExportError(
+            "foundation path escapes repository root"
+        )
+    value = relative.as_posix()
+    _validate_relative_string(value)
+    return value
+
+
+def _validate_relative_string(value: str) -> None:
+    path = Path(value)
+    if (
+        path.is_absolute()
+        or ".." in path.parts
+        or "\\" in value
+        or value.startswith("~")
+    ):
+        raise FoundationExportError(
+            f"unsafe foundation document path: {value}"
+        )
 
 
 def _reject_symlink_path(root: Path, path: Path) -> None:
     current = path
     while current != root:
         if current.is_symlink():
-            raise FoundationExportError(f"foundation path contains symlink: {path}")
+            raise FoundationExportError(
+                f"foundation path contains symlink: {path}"
+            )
         current = current.parent
 
 
@@ -294,11 +416,17 @@ def _verify_source_checkout(root: Path, source_commit: str) -> None:
             check=False,
         )
     except OSError as exc:
-        raise FoundationExportError("git is required for trusted foundation export") from exc
+        raise FoundationExportError(
+            "git is required for trusted foundation export"
+        ) from exc
     if head.returncode != 0:
-        raise FoundationExportError("repository root is not a readable Git checkout")
+        raise FoundationExportError(
+            "repository root is not a readable Git checkout"
+        )
     if head.stdout.strip() != source_commit:
-        raise FoundationExportError("source_commit does not match the checked-out Git HEAD")
+        raise FoundationExportError(
+            "source_commit does not match the checked-out Git HEAD"
+        )
 
     status = subprocess.run(
         [
@@ -319,7 +447,9 @@ def _verify_source_checkout(root: Path, source_commit: str) -> None:
         check=False,
     )
     if status.returncode != 0:
-        raise FoundationExportError("could not verify foundation source checkout state")
+        raise FoundationExportError(
+            "could not verify foundation source checkout state"
+        )
     if status.stdout.strip():
         raise FoundationExportError(
             "foundation source files are dirty or untracked; commit them before export"
@@ -339,15 +469,28 @@ def _parse_corpus(payload: dict[str, Any]) -> FoundationCorpus:
         "documents",
     }
     if set(payload) != expected:
-        raise FoundationExportError("foundation corpus fields do not match v1 schema")
+        raise FoundationExportError(
+            "foundation corpus fields do not match v1 schema"
+        )
     rows = payload.get("documents")
     if not isinstance(rows, list):
-        raise FoundationExportError("foundation documents must be a list")
+        raise FoundationExportError(
+            "foundation documents must be a list"
+        )
     documents: list[FoundationDocument] = []
-    document_fields = {"document_id", "family", "kind", "path", "source_sha256", "text"}
+    document_fields = {
+        "document_id",
+        "family",
+        "kind",
+        "path",
+        "source_sha256",
+        "text",
+    }
     for index, raw in enumerate(rows):
         if not isinstance(raw, dict) or set(raw) != document_fields:
-            raise FoundationExportError(f"invalid foundation document at index {index}")
+            raise FoundationExportError(
+                f"invalid foundation document at index {index}"
+            )
         if not all(isinstance(raw[key], str) for key in document_fields):
             raise FoundationExportError(
                 f"foundation document fields must be strings at index {index}"
@@ -361,10 +504,18 @@ def _parse_corpus(payload: dict[str, Any]) -> FoundationCorpus:
         "corpus_sha256",
     )
     if not all(isinstance(payload[key], str) for key in scalar_fields):
-        raise FoundationExportError("foundation corpus string fields are invalid")
+        raise FoundationExportError(
+            "foundation corpus string fields are invalid"
+        )
     for key in ("document_count", "family_count", "total_bytes"):
-        if not isinstance(payload[key], int) or isinstance(payload[key], bool) or payload[key] < 0:
-            raise FoundationExportError(f"foundation corpus {key} is invalid")
+        if (
+            not isinstance(payload[key], int)
+            or isinstance(payload[key], bool)
+            or payload[key] < 0
+        ):
+            raise FoundationExportError(
+                f"foundation corpus {key} is invalid"
+            )
     return FoundationCorpus(
         schema_version=payload["schema_version"],
         generator_version=payload["generator_version"],
@@ -380,7 +531,10 @@ def _parse_corpus(payload: dict[str, Any]) -> FoundationCorpus:
 
 def _atomic_no_replace(path: Path, payload: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{path.name}.",
+        dir=path.parent,
+    )
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
             handle.write(payload)
@@ -389,7 +543,9 @@ def _atomic_no_replace(path: Path, payload: str) -> None:
         try:
             os.link(temporary_name, path)
         except FileExistsError:
-            raise FileExistsError(f"foundation corpus already exists: {path}") from None
+            raise FileExistsError(
+                f"foundation corpus already exists: {path}"
+            ) from None
         directory_fd = os.open(path.parent, os.O_RDONLY)
         try:
             os.fsync(directory_fd)
