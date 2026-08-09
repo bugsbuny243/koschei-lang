@@ -2,11 +2,12 @@
 #
 # verify.sh — Koschei release gate.
 #
-# Answers four questions before a release:
+# Answers five questions before a release:
 #   1. Does every example still produce the output it produced last time?
 #   2. Do representative programs match between interpreter and native binary?
-#   3. Does every code block in the docs actually compile?
-#   4. Does the malicious supply-chain package still fail to compile?
+#   3. Does a deterministic generated corpus match across both execution paths?
+#   4. Does every code block in the docs actually compile?
+#   5. Does the malicious supply-chain package still fail to compile?
 #
 # No dependencies. Run from the repository root:
 #
@@ -29,7 +30,7 @@ for arg in "$@"; do
   case "$arg" in
     --update-golden) UPDATE_GOLDEN=1 ;;
     --soft-docs)     SOFT_DOCS=1 ;;
-    -h|--help)       sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help)       sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown option: $arg" >&2; exit 64 ;;
   esac
 done
@@ -195,7 +196,56 @@ PY_PARITY
 fi
 rm -rf "$PARITY_TMP"
 
-# ----------------------------------------------- 4. examples vs golden output
+# ------------------------------------------------ 4. deterministic differential fuzzing
+
+head_ "Differential fuzzing"
+FUZZ_TMP=$(mktemp -d)
+FUZZ_REPORT="$FUZZ_TMP/report.json"
+FUZZ_LOG="$FUZZ_TMP/run.log"
+FUZZ_CASES=16
+FUZZ_SEED=20260809
+
+ks-differential-fuzz \
+  --seed "$FUZZ_SEED" \
+  --cases "$FUZZ_CASES" \
+  --output "$FUZZ_REPORT" \
+  --json > "$FUZZ_LOG" 2>&1
+fuzz_status=$?
+if [ $fuzz_status -ne 0 ]; then
+  fail "deterministic interpreter/native differential fuzzing failed"
+  head -5 "$FUZZ_LOG" | sed 's/^/        /'
+else
+  fuzz_values=$(python3 - "$FUZZ_REPORT" <<'PY_FUZZ'
+import json
+import pathlib
+import re
+import sys
+
+payload = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+assert payload["schema_version"] == "koschei.differential-fuzz-report.v1"
+assert payload["state"] == "passed_differential_fuzz"
+assert payload["interpreter_native_byte_identical"] is True
+assert payload["adversarial_capability_tests_observed"] is False
+assert payload["production_integration_allowed"] is False
+assert payload["case_count"] == 16
+assert payload["seed"] == 20260809
+assert len(payload["cases"]) == payload["case_count"]
+assert re.fullmatch(r"[a-f0-9]{64}", payload["corpus_sha256"])
+assert re.fullmatch(r"[a-f0-9]{64}", payload["report_digest"])
+print(payload["case_count"], payload["seed"], payload["corpus_sha256"], payload["report_digest"])
+PY_FUZZ
+  )
+  fuzz_parse_status=$?
+  if [ $fuzz_parse_status -ne 0 ]; then
+    fail "differential fuzz report is malformed"
+  else
+    read -r fuzz_cases fuzz_seed fuzz_corpus fuzz_digest <<< "$fuzz_values"
+    pass "differential fuzz: $fuzz_cases cases seed $fuzz_seed — FUZZ SHA256: $fuzz_digest — CORPUS SHA256: $fuzz_corpus"
+  fi
+fi
+rm -rf "$FUZZ_TMP"
+
+# ----------------------------------------------- 5. examples vs golden output
 #
 # Each entry: <path>|<mode>
 #   run   — must run successfully; stdout is compared against the golden file
@@ -271,7 +321,7 @@ for entry in "${EXAMPLES[@]}"; do
   esac
 done
 
-# ------------------------------------------------------ 5. documentation code
+# ------------------------------------------------------ 6. documentation code
 #
 # Every ```ks block that contains a top-level declaration (fn / struct / enum /
 # import) must compile. Blocks without one are treated as illustrative
