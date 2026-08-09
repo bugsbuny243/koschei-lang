@@ -4,7 +4,7 @@ Koschei Sentinel must learn Koschei from repository truth before it is trained t
 
 ## What v1 exports
 
-`ks foundation-export build` collects only checked-in language material:
+`ks foundation-export build` collects only Git-tracked language material:
 
 - `README.md` and `README.tr.md` when present;
 - Markdown files under `docs/`;
@@ -23,7 +23,7 @@ ks foundation-export build \
   --output build/koschei-language-foundation.json
 ```
 
-The source commit is required instead of being guessed from a mutable branch name.
+Trusted export requires the supplied commit to equal the checked-out Git `HEAD`. The exporter rejects dirty or untracked foundation paths and enumerates candidates through Git's tracked-file index, so ignored or untracked files cannot silently enter a corpus attributed to the commit.
 
 Verify an existing artifact with:
 
@@ -31,7 +31,7 @@ Verify an existing artifact with:
 ks foundation-export verify build/koschei-language-foundation.json
 ```
 
-The output file is no-replace. A pre-existing artifact is never silently overwritten.
+Verification rejects malformed UTF-8, ambiguous duplicate JSON object members, empty corpora, unsafe paths, hash/ID mismatches and family mismatches. The output file is no-replace; a pre-existing artifact is never silently overwritten.
 
 ## Leakage boundary
 
@@ -44,10 +44,14 @@ examples/supply_chain/analytics.ks
 
 both belong to `example:supply_chain`.
 
-A downstream dataset builder must keep a family entirely inside one of train, validation or test. This prevents a multi-file program from teaching the model in train and then appearing as a near-duplicate benchmark in test.
+All `.ks` files directly under `examples/` belong to `example:top-level`. This deliberately keeps adjacent imported modules such as `examples/app.ks` and `examples/risk.ks` together instead of risking train/evaluation leakage.
 
-Reference documents are independent families keyed by their repository path.
+Translated reference variants also share a family: `README.md` and `README.tr.md` are both `reference:README`, while `.en.md` and `.tr.md` documentation variants normalize to the same base Markdown family.
+
+A downstream dataset builder must keep a family entirely inside one of train, validation or test. This prevents a multi-file program or translated near-duplicate from teaching the model in train and then appearing as evaluation material.
 
 ## Trust boundary
 
-The corpus proves which bytes came from which Koschei language commit. It does not claim that every sentence in documentation is a formal language specification, that every example is production-safe, or that a model trained on the corpus understands Koschei. Those are separate validation gates.
+The trusted build path proves which exported bytes came from the clean checked-out Koschei language commit and emits a canonical corpus SHA-256 for downstream pinning. The digest is not a digital signature; a downstream consumer must obtain the expected commit and corpus digest through its trusted handoff rather than trusting values copied from an untrusted artifact.
+
+The corpus does not claim that every sentence in documentation is a formal language specification, that every example is production-safe, or that a model trained on the corpus understands Koschei. Those are separate validation gates.
