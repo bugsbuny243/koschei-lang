@@ -60,7 +60,7 @@ fn main() {
         self.assertEqual(code, 0)
         self.assertEqual(output.getvalue(), "1\n2\n3\n")
 
-    def test_lexical_shadowing_fails_closed_to_compatibility_mode(self) -> None:
+    def test_lexical_shadowing_uses_distinct_native_mir_bindings(self) -> None:
         mir = self.checked_mir(
             """
 fn main() {
@@ -74,15 +74,40 @@ fn main() {
 """
         )
         scope = inspect_mir_scope_safety(mir)
-        self.assertFalse(scope.safe)
-        self.assertTrue(any("shadowed binding" in reason for reason in scope.reasons))
-        self.assertEqual(runtime_execution_mode(mir), "ast_compat_v1")
+        self.assertTrue(scope.safe, scope.reasons)
+        self.assertEqual(runtime_execution_mode(mir), "mir_native_v1")
 
         output = io.StringIO()
-        with redirect_stdout(output):
+        with patch(
+            "koschei.runtime_budget.BudgetedInterpreter.execute_main",
+            side_effect=AssertionError("AST compatibility path must not run"),
+        ), redirect_stdout(output):
             code = run_mir_with_budget(mir)
         self.assertEqual(code, 0)
         self.assertEqual(output.getvalue(), "2\n1\n")
+
+    def test_loop_local_binding_is_reinitialized_each_iteration(self) -> None:
+        mir = self.checked_mir(
+            """
+fn main() {
+    let mut n = 0
+    while n < 3 {
+        let snapshot = n
+        println(snapshot)
+        n = n + 1
+    }
+}
+"""
+        )
+        self.assertEqual(runtime_execution_mode(mir), "mir_native_v1")
+        output = io.StringIO()
+        with patch(
+            "koschei.runtime_budget.BudgetedInterpreter.execute_main",
+            side_effect=AssertionError("AST compatibility path must not run"),
+        ), redirect_stdout(output):
+            code = run_mir_with_budget(mir)
+        self.assertEqual(code, 0)
+        self.assertEqual(output.getvalue(), "0\n1\n2\n")
 
     def test_native_mir_obeys_public_step_budget(self) -> None:
         mir = self.checked_mir(
