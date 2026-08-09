@@ -18,14 +18,15 @@ def add_maturity_parser(subcommands: argparse._SubParsersAction) -> None:
         "maturity",
         help="Evaluate evidence for a Koschei maturity target",
         description=(
-            "Evaluate a strict koschei.maturity-evidence.v1 file against "
-            "incubation, reference, or production requirements."
+            "Evaluate strict Koschei maturity evidence against incubation, reference, "
+            "or production requirements. Protected reproducibility checks require "
+            "attested koschei.maturity-evidence.v2 input."
         ),
     )
     parser.add_argument(
         "--evidence",
         required=True,
-        help="Path to koschei.maturity-evidence.v1 JSON",
+        help="Path to Koschei maturity evidence JSON (v1 or attested v2)",
     )
     parser.add_argument(
         "--target",
