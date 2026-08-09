@@ -32,7 +32,7 @@ _SUPPORTED_BINARY = frozenset({"+", "-", "*", "==", "!=", "<", "<=", ">", ">="})
 _SUPPORTED_UNARY = frozenset({"!", "-", "+"})
 _BUILTINS = frozenset({"print", "println", "Error"})
 _MAX_CALL_DEPTH = 512
-_MAX_STEPS_PER_CALL = 1_000_000
+_DEFAULT_MAX_STEPS = 1_000_000
 
 
 class MirNativeUnsupported(ValueError):
@@ -41,6 +41,18 @@ class MirNativeUnsupported(ValueError):
 
 class MirNativeRuntimeError(RuntimeError):
     """Raised when a normalized MIR contract is violated during execution."""
+
+
+class MirNativeStepBudgetExceeded(MirNativeRuntimeError):
+    """Raised when direct MIR execution exhausts its global step budget."""
+
+
+class MirNativeCallDepthExceeded(MirNativeRuntimeError):
+    """Raised when direct MIR execution exhausts its call-frame budget."""
+
+
+class MirNativeProgramError(MirNativeRuntimeError):
+    """Raised when the Koschei program returns an Error value from main."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,25 +113,39 @@ def inspect_native_mir_support(mir: MirGraph) -> MirNativeSupport:
                     )
                 elif isinstance(instruction, MirMember):
                     reasons.append(f"{function.name}: member access is not native-MIR yet")
-                elif isinstance(instruction, MirBinary) and instruction.operator not in _SUPPORTED_BINARY:
+                elif (
+                    isinstance(instruction, MirBinary)
+                    and instruction.operator not in _SUPPORTED_BINARY
+                ):
                     reasons.append(
-                        f"{function.name}: binary operator {instruction.operator!r} is not native-MIR yet"
+                        f"{function.name}: binary operator "
+                        f"{instruction.operator!r} is not native-MIR yet"
                     )
-                elif isinstance(instruction, MirUnary) and instruction.operator not in _SUPPORTED_UNARY:
+                elif (
+                    isinstance(instruction, MirUnary)
+                    and instruction.operator not in _SUPPORTED_UNARY
+                ):
                     reasons.append(
-                        f"{function.name}: unary operator {instruction.operator!r} is not native-MIR yet"
+                        f"{function.name}: unary operator "
+                        f"{instruction.operator!r} is not native-MIR yet"
                     )
                 elif not isinstance(
                     instruction,
                     (MirConst, MirLoad, MirBind, MirStore, MirUnary, MirBinary, MirCall),
                 ):
                     reasons.append(
-                        f"{function.name}: unsupported MIR instruction {type(instruction).__name__}"
+                        f"{function.name}: unsupported MIR instruction "
+                        f"{type(instruction).__name__}"
                     )
     return MirNativeSupport(not reasons, tuple(dict.fromkeys(reasons)))
 
 
-def run_mir_native(mir: MirGraph) -> int:
+def run_mir_native(
+    mir: MirGraph,
+    *,
+    max_steps: int = _DEFAULT_MAX_STEPS,
+    max_call_depth: int = _MAX_CALL_DEPTH,
+) -> int:
     """Execute a fully supported graph from MIR blocks only.
 
     No AST compatibility path exists here. Callers that need legacy compatibility
@@ -129,17 +155,34 @@ def run_mir_native(mir: MirGraph) -> int:
     support = inspect_native_mir_support(mir)
     if not support.supported:
         raise MirNativeUnsupported("; ".join(support.reasons))
-    executor = _MirExecutor(mir)
+    if max_steps <= 0:
+        raise ValueError("max_steps must be a positive integer")
+    if max_call_depth <= 0 or max_call_depth > _MAX_CALL_DEPTH:
+        raise ValueError(f"max_call_depth must be between 1 and {_MAX_CALL_DEPTH}")
+    executor = _MirExecutor(
+        mir,
+        max_steps=max_steps,
+        max_call_depth=max_call_depth,
+    )
     result = executor.execute_main()
     if isinstance(result, _ErrorValue):
-        raise MirNativeRuntimeError(result.message)
+        raise MirNativeProgramError(result.message)
     return 0
 
 
 class _MirExecutor:
-    def __init__(self, mir: MirGraph) -> None:
+    def __init__(
+        self,
+        mir: MirGraph,
+        *,
+        max_steps: int,
+        max_call_depth: int,
+    ) -> None:
         self.mir = mir
         self.functions = {item.name: item for item in mir.root_module.functions}
+        self.max_steps = max_steps
+        self.max_call_depth = max_call_depth
+        self.steps = 0
         self.depth = 0
 
     def execute_main(self) -> Any:
@@ -148,13 +191,23 @@ class _MirExecutor:
             raise MirNativeRuntimeError("main function is missing")
         return self._call(main, [])
 
+    def _consume_step(self) -> None:
+        self.steps += 1
+        if self.steps > self.max_steps:
+            raise MirNativeStepBudgetExceeded(
+                f"native MIR execution exceeded {self.max_steps} steps"
+            )
+
     def _call(self, function: MirFunction, arguments: list[Any]) -> Any:
         if len(arguments) != len(function.parameters):
             raise MirNativeRuntimeError(
-                f"{function.name} expects {len(function.parameters)} arguments, got {len(arguments)}"
+                f"{function.name} expects {len(function.parameters)} arguments, "
+                f"got {len(arguments)}"
             )
-        if self.depth >= _MAX_CALL_DEPTH:
-            raise MirNativeRuntimeError("native MIR call depth exceeded 512")
+        if self.depth >= self.max_call_depth:
+            raise MirNativeCallDepthExceeded(
+                f"native MIR call depth exceeded {self.max_call_depth}"
+            )
 
         environment: dict[str, Any] = {}
         mutable: set[str] = set()
@@ -164,26 +217,26 @@ class _MirExecutor:
         blocks = {block.id: block for block in function.blocks}
         values: dict[int, Any] = {}
         current = 0
-        steps = 0
         self.depth += 1
         try:
             while True:
-                steps += 1
-                if steps > _MAX_STEPS_PER_CALL:
-                    raise MirNativeRuntimeError(
-                        f"{function.name} exceeded native MIR step budget"
-                    )
                 block = blocks.get(current)
                 if block is None:
                     raise MirNativeRuntimeError(
                         f"{function.name} jumped to unknown block {current}"
                     )
                 for instruction in block.instructions:
+                    self._consume_step()
                     self._execute_instruction(instruction, values, environment, mutable)
 
+                self._consume_step()
                 terminator = block.terminator
                 if isinstance(terminator, MirReturn):
-                    return _UNIT if terminator.value is None else self._value(values, terminator.value)
+                    return (
+                        _UNIT
+                        if terminator.value is None
+                        else self._value(values, terminator.value)
+                    )
                 if isinstance(terminator, MirJump):
                     current = terminator.target
                     continue
@@ -232,9 +285,13 @@ class _MirExecutor:
             return
         if isinstance(instruction, MirStore):
             if instruction.name not in environment:
-                raise MirNativeRuntimeError(f"store to unknown MIR binding {instruction.name!r}")
+                raise MirNativeRuntimeError(
+                    f"store to unknown MIR binding {instruction.name!r}"
+                )
             if instruction.name not in mutable:
-                raise MirNativeRuntimeError(f"store to immutable MIR binding {instruction.name!r}")
+                raise MirNativeRuntimeError(
+                    f"store to immutable MIR binding {instruction.name!r}"
+                )
             environment[instruction.name] = self._value(values, instruction.source)
             return
         if isinstance(instruction, MirUnary):
