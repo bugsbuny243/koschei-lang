@@ -3,8 +3,17 @@
 from __future__ import annotations
 
 from ._parser_v09 import Parser as _ParserV09
-from ._parser_v09 import ParserError
-from .ast_nodes import EnumVariant, Expression, Parameter, StructField, TypeRef
+from ._parser_v09 import ParserError, _OR_RETURN_STOP
+from .ast_nodes import (
+    EnumVariant,
+    Expression,
+    OrBlockExpression,
+    OrElseExpression,
+    OrReturnExpression,
+    Parameter,
+    StructField,
+    TypeRef,
+)
 from .generic_nodes import (
     GenericEnumDeclaration,
     GenericFunctionDeclaration,
@@ -17,6 +26,40 @@ class Parser(_ParserV09):
     @classmethod
     def from_source(cls, source: str) -> "Parser":
         return cls(tokenize(source))
+
+    def _or_handler(self) -> Expression:
+        expression = self._logical_or()
+
+        while self._match(TokenType.OR):
+            or_token = self._previous()
+
+            if self._match(TokenType.RETURN):
+                return_token = self._previous()
+                error: Expression | None = None
+                next_token = self._peek()
+                if (
+                    next_token.type not in _OR_RETURN_STOP
+                    and next_token.line == return_token.line
+                ):
+                    error = self._logical_or()
+                expression = OrReturnExpression(
+                    expression, error, self._location(or_token)
+                )
+                continue
+
+            if self._check(TokenType.LEFT_BRACE):
+                handler = self._block()
+                expression = OrBlockExpression(
+                    expression, handler, self._location(or_token)
+                )
+                continue
+
+            fallback = self._logical_or()
+            expression = OrElseExpression(
+                expression, fallback, self._location(or_token)
+            )
+
+        return expression
 
     def _struct_declaration(self) -> GenericStructDeclaration:
         struct_token = self._consume(TokenType.STRUCT, "'struct' bekleniyordu.")
