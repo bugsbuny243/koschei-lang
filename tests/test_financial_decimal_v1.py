@@ -20,6 +20,7 @@ from koschei.financial_decimal import (
     parse_decimal,
     sub_decimal,
 )
+from koschei.financial_decimal_v1 import _GO_RUNTIME
 from koschei.modules import check_graph, load_graph
 from koschei.semantic import SemanticError
 
@@ -73,6 +74,10 @@ class FinancialDecimalCoreTests(unittest.TestCase):
         self.assertEqual(compare_decimal(low, high), -1)
         self.assertEqual(compare_decimal(low, same), 0)
         self.assertEqual(compare_decimal(high, low), 1)
+
+    def test_decimal_native_runtime_contains_no_float_parser(self) -> None:
+        self.assertNotIn("ParseFloat", _GO_RUNTIME)
+        self.assertNotIn("float64", _GO_RUNTIME)
 
 
 class FinancialDecimalLanguageTests(unittest.TestCase):
@@ -128,7 +133,6 @@ fn main() {
         check_graph(graph)
         generated = generate_go(graph.root_module.program, graph)
         self.assertIn("type KsDecimal struct", generated)
-        self.assertNotIn("ParseFloat", generated)
 
         with tempfile.TemporaryDirectory(prefix="koschei-decimal-") as workspace:
             directory = Path(workspace)
