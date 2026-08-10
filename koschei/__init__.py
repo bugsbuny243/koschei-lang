@@ -25,4 +25,24 @@ from .ergonomics_v010 import install_ergonomics_v010
 
 install_ergonomics_v010()
 
+from .financial_decimal_v1 import install_financial_decimal_v1
+
+install_financial_decimal_v1()
+
+from .financial_decimal_runtime_isolation import install_financial_decimal_runtime_isolation
+
+install_financial_decimal_runtime_isolation()
+
+from .financial_decimal_mir_v1 import install_financial_decimal_mir_v1
+
+install_financial_decimal_mir_v1()
+
+from .financial_decimal_operator_gate import install_financial_decimal_operator_gate
+
+install_financial_decimal_operator_gate()
+
+from .financial_decimal_diagnostics import install_financial_decimal_diagnostics
+
+install_financial_decimal_diagnostics()
+
 __all__ = ["main"]
