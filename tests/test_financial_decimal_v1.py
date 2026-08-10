@@ -10,6 +10,7 @@ import unittest
 
 from koschei.cli import main as cli_main
 from koschei.codegen_go import generate_go
+from koschei.diagnostics import lookup as lookup_diagnostic
 from koschei.financial_decimal import (
     DecimalValue,
     FinancialDecimalError,
@@ -79,6 +80,12 @@ class FinancialDecimalCoreTests(unittest.TestCase):
         self.assertNotIn("ParseFloat", _GO_RUNTIME)
         self.assertNotIn("float64", _GO_RUNTIME)
 
+    def test_decimal_diagnostics_are_explainable(self) -> None:
+        for code in ("KS3801", "KS3802", "KS3803", "KS3804"):
+            with self.subTest(code=code):
+                self.assertIsNotNone(lookup_diagnostic(code, "en"))
+                self.assertIsNotNone(lookup_diagnostic(code, "tr"))
+
 
 class FinancialDecimalLanguageTests(unittest.TestCase):
     @staticmethod
@@ -119,6 +126,23 @@ fn main() {
             path.write_text(source, encoding="utf-8")
             graph = load_graph(path)
             with self.assertRaisesRegex(SemanticError, "String"):
+                check_graph(graph)
+
+    def test_direct_decimal_operator_is_rejected_until_fallible_semantics_exist(self) -> None:
+        source = """
+fn main() {
+    let left = decimal("1.00", 2) or return
+    let right = decimal("2.00", 2) or return
+    if left < right {
+        println("unsafe implicit comparison")
+    }
+}
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "main.ks"
+            path.write_text(source, encoding="utf-8")
+            graph = load_graph(path)
+            with self.assertRaisesRegex(SemanticError, "KS3804"):
                 check_graph(graph)
 
     def test_public_runtime_is_exact_and_deterministic(self) -> None:
