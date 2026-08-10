@@ -19,7 +19,11 @@ from .mir_ir import (
     MirBranch,
     MirCall,
     MirConst,
+    MirIterHasNext,
+    MirIterInit,
+    MirIterNext,
     MirJump,
+    MirList,
     MirLoad,
     MirMember,
     MirReturn,
@@ -76,6 +80,12 @@ class _ErrorValue:
     message: str
 
 
+@dataclass(slots=True)
+class _ListIterator:
+    items: tuple[Any, ...]
+    index: int = 0
+
+
 class _Unit:
     __slots__ = ()
 
@@ -104,6 +114,19 @@ def inspect_native_mir_support(mir: MirGraph) -> MirNativeSupport:
     elif main.parameters:
         reasons.append("native MIR v1 requires zero-parameter main")
 
+    supported_instructions = (
+        MirConst,
+        MirLoad,
+        MirBind,
+        MirStore,
+        MirUnary,
+        MirBinary,
+        MirList,
+        MirIterInit,
+        MirIterHasNext,
+        MirIterNext,
+        MirCall,
+    )
     for function in root.functions:
         for block in function.blocks:
             for instruction in block.instructions:
@@ -129,10 +152,7 @@ def inspect_native_mir_support(mir: MirGraph) -> MirNativeSupport:
                         f"{function.name}: unary operator "
                         f"{instruction.operator!r} is not native-MIR yet"
                     )
-                elif not isinstance(
-                    instruction,
-                    (MirConst, MirLoad, MirBind, MirStore, MirUnary, MirBinary, MirCall),
-                ):
+                elif not isinstance(instruction, supported_instructions):
                     reasons.append(
                         f"{function.name}: unsupported MIR instruction "
                         f"{type(instruction).__name__}"
@@ -277,10 +297,6 @@ class _MirExecutor:
                 raise MirNativeRuntimeError(f"unknown MIR load name {instruction.name!r}")
             return
         if isinstance(instruction, MirBind):
-            # A MirBind is one static lexical slot. Re-entering its block in a loop
-            # reinitializes that slot for the new iteration; it is not a second
-            # source declaration. Shadowed source names are already resolved to
-            # distinct MIR names by lowering.
             environment[instruction.name] = self._value(values, instruction.source)
             if instruction.is_mutable:
                 mutable.add(instruction.name)
@@ -306,6 +322,28 @@ class _MirExecutor:
             left = self._value(values, instruction.left)
             right = self._value(values, instruction.right)
             values[instruction.target] = _binary(instruction.operator, left, right)
+            return
+        if isinstance(instruction, MirList):
+            values[instruction.target] = tuple(
+                self._value(values, item) for item in instruction.items
+            )
+            return
+        if isinstance(instruction, MirIterInit):
+            iterable = self._value(values, instruction.iterable)
+            if not isinstance(iterable, tuple):
+                raise MirNativeRuntimeError("MIR iterator requires a normalized List value")
+            values[instruction.target] = _ListIterator(iterable)
+            return
+        if isinstance(instruction, MirIterHasNext):
+            iterator = self._iterator(values, instruction.iterator)
+            values[instruction.target] = iterator.index < len(iterator.items)
+            return
+        if isinstance(instruction, MirIterNext):
+            iterator = self._iterator(values, instruction.iterator)
+            if iterator.index >= len(iterator.items):
+                raise MirNativeRuntimeError("MIR iterator advanced past end of List")
+            values[instruction.target] = iterator.items[iterator.index]
+            iterator.index += 1
             return
         if isinstance(instruction, MirCall):
             callee = self._value(values, instruction.callee)
@@ -340,6 +378,13 @@ class _MirExecutor:
         if value_id not in values:
             raise MirNativeRuntimeError(f"MIR value %{value_id} is unavailable at runtime")
         return values[value_id]
+
+    @staticmethod
+    def _iterator(values: dict[int, Any], value_id: int) -> _ListIterator:
+        value = _MirExecutor._value(values, value_id)
+        if not isinstance(value, _ListIterator):
+            raise MirNativeRuntimeError("MIR iterator value has invalid runtime shape")
+        return value
 
 
 def _unary(operator: str, operand: Any) -> Any:
@@ -390,6 +435,8 @@ def _to_string(value: Any) -> str:
         if "." not in text and "e" not in text and "E" not in text:
             text += ".0"
         return text
+    if isinstance(value, tuple):
+        return "[" + ", ".join(_to_string(item) for item in value) + "]"
     if isinstance(value, _ErrorValue):
         return value.message
     return str(value)
