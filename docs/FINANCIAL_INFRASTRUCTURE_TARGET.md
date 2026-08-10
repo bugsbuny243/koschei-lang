@@ -30,7 +30,7 @@ preserve the relevant financial invariants.
 
 ### P0 — deterministic pair matching — COMPLETE
 
-- `Order`, `Trade`, `Side` contracts in Koschei.
+- `Order`, `Trade`, and `Side` contracts in Koschei.
 - Integer price ticks and quantity lots only.
 - deterministic maker/taker and maker-price execution.
 - invalid/non-crossing orders produce no fill.
@@ -39,7 +39,7 @@ preserve the relevant financial invariants.
 
 Reference: `examples/financial_exchange/`.
 
-### P1 — exact financial arithmetic — CURRENT
+### P1 — exact financial arithmetic — COMPLETE
 
 The first exact `Decimal` ABI uses signed-int64 atoms plus an explicit scale from
 0 through 18. Its initial public surface is:
@@ -50,29 +50,44 @@ The first exact `Decimal` ABI uses signed-int64 atoms plus an explicit scale fro
 - `decimal_cmp(Decimal, Decimal) -> Int or Error`;
 - `decimal_text(Decimal) -> String`.
 
-Current P1 invariants:
+P1 invariants:
 
 - no binary floating-point representation in the Decimal runtime;
 - canonical input and fixed-scale serialization;
 - checked signed-int64 overflow;
 - different scales fail closed instead of rescaling implicitly;
 - no implicit `Float <-> Decimal` conversion;
-- interpreter, direct-MIR and generated-Go adapters share the same contract.
+- interpreter, direct-MIR and generated-Go adapters share the same contract;
+- direct Decimal operators remain fail-closed until explicit error semantics exist.
 
 Multiplication, division and rescaling remain intentionally unavailable until
 explicit rounding modes and their adversarial parity vectors are specified.
 
 Reference: `examples/financial_exchange/decimal_v1.ks`.
 
-### P2 — order book and venue semantics
+### P2 — order book and venue semantics — CURRENT
 
-- deterministic price-time priority over many orders;
-- cancel/replace and partial fills;
-- monotonic sequence numbers;
-- duplicate order-id rejection;
-- tick-size / lot-size validation;
-- self-trade and risk policy hooks;
-- deterministic event log.
+The P2 reference core is an authority-free in-memory venue state machine. It
+keeps sequencing explicit and does not consult a host clock or host container
+ordering for matching decisions.
+
+Current P2 invariants under implementation:
+
+- deterministic bid priority: higher price first, then lower sequence;
+- deterministic ask priority: lower price first, then lower sequence;
+- resting order is maker and resting limit is execution price;
+- partial maker fills are reinserted with original priority metadata;
+- unmatched taker remainder rests at its original incoming sequence;
+- submit, cancel and replace commands require strictly increasing sequence values;
+- order ids cannot be reused through normal submission;
+- replace keeps the active id/owner/side but assigns new price-time priority;
+- tick size, lot size and maximum order quantity are explicit venue policy data;
+- self-trade preflight can fail closed before any partial state mutation;
+- every accepted state transition appends a typed deterministic event;
+- matching owns zero disk/network/env/process/clock authority;
+- interpreter/native output must remain byte-identical for the reference scenario.
+
+Reference: `examples/financial_exchange/order_book_v1.ks`.
 
 ### P3 — persistence and crash recovery
 
