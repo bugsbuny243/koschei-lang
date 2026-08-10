@@ -95,10 +95,17 @@ def _contains_loop_control(block: ast.Block) -> bool:
 
 
 def _mir_statement(self, statement):
-    if isinstance(statement, ast.ForStatement) and not _contains_loop_control(
-        statement.body
+    if isinstance(statement, ast.ForStatement):
+        # V5 now owns the typed List/iterator CFG for every for-loop shape,
+        # including bodies with break/continue. Do not route those loops back
+        # through the legacy v0.10 ForHasNext/ForBind AST-fallback markers.
+        return semantics_v010._mir_statement.original(self, statement)
+    if isinstance(statement, (ast.BreakStatement, ast.ContinueStatement)) and getattr(
+        self, "loop_targets", None
     ):
-        # Keep the established V5 fallback contract for ordinary for loops.
+        # Core for lowering tracks its own break/continue targets. The v0.10
+        # patched while lowering still uses _v010_loops and therefore stays on
+        # the compatibility path below.
         return semantics_v010._mir_statement.original(self, statement)
     return _mir_statement.v010(self, statement)
 
