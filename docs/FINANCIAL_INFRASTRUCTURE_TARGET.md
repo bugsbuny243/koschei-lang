@@ -28,7 +28,7 @@ preserve the relevant financial invariants.
 
 ## Roadmap
 
-### P0 — deterministic pair matching — CURRENT
+### P0 — deterministic pair matching — COMPLETE
 
 - `Order`, `Trade`, `Side` contracts in Koschei.
 - Integer price ticks and quantity lots only.
@@ -39,17 +39,30 @@ preserve the relevant financial invariants.
 
 Reference: `examples/financial_exchange/`.
 
-### P1 — exact financial arithmetic
+### P1 — exact financial arithmetic — CURRENT
 
-Add a first-class exact decimal/fixed-point contract. Requirements before it may
-be used for money:
+The first exact `Decimal` ABI uses signed-int64 atoms plus an explicit scale from
+0 through 18. Its initial public surface is:
 
-- no binary floating-point representation;
-- canonical scale and serialization;
-- checked overflow;
-- explicit rounding mode for every lossy operation;
+- `decimal(String, Int) -> Decimal or Error`;
+- `decimal_add(Decimal, Decimal) -> Decimal or Error`;
+- `decimal_sub(Decimal, Decimal) -> Decimal or Error`;
+- `decimal_cmp(Decimal, Decimal) -> Int or Error`;
+- `decimal_text(Decimal) -> String`.
+
+Current P1 invariants:
+
+- no binary floating-point representation in the Decimal runtime;
+- canonical input and fixed-scale serialization;
+- checked signed-int64 overflow;
+- different scales fail closed instead of rescaling implicitly;
 - no implicit `Float <-> Decimal` conversion;
-- interpreter/native arithmetic parity with adversarial boundary vectors.
+- interpreter, direct-MIR and generated-Go adapters share the same contract.
+
+Multiplication, division and rescaling remain intentionally unavailable until
+explicit rounding modes and their adversarial parity vectors are specified.
+
+Reference: `examples/financial_exchange/decimal_v1.ks`.
 
 ### P2 — order book and venue semantics
 
