@@ -25,4 +25,8 @@ from .ergonomics_v010 import install_ergonomics_v010
 
 install_ergonomics_v010()
 
+from .financial_decimal_v1 import install_financial_decimal_v1
+
+install_financial_decimal_v1()
+
 __all__ = ["main"]
