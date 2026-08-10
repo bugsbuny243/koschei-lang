@@ -29,6 +29,10 @@ from .financial_decimal_v1 import install_financial_decimal_v1
 
 install_financial_decimal_v1()
 
+from .financial_decimal_runtime_isolation import install_financial_decimal_runtime_isolation
+
+install_financial_decimal_runtime_isolation()
+
 from .financial_decimal_mir_v1 import install_financial_decimal_mir_v1
 
 install_financial_decimal_mir_v1()
