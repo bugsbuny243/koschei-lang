@@ -29,4 +29,8 @@ from .financial_decimal_v1 import install_financial_decimal_v1
 
 install_financial_decimal_v1()
 
+from .financial_decimal_mir_v1 import install_financial_decimal_mir_v1
+
+install_financial_decimal_mir_v1()
+
 __all__ = ["main"]
