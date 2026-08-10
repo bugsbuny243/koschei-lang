@@ -1,9 +1,8 @@
 """Strict Go code generation from normalized Koschei MIR.
 
-This backend deliberately supports a small, measurable scalar core first. It
-consumes MIR blocks directly and emits a program-counter state machine for each
-function. Unsupported constructs are reported before generation; this module
-never consults the source AST.
+This backend consumes sealed MIR blocks directly and emits a program-counter
+state machine for each function. Unsupported constructs are reported before
+generation; this module never consults the source AST.
 """
 
 from __future__ import annotations
@@ -21,7 +20,11 @@ from .mir_ir import (
     MirBranch,
     MirCall,
     MirConst,
+    MirIterHasNext,
+    MirIterInit,
+    MirIterNext,
     MirJump,
+    MirList,
     MirLoad,
     MirMember,
     MirReturn,
@@ -29,7 +32,7 @@ from .mir_ir import (
     MirUnary,
     MirUnreachable,
 )
-from .type_system import NamedType, TypeNode, UnknownType, render_type
+from .type_system import GenericType, NamedType, TypeNode, UnknownType, render_type
 
 _SCALAR_TYPES = {
     "Bool": "bool",
@@ -89,6 +92,8 @@ def inspect_mir_go_support(mir: MirGraph) -> MirGoSupport:
                     f"{function.name}: unsupported parameter type {render_type(parameter.type)}"
                 )
 
+        value_types = _instruction_type_map(function)
+        static_loads = _static_load_names(function)
         binding_names: set[str] = set()
         for block in function.blocks:
             for instruction in block.instructions:
@@ -144,6 +149,31 @@ def inspect_mir_go_support(mir: MirGraph) -> MirGoSupport:
                             f"{function.name}: unsupported binary result type "
                             f"{render_type(instruction.type)}"
                         )
+                    if instruction.operator in {"==", "!="} and (
+                        _is_list_type(value_types.get(instruction.left))
+                        or _is_list_type(value_types.get(instruction.right))
+                    ):
+                        reasons.append(
+                            f"{function.name}: structural List equality is not MIR-Go v1 yet"
+                        )
+                elif isinstance(instruction, MirList):
+                    if _go_type(instruction.type, allow_void=False) is None:
+                        reasons.append(
+                            f"{function.name}: unsupported List type "
+                            f"{render_type(instruction.type)}"
+                        )
+                elif isinstance(instruction, MirIterInit):
+                    if _go_type(instruction.type, allow_void=False) is None:
+                        reasons.append(
+                            f"{function.name}: unsupported iterator type "
+                            f"{render_type(instruction.type)}"
+                        )
+                elif isinstance(instruction, (MirIterHasNext, MirIterNext)):
+                    if _go_type(instruction.type, allow_void=False) is None:
+                        reasons.append(
+                            f"{function.name}: unsupported iterator result type "
+                            f"{render_type(instruction.type)}"
+                        )
                 elif isinstance(instruction, MirLoad):
                     if (
                         instruction.name not in function_names
@@ -158,9 +188,29 @@ def inspect_mir_go_support(mir: MirGraph) -> MirGoSupport:
                             f"{function.name}: unsupported call result type "
                             f"{render_type(instruction.type)}"
                         )
+                    builtin = static_loads.get(instruction.callee)
+                    if builtin in _PRINT_BUILTINS and any(
+                        _is_list_type(value_types.get(argument))
+                        for argument in instruction.arguments
+                    ):
+                        reasons.append(
+                            f"{function.name}: direct List printing is not MIR-Go v1 yet"
+                        )
                 elif not isinstance(
                     instruction,
-                    (MirLoad, MirBind, MirStore, MirConst, MirUnary, MirBinary, MirCall),
+                    (
+                        MirLoad,
+                        MirBind,
+                        MirStore,
+                        MirConst,
+                        MirUnary,
+                        MirBinary,
+                        MirList,
+                        MirIterInit,
+                        MirIterHasNext,
+                        MirIterNext,
+                        MirCall,
+                    ),
                 ):
                     reasons.append(
                         f"{function.name}: unsupported instruction {type(instruction).__name__}"
@@ -185,10 +235,26 @@ def generate_go_mir_native(mir: MirGraph) -> str:
         for block in function.blocks
         for instruction in block.instructions
     )
+    uses_iterator = any(
+        isinstance(instruction, MirIterInit)
+        for function in functions
+        for block in function.blocks
+        for instruction in block.instructions
+    )
 
     lines = ["// Code generated from sealed Koschei MIR v3. DO NOT EDIT.", "package main", ""]
     if uses_fmt:
         lines.extend(['import "fmt"', ""])
+    if uses_iterator:
+        lines.extend(
+            [
+                "type _ksIter[T any] struct {",
+                "\titems []T",
+                "\tindex int",
+                "}",
+                "",
+            ]
+        )
     for function in functions:
         lines.extend(_emit_function(function, function_symbols))
         lines.append("")
@@ -288,6 +354,31 @@ def _emit_instruction(
             f"{prefix}_ks_v_{instruction.target} = _ks_v_{instruction.left} "
             f"{instruction.operator} _ks_v_{instruction.right}"
         ]
+    if isinstance(instruction, MirList):
+        go_type = _require_go_type(instruction.type)
+        items = ", ".join(f"_ks_v_{item}" for item in instruction.items)
+        return [f"{prefix}_ks_v_{instruction.target} = {go_type}{{{items}}}"]
+    if isinstance(instruction, MirIterInit):
+        go_type = _require_go_type(instruction.type)
+        return [
+            f"{prefix}_ks_v_{instruction.target} = "
+            f"{go_type}{{items: _ks_v_{instruction.iterable}}}"
+        ]
+    if isinstance(instruction, MirIterHasNext):
+        iterator = f"_ks_v_{instruction.iterator}"
+        return [
+            f"{prefix}_ks_v_{instruction.target} = "
+            f"{iterator}.index < len({iterator}.items)"
+        ]
+    if isinstance(instruction, MirIterNext):
+        iterator = f"_ks_v_{instruction.iterator}"
+        return [
+            f"{prefix}if {iterator}.index >= len({iterator}.items) {{",
+            f'{prefix}\tpanic("sealed Koschei MIR iterator advanced past end")',
+            f"{prefix}}}",
+            f"{prefix}_ks_v_{instruction.target} = {iterator}.items[{iterator}.index]",
+            f"{prefix}{iterator}.index++",
+        ]
     if isinstance(instruction, MirCall):
         symbolic = symbolic_values.get(instruction.callee)
         if symbolic is None:
@@ -326,8 +417,6 @@ def _emit_terminator(terminator: Any, return_type: TypeNode) -> list[str]:
             f"{prefix}continue",
         ]
     if isinstance(terminator, MirUnreachable):
-        if _require_go_type(return_type, allow_void=True):
-            return [f'{prefix}panic("unreachable sealed Koschei MIR block")']
         return [f'{prefix}panic("unreachable sealed Koschei MIR block")']
     raise MirGoUnsupported(f"unsupported terminator {type(terminator).__name__}")
 
@@ -353,6 +442,15 @@ def _symbolic_loads(
     return result
 
 
+def _static_load_names(function: MirFunction) -> dict[int, str]:
+    result: dict[int, str] = {}
+    for block in function.blocks:
+        for instruction in block.instructions:
+            if isinstance(instruction, MirLoad):
+                result[instruction.target] = instruction.name
+    return result
+
+
 def _binding_symbols(function: MirFunction) -> dict[str, str]:
     names: list[str] = []
     for block in function.blocks:
@@ -372,35 +470,49 @@ def _binding_type(function: MirFunction, name: str) -> TypeNode:
     raise MirGoUnsupported(f"binding type missing for {name!r}")
 
 
+def _instruction_type_map(function: MirFunction) -> dict[int, TypeNode]:
+    result: dict[int, TypeNode] = {}
+    for block in function.blocks:
+        for instruction in block.instructions:
+            target = getattr(instruction, "target", None)
+            type_node = getattr(instruction, "type", None)
+            if isinstance(target, int) and type_node is not None:
+                result[target] = type_node
+    return result
+
+
 def _value_types(
     function: MirFunction,
     symbolic_values: dict[int, tuple[str, str]],
 ) -> dict[int, TypeNode]:
     result: dict[int, TypeNode] = {}
-    for block in function.blocks:
-        for instruction in block.instructions:
-            target = getattr(instruction, "target", None)
-            if target is None or target in symbolic_values:
-                continue
-            type_node = getattr(instruction, "type", None)
-            if type_node is None:
-                continue
-            if isinstance(instruction, MirCall) and not _require_go_type(
-                type_node, allow_void=True
-            ):
-                continue
-            result[target] = type_node
+    for value_id, type_node in _instruction_type_map(function).items():
+        if value_id in symbolic_values:
+            continue
+        result[value_id] = type_node
     return result
+
+
+def _is_list_type(type_node: TypeNode | None) -> bool:
+    return isinstance(type_node, GenericType) and type_node.name == "List"
 
 
 def _go_type(type_node: TypeNode, *, allow_void: bool) -> str | None:
     if isinstance(type_node, UnknownType):
         return None
-    if not isinstance(type_node, NamedType):
-        return None
-    if type_node.name == "Void":
-        return "" if allow_void else None
-    return _SCALAR_TYPES.get(type_node.name)
+    if isinstance(type_node, NamedType):
+        if type_node.name == "Void":
+            return "" if allow_void else None
+        return _SCALAR_TYPES.get(type_node.name)
+    if isinstance(type_node, GenericType) and len(type_node.arguments) == 1:
+        argument = _go_type(type_node.arguments[0], allow_void=False)
+        if argument is None:
+            return None
+        if type_node.name == "List":
+            return f"[]{argument}"
+        if type_node.name == "Iterator":
+            return f"_ksIter[{argument}]"
+    return None
 
 
 def _require_go_type(type_node: TypeNode, *, allow_void: bool = False) -> str:
