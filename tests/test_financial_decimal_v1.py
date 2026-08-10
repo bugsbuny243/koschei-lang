@@ -9,7 +9,7 @@ import tempfile
 import unittest
 
 from koschei.cli import main as cli_main
-from koschei.codegen_go import generate_go
+from koschei.codegen_go import generate_go_mir
 from koschei.diagnostics import lookup as lookup_diagnostic
 from koschei.financial_decimal import (
     DecimalValue,
@@ -22,6 +22,7 @@ from koschei.financial_decimal import (
     sub_decimal,
 )
 from koschei.financial_decimal_v1 import _GO_RUNTIME
+from koschei.mir import require_mir
 from koschei.modules import check_graph, load_graph
 from koschei.semantic import SemanticError
 
@@ -152,10 +153,10 @@ fn main() {
         self.assertEqual(second, EXPECTED)
 
     @unittest.skipUnless(GO_BINARY, "Go toolchain is required for native parity")
-    def test_native_decimal_output_matches_interpreter_byte_for_byte(self) -> None:
+    def test_public_mir_build_decimal_matches_interpreter_byte_for_byte(self) -> None:
         graph = load_graph(ENTRY)
         check_graph(graph)
-        generated = generate_go(graph.root_module.program, graph)
+        generated = generate_go_mir(require_mir(graph))
         self.assertIn("type KsDecimal struct", generated)
 
         with tempfile.TemporaryDirectory(prefix="koschei-decimal-") as workspace:
