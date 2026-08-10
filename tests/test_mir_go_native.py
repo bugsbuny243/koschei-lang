@@ -101,7 +101,7 @@ fn main() {
             self.assertEqual(completed.returncode, 0)
             self.assertEqual(completed.stdout, "2\n1\n")
 
-    def test_normalized_for_loop_waits_for_explicit_mir_go_iterator_backend(self) -> None:
+    def test_list_for_loop_is_supported_by_explicit_mir_go_iterator_backend(self) -> None:
         _, mir = self.checked_mir(
             """
 fn main() {
@@ -112,11 +112,82 @@ fn main() {
 """
         )
         support = inspect_mir_go_support(mir)
+        self.assertTrue(support.supported, support.reasons)
+        self.assertEqual(native_build_mode(mir), "mir_go_v1")
+        source = generate_go_mir_native(mir)
+        self.assertIn("type _ksIter[T any] struct", source)
+        self.assertIn("[]int64{", source)
+        self.assertIn(".index < len(", source)
+        self.assertIn(".index++", source)
+
+    @unittest.skipUnless(shutil.which("go"), "Go toolchain is required")
+    def test_public_list_for_build_never_touches_legacy_ast_codegen(self) -> None:
+        source, mir = self.checked_mir(
+            """
+fn main() {
+    for value in [1, 2, 3, 4] {
+        if value == 2 {
+            continue
+        }
+        println(value)
+        if value == 3 {
+            break
+        }
+    }
+}
+"""
+        )
+        support = inspect_mir_go_support(mir)
+        self.assertTrue(support.supported, support.reasons)
+        self.assertEqual(native_build_mode(mir), "mir_go_v1")
+
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "for-native"
+            with patch.object(
+                legacy_cli,
+                "command_build",
+                side_effect=AssertionError("legacy AST-Go path must not run"),
+            ):
+                code = cli_main(["build", str(source), "-o", str(target)])
+            self.assertEqual(code, 0)
+            completed = subprocess.run(
+                [str(target)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(completed.returncode, 0)
+            self.assertEqual(completed.stdout, "1\n3\n")
+
+    def test_direct_list_printing_remains_fail_closed_until_renderer_lands(self) -> None:
+        _, mir = self.checked_mir(
+            """
+fn main() {
+    println([1, 2, 3])
+}
+"""
+        )
+        support = inspect_mir_go_support(mir)
         self.assertFalse(support.supported)
-        self.assertEqual(native_build_mode(mir), "ast_go_compat_v1")
-        self.assertFalse(any("AST fallback" in reason for reason in support.reasons))
         self.assertTrue(
-            any("MirList" in reason or "MirIter" in reason for reason in support.reasons),
+            any("List printing" in reason for reason in support.reasons),
+            support.reasons,
+        )
+
+    def test_list_equality_remains_fail_closed_until_structural_codegen_lands(self) -> None:
+        _, mir = self.checked_mir(
+            """
+fn main() {
+    let left = [1, 2]
+    let right = [1, 2]
+    println(left == right)
+}
+"""
+        )
+        support = inspect_mir_go_support(mir)
+        self.assertFalse(support.supported)
+        self.assertTrue(
+            any("structural List equality" in reason for reason in support.reasons),
             support.reasons,
         )
 
