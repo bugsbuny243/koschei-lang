@@ -36,7 +36,7 @@ fn valid_order(order: Order) -> Bool {
 }
 
 fn crosses(buy: Order, sell: Order) -> Bool {
-    return buy.side == Buy && sell.side == Sell && buy.price_ticks >= sell.price_ticks
+    return buy.side == Buy() && sell.side == Sell() && buy.price_ticks >= sell.price_ticks
 }
 
 fn match_pair(buy: Order, sell: Order) -> Option<Trade> {
