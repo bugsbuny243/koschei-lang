@@ -7,6 +7,7 @@ import tempfile
 import unittest
 
 from koschei.mir import require_mir
+from koschei.mir_ir import MirAstFallback
 from koschei.mir_native_runtime import inspect_native_mir_support, run_mir_native
 from koschei.modules import check_graph, load_graph
 
@@ -98,6 +99,18 @@ fn main() {
 }
 """
         )
+        unexpected = [
+            (
+                block.id,
+                instruction.node_kind,
+                instruction.location.line,
+                instruction.location.column,
+            )
+            for block in mir.root_module.functions[0].blocks
+            for instruction in block.instructions
+            if isinstance(instruction, MirAstFallback)
+        ]
+        self.assertEqual(unexpected, [], f"unexpected List-for fallbacks: {unexpected!r}")
         support = inspect_native_mir_support(mir)
         self.assertTrue(support.supported, support.reasons)
         output = io.StringIO()
