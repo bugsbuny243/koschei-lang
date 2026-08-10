@@ -486,10 +486,19 @@ def _value_types(
     symbolic_values: dict[int, tuple[str, str]],
 ) -> dict[int, TypeNode]:
     result: dict[int, TypeNode] = {}
-    for value_id, type_node in _instruction_type_map(function).items():
-        if value_id in symbolic_values:
-            continue
-        result[value_id] = type_node
+    for block in function.blocks:
+        for instruction in block.instructions:
+            target = getattr(instruction, "target", None)
+            if target is None or target in symbolic_values:
+                continue
+            type_node = getattr(instruction, "type", None)
+            if type_node is None:
+                continue
+            if isinstance(instruction, MirCall) and _go_type(
+                type_node, allow_void=True
+            ) == "":
+                continue
+            result[target] = type_node
     return result
 
 
