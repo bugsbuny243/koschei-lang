@@ -33,6 +33,10 @@ from .financial_decimal_mir_v1 import install_financial_decimal_mir_v1
 
 install_financial_decimal_mir_v1()
 
+from .financial_decimal_operator_gate import install_financial_decimal_operator_gate
+
+install_financial_decimal_operator_gate()
+
 from .financial_decimal_diagnostics import install_financial_decimal_diagnostics
 
 install_financial_decimal_diagnostics()
