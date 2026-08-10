@@ -101,7 +101,7 @@ fn main() {
             self.assertEqual(completed.returncode, 0)
             self.assertEqual(completed.stdout, "2\n1\n")
 
-    def test_for_loop_stays_on_explicit_ast_go_compatibility_lane(self) -> None:
+    def test_normalized_for_loop_waits_for_explicit_mir_go_iterator_backend(self) -> None:
         _, mir = self.checked_mir(
             """
 fn main() {
@@ -114,7 +114,11 @@ fn main() {
         support = inspect_mir_go_support(mir)
         self.assertFalse(support.supported)
         self.assertEqual(native_build_mode(mir), "ast_go_compat_v1")
-        self.assertTrue(any("AST fallback" in reason for reason in support.reasons))
+        self.assertFalse(any("AST fallback" in reason for reason in support.reasons))
+        self.assertTrue(
+            any("MirList" in reason or "MirIter" in reason for reason in support.reasons),
+            support.reasons,
+        )
 
     def test_local_calls_and_loop_cfg_are_emitted_from_mir(self) -> None:
         _, mir = self.checked_mir(
