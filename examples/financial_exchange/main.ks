@@ -11,14 +11,14 @@ fn main() {
     // Resting sell is older, therefore it is maker and fixes execution price.
     let resting_sell = Order {
         id: "S-0001",
-        side: Sell,
+        side: Sell(),
         price_ticks: 10100,
         quantity_lots: 40,
         sequence: 10,
     }
     let incoming_buy = Order {
         id: "B-0001",
-        side: Buy,
+        side: Buy(),
         price_ticks: 10200,
         quantity_lots: 25,
         sequence: 20,
@@ -28,7 +28,7 @@ fn main() {
     // Price does not cross the resting ask.
     let low_buy = Order {
         id: "B-0002",
-        side: Buy,
+        side: Buy(),
         price_ticks: 10099,
         quantity_lots: 10,
         sequence: 21,
@@ -38,7 +38,7 @@ fn main() {
     // Zero quantity is invalid and cannot produce a trade.
     let invalid_sell = Order {
         id: "S-0002",
-        side: Sell,
+        side: Sell(),
         price_ticks: 10000,
         quantity_lots: 0,
         sequence: 22,
