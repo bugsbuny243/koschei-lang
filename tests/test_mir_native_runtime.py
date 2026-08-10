@@ -86,7 +86,7 @@ fn main() {
         self.assertEqual(code, 0)
         self.assertEqual(output.getvalue(), "1\n3\n")
 
-    def test_for_loop_is_rejected_instead_of_falling_back_to_ast(self) -> None:
+    def test_normalized_for_loop_fails_closed_until_iterator_runtime_lands(self) -> None:
         mir = self.checked_mir(
             """
 fn main() {
@@ -98,7 +98,11 @@ fn main() {
         )
         support = inspect_native_mir_support(mir)
         self.assertFalse(support.supported)
-        self.assertTrue(any("AST fallback" in item for item in support.reasons))
+        self.assertFalse(any("AST fallback" in item for item in support.reasons))
+        self.assertTrue(
+            any("MirList" in item or "MirIter" in item for item in support.reasons),
+            support.reasons,
+        )
         with self.assertRaises(MirNativeUnsupported):
             run_mir_native(mir)
 
