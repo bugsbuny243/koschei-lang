@@ -60,6 +60,23 @@ def install_financial_decimal_diagnostics() -> None:
             ),
             example='let total = decimal_add(a, b) or return',
         ),
+        "KS3804": diagnostics.Diagnostic(
+            code="KS3804",
+            title="Decimal için örtük işleç kapalı",
+            summary="Decimal P1 üzerinde doğrudan aritmetik veya karşılaştırma işleci kullanıldı.",
+            why=(
+                "Scale uyuşmazlığı ve gelecekteki rounding kararları hata üretebilir. Bool veya "
+                "normal aritmetik işleci bu fallible sözleşmeyi güvenli biçimde taşıyamaz."
+            ),
+            fix=(
+                "Toplama için decimal_add(), çıkarma için decimal_sub(), sıralama/eşitlik "
+                "kararı için decimal_cmp() kullanın ve sonucu 'or' ile ele alın."
+            ),
+            example=(
+                "let order = decimal_cmp(left, right) or return\n"
+                "if order < 0 { println(\"left daha küçük\") }"
+            ),
+        ),
     }
     english_fields = {
         "KS3801": (
@@ -79,6 +96,12 @@ def install_financial_decimal_diagnostics() -> None:
             "A Decimal atom calculation exceeded the signed 64-bit range.",
             "Checked atoms keep interpreter and native money arithmetic identical and prevent wraparound.",
             "Reduce the atom magnitude or split the calculation; do not rely on overflow.",
+        ),
+        "KS3804": (
+            "Implicit Decimal operator disabled",
+            "A direct arithmetic or comparison operator was used on Decimal P1.",
+            "Scale mismatch and future rounding decisions are fallible and cannot be hidden inside an infallible operator.",
+            "Use decimal_add(), decimal_sub(), or decimal_cmp() and handle the result with 'or'.",
         ),
     }
 
