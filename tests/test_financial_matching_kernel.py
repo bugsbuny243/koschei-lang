@@ -57,8 +57,9 @@ class FinancialMatchingKernelTests(unittest.TestCase):
         graph = load_graph(ENTRY)
         check_graph(graph)
         manifest = analyze_graph(graph)
-        self.assertEqual(manifest.grants, ())
-        self.assertEqual(manifest.holder_functions, ())
+        self.assertFalse(manifest.grants)
+        self.assertFalse(manifest.holder_functions)
+        self.assertEqual(manifest.domains(), [])
 
     def test_price_time_result_is_deterministic(self) -> None:
         first = self.interpreter_output()
