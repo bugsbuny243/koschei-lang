@@ -1,8 +1,8 @@
 """Export a provenance-pinned Koschei language foundation corpus for Sentinel.
 
-The exporter never reads selected training documents from the mutable working tree.
-It enumerates and reads blobs from one exact Git commit so the recorded provenance
-cannot silently describe dirty or untracked bytes.
+Selected training documents are read from one exact Git commit by blob SHA, never
+from the mutable working tree. The producer also self-verifies the complete
+Sentinel-facing contract before any corpus bytes are published.
 """
 
 from __future__ import annotations
@@ -19,8 +19,21 @@ SOURCE_SCHEMA = "koschei.language-foundation-corpus.v1"
 GENERATOR_VERSION = "koschei-foundation-export/v1"
 SOURCE_REPOSITORY = "bugsbuny243/koschei-lang"
 _COMMIT_RE = re.compile(r"^[a-f0-9]{40}$")
+_SHA_RE = re.compile(r"^[a-f0-9]{64}$")
 _ALLOWED_BLOB_MODES = {"100644", "100755"}
 _ROOT_REFERENCES = {"README.md", "README.tr.md", "README.en.md"}
+_CORPUS_KEYS = {
+    "schema_version",
+    "generator_version",
+    "source_repository",
+    "source_commit",
+    "document_count",
+    "family_count",
+    "total_bytes",
+    "corpus_sha256",
+    "documents",
+}
+_DOCUMENT_KEYS = {"document_id", "family", "kind", "path", "source_sha256", "text"}
 
 
 class LanguageFoundationExportError(ValueError):
@@ -78,15 +91,11 @@ def build_language_foundation_corpus(
     documents.sort(key=lambda item: item["path"])
     if not documents:
         raise LanguageFoundationExportError("foundation source selection is empty")
-    paths = [item["path"] for item in documents]
-    if len(paths) != len(set(paths)):
-        raise LanguageFoundationExportError("foundation source selection contains duplicate paths")
     families = {item["family"] for item in documents}
     if len(families) < 3:
         raise LanguageFoundationExportError(
             "foundation corpus requires at least three families for leakage-safe splits"
         )
-
     total_bytes = sum(len(item["text"].encode("utf-8")) for item in documents)
     payload: dict[str, Any] = {
         "schema_version": SOURCE_SCHEMA,
@@ -99,13 +108,80 @@ def build_language_foundation_corpus(
         "documents": documents,
     }
     payload["corpus_sha256"] = hashlib.sha256(canonical_json(payload).encode()).hexdigest()
-    return payload
+    return verify_language_foundation_corpus(payload)
 
 
-def write_language_foundation_corpus(
-    corpus: dict[str, Any],
-    output: str | Path,
-) -> Path:
+def verify_language_foundation_corpus(corpus: dict[str, Any]) -> dict[str, Any]:
+    if set(corpus) != _CORPUS_KEYS:
+        raise LanguageFoundationExportError("foundation corpus has missing or unknown fields")
+    if corpus["schema_version"] != SOURCE_SCHEMA:
+        raise LanguageFoundationExportError("foundation corpus schema mismatch")
+    if corpus["generator_version"] != GENERATOR_VERSION:
+        raise LanguageFoundationExportError("foundation corpus generator mismatch")
+    if corpus["source_repository"] != SOURCE_REPOSITORY:
+        raise LanguageFoundationExportError("foundation corpus repository mismatch")
+    source_commit = corpus["source_commit"]
+    if not isinstance(source_commit, str) or not _COMMIT_RE.fullmatch(source_commit):
+        raise LanguageFoundationExportError("foundation corpus source commit is invalid")
+    documents = corpus["documents"]
+    if not isinstance(documents, list) or not documents:
+        raise LanguageFoundationExportError("foundation corpus documents must be non-empty")
+
+    paths: list[str] = []
+    families: set[str] = set()
+    total_bytes = 0
+    for document in documents:
+        if not isinstance(document, dict) or set(document) != _DOCUMENT_KEYS:
+            raise LanguageFoundationExportError("foundation document has missing or unknown fields")
+        if not all(isinstance(document[key], str) for key in _DOCUMENT_KEYS):
+            raise LanguageFoundationExportError("foundation document fields must be strings")
+        kind = document["kind"]
+        if kind not in {"reference", "koschei_source"}:
+            raise LanguageFoundationExportError(f"invalid foundation document kind: {kind}")
+        relative = document["path"]
+        _verify_relative_path(relative)
+        expected_family = _family(relative, kind)
+        if document["family"] != expected_family:
+            raise LanguageFoundationExportError(f"foundation family mismatch: {relative}")
+        raw = document["text"].encode("utf-8")
+        source_sha = hashlib.sha256(raw).hexdigest()
+        if document["source_sha256"] != source_sha:
+            raise LanguageFoundationExportError(f"foundation source hash mismatch: {relative}")
+        if not _SHA_RE.fullmatch(document["source_sha256"]):
+            raise LanguageFoundationExportError(f"invalid foundation source digest: {relative}")
+        material = f"{kind}\0{expected_family}\0{relative}\0{source_sha}"
+        expected_id = hashlib.sha256(material.encode()).hexdigest()
+        if document["document_id"] != expected_id:
+            raise LanguageFoundationExportError(f"foundation document id mismatch: {relative}")
+        paths.append(relative)
+        families.add(expected_family)
+        total_bytes += len(raw)
+
+    if paths != sorted(paths) or len(paths) != len(set(paths)):
+        raise LanguageFoundationExportError("foundation document paths must be unique and sorted")
+    if len(families) < 3:
+        raise LanguageFoundationExportError(
+            "foundation corpus requires at least three families for leakage-safe splits"
+        )
+    if type(corpus["document_count"]) is not int or corpus["document_count"] != len(documents):
+        raise LanguageFoundationExportError("foundation corpus document_count mismatch")
+    if type(corpus["family_count"]) is not int or corpus["family_count"] != len(families):
+        raise LanguageFoundationExportError("foundation corpus family_count mismatch")
+    if type(corpus["total_bytes"]) is not int or corpus["total_bytes"] != total_bytes:
+        raise LanguageFoundationExportError("foundation corpus total_bytes mismatch")
+    observed_digest = corpus["corpus_sha256"]
+    if not isinstance(observed_digest, str) or not _SHA_RE.fullmatch(observed_digest):
+        raise LanguageFoundationExportError("foundation corpus digest is invalid")
+    digest_payload = dict(corpus)
+    digest_payload.pop("corpus_sha256")
+    expected_digest = hashlib.sha256(canonical_json(digest_payload).encode()).hexdigest()
+    if observed_digest != expected_digest:
+        raise LanguageFoundationExportError("foundation corpus digest mismatch")
+    return corpus
+
+
+def write_language_foundation_corpus(corpus: dict[str, Any], output: str | Path) -> Path:
+    verify_language_foundation_corpus(corpus)
     destination = Path(output)
     destination.parent.mkdir(parents=True, exist_ok=True)
     encoded = (json.dumps(corpus, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode(
