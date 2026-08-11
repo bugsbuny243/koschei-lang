@@ -16,9 +16,10 @@ class GenericFunctionDeclaration(FunctionDeclaration):
 
 @dataclass(frozen=True, slots=True)
 class GenericStructDeclaration(StructDeclaration):
-    """A struct declaration whose field contracts may reference type parameters."""
+    """A generic struct, optionally carrying a compiler-enforced typestate axis."""
 
     type_parameters: tuple[str, ...] = ()
+    is_stateful: bool = False
 
 
 @dataclass(frozen=True, slots=True)
