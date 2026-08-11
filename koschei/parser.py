@@ -121,6 +121,8 @@ class Parser(_ParserV09):
         )
 
     def _function_declaration(self) -> GenericFunctionDeclaration:
+        is_pure = self._match(TokenType.PURE)
+        pure_token = self._previous() if is_pure else None
         fn_token = self._consume(TokenType.FN, "Fonksiyon 'fn' ile başlamalıdır.")
         name = self._consume(TokenType.IDENTIFIER, "Fonksiyon adı bekleniyordu.")
         type_parameters = self._type_parameters("Fonksiyon")
@@ -147,7 +149,8 @@ class Parser(_ParserV09):
             parameters=tuple(parameters),
             return_type=return_type,
             body=body,
-            location=self._location(fn_token),
+            location=self._location(pure_token or fn_token),
+            is_pure=is_pure,
             type_parameters=type_parameters,
         )
 

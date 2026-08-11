@@ -286,6 +286,7 @@ class FunctionDeclaration:
     return_type: TypeRef | None
     body: Block
     location: SourceLocation
+    is_pure: bool = False
 
 
 @dataclass(frozen=True, slots=True)
