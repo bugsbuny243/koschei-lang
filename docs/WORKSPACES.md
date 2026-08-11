@@ -32,8 +32,9 @@ Every member is still an ordinary Koschei project with its own `koschei.toml` an
 
 A workspace member may import another package only when that package is a **direct dependency** in the workspace manifest.
 
-`services/catalog/src/main.ks`:
+`services/catalog/src/main.ks` below is a workspace-context snippet: the generic single-file documentation verifier intentionally has no workspace resolver.
 
+<!-- verify: skip -->
 ```ks
 import domain
 
@@ -42,8 +43,9 @@ fn sellable(stock: Int) -> Bool {
 }
 ```
 
-`services/orders/src/main.ks`:
+`services/orders/src/main.ks` is likewise verified by the checked-in commerce workspace and workspace test suite rather than the sibling-only single-file verifier.
 
+<!-- verify: skip -->
 ```ks
 import catalog
 
