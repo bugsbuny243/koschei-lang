@@ -2,7 +2,7 @@
 
 Status: large-codebase foundation. This is not a production-scale or Alibaba-scale readiness claim.
 
-Koschei Workspace v1 lets one repository contain many Koschei projects and gives the repository one deterministic dependency graph, workspace-wide compiler/capability gates, declared package imports, and one SHA-256-bound workspace lock.
+Koschei Workspace v1 lets one repository contain many Koschei projects and gives the repository one deterministic dependency graph, workspace-wide compiler/capability gates, declared package imports, locked package execution/native builds, and one SHA-256-bound workspace lock.
 
 The goal is to make large codebases decomposable without weakening the security boundary that already exists for a single Koschei project.
 
@@ -110,6 +110,48 @@ For a package-local graph, the existing member module-lock identity is preserved
 
 Lock parsing rejects duplicate JSON members, unknown fields, malformed digests, non-canonical dependency lists, forged build order and digest tampering. Lock creation is no-replace unless `--force` is explicit.
 
+## Run and build a locked package
+
+Workspace execution intentionally has no unlocked mode.
+
+First create the workspace lock:
+
+```sh
+ks-workspace lock create examples/commerce_workspace
+```
+
+Then the selected package may run through the same checked MIR graph:
+
+```sh
+ks-workspace run orders examples/commerce_workspace
+```
+
+A missing, stale, tampered or symlinked workspace lock blocks execution before the program runs. Source changes in any imported dependency also invalidate the lock and block execution.
+
+Build the same package as a native binary:
+
+```sh
+ks-workspace build orders examples/commerce_workspace -o ./orders
+```
+
+The native build is create-only: it does not silently replace an existing artifact or build manifest. A successful build emits:
+
+```text
+orders
+orders.workspace-build.json
+```
+
+The `koschei.workspace-build.v1` manifest binds:
+
+- selected package name;
+- native artifact SHA-256;
+- complete workspace digest;
+- workspace-manifest SHA-256;
+- selected package module-lock digest, including imported package source when present;
+- sealed MIR version and fingerprint.
+
+The build verifier re-hashes the artifact and checks those identities before a build result is accepted. The test suite additionally executes both the interpreter and the generated native binary for a cross-package commerce graph and requires byte-identical stdout.
+
 ## Fail-closed path and graph rules
 
 Workspace v1 rejects:
@@ -159,18 +201,20 @@ ks-workspace check examples/commerce_workspace
 ks-workspace caps examples/commerce_workspace
 ks-workspace lock create examples/commerce_workspace
 ks-workspace lock verify examples/commerce_workspace
+ks-workspace run orders examples/commerce_workspace
+ks-workspace build orders examples/commerce_workspace -o ./orders
 ```
 
 ## Deliberate current boundary
 
-Workspace package imports are now available to **check, capability analysis and workspace locking**. The ordinary `ks run` / `ks build` commands do not yet receive workspace package context, so this change does not claim workspace-native execution/build support.
+Workspace package graphs now support **check, capability analysis, locking, interpreter execution and native builds**. This is a meaningful large-codebase milestone, not a claim that the language already provides the distributed-systems runtime needed by Alibaba-scale production infrastructure.
 
-The next large-project gate is a workspace-aware build target that compiles a selected package with its locked declared dependencies and proves interpreter/native output parity. After that, incremental compilation/cache identity can be layered on top of the same package graph.
+The next large-project gate is incremental compilation and content-addressed build caching keyed by package/module/MIR/workspace identity. After that come separately proven concurrency/backpressure, durable storage/recovery, network service runtime limits, observability and package distribution.
 
-Remote package registries are also still absent. No package is downloaded or trusted merely because its name appears in a manifest.
+Remote package registries are still absent. No package is downloaded or trusted merely because its name appears in a manifest.
 
 ## Large-system direction
 
-Workspaces solve repository decomposition, package visibility and source integrity, not the whole distributed-systems problem. Production-scale service systems still require separately proven concurrency/backpressure, server/network resource bounds, durable storage and recovery, package distribution, observability, incremental builds and performance gates.
+Workspaces solve repository decomposition, package visibility, source integrity and reproducible package execution/build identity. Production-scale service systems still require separately proven concurrency/backpressure, server/network resource bounds, durable storage and recovery, package distribution, observability, incremental builds and performance gates.
 
 Koschei will add those capabilities as independently testable language/runtime contracts rather than claiming scale because a monorepo manifest exists.
