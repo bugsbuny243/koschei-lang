@@ -40,7 +40,6 @@ class GoToolchainIdentity:
 @dataclass(frozen=True, slots=True)
 class WorkspaceCacheIdentity:
     package: str
-    workspace_digest: str
     module_lock_digest: str
     mir_version: int
     mir_fingerprint: str
@@ -51,7 +50,6 @@ class WorkspaceCacheIdentity:
         return {
             "schema_version": CACHE_KEY_SCHEMA,
             "package": self.package,
-            "workspace_digest": self.workspace_digest,
             "module_lock_digest": self.module_lock_digest,
             "mir_version": self.mir_version,
             "mir_fingerprint": self.mir_fingerprint,
