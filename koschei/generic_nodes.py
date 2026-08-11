@@ -9,9 +9,10 @@ from .ast_nodes import EnumDeclaration, FunctionDeclaration, StructDeclaration
 
 @dataclass(frozen=True, slots=True)
 class GenericFunctionDeclaration(FunctionDeclaration):
-    """A function declaration with inferred source-level type parameters."""
+    """A generic function, optionally declaring a typestate transition."""
 
     type_parameters: tuple[str, ...] = ()
+    is_transition: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -20,6 +21,7 @@ class GenericStructDeclaration(StructDeclaration):
 
     type_parameters: tuple[str, ...] = ()
     is_stateful: bool = False
+    initial_state: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
