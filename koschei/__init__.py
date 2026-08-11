@@ -65,4 +65,10 @@ from .structured_tasks_mir_v1 import install_structured_tasks_mir_v1
 
 install_structured_tasks_mir_v1()
 
+from .structured_tasks_runtime_alignment import (
+    install_structured_tasks_runtime_alignment,
+)
+
+install_structured_tasks_runtime_alignment()
+
 __all__ = ["main"]
