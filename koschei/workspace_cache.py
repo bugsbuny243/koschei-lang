@@ -120,14 +120,15 @@ def build_or_load_cached_native(
     go_source: str,
     go_environment: dict[str, str],
 ) -> WorkspaceCacheResult:
-    root = Path(cache_root).resolve()
-    root.mkdir(parents=True, exist_ok=True)
-    if root.is_symlink():
+    requested_root = Path(cache_root)
+    if requested_root.is_symlink():
         raise WorkspaceError("workspace native cache root cannot be a symlink")
+    root = requested_root.resolve(strict=False)
+    root.mkdir(parents=True, exist_ok=True)
 
     cache_key = identity.cache_key
     entry = root / cache_key
-    if entry.exists():
+    if entry.exists() or entry.is_symlink():
         artifact_sha256 = verify_cache_entry(entry, identity)
         return WorkspaceCacheResult(
             artifact=entry / "artifact",
@@ -215,7 +216,11 @@ def verify_cache_entry(entry: str | Path, identity: WorkspaceCacheIdentity) -> s
         raise WorkspaceError("workspace native cache entry contains a symlink")
     if not manifest.is_file() or not artifact.is_file():
         raise WorkspaceError("workspace native cache entry is incomplete")
-    extras = sorted(path.name for path in root.iterdir() if path.name not in {"manifest.json", "artifact"})
+    extras = sorted(
+        path.name
+        for path in root.iterdir()
+        if path.name not in {"manifest.json", "artifact"}
+    )
     if extras:
         raise WorkspaceError("workspace native cache entry contains unexpected files")
 
