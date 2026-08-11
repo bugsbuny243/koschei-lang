@@ -6,10 +6,8 @@ import hashlib
 import json
 import os
 import shutil
-import subprocess
-import tempfile
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from .codegen_go import generate_go_mir
@@ -17,6 +15,13 @@ from .interpreter import run_mir as interpret_mir
 from .mir import require_mir
 from .modules import ModuleGraph, check_graph
 from .workspace import WorkspaceConfig, WorkspaceError, WorkspaceLock, load_workspace_lock
+from .workspace_cache import (
+    DEFAULT_CACHE_DIR,
+    WorkspaceCacheIdentity,
+    build_or_load_cached_native,
+    detect_go_toolchain,
+    publish_cached_artifact,
+)
 from .workspace_modules import load_workspace_member_graph
 from .workspace_package_lock import verify_workspace_package_lock
 
@@ -42,6 +47,8 @@ class WorkspaceBuildResult:
     workspace_digest: str
     module_lock_digest: str
     mir_fingerprint: str
+    cache_key: str
+    cache_hit: bool
 
 
 def prepare_locked_workspace_program(
@@ -97,6 +104,7 @@ def build_locked_workspace_package(
     *,
     output: str | Path | None = None,
     lock_path: str | Path | None = None,
+    cache_dir: str | Path | None = None,
 ) -> WorkspaceBuildResult:
     program = prepare_locked_workspace_program(
         workspace,
@@ -111,58 +119,45 @@ def build_locked_workspace_package(
         raise WorkspaceError(
             "'go' was not found; install Go for native workspace builds"
         )
-
-    target = Path(output) if output is not None else workspace.root / "build" / package
-    if not target.is_absolute():
-        target = (Path.cwd() / target).resolve()
-    else:
-        target = target.resolve()
-    manifest_path = Path(str(target) + ".workspace-build.json")
-    if target.exists():
-        raise WorkspaceError(f"workspace build artifact already exists: {target}")
-    if manifest_path.exists():
-        raise WorkspaceError(
-            f"workspace build manifest already exists: {manifest_path}"
-        )
-    target.parent.mkdir(parents=True, exist_ok=True)
-
-    with tempfile.TemporaryDirectory(
-        prefix=".koschei-workspace-build-",
-        dir=target.parent,
-    ) as temporary:
-        directory = Path(temporary)
-        staged = directory / "program"
-        (directory / "main.go").write_text(go_source, encoding="utf-8")
-        (directory / "go.mod").write_text(
-            "module koscheiworkspaceprogram\n\ngo 1.21\n",
-            encoding="utf-8",
-        )
-        completed = subprocess.run(
-            [go_binary, "build", "-o", str(staged), "."],
-            cwd=directory,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if completed.returncode != 0:
-            details = completed.stderr.strip() or "unknown Go compiler error"
-            raise WorkspaceError(
-                "workspace native compilation failed; this is a Koschei compiler bug: "
-                + details
-            )
-        try:
-            os.link(staged, target)
-        except FileExistsError:
-            raise WorkspaceError(f"workspace build artifact already exists: {target}") from None
-        except OSError as error:
-            raise WorkspaceError(
-                f"workspace build could not publish artifact without replacement: {error}"
-            ) from error
-
+    toolchain, go_environment = detect_go_toolchain(go_binary)
     locked_member = next(
         member for member in program.locked.members if member.name == package
     )
+    identity = WorkspaceCacheIdentity(
+        package=package,
+        module_lock_digest=locked_member.module_lock_digest,
+        mir_version=mir.version,
+        mir_fingerprint=mir.fingerprint,
+        go_source_sha256=hashlib.sha256(go_source.encode("utf-8")).hexdigest(),
+        toolchain=toolchain,
+    )
+    cache_root = _resolve_cache_path(workspace, cache_dir)
+    cached = build_or_load_cached_native(
+        cache_root=cache_root,
+        identity=identity,
+        go_binary=go_binary,
+        go_source=go_source,
+        go_environment=go_environment,
+    )
+
+    raw_target = Path(output) if output is not None else workspace.root / "build" / package
+    if raw_target.is_symlink():
+        raise WorkspaceError("workspace build artifact target cannot be a symlink")
+    target = raw_target.absolute()
+    manifest_path = Path(str(target) + ".workspace-build.json")
+    if target.exists():
+        raise WorkspaceError(f"workspace build artifact already exists: {target}")
+    if manifest_path.exists() or manifest_path.is_symlink():
+        raise WorkspaceError(
+            f"workspace build manifest already exists: {manifest_path}"
+        )
+
+    publish_cached_artifact(cached.artifact, target)
     artifact_sha256 = hashlib.sha256(target.read_bytes()).hexdigest()
+    if artifact_sha256 != cached.artifact_sha256:
+        target.unlink(missing_ok=True)
+        raise WorkspaceError("published workspace artifact differs from verified cache")
+
     payload = {
         "schema_version": WORKSPACE_BUILD_SCHEMA,
         "package": package,
@@ -187,6 +182,8 @@ def build_locked_workspace_package(
         workspace_digest=program.locked.workspace_digest,
         module_lock_digest=locked_member.module_lock_digest,
         mir_fingerprint=mir.fingerprint,
+        cache_key=cached.cache_key,
+        cache_hit=cached.hit,
     )
 
 
@@ -251,12 +248,33 @@ def _resolve_lock_path(
         return workspace.root / DEFAULT_WORKSPACE_LOCK
     candidate = Path(lock_path)
     if candidate.is_absolute():
-        return candidate.resolve(strict=False)
-    return (workspace.root / candidate).resolve(strict=False)
+        return candidate
+    _validate_relative_control_path(candidate, "workspace lock")
+    return workspace.root / candidate
+
+
+def _resolve_cache_path(
+    workspace: WorkspaceConfig,
+    cache_dir: str | Path | None,
+) -> Path:
+    if cache_dir is None:
+        return workspace.root / DEFAULT_CACHE_DIR
+    candidate = Path(cache_dir)
+    if candidate.is_absolute():
+        return candidate
+    _validate_relative_control_path(candidate, "workspace cache")
+    return workspace.root / candidate
+
+
+def _validate_relative_control_path(path: Path, label: str) -> None:
+    pure = PurePosixPath(path.as_posix())
+    if pure.is_absolute() or ".." in pure.parts or path.as_posix().startswith("~"):
+        raise WorkspaceError(f"{label} path must stay within the workspace root")
 
 
 def _write_create_only_json(path: Path, payload: dict[str, object]) -> None:
     encoded = (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    path.parent.mkdir(parents=True, exist_ok=True)
     descriptor: int | None = None
     try:
         descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
