@@ -91,4 +91,8 @@ from .bounded_queue_sync_v1 import install_bounded_queue_sync_v1
 
 install_bounded_queue_sync_v1()
 
+from .deterministic_parallel_map_v1 import install_deterministic_parallel_map_v1
+
+install_deterministic_parallel_map_v1()
+
 __all__ = ["main"]
