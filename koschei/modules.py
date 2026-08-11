@@ -14,6 +14,7 @@ from pathlib import Path
 
 from .affine_resources_v1 import check_affine_resources
 from .ast_nodes import Program, SourceLocation
+from .effect_contracts_v1 import EffectReport, check_effect_contracts
 from .integrity import check_program_integrity
 from .legacy_generics import prepare_legacy_analysis
 from .lexer import LexerError
@@ -180,13 +181,29 @@ def check_graph(graph: ModuleGraph) -> SemanticReport:
     graph.mir = None
     report: SemanticReport | None = None
     typed_reports = {}
+    effect_reports: dict[str, EffectReport] = {}
+
     for module in graph.in_dependency_order():
         try:
             imports = imported_modules(graph, module)
             check_program_integrity(module.program)
             typed_report = check_typed_hir(module.program, imports)
             check_affine_resources(module.program, imports, typed_report)
+
+            imported_effects = {
+                alias: effect_reports[target]
+                for alias, target in module.imports.items()
+                if target in effect_reports
+            }
+            effect_report = check_effect_contracts(
+                module.program,
+                imports,
+                typed_report,
+                imported_effects,
+            )
+            effect_reports[str(module.path)] = effect_report
             typed_reports[str(module.path)] = typed_report
+
             legacy_program, legacy_imports = prepare_legacy_analysis(
                 module.program,
                 imports,
