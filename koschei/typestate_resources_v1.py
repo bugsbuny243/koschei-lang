@@ -1,14 +1,43 @@
 """Compiler-enforced typestate resources for Koschei.
 
-V1 uses `stateful struct Resource<S>` where S is a zero-field marker struct.
-Stateful resources are affine and transitions are ordinary typed functions that
-consume one state and return another. This keeps the state machine in the type
-system rather than in runtime booleans/string tags.
+V1 syntax:
+
+    struct Open {}
+    struct Settled {}
+
+    stateful struct Transaction<S> starts Open {
+        id: String,
+        state: S,
+    }
+
+    transition fn settle(tx: Transaction<Open>) -> Transaction<Settled> {
+        return Transaction { id: tx.id, state: Settled {} }
+    }
+
+Initial-state construction is public. Non-initial state construction is sealed
+behind a validated `transition fn`. Stateful values are affine through the A0
+ownership checker, so the source owner is consumed at the call boundary and
+cannot be used again by the caller.
+
+V1 is deliberately conservative: a transition has one direct stateful source,
+one direct final target literal, and cannot hand the source resource elsewhere.
+This keeps the state-machine invariant hard while later path-sensitive ownership
+work can safely make transition bodies more expressive.
 """
 
 from __future__ import annotations
 
-from .ast_nodes import Program, SourceLocation
+from dataclasses import fields, is_dataclass
+from typing import Any
+
+from .ast_nodes import (
+    Identifier,
+    MemberExpression,
+    Program,
+    ReturnStatement,
+    SourceLocation,
+    StructLiteral,
+)
 from .semantic import ImportedModule, SemanticError
 from .type_contracts import (
     TypeContractValidator,
@@ -23,6 +52,7 @@ from .type_system import (
     TypeVariable,
     UnionType,
     UnknownType,
+    render_type,
     substitute_type,
 )
 from .typed_hir import TypedHIRReport
@@ -41,6 +71,20 @@ def _stateful_declaration(type_node: TypeNode, contracts: TypeContractValidator)
         return None
     declaration = contracts.structs.get(name)
     return declaration if declaration is not None and is_stateful_declaration(declaration) else None
+
+
+def _stateful_instance(
+    type_node: TypeNode, contracts: TypeContractValidator
+) -> tuple[object, NamedType] | None:
+    if not isinstance(type_node, GenericType):
+        return None
+    declaration = _stateful_declaration(type_node, contracts)
+    if declaration is None or len(type_node.arguments) != 1:
+        return None
+    marker = type_node.arguments[0]
+    if not isinstance(marker, NamedType):
+        return None
+    return declaration, marker
 
 
 def is_typestate_affine(
@@ -66,7 +110,7 @@ def is_typestate_affine(
         declaration = contracts.structs.get(type_node.name)
         if declaration is None:
             return False
-        key = f"{type_node.name}<{','.join(str(item) for item in type_node.arguments)}>"
+        key = render_type(type_node)
         if key in seen:
             return False
         mapping = dict(zip(type_parameters_of(declaration), type_node.arguments))
@@ -95,6 +139,19 @@ def is_typestate_affine(
     )
 
 
+def _walk(value: Any):
+    if is_dataclass(value):
+        yield value
+        for field in fields(value):
+            yield from _walk(getattr(value, field.name))
+    elif isinstance(value, (tuple, list)):
+        for item in value:
+            yield from _walk(item)
+    elif isinstance(value, dict):
+        for item in value.values():
+            yield from _walk(item)
+
+
 class TypestateResourceChecker:
     def __init__(
         self,
@@ -106,14 +163,17 @@ class TypestateResourceChecker:
         self.imports = imports
         self.typed_report = typed_report
         self.contracts = TypeContractValidator(program, imports)
+        self.expression_types = {
+            id(item.expression): item.type for item in typed_report.expressions
+        }
 
     def check(self) -> None:
         for declaration in self.program.structs:
             if is_stateful_declaration(declaration):
                 self._validate_declaration(declaration)
 
-        # Declarations expose the state contract even when no expression creates
-        # the resource in this module.
+        # Declarations expose the state contract even if no value is constructed
+        # in this module.
         for declaration in self.program.structs:
             if is_stateful_declaration(declaration):
                 continue
@@ -123,6 +183,7 @@ class TypestateResourceChecker:
                     field.location,
                     f"'{declaration.name}.{field.name}' alanı",
                 )
+
         for declaration in self.program.enums:
             for variant in declaration.variants:
                 if variant.payload_type is None:
@@ -140,6 +201,7 @@ class TypestateResourceChecker:
                     variant.location,
                     f"'{declaration.name}.{variant.name}' payload'u",
                 )
+
         for function in self.program.declarations:
             for parameter in function.parameters:
                 self._validate_type(
@@ -154,8 +216,13 @@ class TypestateResourceChecker:
                     f"'{function.name}' dönüş tipi",
                 )
 
-        # Typed expressions catch inferred state instances produced by struct
-        # literals/generic substitutions rather than only source annotations.
+            if bool(getattr(function, "is_transition", False)):
+                self._validate_transition(function)
+            else:
+                self._validate_ordinary_construction(function)
+
+        # Inferred state instances from literals/generic substitutions must obey
+        # marker/container rules even when the source has no explicit annotation.
         for item in self.typed_report.expressions:
             self._validate_type(item.type, item.expression.location, "ifade")
 
@@ -185,6 +252,18 @@ class TypestateResourceChecker:
                 "olmalıdır.",
                 state_fields[0].location,
             )
+        initial = getattr(declaration, "initial_state", None)
+        if not initial:
+            raise SemanticError(
+                "KS3950",
+                f"stateful struct '{declaration.name}' 'starts InitialState' ilan etmelidir.",
+                declaration.location,
+            )
+        self._validate_marker(
+            NamedType(initial),
+            declaration.location,
+            f"stateful struct '{declaration.name}' başlangıç state'i",
+        )
 
     def _validate_marker(
         self, marker: TypeNode, location: SourceLocation, subject: str
@@ -246,6 +325,174 @@ class TypestateResourceChecker:
         for argument in type_node.arguments:
             self._validate_type(argument, location, subject)
 
+    def _stateful_literals(self, function) -> list[tuple[StructLiteral, object, NamedType]]:
+        result: list[tuple[StructLiteral, object, NamedType]] = []
+        for node in _walk(function.body):
+            if not isinstance(node, StructLiteral):
+                continue
+            type_node = self.expression_types.get(id(node), UnknownType())
+            instance = _stateful_instance(type_node, self.contracts)
+            if instance is not None:
+                declaration, marker = instance
+                result.append((node, declaration, marker))
+        return result
+
+    def _validate_ordinary_construction(self, function) -> None:
+        for literal, declaration, marker in self._stateful_literals(function):
+            initial = getattr(declaration, "initial_state", None)
+            if marker.name != initial:
+                raise SemanticError(
+                    "KS3953",
+                    f"'{declaration.name}<{marker.name}>' non-initial state'i normal fn "
+                    "içinde doğrudan forge edilemez; '{declaration.name}<{initial}>' "
+                    "ile başlayın ve transition fn kullanın.",
+                    literal.location,
+                )
+
+    def _validate_transition(self, function) -> None:
+        if function.name == "main" or function.return_type is None:
+            raise SemanticError(
+                "KS3953",
+                "transition fn main olamaz ve somut stateful dönüş tipi taşımalıdır.",
+                function.location,
+            )
+
+        return_type = function_type(function, function.return_type)
+        target = _stateful_instance(return_type, self.contracts)
+        if target is None:
+            raise SemanticError(
+                "KS3953",
+                "transition fn dönüş tipi somut stateful Resource<State> olmalıdır.",
+                function.return_type.location,
+            )
+        target_declaration, target_marker = target
+        self._validate_marker(
+            target_marker, function.return_type.location, "transition target state"
+        )
+
+        sources: list[tuple[object, GenericType, object, NamedType]] = []
+        for parameter in function.parameters:
+            type_node = function_type(function, parameter.type_ref)
+            instance = _stateful_instance(type_node, self.contracts)
+            if instance is not None:
+                declaration, marker = instance
+                sources.append((parameter, type_node, declaration, marker))
+        if len(sources) != 1:
+            raise SemanticError(
+                "KS3953",
+                "transition fn v1 tam 1 doğrudan stateful source parametresi almalıdır.",
+                function.location,
+            )
+
+        source_parameter, source_type, source_declaration, source_marker = sources[0]
+        if source_declaration.name != target_declaration.name:
+            raise SemanticError(
+                "KS3953",
+                "transition fn source ve target aynı stateful resource ailesine ait olmalıdır.",
+                function.location,
+            )
+        self._validate_marker(
+            source_marker, source_parameter.location, "transition source state"
+        )
+        if source_marker == target_marker:
+            raise SemanticError(
+                "KS3953",
+                f"transition fn state değiştirmelidir; source ve target ikisi de "
+                f"{render_type(source_type)}.",
+                function.location,
+            )
+
+        statements = function.body.statements
+        if not statements or not isinstance(statements[-1], ReturnStatement):
+            raise SemanticError(
+                "KS3953",
+                "transition fn v1 final statement olarak target state'i return etmelidir.",
+                function.location,
+            )
+        final_return = statements[-1]
+        if not isinstance(final_return.value, StructLiteral):
+            raise SemanticError(
+                "KS3953",
+                "transition fn v1 final return'da stateful target struct literalini "
+                "doğrudan üretmelidir.",
+                final_return.location,
+            )
+
+        literals = self._stateful_literals(function)
+        if len(literals) != 1 or literals[0][0] is not final_return.value:
+            raise SemanticError(
+                "KS3953",
+                "transition fn v1 tam 1 stateful target literal üretmelidir; ara/ek "
+                "stateful constructor'lar yasaktır.",
+                function.location,
+            )
+        final_type = self.expression_types.get(id(final_return.value), UnknownType())
+        if final_type != return_type:
+            raise SemanticError(
+                "KS3953",
+                f"transition final literal {render_type(return_type)} olmalı, "
+                f"{render_type(final_type)} bulundu.",
+                final_return.location,
+            )
+
+        self._reject_source_escape(
+            function.body,
+            source_parameter.name,
+            function.location,
+        )
+
+    def _reject_source_escape(
+        self,
+        value: Any,
+        source_name: str,
+        fallback_location: SourceLocation,
+        *,
+        parent: Any | None = None,
+        role: str | None = None,
+    ) -> None:
+        if isinstance(value, Identifier) and value.name == source_name:
+            # Borrowing a field is allowed (`tx.id`). Whole-source use would let
+            # the old state escape through another call/alias/return while a new
+            # target state is also being minted.
+            if isinstance(parent, MemberExpression) and role == "object":
+                return
+            raise SemanticError(
+                "KS3953",
+                f"transition source '{source_name}' bütün değer olarak başka yere "
+                "move/alias edilemez; yalnız field borrow ile target kurulabilir.",
+                value.location,
+            )
+
+        if is_dataclass(value):
+            for field in fields(value):
+                self._reject_source_escape(
+                    getattr(value, field.name),
+                    source_name,
+                    fallback_location,
+                    parent=value,
+                    role=field.name,
+                )
+            return
+        if isinstance(value, (tuple, list)):
+            for item in value:
+                self._reject_source_escape(
+                    item,
+                    source_name,
+                    fallback_location,
+                    parent=parent,
+                    role=role,
+                )
+            return
+        if isinstance(value, dict):
+            for item in value.values():
+                self._reject_source_escape(
+                    item,
+                    source_name,
+                    fallback_location,
+                    parent=parent,
+                    role=role,
+                )
+
 
 def check_typestate_resources(
     program: Program,
@@ -271,6 +518,10 @@ def _register_diagnostics() -> None:
             "Stateful resource desteklenmeyen container/payload içinde",
             "Stateful resource in unsupported container/payload",
         ),
+        "KS3953": (
+            "Geçersiz veya forge edilmiş typestate transition",
+            "Invalid or forged typestate transition",
+        ),
     }
     for code, (tr, en) in entries.items():
         CATALOG.setdefault(
@@ -280,8 +531,8 @@ def _register_diagnostics() -> None:
                 tr,
                 tr + ".",
                 "Typestate ownership/state transition sözleşmesi fail-closed korundu.",
-                "State marker ve resource taşıma biçimini v1 typestate kurallarına göre düzeltin.",
-                "stateful struct Transaction<S> { state: S }",
+                "Initial state veya doğrulanmış transition fn üzerinden state değiştirin.",
+                "stateful struct Transaction<S> starts Open { state: S }",
             ),
         )
         ENGLISH_CATALOG.setdefault(
@@ -291,8 +542,8 @@ def _register_diagnostics() -> None:
                 en,
                 en + ".",
                 "The typestate ownership/state-transition contract failed closed.",
-                "Fix the marker or resource placement to satisfy typestate v1.",
-                "stateful struct Transaction<S> { state: S }",
+                "Use the initial state or a validated transition fn to change state.",
+                "stateful struct Transaction<S> starts Open { state: S }",
             ),
         )
 
