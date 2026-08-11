@@ -128,7 +128,7 @@ func (parser *Parser) program() (syntax.Document, error) {
 				return syntax.Document{}, err
 			}
 			document.Imports = append(document.Imports, declaration)
-		case lexer.STRUCT:
+		case lexer.STRUCT, lexer.STATEFUL:
 			declaration, err := parser.structDeclaration(1)
 			if err != nil {
 				return syntax.Document{}, err
