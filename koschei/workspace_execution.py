@@ -124,7 +124,10 @@ def build_locked_workspace_package(
         )
     target.parent.mkdir(parents=True, exist_ok=True)
 
-    with tempfile.TemporaryDirectory(prefix="koschei-workspace-build-") as temporary:
+    with tempfile.TemporaryDirectory(
+        prefix=".koschei-workspace-build-",
+        dir=target.parent,
+    ) as temporary:
         directory = Path(temporary)
         staged = directory / "program"
         (directory / "main.go").write_text(go_source, encoding="utf-8")
