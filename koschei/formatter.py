@@ -1,4 +1,4 @@
-"""V5 formatter facade for generic function headers."""
+"""V5 formatter facade for generic function headers and pure contracts."""
 
 from __future__ import annotations
 
@@ -73,11 +73,24 @@ def _needs_space(previous: Token, token: Token, row: list[Token], index: int) ->
     return _ORIGINAL_NEEDS_SPACE(previous, token, row, index)
 
 
+def _breaks_before(
+    token: Token, previous: Token, depth: int, previous_depth: int
+) -> bool:
+    # `pure fn` is one declaration header. `pure` itself remains a declaration
+    # starter so adjacent functions are still split canonically.
+    if token.type is TokenType.FN and previous.type is TokenType.PURE:
+        return False
+    return _ORIGINAL_BREAKS_BEFORE(token, previous, depth, previous_depth)
+
+
 _ORIGINAL_BRACE_IS_LITERAL = _v09._brace_is_literal
 _ORIGINAL_NEEDS_SPACE = _v09._needs_space
+_ORIGINAL_BREAKS_BEFORE = _v09._breaks_before
+_v09.STATEMENT_STARTERS.add(TokenType.PURE)
 _v09._is_generic_angle = _is_generic_angle
 _v09._brace_is_literal = _brace_is_literal
 _v09._needs_space = _needs_space
+_v09._breaks_before = _breaks_before
 
 format_source = _v09.format_source
 check_source = _v09.check_source
