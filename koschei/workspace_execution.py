@@ -125,7 +125,6 @@ def build_locked_workspace_package(
     )
     identity = WorkspaceCacheIdentity(
         package=package,
-        workspace_digest=program.locked.workspace_digest,
         module_lock_digest=locked_member.module_lock_digest,
         mir_version=mir.version,
         mir_fingerprint=mir.fingerprint,
