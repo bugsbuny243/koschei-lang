@@ -29,8 +29,9 @@ ambient authority and exist to make state identity structural in Typed HIR.
 ## Initial construction
 
 Only the declared initial state may be constructed directly from an ordinary
-function:
+function. This fragment depends on the `Open` / `Session` declarations above:
 
+<!-- verify: skip — fragment depends on declaration block above -->
 ```ks
 fn new_session(id: String) -> Session<Open> {
     return Session { id: id, state: Open {} }
@@ -43,8 +44,10 @@ tag.
 
 ## Transition
 
-A state change is explicit:
+A state change is explicit. This fragment also depends on the declaration block
+above:
 
+<!-- verify: skip — fragment depends on declaration block above -->
 ```ks
 transition fn close(session: Session<Open>) -> Session<Closed> {
     return Session { id: session.id, state: Closed {} }
