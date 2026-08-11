@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from typing import Any
 
 MIN_QUEUE_CAPACITY = 1
@@ -13,14 +14,24 @@ class BoundedQueueError(ValueError):
 
 
 class BoundedQueueValue:
-    """A physically bounded ring buffer.
+    """A physically bounded, race-safe ring buffer.
 
     The buffer is allocated exactly once at construction. Enqueue never grows an
     underlying Python list and dequeue clears the released slot so references do
-    not stay live for the lifetime of the queue.
+    not stay live for the lifetime of the queue. Every mutable ring-state access
+    is serialized by the queue-owned lock; immutable capacity/item_type may be
+    read without it.
     """
 
-    __slots__ = ("capacity", "item_type", "_buffer", "_head", "_tail", "_count")
+    __slots__ = (
+        "capacity",
+        "item_type",
+        "_buffer",
+        "_head",
+        "_tail",
+        "_count",
+        "_lock",
+    )
 
     def __init__(self, capacity: int, item_type: Any) -> None:
         if type(capacity) is not int:
@@ -36,35 +47,51 @@ class BoundedQueueValue:
         self._head = 0
         self._tail = 0
         self._count = 0
+        self._lock = threading.Lock()
 
     @property
     def length(self) -> int:
-        return self._count
+        with self._lock:
+            return self._count
 
     @property
     def is_full(self) -> bool:
-        return self._count == self.capacity
+        with self._lock:
+            return self._count == self.capacity
 
     @property
     def is_empty(self) -> bool:
-        return self._count == 0
+        with self._lock:
+            return self._count == 0
 
     def try_send(self, value: Any) -> bool:
-        if self._count == self.capacity:
-            return False
-        self._buffer[self._tail] = value
-        self._tail = (self._tail + 1) % self.capacity
-        self._count += 1
-        return True
+        with self._lock:
+            if self._count == self.capacity:
+                return False
+            self._buffer[self._tail] = value
+            self._tail = (self._tail + 1) % self.capacity
+            self._count += 1
+            return True
 
     def try_recv(self) -> tuple[bool, Any]:
-        if self._count == 0:
-            return False, None
-        value = self._buffer[self._head]
-        self._buffer[self._head] = None
-        self._head = (self._head + 1) % self.capacity
-        self._count -= 1
-        return True, value
+        with self._lock:
+            if self._count == 0:
+                return False, None
+            value = self._buffer[self._head]
+            self._buffer[self._head] = None
+            self._head = (self._head + 1) % self.capacity
+            self._count -= 1
+            return True, value
+
+    def snapshot_items(self) -> tuple[Any, ...]:
+        """Return the currently occupied FIFO items under one lock acquisition."""
+
+        with self._lock:
+            return tuple(
+                self._buffer[(self._head + offset) % self.capacity]
+                for offset in range(self._count)
+            )
 
     def __str__(self) -> str:
-        return f"BoundedQueue(len={self._count}, capacity={self.capacity})"
+        with self._lock:
+            return f"BoundedQueue(len={self._count}, capacity={self.capacity})"
