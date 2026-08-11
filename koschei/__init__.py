@@ -87,4 +87,8 @@ from .structured_task_safety_runtime_names import (
 
 install_structured_task_safety_runtime_names()
 
+from .bounded_queue_sync_v1 import install_bounded_queue_sync_v1
+
+install_bounded_queue_sync_v1()
+
 __all__ = ["main"]
