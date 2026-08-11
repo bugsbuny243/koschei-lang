@@ -8,6 +8,8 @@ whether a statically proven Void worker succeeds.
 
 This layer therefore treats any non-Error worker completion as successful across
 all three runtimes. Non-Void workers remain rejected by Typed HIR before execution.
+It also isolates internal Go task-state symbols from the public task_* helper
+namespace so every generated program compiles even when it never uses tasks.
 """
 
 from __future__ import annotations
@@ -47,6 +49,22 @@ _GO_NEW = '''\t\tif failure, failed := result.(*KsError); failed {
 \t\t\t// backend-specific unit representation here.
 \t\t\tslot.State = ksTaskDone
 \t\t}
+'''
+
+_GO_STATE_DECL_OLD = '''const (
+\tksTaskPending int64 = iota
+\tksTaskRunning
+\tksTaskDone
+\tksTaskFailed
+)
+'''
+
+_GO_STATE_DECL_NEW = '''const (
+\tksTaskStatePending int64 = iota
+\tksTaskStateRunning
+\tksTaskStateDone
+\tksTaskStateFailed
+)
 '''
 
 
@@ -108,6 +126,31 @@ def _mir_invoke(self, callee, arguments):
     return scope.join_result
 
 
+def _align_go_task_state_symbols() -> None:
+    prelude = _codegen.RUNTIME_PRELUDE
+    if _GO_STATE_DECL_OLD in prelude:
+        prelude = prelude.replace(_GO_STATE_DECL_OLD, _GO_STATE_DECL_NEW, 1)
+    elif _GO_STATE_DECL_NEW not in prelude:
+        raise RuntimeError(
+            "Structured Task Scope Go state layout changed; alignment must fail closed."
+        )
+
+    replacements = (
+        ("State: ksTaskPending,", "State: ksTaskStatePending,"),
+        ("slot.State = ksTaskRunning", "slot.State = ksTaskStateRunning"),
+        ("slot.State = ksTaskDone", "slot.State = ksTaskStateDone"),
+        ("slot.State = ksTaskFailed", "slot.State = ksTaskStateFailed"),
+    )
+    for old, new in replacements:
+        if old in prelude:
+            prelude = prelude.replace(old, new)
+        elif new not in prelude:
+            raise RuntimeError(
+                "Structured Task Scope Go state reference changed; alignment must fail closed."
+            )
+    _codegen.RUNTIME_PRELUDE = prelude
+
+
 def install_structured_tasks_runtime_alignment() -> None:
     global _INSTALLED, _ORIGINAL_TREE_INVOKE, _ORIGINAL_MIR_INVOKE
     if _INSTALLED:
@@ -130,4 +173,5 @@ def install_structured_tasks_runtime_alignment() -> None:
             "Structured Task Scope Go runtime layout changed; alignment must fail closed."
         )
 
+    _align_go_task_state_symbols()
     _INSTALLED = True
