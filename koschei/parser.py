@@ -28,6 +28,18 @@ class Parser(_ParserV09):
     def from_source(cls, source: str) -> "Parser":
         return cls(tokenize(source))
 
+    def _match_contextual(self, value: str) -> bool:
+        if self._check(TokenType.IDENTIFIER) and self._peek().value == value:
+            self._advance()
+            return True
+        return False
+
+    def _consume_contextual(self, value: str, message: str):
+        if self._match_contextual(value):
+            return self._previous()
+        self._error(self._peek(), message)
+        raise AssertionError("unreachable")
+
     def parse(self) -> Program:
         declarations = []
         structs = []
@@ -88,6 +100,19 @@ class Parser(_ParserV09):
         struct_token = self._consume(TokenType.STRUCT, "'struct' bekleniyordu.")
         name = self._consume(TokenType.TYPE, "Struct adı büyük harfle başlamalıdır.")
         type_parameters = self._type_parameters("Struct")
+
+        initial_state: str | None = None
+        if is_stateful:
+            self._consume_contextual(
+                "starts",
+                "stateful struct tip parametresinden sonra 'starts State' bekleniyordu.",
+            )
+            marker = self._consume(
+                TokenType.TYPE,
+                "stateful struct başlangıç state'i büyük harfle başlayan bir tip olmalıdır.",
+            )
+            initial_state = marker.value
+
         self._consume(TokenType.LEFT_BRACE, "Struct adından sonra '{' bekleniyordu.")
 
         fields: list[StructField] = []
@@ -108,6 +133,7 @@ class Parser(_ParserV09):
             location=self._location(stateful_token or struct_token),
             type_parameters=type_parameters,
             is_stateful=is_stateful,
+            initial_state=initial_state,
         )
 
     def _enum_declaration(self) -> GenericEnumDeclaration:
@@ -147,6 +173,8 @@ class Parser(_ParserV09):
     def _function_declaration(self) -> GenericFunctionDeclaration:
         is_pure = self._match(TokenType.PURE)
         pure_token = self._previous() if is_pure else None
+        is_transition = self._match_contextual("transition")
+        transition_token = self._previous() if is_transition else None
         fn_token = self._consume(TokenType.FN, "Fonksiyon 'fn' ile başlamalıdır.")
         name = self._consume(TokenType.IDENTIFIER, "Fonksiyon adı bekleniyordu.")
         type_parameters = self._type_parameters("Fonksiyon")
@@ -173,9 +201,10 @@ class Parser(_ParserV09):
             parameters=tuple(parameters),
             return_type=return_type,
             body=body,
-            location=self._location(pure_token or fn_token),
+            location=self._location(pure_token or transition_token or fn_token),
             is_pure=is_pure,
             type_parameters=type_parameters,
+            is_transition=is_transition,
         )
 
     def _type_parameters(self, subject: str = "Bildirim") -> tuple[str, ...]:
