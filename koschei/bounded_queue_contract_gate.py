@@ -18,6 +18,7 @@ _INSTALLED = False
 _ORIGINAL_LEGACY_VALIDATE = None
 _ORIGINAL_STRUCTURAL_VALIDATE = None
 _ORIGINAL_LEGACY_EXPRESSION = None
+_ORIGINAL_LEGACY_ASSIGNABLE = None
 _QUEUE_METHODS = {
     "queue_try_send",
     "queue_try_recv",
@@ -45,6 +46,31 @@ def _structural_validate(self, type_node, location, subject):
             location,
         )
     return _ORIGINAL_STRUCTURAL_VALIDATE(self, type_node, location, subject)
+
+
+def _legacy_assignable(self, expected_names, actual_type, subject, location):
+    # Old TypeRef data collapses a declared `BoundedQueue<T>` function parameter
+    # to the container token `BoundedQueue`, while an inferred constructor result
+    # still arrives here as `BoundedQueue<Int>`. `modules.check_graph()` has
+    # already completed structural Typed HIR checking before this compatibility
+    # pass, so accepting only this exact legacy/container shape cannot turn a
+    # mismatched `BoundedQueue<String>` into an `Int` queue: Typed HIR rejects that
+    # mismatch before this function can run.
+    expected = set(expected_names)
+    if (
+        expected == {"BoundedQueue"}
+        and isinstance(actual_type, str)
+        and actual_type.startswith("BoundedQueue<")
+        and actual_type.endswith(">")
+    ):
+        return
+    return _ORIGINAL_LEGACY_ASSIGNABLE(
+        self,
+        expected_names,
+        actual_type,
+        subject,
+        location,
+    )
 
 
 def _legacy_expression(self, expression):
@@ -80,13 +106,15 @@ def _legacy_expression(self, expression):
 def install_bounded_queue_contract_gate() -> None:
     global _INSTALLED
     global _ORIGINAL_LEGACY_VALIDATE, _ORIGINAL_STRUCTURAL_VALIDATE
-    global _ORIGINAL_LEGACY_EXPRESSION
+    global _ORIGINAL_LEGACY_EXPRESSION, _ORIGINAL_LEGACY_ASSIGNABLE
     if _INSTALLED:
         return
     _ORIGINAL_LEGACY_VALIDATE = _semantic.SemanticChecker._validate_generic_type
     _semantic.SemanticChecker._validate_generic_type = _legacy_validate
     _ORIGINAL_STRUCTURAL_VALIDATE = _contracts.TypeContractValidator.validate_type
     _contracts.TypeContractValidator.validate_type = _structural_validate
+    _ORIGINAL_LEGACY_ASSIGNABLE = _semantic.SemanticChecker._require_assignable
+    _semantic.SemanticChecker._require_assignable = _legacy_assignable
     _ORIGINAL_LEGACY_EXPRESSION = _semantic.SemanticChecker._check_expression
     _semantic.SemanticChecker._check_expression = _legacy_expression
     _INSTALLED = True
