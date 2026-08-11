@@ -57,4 +57,12 @@ from .bounded_queue_mir_v1 import install_bounded_queue_mir_v1
 
 install_bounded_queue_mir_v1()
 
+from .structured_tasks_v1 import install_structured_tasks_v1
+
+install_structured_tasks_v1()
+
+from .structured_tasks_mir_v1 import install_structured_tasks_mir_v1
+
+install_structured_tasks_mir_v1()
+
 __all__ = ["main"]
