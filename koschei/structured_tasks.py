@@ -1,9 +1,9 @@
 """Deterministic cooperative task-scope storage for Koschei.
 
 Task Scope v1 is deliberately not a thread pool. Spawn records work in fixed
-storage; join executes every recorded child in spawn order and closes the scope.
-No child begins background execution before join, so dropping an unjoined scope
-cannot leave a detached running task behind.
+storage; join executes every non-cancelled child in spawn order and closes the
+scope. No child begins background execution before join, so dropping an unjoined
+scope cannot leave a detached running task behind.
 """
 
 from __future__ import annotations
@@ -17,6 +17,7 @@ TASK_PENDING = "pending"
 TASK_RUNNING = "running"
 TASK_DONE = "done"
 TASK_FAILED = "failed"
+TASK_CANCELLED = "cancelled"
 
 
 class StructuredTaskError(ValueError):
@@ -76,18 +77,47 @@ class TaskScopeValue:
         self._count += 1
         return task_id
 
+    def record(self, task_id: int) -> TaskRecord:
+        if type(task_id) is not int or task_id < 0 or task_id >= self._count:
+            raise StructuredTaskError("KS3916: task id is outside this scope")
+        record = self._slots[task_id]
+        if record is None:
+            raise StructuredTaskError("KS3915: task slot is unexpectedly empty")
+        return record
+
+    def cancel(self, task_id: int) -> bool:
+        if self.closed:
+            raise StructuredTaskError("KS3913: task scope is already closed")
+        record = self.record(task_id)
+        if record.state == TASK_CANCELLED:
+            return False
+        if record.state != TASK_PENDING:
+            return False
+        record.state = TASK_CANCELLED
+        self._terminal += 1
+        return True
+
+    def cancel_all(self) -> int:
+        if self.closed:
+            raise StructuredTaskError("KS3913: task scope is already closed")
+        cancelled = 0
+        for task_id in range(self._count):
+            record = self.record(task_id)
+            if record.state == TASK_PENDING:
+                record.state = TASK_CANCELLED
+                self._terminal += 1
+                cancelled += 1
+        return cancelled
+
     def records(self) -> tuple[TaskRecord, ...]:
         result: list[TaskRecord] = []
         for index in range(self._count):
-            record = self._slots[index]
-            if record is None:
-                raise StructuredTaskError(
-                    "KS3915: task scope contains an impossible empty occupied slot"
-                )
-            result.append(record)
+            result.append(self.record(index))
         return tuple(result)
 
     def mark_terminal(self, record: TaskRecord, failure: Any = None) -> None:
+        if record.state == TASK_CANCELLED:
+            raise StructuredTaskError("KS3915: cancelled task cannot complete again")
         record.failure = failure
         record.state = TASK_FAILED if failure is not None else TASK_DONE
         self._terminal += 1
