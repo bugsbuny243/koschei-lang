@@ -18,8 +18,11 @@ fn inspect(authority: NetCaps) {
 }
 ```
 
-Ownership transfer **moves** it:
+Ownership transfer **moves** it. The following example performs a real network
+request, so repository verification compiles it but does not execute the host-
+dependent request.
 
+<!-- verify: compile -->
 ```ks
 fn handoff(authority: NetCaps) -> NetCaps {
     return authority
