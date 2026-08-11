@@ -75,4 +75,10 @@ from .structured_task_safety_v1 import install_structured_task_safety_v1
 
 install_structured_task_safety_v1()
 
+from .structured_task_safety_go_alignment import (
+    install_structured_task_safety_go_alignment,
+)
+
+install_structured_task_safety_go_alignment()
+
 __all__ = ["main"]
