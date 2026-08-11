@@ -10,6 +10,7 @@ from typing import Any
 class TokenType(Enum):
     # Keywords
     PURE = auto()
+    STATEFUL = auto()
     FN = auto()
     LET = auto()
     MUT = auto()
@@ -92,6 +93,7 @@ class LexerError(SyntaxError):
 class Lexer:
     KEYWORDS = {
         "pure": TokenType.PURE,
+        "stateful": TokenType.STATEFUL,
         "fn": TokenType.FN,
         "let": TokenType.LET,
         "mut": TokenType.MUT,
