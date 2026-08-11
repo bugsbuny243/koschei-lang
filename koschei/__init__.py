@@ -95,4 +95,8 @@ from .deterministic_parallel_map_v1 import install_deterministic_parallel_map_v1
 
 install_deterministic_parallel_map_v1()
 
+from .typestate_affine_alignment import install_typestate_affine_alignment
+
+install_typestate_affine_alignment()
+
 __all__ = ["main"]
