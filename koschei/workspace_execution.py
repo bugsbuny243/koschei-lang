@@ -10,6 +10,7 @@ import subprocess
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from .codegen_go import generate_go_mir
 from .interpreter import run_mir as interpret_mir
@@ -21,6 +22,7 @@ from .workspace_package_lock import verify_workspace_package_lock
 
 WORKSPACE_BUILD_SCHEMA = "koschei.workspace-build.v1"
 DEFAULT_WORKSPACE_LOCK = "koschei.workspace.lock.json"
+_DIGEST_LENGTH = 64
 
 
 @dataclass(frozen=True, slots=True)
@@ -192,7 +194,12 @@ def verify_workspace_build(result: WorkspaceBuildResult) -> None:
     if not result.artifact.is_file() or not result.manifest.is_file():
         raise WorkspaceError("workspace build artifact or manifest is missing")
     try:
-        payload = json.loads(result.manifest.read_text(encoding="utf-8"))
+        payload = json.loads(
+            result.manifest.read_text(encoding="utf-8"),
+            object_pairs_hook=_unique_pairs,
+        )
+    except WorkspaceError:
+        raise
     except (OSError, UnicodeError, json.JSONDecodeError) as error:
         raise WorkspaceError("workspace build manifest is not valid UTF-8 JSON") from error
     if not isinstance(payload, dict) or set(payload) != {
@@ -213,6 +220,18 @@ def verify_workspace_build(result: WorkspaceBuildResult) -> None:
         raise WorkspaceError("workspace build manifest package mismatch")
     if payload["artifact"] != result.artifact.name:
         raise WorkspaceError("workspace build manifest artifact name mismatch")
+    for field in (
+        "artifact_sha256",
+        "workspace_digest",
+        "workspace_manifest_sha256",
+        "module_lock_digest",
+        "mir_fingerprint",
+    ):
+        if not _is_digest(payload[field]):
+            raise WorkspaceError(f"workspace build manifest has invalid {field}")
+    if not isinstance(payload["mir_version"], int) or isinstance(payload["mir_version"], bool):
+        raise WorkspaceError("workspace build manifest has invalid mir_version")
+
     observed = hashlib.sha256(result.artifact.read_bytes()).hexdigest()
     if observed != payload["artifact_sha256"] or observed != result.artifact_sha256:
         raise WorkspaceError("workspace build artifact digest mismatch")
@@ -251,3 +270,20 @@ def _write_create_only_json(path: Path, payload: dict[str, object]) -> None:
     finally:
         if descriptor is not None:
             os.close(descriptor)
+
+
+def _is_digest(value: Any) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == _DIGEST_LENGTH
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
+def _unique_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise WorkspaceError(f"duplicate workspace build JSON member: {key}")
+        result[key] = value
+    return result
