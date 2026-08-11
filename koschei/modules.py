@@ -12,6 +12,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .affine_resources_v1 import check_affine_resources
 from .ast_nodes import Program, SourceLocation
 from .integrity import check_program_integrity
 from .legacy_generics import prepare_legacy_analysis
@@ -184,6 +185,7 @@ def check_graph(graph: ModuleGraph) -> SemanticReport:
             imports = imported_modules(graph, module)
             check_program_integrity(module.program)
             typed_report = check_typed_hir(module.program, imports)
+            check_affine_resources(module.program, imports, typed_report)
             typed_reports[str(module.path)] = typed_report
             legacy_program, legacy_imports = prepare_legacy_analysis(
                 module.program,
