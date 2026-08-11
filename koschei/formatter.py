@@ -77,8 +77,12 @@ def _breaks_before(
     token: Token, previous: Token, depth: int, previous_depth: int
 ) -> bool:
     # High-assurance declaration prefixes stay attached to the declaration they
-    # qualify, while each prefix itself remains a canonical declaration starter.
-    if token.type is TokenType.FN and previous.type is TokenType.PURE:
+    # qualify. `transition`/`starts` are contextual identifiers, not globally
+    # reserved keywords.
+    if token.type is TokenType.FN and (
+        previous.type is TokenType.PURE
+        or (previous.type is TokenType.IDENTIFIER and previous.value == "transition")
+    ):
         return False
     if token.type is TokenType.STRUCT and previous.type is TokenType.STATEFUL:
         return False
