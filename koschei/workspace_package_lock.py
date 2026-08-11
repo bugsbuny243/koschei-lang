@@ -76,6 +76,28 @@ def verify_workspace_package_lock(
     workspace: WorkspaceConfig,
     locked: WorkspaceLock,
 ) -> WorkspaceLock:
+    """Verify through the immutable source index when one exists for this lock."""
+
+    from .workspace_lock_index import DEFAULT_LOCK_INDEX_DIR, verify_or_create_lock_index
+
+    return verify_or_create_lock_index(
+        workspace,
+        locked,
+        cache_root=workspace.root / DEFAULT_LOCK_INDEX_DIR,
+    )
+
+
+def verify_workspace_package_lock_full(
+    workspace: WorkspaceConfig,
+    locked: WorkspaceLock,
+) -> WorkspaceLock:
+    """Reconstruct every package module graph and compare the complete lock.
+
+    This is the authoritative slow path used on a source-index miss. Keeping it
+    separate makes it possible to prove that an index hit does not invoke parser,
+    semantic, typed-HIR, or MIR work for unrelated workspace packages.
+    """
+
     current = build_workspace_package_lock(workspace)
     if current.to_dict() == locked.to_dict():
         return current
