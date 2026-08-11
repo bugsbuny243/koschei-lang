@@ -22,6 +22,7 @@ from .mir import lower_graph as lower_mir_graph
 from .parser import ParserError, parse
 from .semantic import ImportedModule, SemanticError, SemanticReport, check as semantic_check
 from .typed_hir import check_typed_hir
+from .typestate_resources_v1 import check_typestate_resources
 
 MODULE_SUFFIX = ".ks"
 ImportResolver = Callable[[Path, str, SourceLocation], Path]
@@ -188,6 +189,7 @@ def check_graph(graph: ModuleGraph) -> SemanticReport:
             imports = imported_modules(graph, module)
             check_program_integrity(module.program)
             typed_report = check_typed_hir(module.program, imports)
+            check_typestate_resources(module.program, imports, typed_report)
             check_affine_resources(module.program, imports, typed_report)
 
             imported_effects = {
