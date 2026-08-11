@@ -17,7 +17,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from .workspace import WorkspaceConfig, WorkspaceError, WorkspaceLock
-from .workspace_package_lock import verify_workspace_package_lock
+from .workspace_package_lock import verify_workspace_package_lock_full
 
 LOCK_INDEX_SCHEMA = "koschei.workspace-lock-index.v1"
 DEFAULT_LOCK_INDEX_DIR = ".koschei/cache/workspace-lock-index-v1"
@@ -58,7 +58,7 @@ def verify_or_create_lock_index(
         return locked
 
     before = snapshot_workspace_sources(workspace)
-    current = verify_workspace_package_lock(workspace, locked)
+    current = verify_workspace_package_lock_full(workspace, locked)
     after = snapshot_workspace_sources(workspace)
     if before != after:
         raise WorkspaceError(
