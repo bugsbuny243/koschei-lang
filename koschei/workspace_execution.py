@@ -33,6 +33,7 @@ class LockedWorkspaceProgram:
 
 @dataclass(frozen=True, slots=True)
 class WorkspaceBuildResult:
+    package: str
     artifact: Path
     manifest: Path
     artifact_sha256: str
@@ -61,11 +62,7 @@ def prepare_locked_workspace_program(
 
     locked = load_workspace_lock(lockfile)
     verified = verify_workspace_package_lock(workspace, locked)
-    locked_member = next(
-        (candidate for candidate in verified.members if candidate.name == package),
-        None,
-    )
-    if locked_member is None:
+    if not any(candidate.name == package for candidate in verified.members):
         raise WorkspaceError(f"package is missing from workspace lock: {package}")
 
     graph = load_workspace_member_graph(workspace, package)
@@ -113,50 +110,54 @@ def build_locked_workspace_package(
             "'go' was not found; install Go for native workspace builds"
         )
 
-    target = (
-        Path(output)
-        if output is not None
-        else workspace.root / "build" / package
-    )
+    target = Path(output) if output is not None else workspace.root / "build" / package
     if not target.is_absolute():
         target = (Path.cwd() / target).resolve()
     else:
         target = target.resolve()
+    manifest_path = Path(str(target) + ".workspace-build.json")
+    if target.exists():
+        raise WorkspaceError(f"workspace build artifact already exists: {target}")
+    if manifest_path.exists():
+        raise WorkspaceError(
+            f"workspace build manifest already exists: {manifest_path}"
+        )
     target.parent.mkdir(parents=True, exist_ok=True)
 
     with tempfile.TemporaryDirectory(prefix="koschei-workspace-build-") as temporary:
         directory = Path(temporary)
+        staged = directory / "program"
         (directory / "main.go").write_text(go_source, encoding="utf-8")
         (directory / "go.mod").write_text(
             "module koscheiworkspaceprogram\n\ngo 1.21\n",
             encoding="utf-8",
         )
         completed = subprocess.run(
-            [go_binary, "build", "-o", str(target), "."],
+            [go_binary, "build", "-o", str(staged), "."],
             cwd=directory,
             capture_output=True,
             text=True,
             check=False,
         )
-    if completed.returncode != 0:
-        target.unlink(missing_ok=True)
-        details = completed.stderr.strip() or "unknown Go compiler error"
-        raise WorkspaceError(
-            "workspace native compilation failed; this is a Koschei compiler bug: "
-            + details
-        )
+        if completed.returncode != 0:
+            details = completed.stderr.strip() or "unknown Go compiler error"
+            raise WorkspaceError(
+                "workspace native compilation failed; this is a Koschei compiler bug: "
+                + details
+            )
+        try:
+            os.link(staged, target)
+        except FileExistsError:
+            raise WorkspaceError(f"workspace build artifact already exists: {target}") from None
+        except OSError as error:
+            raise WorkspaceError(
+                f"workspace build could not publish artifact without replacement: {error}"
+            ) from error
 
     locked_member = next(
         member for member in program.locked.members if member.name == package
     )
     artifact_sha256 = hashlib.sha256(target.read_bytes()).hexdigest()
-    manifest_path = Path(str(target) + ".workspace-build.json")
-    if manifest_path.exists():
-        target.unlink(missing_ok=True)
-        raise WorkspaceError(
-            f"workspace build manifest already exists: {manifest_path}"
-        )
-
     payload = {
         "schema_version": WORKSPACE_BUILD_SCHEMA,
         "package": package,
@@ -168,8 +169,13 @@ def build_locked_workspace_package(
         "mir_version": mir.version,
         "mir_fingerprint": mir.fingerprint,
     }
-    _write_create_only_json(manifest_path, payload)
+    try:
+        _write_create_only_json(manifest_path, payload)
+    except Exception:
+        target.unlink(missing_ok=True)
+        raise
     return WorkspaceBuildResult(
+        package=package,
         artifact=target,
         manifest=manifest_path,
         artifact_sha256=artifact_sha256,
@@ -182,7 +188,10 @@ def build_locked_workspace_package(
 def verify_workspace_build(result: WorkspaceBuildResult) -> None:
     if not result.artifact.is_file() or not result.manifest.is_file():
         raise WorkspaceError("workspace build artifact or manifest is missing")
-    payload = json.loads(result.manifest.read_text(encoding="utf-8"))
+    try:
+        payload = json.loads(result.manifest.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise WorkspaceError("workspace build manifest is not valid UTF-8 JSON") from error
     if not isinstance(payload, dict) or set(payload) != {
         "schema_version",
         "package",
@@ -197,6 +206,8 @@ def verify_workspace_build(result: WorkspaceBuildResult) -> None:
         raise WorkspaceError("workspace build manifest contains unsupported fields")
     if payload["schema_version"] != WORKSPACE_BUILD_SCHEMA:
         raise WorkspaceError("unsupported workspace build manifest schema")
+    if payload["package"] != result.package:
+        raise WorkspaceError("workspace build manifest package mismatch")
     if payload["artifact"] != result.artifact.name:
         raise WorkspaceError("workspace build manifest artifact name mismatch")
     observed = hashlib.sha256(result.artifact.read_bytes()).hexdigest()
