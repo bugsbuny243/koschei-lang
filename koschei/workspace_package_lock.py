@@ -32,6 +32,8 @@ def build_workspace_package_lock(workspace: WorkspaceConfig) -> WorkspaceLock:
     for name in workspace.build_order:
         member = by_name[name]
         graph = load_workspace_member_graph(workspace, name)
+        if graph.root_module.path.resolve() != member.project.entry.resolve():
+            raise WorkspaceError(f"workspace package graph root mismatch: {name}")
         lock_root = (
             workspace.root
             if graph_uses_workspace_packages(workspace, member, graph)
