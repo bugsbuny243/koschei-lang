@@ -47,26 +47,41 @@ runtime paths preserve the relevant invariants.
 These gates are the primary language-development line. Ergonomic work remains
 useful, but it does not outrank these properties.
 
-### A0 — affine authority ownership — CURRENT
+### A0 — affine authority ownership — COMPLETE FOUNDATION
 
 - capability-bearing values are move-only;
 - ordinary method invocation borrows rather than consumes authority;
 - ownership transfer through binding, call, return or aggregate is explicit;
 - use-after-move fails at compile time;
 - mutable affine bindings fail closed;
-- capability-bearing aggregates inherit affine ownership structurally.
+- capability-bearing aggregates inherit affine ownership structurally;
+- branch/loop handling is deliberately conservative until a path-sensitive borrow
+  checker can prove more programs safe.
 
 Reference: `docs/AFFINE_RESOURCES_V1.md`.
 
-### A1 — mandatory effect system
+### A1 — mandatory effect system — CURRENT
 
-The current effect inference becomes an enforceable contract:
+The first enforceable slice is `pure fn`:
 
-- every function has a mechanically known effect set;
-- pure functions cannot call effectful code indirectly;
-- effect polymorphism is explicit rather than inferred into ambient authority;
-- module/package APIs expose effect contracts as part of compatibility;
-- build policy can reject effect widening.
+- every analyzed function receives a deterministic inferred effect set;
+- a `pure fn` with any direct or transitive effect fails compilation with KS3940;
+- local and imported direct-call graphs propagate effects;
+- structural Typed HIR receiver types identify authority I/O rather than variable
+  names;
+- unknown/indirect/higher-order calls fail closed inside pure contracts;
+- authority input/output/derivation, console, network, disk, env, process,
+  shared-queue state and task scheduling are named effects.
+
+Still required before A1 is complete:
+
+- explicit effect-set contracts for non-pure public APIs;
+- function/effect types and effect polymorphism;
+- package/API compatibility rules that reject effect widening;
+- effect-aware FFI signatures;
+- release/build policy binding of exported effect contracts.
+
+Reference: `docs/EFFECT_CONTRACTS_V1.md`.
 
 ### A2 — typestate
 
