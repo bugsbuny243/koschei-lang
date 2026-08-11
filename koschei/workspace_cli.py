@@ -19,6 +19,11 @@ from .workspace import (
     load_workspace_lock,
     write_workspace_lock,
 )
+from .workspace_execution import (
+    build_locked_workspace_package,
+    run_locked_workspace_package,
+    verify_workspace_build,
+)
 from .workspace_modules import load_workspace_member_graph
 from .workspace_package_lock import (
     build_workspace_package_lock,
@@ -29,7 +34,7 @@ from .workspace_package_lock import (
 def add_workspace_parser(subcommands: argparse._SubParsersAction) -> None:
     parser = subcommands.add_parser(
         "workspace",
-        help="Validate and lock a multi-project Koschei monorepo",
+        help="Validate, lock, run, and build a multi-project Koschei monorepo",
     )
     parser.add_argument(
         "--lang",
@@ -59,6 +64,30 @@ def add_workspace_parser(subcommands: argparse._SubParsersAction) -> None:
         help="Exit 2 when any workspace member requests this capability domain",
     )
 
+    run = commands.add_parser(
+        "run",
+        help="Run one package only after verifying the workspace lock",
+    )
+    run.add_argument("package", help="Workspace package name")
+    run.add_argument("path", nargs="?", default=".", help="Workspace root or manifest")
+    run.add_argument(
+        "--lock",
+        help="Lock path relative to workspace root; defaults to koschei.workspace.lock.json",
+    )
+
+    build = commands.add_parser(
+        "build",
+        help="Build one locked package as a native binary",
+    )
+    build.add_argument("package", help="Workspace package name")
+    build.add_argument("path", nargs="?", default=".", help="Workspace root or manifest")
+    build.add_argument("-o", "--output", help="Native output path")
+    build.add_argument(
+        "--lock",
+        help="Lock path relative to workspace root; defaults to koschei.workspace.lock.json",
+    )
+    build.add_argument("--json", action="store_true", help="Emit stable JSON result")
+
     lock = commands.add_parser("lock", help="Create or verify a workspace lock")
     lock_commands = lock.add_subparsers(dest="workspace_lock_command", required=True)
     create = lock_commands.add_parser("create", help="Create a deterministic workspace lock")
@@ -82,6 +111,21 @@ def command_workspace(args: argparse.Namespace) -> int:
         if args.workspace_command == "caps":
             result = _workspace_caps(workspace)
             return _emit_caps(result, args)
+        if args.workspace_command == "run":
+            return run_locked_workspace_package(
+                workspace,
+                args.package,
+                lock_path=args.lock,
+            )
+        if args.workspace_command == "build":
+            result = build_locked_workspace_package(
+                workspace,
+                args.package,
+                output=args.output,
+                lock_path=args.lock,
+            )
+            verify_workspace_build(result)
+            return _emit_build(result, args)
         if args.workspace_command == "lock":
             return _command_workspace_lock(workspace, args)
         raise WorkspaceError("unsupported workspace command")
@@ -220,6 +264,26 @@ def _emit_caps(result: dict[str, object], args: argparse.Namespace) -> int:
                 file=sys.stderr,
             )
         return 2
+    return 0
+
+
+def _emit_build(result, args: argparse.Namespace) -> int:
+    payload = {
+        "ok": True,
+        "artifact": str(result.artifact),
+        "manifest": str(result.manifest),
+        "artifact_sha256": result.artifact_sha256,
+        "workspace_digest": result.workspace_digest,
+        "module_lock_digest": result.module_lock_digest,
+        "mir_fingerprint": result.mir_fingerprint,
+    }
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+        return 0
+    print(f"KOSCHEI WORKSPACE BUILD: {result.artifact}")
+    print(f"BUILD MANIFEST: {result.manifest}")
+    print(f"ARTIFACT SHA256: {result.artifact_sha256}")
+    print(f"WORKSPACE DIGEST: {result.workspace_digest}")
     return 0
 
 
