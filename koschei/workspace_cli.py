@@ -10,7 +10,7 @@ from pathlib import Path
 from .capabilities import DOMAIN_ORDER, analyze_graph
 from .lexer import LexerError
 from .mir import MirIntegrityError
-from .modules import ModuleError, check_graph, load_graph
+from .modules import ModuleError, check_graph
 from .parser import ParserError
 from .semantic import SemanticError
 from .workspace import (
@@ -21,6 +21,7 @@ from .workspace import (
     verify_workspace_lock,
     write_workspace_lock,
 )
+from .workspace_modules import load_workspace_member_graph
 
 
 def add_workspace_parser(subcommands: argparse._SubParsersAction) -> None:
@@ -114,7 +115,7 @@ def _check_workspace(workspace) -> dict[str, object]:
     modules = 0
     for name in workspace.build_order:
         member = by_name[name]
-        graph = load_graph(member.project.entry)
+        graph = load_workspace_member_graph(workspace, name)
         report = check_graph(graph)
         count = len(graph.modules)
         functions += report.functions
@@ -152,7 +153,7 @@ def _workspace_caps(workspace) -> dict[str, object]:
     exact = True
     for name in workspace.build_order:
         member = by_name[name]
-        graph = load_graph(member.project.entry)
+        graph = load_workspace_member_graph(workspace, name)
         check_graph(graph)
         manifest = analyze_graph(graph)
         domains = manifest.domains()
