@@ -8,20 +8,32 @@ metadata; source-level cross-package imports are deliberately not invented here.
 from __future__ import annotations
 
 import hashlib
+import heapq
 import json
 import os
 import tempfile
 import tomllib
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any
 
 from .module_lock import build_module_lock
-from .project import PACKAGE_NAME, ProjectConfig, ProjectError, load_project
+from .project import (
+    MANIFEST_NAME,
+    PACKAGE_NAME,
+    SEMVER,
+    ProjectConfig,
+    ProjectError,
+    load_project,
+)
 
 WORKSPACE_MANIFEST_NAME = "koschei.workspace.toml"
 WORKSPACE_SCHEMA = "koschei.workspace/v1"
 WORKSPACE_LOCK_SCHEMA = "koschei.workspace-lock.v1"
+MAX_WORKSPACE_MANIFEST_BYTES = 8 * 1024 * 1024
+MAX_WORKSPACE_MEMBERS = 100_000
+MAX_WORKSPACE_DEPENDENCY_EDGES = 1_000_000
 _DIGEST_LENGTH = 64
 
 
@@ -105,7 +117,13 @@ def load_workspace(path: str | Path) -> WorkspaceConfig:
         raise WorkspaceError(f"Workspace manifest not found: {manifest}")
 
     try:
-        data: dict[str, Any] = tomllib.loads(manifest.read_text(encoding="utf-8"))
+        raw_manifest = manifest.read_bytes()
+        if len(raw_manifest) > MAX_WORKSPACE_MANIFEST_BYTES:
+            raise WorkspaceError("workspace manifest exceeds the 8 MiB parsing budget")
+        manifest_text = raw_manifest.decode("utf-8")
+        data: dict[str, Any] = tomllib.loads(manifest_text)
+    except WorkspaceError:
+        raise
     except (OSError, UnicodeError, tomllib.TOMLDecodeError) as error:
         raise WorkspaceError(f"Invalid {WORKSPACE_MANIFEST_NAME}: {error}") from error
 
@@ -126,6 +144,8 @@ def load_workspace(path: str | Path) -> WorkspaceConfig:
     raw_members = workspace_table["members"]
     if not isinstance(raw_members, list) or not raw_members:
         raise WorkspaceError("workspace.members must be a non-empty array")
+    if len(raw_members) > MAX_WORKSPACE_MEMBERS:
+        raise WorkspaceError("workspace member count exceeds the 100000-member budget")
     if any(not isinstance(item, str) for item in raw_members):
         raise WorkspaceError("workspace.members entries must be strings")
 
@@ -137,6 +157,9 @@ def load_workspace(path: str | Path) -> WorkspaceConfig:
     projects: list[tuple[str, ProjectConfig]] = []
     for relative in normalized_paths:
         member_root = _safe_member_directory(root, relative)
+        member_manifest = member_root / MANIFEST_NAME
+        if member_manifest.is_symlink():
+            raise WorkspaceError(f"workspace member manifest cannot be a symlink: {relative}")
         try:
             project = load_project(member_root)
         except ProjectError as error:
@@ -146,12 +169,13 @@ def load_workspace(path: str | Path) -> WorkspaceConfig:
         projects.append((relative, project))
 
     names = [project.name for _, project in projects]
-    if len(names) != len(set(names)):
-        duplicates = sorted({name for name in names if names.count(name) > 1})
+    duplicates = sorted(name for name, count in Counter(names).items() if count > 1)
+    if duplicates:
         raise WorkspaceError("duplicate workspace package names: " + ", ".join(duplicates))
     known = set(names)
 
     normalized_dependencies: dict[str, tuple[str, ...]] = {name: () for name in names}
+    edge_count = 0
     for owner, raw in dependency_table.items():
         if not isinstance(owner, str) or not PACKAGE_NAME.fullmatch(owner):
             raise WorkspaceError(f"invalid dependency owner package name: {owner!r}")
@@ -161,6 +185,11 @@ def load_workspace(path: str | Path) -> WorkspaceConfig:
             raise WorkspaceError(f"dependencies.{owner} must be an array of package names")
         if len(raw) != len(set(raw)):
             raise WorkspaceError(f"dependencies.{owner} contains duplicates")
+        edge_count += len(raw)
+        if edge_count > MAX_WORKSPACE_DEPENDENCY_EDGES:
+            raise WorkspaceError(
+                "workspace dependency count exceeds the 1000000-edge budget"
+            )
         for dependency in raw:
             if dependency not in known:
                 raise WorkspaceError(f"{owner} depends on unknown workspace package: {dependency}")
@@ -224,6 +253,8 @@ def load_workspace_lock(path: str | Path) -> WorkspaceLock:
     try:
         text = lock_path.read_text(encoding="utf-8")
         payload = json.loads(text, object_pairs_hook=_unique_pairs)
+    except WorkspaceError:
+        raise
     except (OSError, UnicodeError, json.JSONDecodeError) as error:
         raise WorkspaceError("workspace lock is not valid UTF-8 JSON") from error
     return _parse_workspace_lock(payload)
@@ -325,7 +356,7 @@ def _parse_workspace_lock(payload: Any) -> WorkspaceLock:
         entry = _validate_entry_path(raw["entry"])
         version = raw["version"]
         dependencies = raw["dependencies"]
-        if not isinstance(version, str):
+        if not isinstance(version, str) or not SEMVER.fullmatch(version):
             raise WorkspaceError(f"workspace lock version is invalid for {name}")
         if not isinstance(dependencies, list) or any(
             not isinstance(item, str) for item in dependencies
@@ -392,25 +423,38 @@ def _workspace_lock_payload(
 
 def _topological_order(dependencies: dict[str, tuple[str, ...]]) -> tuple[str, ...]:
     known = set(dependencies)
+    dependents: dict[str, list[str]] = {name: [] for name in dependencies}
+    indegree: dict[str, int] = {}
+    edge_count = 0
     for owner, required in dependencies.items():
         unknown = sorted(set(required) - known)
         if unknown:
-            raise WorkspaceError(f"{owner} depends on unknown workspace packages: {', '.join(unknown)}")
+            raise WorkspaceError(
+                f"{owner} depends on unknown workspace packages: {', '.join(unknown)}"
+            )
+        indegree[owner] = len(required)
+        edge_count += len(required)
+        if edge_count > MAX_WORKSPACE_DEPENDENCY_EDGES:
+            raise WorkspaceError(
+                "workspace dependency count exceeds the 1000000-edge budget"
+            )
+        for dependency in required:
+            dependents[dependency].append(owner)
 
-    remaining = {name: set(required) for name, required in dependencies.items()}
+    for dependency in dependents:
+        dependents[dependency].sort()
+    ready = [name for name, count in indegree.items() if count == 0]
+    heapq.heapify(ready)
     order: list[str] = []
-    ready = sorted(name for name, required in remaining.items() if not required)
     while ready:
-        name = ready.pop(0)
+        name = heapq.heappop(ready)
         order.append(name)
-        for candidate in sorted(remaining):
-            if name in remaining[candidate]:
-                remaining[candidate].remove(name)
-                if not remaining[candidate] and candidate not in order and candidate not in ready:
-                    ready.append(candidate)
-                    ready.sort()
-    if len(order) != len(remaining):
-        cyclic = sorted(name for name in remaining if name not in order)
+        for candidate in dependents[name]:
+            indegree[candidate] -= 1
+            if indegree[candidate] == 0:
+                heapq.heappush(ready, candidate)
+    if len(order) != len(dependencies):
+        cyclic = sorted(name for name, count in indegree.items() if count > 0)
         raise WorkspaceError("workspace dependency cycle detected: " + ", ".join(cyclic))
     return tuple(order)
 
