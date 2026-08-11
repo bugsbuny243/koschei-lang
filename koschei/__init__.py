@@ -49,6 +49,10 @@ from .bounded_queue_v1 import install_bounded_queue_v1
 
 install_bounded_queue_v1()
 
+from .bounded_queue_contract_gate import install_bounded_queue_contract_gate
+
+install_bounded_queue_contract_gate()
+
 from .bounded_queue_mir_v1 import install_bounded_queue_mir_v1
 
 install_bounded_queue_mir_v1()
