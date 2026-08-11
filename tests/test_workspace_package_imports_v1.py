@@ -147,7 +147,9 @@ class WorkspacePackageImportTests(unittest.TestCase):
             workspace = load_workspace(root)
             graph = load_workspace_member_graph(workspace, "consumer")
 
-            with self.assertRaisesRegex(SemanticError, "KS2401"):
+            # The dependency edge does not synthesize or inherit a NetCaps value.
+            # The call is therefore rejected at the earlier arity gate.
+            with self.assertRaisesRegex(SemanticError, "KS1301"):
                 check_graph(graph)
 
     def test_workspace_package_lock_binds_dependency_source_bytes(self) -> None:
