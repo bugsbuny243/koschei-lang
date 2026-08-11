@@ -1,0 +1,13 @@
+schema_version = "koschei.workspace/v1"
+
+[workspace]
+members = [
+  "libs/domain",
+  "services/catalog",
+  "services/orders",
+]
+
+[dependencies]
+domain = []
+catalog = ["domain"]
+orders = ["catalog", "domain"]
