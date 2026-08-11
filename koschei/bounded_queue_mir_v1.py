@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from . import interpreter as _runtime
 from . import mir_native_runtime as _mir
 from . import runtime_alignment as _alignment
 from .bounded_queue import BoundedQueueError, BoundedQueueValue
@@ -39,6 +40,10 @@ def _invoke(self, callee, arguments):
 
     if callee.name == "bounded_queue":
         capacity, witness = arguments
+        if _runtime._contains_capability(witness):
+            return _mir._ErrorValue(
+                "KS3904: capability values cannot be bounded-queue item types"
+            )
         try:
             return BoundedQueueValue(capacity, _alignment._runtime_type_node(witness))
         except BoundedQueueError as error:
@@ -49,6 +54,10 @@ def _invoke(self, callee, arguments):
         return _mir._ErrorValue(f"KS3902: {callee.name} expects BoundedQueue")
     if callee.name == "queue_try_send":
         value = arguments[1]
+        if _runtime._contains_capability(value):
+            return _mir._ErrorValue(
+                "KS3904: capability values cannot enter a bounded queue"
+            )
         if not _alignment._matches_node(value, queue.item_type):
             return _mir._ErrorValue(
                 "KS3904: bounded-queue runtime item type mismatch: expected "
