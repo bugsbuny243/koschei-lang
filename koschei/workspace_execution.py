@@ -14,7 +14,19 @@ from .codegen_go import generate_go_mir
 from .interpreter import run_mir as interpret_mir
 from .mir import require_mir
 from .modules import ModuleGraph, check_graph
-from .workspace import WorkspaceConfig, WorkspaceError, WorkspaceLock, load_workspace_lock
+from .workspace import (
+    WorkspaceConfig,
+    WorkspaceError,
+    WorkspaceLock,
+    WorkspaceLockedMember,
+    load_workspace_lock,
+)
+from .workspace_analysis_cache import (
+    DEFAULT_ANALYSIS_CACHE_DIR,
+    WorkspaceAnalysisIdentity,
+    compiler_contract_digest,
+    load_or_build_analysis,
+)
 from .workspace_cache import (
     DEFAULT_CACHE_DIR,
     WorkspaceCacheIdentity,
@@ -28,6 +40,14 @@ from .workspace_package_lock import verify_workspace_package_lock
 WORKSPACE_BUILD_SCHEMA = "koschei.workspace-build.v1"
 DEFAULT_WORKSPACE_LOCK = "koschei.workspace.lock.json"
 _DIGEST_LENGTH = 64
+
+
+@dataclass(frozen=True, slots=True)
+class LockedWorkspaceIdentity:
+    workspace: WorkspaceConfig
+    locked: WorkspaceLock
+    package: str
+    member: WorkspaceLockedMember
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,16 +69,17 @@ class WorkspaceBuildResult:
     mir_fingerprint: str
     cache_key: str
     cache_hit: bool
+    analysis_cache_key: str
+    analysis_cache_hit: bool
 
 
-def prepare_locked_workspace_program(
+def prepare_locked_workspace_identity(
     workspace: WorkspaceConfig,
     package: str,
     *,
     lock_path: str | Path | None = None,
-) -> LockedWorkspaceProgram:
-    member = workspace.by_name.get(package)
-    if member is None:
+) -> LockedWorkspaceIdentity:
+    if package not in workspace.by_name:
         raise WorkspaceError(f"unknown workspace package: {package}")
 
     lockfile = _resolve_lock_path(workspace, lock_path)
@@ -71,14 +92,36 @@ def prepare_locked_workspace_program(
 
     locked = load_workspace_lock(lockfile)
     verified = verify_workspace_package_lock(workspace, locked)
-    if not any(candidate.name == package for candidate in verified.members):
+    locked_member = next(
+        (candidate for candidate in verified.members if candidate.name == package),
+        None,
+    )
+    if locked_member is None:
         raise WorkspaceError(f"package is missing from workspace lock: {package}")
+    return LockedWorkspaceIdentity(
+        workspace=workspace,
+        locked=verified,
+        package=package,
+        member=locked_member,
+    )
 
+
+def prepare_locked_workspace_program(
+    workspace: WorkspaceConfig,
+    package: str,
+    *,
+    lock_path: str | Path | None = None,
+) -> LockedWorkspaceProgram:
+    identity = prepare_locked_workspace_identity(
+        workspace,
+        package,
+        lock_path=lock_path,
+    )
     graph = load_workspace_member_graph(workspace, package)
     check_graph(graph)
     return LockedWorkspaceProgram(
         workspace=workspace,
-        locked=verified,
+        locked=identity.locked,
         package=package,
         graph=graph,
     )
@@ -105,14 +148,24 @@ def build_locked_workspace_package(
     output: str | Path | None = None,
     lock_path: str | Path | None = None,
     cache_dir: str | Path | None = None,
+    analysis_cache_dir: str | Path | None = None,
 ) -> WorkspaceBuildResult:
-    program = prepare_locked_workspace_program(
+    locked = prepare_locked_workspace_identity(
         workspace,
         package,
         lock_path=lock_path,
     )
-    mir = require_mir(program.graph)
-    go_source = generate_go_mir(mir)
+    analysis_identity = WorkspaceAnalysisIdentity(
+        package=package,
+        member_manifest_sha256=locked.member.manifest_sha256,
+        module_lock_digest=locked.member.module_lock_digest,
+        compiler_contract_digest=compiler_contract_digest(),
+    )
+    analysis = load_or_build_analysis(
+        cache_root=_resolve_analysis_cache_path(workspace, analysis_cache_dir),
+        identity=analysis_identity,
+        builder=lambda: _analyze_workspace_package(workspace, package),
+    )
 
     go_binary = shutil.which("go")
     if go_binary is None:
@@ -120,23 +173,20 @@ def build_locked_workspace_package(
             "'go' was not found; install Go for native workspace builds"
         )
     toolchain, go_environment = detect_go_toolchain(go_binary)
-    locked_member = next(
-        member for member in program.locked.members if member.name == package
-    )
-    identity = WorkspaceCacheIdentity(
+    native_identity = WorkspaceCacheIdentity(
         package=package,
-        module_lock_digest=locked_member.module_lock_digest,
-        mir_version=mir.version,
-        mir_fingerprint=mir.fingerprint,
-        go_source_sha256=hashlib.sha256(go_source.encode("utf-8")).hexdigest(),
+        module_lock_digest=locked.member.module_lock_digest,
+        mir_version=analysis.mir_version,
+        mir_fingerprint=analysis.mir_fingerprint,
+        go_source_sha256=analysis.go_source_sha256,
         toolchain=toolchain,
     )
     cache_root = _resolve_cache_path(workspace, cache_dir)
     cached = build_or_load_cached_native(
         cache_root=cache_root,
-        identity=identity,
+        identity=native_identity,
         go_binary=go_binary,
-        go_source=go_source,
+        go_source=analysis.go_source,
         go_environment=go_environment,
     )
 
@@ -163,11 +213,11 @@ def build_locked_workspace_package(
         "package": package,
         "artifact": target.name,
         "artifact_sha256": artifact_sha256,
-        "workspace_digest": program.locked.workspace_digest,
-        "workspace_manifest_sha256": program.locked.manifest_sha256,
-        "module_lock_digest": locked_member.module_lock_digest,
-        "mir_version": mir.version,
-        "mir_fingerprint": mir.fingerprint,
+        "workspace_digest": locked.locked.workspace_digest,
+        "workspace_manifest_sha256": locked.locked.manifest_sha256,
+        "module_lock_digest": locked.member.module_lock_digest,
+        "mir_version": analysis.mir_version,
+        "mir_fingerprint": analysis.mir_fingerprint,
     }
     try:
         _write_create_only_json(manifest_path, payload)
@@ -179,12 +229,24 @@ def build_locked_workspace_package(
         artifact=target,
         manifest=manifest_path,
         artifact_sha256=artifact_sha256,
-        workspace_digest=program.locked.workspace_digest,
-        module_lock_digest=locked_member.module_lock_digest,
-        mir_fingerprint=mir.fingerprint,
+        workspace_digest=locked.locked.workspace_digest,
+        module_lock_digest=locked.member.module_lock_digest,
+        mir_fingerprint=analysis.mir_fingerprint,
         cache_key=cached.cache_key,
         cache_hit=cached.hit,
+        analysis_cache_key=analysis.cache_key,
+        analysis_cache_hit=analysis.hit,
     )
+
+
+def _analyze_workspace_package(
+    workspace: WorkspaceConfig,
+    package: str,
+) -> tuple[str, int, str]:
+    graph = load_workspace_member_graph(workspace, package)
+    check_graph(graph)
+    mir = require_mir(graph)
+    return generate_go_mir(mir), mir.version, mir.fingerprint
 
 
 def verify_workspace_build(result: WorkspaceBuildResult) -> None:
@@ -263,6 +325,19 @@ def _resolve_cache_path(
     if candidate.is_absolute():
         return candidate
     _validate_relative_control_path(candidate, "workspace cache")
+    return workspace.root / candidate
+
+
+def _resolve_analysis_cache_path(
+    workspace: WorkspaceConfig,
+    cache_dir: str | Path | None,
+) -> Path:
+    if cache_dir is None:
+        return workspace.root / DEFAULT_ANALYSIS_CACHE_DIR
+    candidate = Path(cache_dir)
+    if candidate.is_absolute():
+        return candidate
+    _validate_relative_control_path(candidate, "workspace analysis cache")
     return workspace.root / candidate
 
 
