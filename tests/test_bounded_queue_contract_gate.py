@@ -33,6 +33,23 @@ fn main() {
         with temporary:
             check_graph(graph)
 
+    def test_mismatched_queue_generic_is_still_rejected_by_typed_hir(self) -> None:
+        temporary, graph = self._graph(
+            """
+fn take(q: BoundedQueue<Int>) -> Int {
+    return queue_try_recv(q) or -1
+}
+
+fn main() {
+    let q = bounded_queue(2, "") or return
+    println(take(q))
+}
+"""
+        )
+        with temporary:
+            with self.assertRaisesRegex(SemanticError, "KS1301"):
+                check_graph(graph)
+
     def test_raw_queue_annotation_is_rejected_structurally(self) -> None:
         temporary, graph = self._graph(
             """
