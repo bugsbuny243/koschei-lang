@@ -6,7 +6,7 @@ stateful struct Settlement<S> starts Pending {
     state: S,
 }
 
-transition fn settle(item: Settlement<Pending>) -> Settlement<Settled> {
+pure transition fn settle(item: Settlement<Pending>) -> Settlement<Settled> {
     return Settlement { id: item.id, state: Settled {} }
 }
 
