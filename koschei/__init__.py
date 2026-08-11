@@ -71,4 +71,20 @@ from .structured_tasks_runtime_alignment import (
 
 install_structured_tasks_runtime_alignment()
 
+from .structured_task_safety_v1 import install_structured_task_safety_v1
+
+install_structured_task_safety_v1()
+
+from .structured_task_safety_go_alignment import (
+    install_structured_task_safety_go_alignment,
+)
+
+install_structured_task_safety_go_alignment()
+
+from .structured_task_safety_runtime_names import (
+    install_structured_task_safety_runtime_names,
+)
+
+install_structured_task_safety_runtime_names()
+
 __all__ = ["main"]
