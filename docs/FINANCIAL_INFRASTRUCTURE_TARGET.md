@@ -4,88 +4,150 @@ Status: engineering target; not a production-readiness claim.
 
 Koschei should eventually be capable of implementing the security-critical core
 of exchange, clearing, settlement and tokenized-asset infrastructure without
-requiring ambient authority or floating-point money arithmetic.
+requiring ambient authority, implicit floating-point money arithmetic, hidden
+scheduler ordering or unsafe authority aliasing.
 
-The target is deliberately stronger than "can compile a trading demo". Each
-phase must create executable evidence that the language and both runtime paths
-preserve the relevant financial invariants.
+The target is deliberately stronger than "can compile a trading demo" or "is
+pleasant to write". The hard question is:
+
+> How difficult does Koschei make it to write a financially catastrophic system
+> incorrectly?
+
+Each phase must create executable evidence that the language and supported
+runtime paths preserve the relevant invariants.
 
 ## Non-negotiable invariants
 
 1. **No implicit floating-point money.** Prices, quantities, fees and settlement
-   amounts must use exact representations. P0 uses integer ticks/lots; P1 adds a
-   first-class exact fixed-point contract.
-2. **Deterministic state transitions.** Equal inputs and sequencing metadata must
-   produce the same fills and state transitions across interpreter/native paths.
-3. **Price-time priority is explicit.** Matching policy is data + code, never
-   hidden in host-language container iteration behavior.
-4. **Authority is least-privilege.** Matching is pure. Network, persistence,
-   custody and chain settlement live behind separate capability boundaries.
-5. **Fail closed on overflow, unsupported rounding, corrupt recovery state,
-   authority widening and backend disagreement.**
-6. **Build identity is auditable.** Release/reproducibility proofs must bind the
-   exact source, MIR, dependency lock and authority contracts used by the binary.
+   amounts use exact representations.
+2. **Deterministic state transitions.** Equal inputs and sequencing metadata
+   produce the same state transitions across supported execution paths.
+3. **Authority is explicit and least-privilege.** Matching is pure. Network,
+   persistence, custody and settlement sit behind separate capability boundaries.
+4. **Authority ownership cannot silently alias.** Capability-bearing resources
+   become affine/linear where the lifecycle requires it.
+5. **Sensitive information cannot silently flow to a weaker sink.** Information
+   flow becomes a type-level property, not a code-review convention.
+6. **Protocol state is explicit.** Typestate makes invalid state-machine calls
+   unrepresentable where practical.
+7. **Transactions end in a named terminal state.** Commit/abort and recovery are
+   explicit, atomic and replay-safe.
+8. **Concurrency cannot change financial meaning.** Scheduler order is not a
+   matching, settlement or failure-selection input unless the protocol names it.
+9. **FFI cannot become an ambient escape hatch.** Foreign code is isolated behind
+   explicit capability/effect contracts and audited data boundaries.
+10. **Fail closed.** Overflow, unsupported rounding, corrupt recovery state,
+    authority widening, information-flow violation and backend disagreement deny
+    progress rather than guess.
+11. **Build identity is auditable.** Release proofs bind exact source, dependency
+    graph, compiler contract, MIR/backend identity and authority policy.
 
-## Roadmap
+## High-assurance language gates
+
+These gates are the primary language-development line. Ergonomic work remains
+useful, but it does not outrank these properties.
+
+### A0 — affine authority ownership — CURRENT
+
+- capability-bearing values are move-only;
+- ordinary method invocation borrows rather than consumes authority;
+- ownership transfer through binding, call, return or aggregate is explicit;
+- use-after-move fails at compile time;
+- mutable affine bindings fail closed;
+- capability-bearing aggregates inherit affine ownership structurally.
+
+Reference: `docs/AFFINE_RESOURCES_V1.md`.
+
+### A1 — mandatory effect system
+
+The current effect inference becomes an enforceable contract:
+
+- every function has a mechanically known effect set;
+- pure functions cannot call effectful code indirectly;
+- effect polymorphism is explicit rather than inferred into ambient authority;
+- module/package APIs expose effect contracts as part of compatibility;
+- build policy can reject effect widening.
+
+### A2 — typestate
+
+Security-critical handles carry protocol state in their type:
+
+- `Transaction<Open>` cannot be settled twice;
+- `Order<Active>` cannot be cancelled after terminal state;
+- `Session<Authenticated>` is distinct from unauthenticated state;
+- invalid transitions fail during compilation rather than runtime branch logic.
+
+### A3 — information-flow types
+
+- labels such as public/internal/secret/regulated become structural;
+- declassification requires explicit authority and an auditable operation;
+- secret values cannot flow to logs, network origins or low-integrity outputs by
+  ordinary assignment/call composition;
+- control-flow leaks receive explicit treatment instead of being ignored.
+
+### A4 — atomic transaction resources
+
+- transaction handles are linear where exactly-once termination is required;
+- commit/abort are terminal typestate transitions;
+- write-set/read-set and conflict semantics are explicit;
+- WAL/recovery identity is bound to transaction identity;
+- torn writes, duplicate commit and replay fail closed.
+
+### A5 — capability delegation and revocation
+
+- delegation narrows authority and records lineage;
+- delegated tokens cannot widen themselves;
+- revocation checks are explicit in the authority model;
+- expiry/revocation semantics cannot depend on ambient wall-clock reads unless a
+  trusted clock capability is explicitly present;
+- ownership and revocation compose with affine/linear resource rules.
+
+### A6 — deterministic execution contract
+
+- deterministic ordering for externally visible state changes;
+- bounded deterministic parallel primitives;
+- scheduler order cannot alter result/failure selection;
+- clocks, randomness and nondeterministic I/O require explicit capabilities and
+  replayable inputs;
+- deterministic replay/state-hash comparison becomes a release gate.
+
+### A7 — strong FFI isolation
+
+- no raw unrestricted host-language escape;
+- imported foreign functions declare effects, memory/ownership contract and
+  authority surface;
+- unsafe FFI is isolated into explicitly marked audited boundary modules;
+- capability tokens cannot be forged by foreign values;
+- FFI ABI compatibility and implementation digest are part of build identity.
+
+## Financial-system roadmap
 
 ### P0 — deterministic pair matching — COMPLETE
 
-- `Order`, `Trade`, and `Side` contracts in Koschei.
-- Integer price ticks and quantity lots only.
-- deterministic maker/taker and maker-price execution.
-- invalid/non-crossing orders produce no fill.
-- zero side-effect capability in the matching core.
-- interpreter/native byte parity.
+- integer price ticks and quantity lots;
+- deterministic maker/taker and maker-price execution;
+- invalid/non-crossing orders produce no fill;
+- authority-free matching core;
+- interpreter/native parity.
 
 Reference: `examples/financial_exchange/`.
 
 ### P1 — exact financial arithmetic — COMPLETE
 
 The first exact `Decimal` ABI uses signed-int64 atoms plus an explicit scale from
-0 through 18. Its initial public surface is:
+0 through 18.
 
-- `decimal(String, Int) -> Decimal or Error`;
-- `decimal_add(Decimal, Decimal) -> Decimal or Error`;
-- `decimal_sub(Decimal, Decimal) -> Decimal or Error`;
-- `decimal_cmp(Decimal, Decimal) -> Int or Error`;
-- `decimal_text(Decimal) -> String`.
-
-P1 invariants:
-
-- no binary floating-point representation in the Decimal runtime;
-- canonical input and fixed-scale serialization;
-- checked signed-int64 overflow;
-- different scales fail closed instead of rescaling implicitly;
-- no implicit `Float <-> Decimal` conversion;
-- interpreter, direct-MIR and generated-Go adapters share the same contract;
-- direct Decimal operators remain fail-closed until explicit error semantics exist.
-
-Multiplication, division and rescaling remain intentionally unavailable until
-explicit rounding modes and their adversarial parity vectors are specified.
+P1 invariants include canonical fixed-scale parsing/serialization, checked
+signed-int64 overflow, no implicit rescale, no implicit Float conversion and
+backend parity.
 
 Reference: `examples/financial_exchange/decimal_v1.ks`.
 
-### P2 — order book and venue semantics — CURRENT
+### P2 — order book and venue semantics — COMPLETE FOUNDATION
 
-The P2 reference core is an authority-free in-memory venue state machine. It
-keeps sequencing explicit and does not consult a host clock or host container
-ordering for matching decisions.
-
-Current P2 invariants under implementation:
-
-- deterministic bid priority: higher price first, then lower sequence;
-- deterministic ask priority: lower price first, then lower sequence;
-- resting order is maker and resting limit is execution price;
-- partial maker fills are reinserted with original priority metadata;
-- unmatched taker remainder rests at its original incoming sequence;
-- submit, cancel and replace commands require strictly increasing sequence values;
-- order ids cannot be reused through normal submission;
-- replace keeps the active id/owner/side but assigns new price-time priority;
-- tick size, lot size and maximum order quantity are explicit venue policy data;
-- self-trade preflight can fail closed before any partial state mutation;
-- every accepted state transition appends a typed deterministic event;
-- matching owns zero disk/network/env/process/clock authority;
-- interpreter/native output must remain byte-identical for the reference scenario.
+The reference venue state machine has deterministic price-time priority,
+partial fills, sequence-controlled submit/cancel/replace, duplicate-id rejection,
+self-trade preflight, typed deterministic events and no ambient clock/authority.
 
 Reference: `examples/financial_exchange/order_book_v1.ks`.
 
@@ -98,39 +160,51 @@ Reference: `examples/financial_exchange/order_book_v1.ks`.
 - explicit disk capability scopes;
 - recovery fuzzing and state-hash comparison.
 
-### P4 — concurrency and throughput
+### P4 — concurrency and throughput — FOUNDATION IN PROGRESS
 
-Concurrency is not allowed to change matching semantics.
+Already established:
 
-- bounded queues/backpressure;
-- deterministic sequencing boundary;
-- actor/task isolation;
-- cancellation semantics;
-- race/deadlock stress tests;
-- latency/throughput benchmarks with invariant checks.
+- fixed-capacity bounded queues/backpressure;
+- structured task lifetime and cancellation;
+- task share-safety boundary;
+- race-safe native bounded queue;
+- bounded deterministic native `parallel_map` with input-index result commit;
+- race-detector proof for shared queue and parallel callback execution.
 
-### P5 — clearing and settlement adapters
+Still required before venue-core parallelization claims:
+
+- deterministic sequencing boundaries for shared state;
+- deadlock/fairness/resource budgets;
+- ownership-safe parallel actors;
+- latency/throughput benchmarks that also check financial invariants.
+
+### P5 — clearing and settlement
 
 - settlement state machine separate from matching;
-- custody/key operations behind narrow authority;
-- network origins capability-scoped;
-- chain/provider adapters cannot widen authority;
+- exact asset/amount identity;
 - idempotent settlement and replay protection;
-- exact asset/amount identity in every transition.
+- custody/key operations behind narrow authority;
+- transaction typestate + linear commit/abort resources;
+- capability delegation/revocation for operators and adapters.
 
-### P6 — security intelligence gate
+### P6 — production assurance
 
-Only after Sentinel and the language independently pass their maturity gates:
+Before any NYSE/CME/Nasdaq-class claim:
 
-- pre-trade / pre-settlement risk evidence can be supplied by Sentinel;
-- Sentinel output remains advisory/evidence-bearing;
-- deterministic Koschei policy is final for execution authority;
-- AI output cannot forge capability tokens, mutate signed state, or override
-  compiler/runtime invariants.
+- fault-injection and recovery campaigns;
+- deterministic replay across supported targets;
+- race/deadlock/overflow/rounding/property fuzzing;
+- reproducible and attestable build chain;
+- hostile FFI tests;
+- effect/authority/information-flow audit reports;
+- operational threat model and production maturity gate separate from language
+  feature completion.
 
 ## Promotion rule
 
-A phase is not "done" because a feature exists. It is done only when its
-invariants are represented by deterministic tests/benchmarks and both supported
-execution paths agree. Production exchange claims remain prohibited until a
-separate production maturity gate is defined and passed.
+A phase is not done because a feature exists. It is done only when its invariants
+are represented by deterministic tests, adversarial tests and/or benchmarks and
+all supported execution paths agree.
+
+Production exchange claims remain prohibited until a separate production
+maturity gate is defined and passed.
