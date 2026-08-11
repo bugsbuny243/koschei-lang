@@ -9,6 +9,7 @@ from typing import Any
 
 class TokenType(Enum):
     # Keywords
+    PURE = auto()
     FN = auto()
     LET = auto()
     MUT = auto()
@@ -90,6 +91,7 @@ class LexerError(SyntaxError):
 
 class Lexer:
     KEYWORDS = {
+        "pure": TokenType.PURE,
         "fn": TokenType.FN,
         "let": TokenType.LET,
         "mut": TokenType.MUT,
