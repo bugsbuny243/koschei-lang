@@ -10,4 +10,4 @@ members = [
 [dependencies]
 domain = []
 catalog = ["domain"]
-orders = ["catalog", "domain"]
+orders = ["catalog"]

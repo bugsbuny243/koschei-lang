@@ -10,16 +10,19 @@ from pathlib import Path
 from .capabilities import DOMAIN_ORDER, analyze_graph
 from .lexer import LexerError
 from .mir import MirIntegrityError
-from .modules import ModuleError, check_graph, load_graph
+from .modules import ModuleError, check_graph
 from .parser import ParserError
 from .semantic import SemanticError
 from .workspace import (
     WorkspaceError,
-    build_workspace_lock,
     load_workspace,
     load_workspace_lock,
-    verify_workspace_lock,
     write_workspace_lock,
+)
+from .workspace_modules import load_workspace_member_graph
+from .workspace_package_lock import (
+    build_workspace_package_lock,
+    verify_workspace_package_lock,
 )
 
 
@@ -114,7 +117,7 @@ def _check_workspace(workspace) -> dict[str, object]:
     modules = 0
     for name in workspace.build_order:
         member = by_name[name]
-        graph = load_graph(member.project.entry)
+        graph = load_workspace_member_graph(workspace, name)
         report = check_graph(graph)
         count = len(graph.modules)
         functions += report.functions
@@ -152,7 +155,7 @@ def _workspace_caps(workspace) -> dict[str, object]:
     exact = True
     for name in workspace.build_order:
         member = by_name[name]
-        graph = load_graph(member.project.entry)
+        graph = load_workspace_member_graph(workspace, name)
         check_graph(graph)
         manifest = analyze_graph(graph)
         domains = manifest.domains()
@@ -224,13 +227,16 @@ def _command_workspace_lock(workspace, args: argparse.Namespace) -> int:
     default_lock = workspace.root / "koschei.workspace.lock.json"
     if args.workspace_lock_command == "create":
         destination = Path(args.output) if args.output else default_lock
-        lock = build_workspace_lock(workspace)
+        lock = build_workspace_package_lock(workspace)
         write_workspace_lock(lock, destination, replace=args.force)
         action = "created"
         lock_path = destination
     else:
         lock_path = Path(args.lock) if args.lock else default_lock
-        lock = verify_workspace_lock(workspace, load_workspace_lock(lock_path))
+        lock = verify_workspace_package_lock(
+            workspace,
+            load_workspace_lock(lock_path),
+        )
         action = "verified"
 
     result = {

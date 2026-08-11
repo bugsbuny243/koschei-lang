@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from .modules import check_graph, load_graph
+from .modules import ModuleGraph, check_graph, load_graph
 
 _SCHEMA = "koschei.module-lock.v1"
 _DIGEST_LENGTH = 64
@@ -52,17 +52,22 @@ class ModuleLock:
         }
 
 
-def build_module_lock(source: str | Path) -> ModuleLock:
+def build_module_lock(
+    source: str | Path,
+    *,
+    graph: ModuleGraph | None = None,
+    root: str | Path | None = None,
+) -> ModuleLock:
     source_path = Path(source).resolve()
-    graph = load_graph(source_path)
-    check_graph(graph)
-    root = source_path.parent
+    module_graph = graph if graph is not None else load_graph(source_path)
+    check_graph(module_graph)
+    lock_root = Path(root).resolve() if root is not None else source_path.parent
     modules: list[LockedModule] = []
 
-    for module in graph.modules.values():
-        relative = _relative_module_path(root, module.path)
+    for module in module_graph.modules.values():
+        relative = _relative_module_path(lock_root, module.path)
         imports = {
-            name: _relative_module_path(root, graph.module_of(target).path)
+            name: _relative_module_path(lock_root, module_graph.module_of(target).path)
             for name, target in module.imports.items()
         }
         modules.append(
@@ -74,7 +79,7 @@ def build_module_lock(source: str | Path) -> ModuleLock:
         )
 
     ordered = tuple(sorted(modules, key=lambda item: item.path))
-    entrypoint = _relative_module_path(root, source_path)
+    entrypoint = _relative_module_path(lock_root, source_path)
     payload = _lock_payload(entrypoint, ordered)
     return ModuleLock(
         entrypoint=entrypoint,
@@ -91,8 +96,14 @@ def load_module_lock(path: str | Path) -> ModuleLock:
     return _parse_lock(payload)
 
 
-def verify_module_lock(source: str | Path, locked: ModuleLock) -> ModuleLock:
-    current = build_module_lock(source)
+def verify_module_lock(
+    source: str | Path,
+    locked: ModuleLock,
+    *,
+    graph: ModuleGraph | None = None,
+    root: str | Path | None = None,
+) -> ModuleLock:
+    current = build_module_lock(source, graph=graph, root=root)
     if current.entrypoint != locked.entrypoint:
         raise ModuleLockError(
             "KS1904",
