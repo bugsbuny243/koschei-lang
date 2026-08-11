@@ -33,7 +33,7 @@ The compiler implementation digest hashes every installed `koschei/**/*.py` sour
 
 Before an analysis cache hit is accepted:
 
-1. the current workspace lock is loaded and fully verified;
+1. the current workspace lock is proven fresh, using the digest-scoped workspace lock index when available or the authoritative full verifier on an index miss;
 2. the selected package must still exist in that verified lock;
 3. its package-manifest digest and module-lock digest must match the analysis identity;
 4. the current compiler implementation digest must match;
@@ -46,13 +46,14 @@ Before an analysis cache hit is accepted:
 
 A corrupt, incomplete, stale, forged, or tampered analysis entry fails closed. Koschei does not silently repair or trust it.
 
-## Build pipeline
+## Warm build pipeline
 
-Conceptually a repeated native package build is now:
+After the workspace lock has already passed one full package-aware verification and its source index exists, a repeated native package build is conceptually:
 
 ```text
-workspace manifest load
-  -> full workspace-lock verification
+workspace/project TOML load
+  -> workspace lock-index freshness proof
+     -> manifest SHA-256 + exact .ks file set + source SHA-256
   -> analysis identity
      -> analysis miss: semantic + MIR + codegen -> immutable main.go cache
      -> analysis hit: verified cached main.go
@@ -62,10 +63,12 @@ workspace manifest load
   -> create-only user artifact + workspace-build sidecar
 ```
 
-`ks-workspace run` intentionally does **not** use Analysis Cache v1. The interpreter requires the real sealed in-memory MIR graph. v1 does not reconstruct Python MIR objects from cache data because doing so would create a much larger deserialization/security surface.
+On a new workspace digest, the lock-index layer intentionally falls back to the full package graph/semantic/module-lock verifier before it may publish a new freshness index.
+
+`ks-workspace run` intentionally does **not** use Analysis Cache v1. The interpreter requires the real sealed in-memory MIR graph. v1 does not reconstruct Python MIR objects from cache data because doing so would create a much larger deserialization/security surface. `run` still benefits from the workspace lock-index fast freshness proof before it performs the selected program's real analysis.
 
 ## Deliberate boundary
 
-Analysis Cache v1 removes repeated selected-package semantic/MIR/codegen work, but the existing `koschei.workspace.lock.json` verifier still reconstructs member module locks and therefore reparses workspace source graphs while proving that the lock is current.
+With Workspace Lock Index v1, repeated lock freshness no longer requires reparsing and semantically checking every workspace package. The index still hashes the complete current `.ks` inventory on each proof; this is a deliberate cryptographic content check rather than an mtime/size shortcut.
 
-That is now the next large-monorepo bottleneck. The next gate is a cryptographically bound workspace source inventory/topology index that allows current source bytes, manifests, and declared graph identity to be checked with direct SHA-256 verification before any selected-package analysis cache is trusted. The design must preserve fail-closed behavior and must not turn mtime/size metadata into authority.
+The next scale gates are therefore higher-level: hierarchical content-addressed source trees/CAS for very large workspaces, structured concurrency/backpressure, bounded network-service runtime primitives, durable transactional storage/recovery, and production observability. Any future filesystem/watch acceleration must remain a hint; timestamps cannot become security authority.
