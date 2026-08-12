@@ -1,4 +1,4 @@
-"""V5 formatter facade for generic function headers."""
+"""V5 formatter facade for generic and high-assurance declarations."""
 
 from __future__ import annotations
 
@@ -73,11 +73,30 @@ def _needs_space(previous: Token, token: Token, row: list[Token], index: int) ->
     return _ORIGINAL_NEEDS_SPACE(previous, token, row, index)
 
 
+def _breaks_before(
+    token: Token, previous: Token, depth: int, previous_depth: int
+) -> bool:
+    # High-assurance declaration prefixes stay attached to the declaration they
+    # qualify. `transition`/`starts` are contextual identifiers, not globally
+    # reserved keywords.
+    if token.type is TokenType.FN and (
+        previous.type is TokenType.PURE
+        or (previous.type is TokenType.IDENTIFIER and previous.value == "transition")
+    ):
+        return False
+    if token.type is TokenType.STRUCT and previous.type is TokenType.STATEFUL:
+        return False
+    return _ORIGINAL_BREAKS_BEFORE(token, previous, depth, previous_depth)
+
+
 _ORIGINAL_BRACE_IS_LITERAL = _v09._brace_is_literal
 _ORIGINAL_NEEDS_SPACE = _v09._needs_space
+_ORIGINAL_BREAKS_BEFORE = _v09._breaks_before
+_v09.STATEMENT_STARTERS.update({TokenType.PURE, TokenType.STATEFUL})
 _v09._is_generic_angle = _is_generic_angle
 _v09._brace_is_literal = _brace_is_literal
 _v09._needs_space = _needs_space
+_v09._breaks_before = _breaks_before
 
 format_source = _v09.format_source
 check_source = _v09.check_source

@@ -43,22 +43,31 @@ class PublicMirRuntimeTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(output.getvalue(), "Koschei\n1\n")
 
-    def test_not_yet_normalized_for_loop_uses_explicit_compatibility_mode(self) -> None:
+    def test_list_for_loop_uses_native_mir_without_ast_compatibility(self) -> None:
         mir = self.checked_mir(
             """
 fn main() {
-    for value in [1, 2, 3] {
+    for value in [1, 2, 3, 4] {
+        if value == 2 {
+            continue
+        }
         println(value)
+        if value == 3 {
+            break
+        }
     }
 }
 """
         )
-        self.assertEqual(runtime_execution_mode(mir), "ast_compat_v1")
+        self.assertEqual(runtime_execution_mode(mir), "mir_native_v1")
         output = io.StringIO()
-        with redirect_stdout(output):
+        with patch(
+            "koschei.runtime_budget.BudgetedInterpreter.execute_main",
+            side_effect=AssertionError("AST compatibility path must not run"),
+        ), redirect_stdout(output):
             code = run_mir_with_budget(mir)
         self.assertEqual(code, 0)
-        self.assertEqual(output.getvalue(), "1\n2\n3\n")
+        self.assertEqual(output.getvalue(), "1\n3\n")
 
     def test_lexical_shadowing_uses_distinct_native_mir_bindings(self) -> None:
         mir = self.checked_mir(

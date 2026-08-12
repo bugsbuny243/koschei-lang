@@ -45,8 +45,10 @@ func (parser *Parser) orHandler(depth int) (syntax.Expression, error) {
 	for parser.match(lexer.OR) {
 		operator := parser.previous()
 		if parser.match(lexer.RETURN) {
+			returnToken := parser.previous()
 			var failureExpression *syntax.Expression
-			if !orReturnStop(parser.peek().Kind) {
+			next := parser.peek()
+			if !orReturnStop(next.Kind) && next.Line == returnToken.Line {
 				value, err := parser.logicalOr(depth + 1)
 				if err != nil {
 					return syntax.Expression{}, err

@@ -1,31 +1,31 @@
-"""Koschei modül yükleyicisi.
+"""Koschei module loader.
 
-`import risk` ifadesi, içe aktaran dosyanın yanındaki `risk.ks` dosyasını bağlar.
-Konfigürasyon dosyası, paket bildirimi veya derleme betiği YOKTUR: dosya sistemi
-tek gerçektir.
-
-Yetki açısından kritik nokta: **import hiçbir yetki vermez.** Bir modülün
-fonksiyonları, tıpkı aynı dosyadaki fonksiyonlar gibi, diske veya ağa ancak
-kendilerine bir jeton parametresi verilirse dokunabilir. `main` dışında yetki
-üreten hiçbir yol olmadığı için, içe aktarılan kod kendiliğinden hiçbir şey
-yapamaz — bu, dilin merkezi iddiasının çok dosyalı programlardaki karşılığıdır.
+By default, `import risk` binds `risk.ks` beside the importing file. Callers that
+need a stronger project system may supply an explicit resolver, but import never
+grants authority: imported code can use disk/network/env/process effects only
+through capability values that are actually passed to it.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .affine_resources_v1 import check_affine_resources
 from .ast_nodes import Program, SourceLocation
+from .effect_contracts_v1 import EffectReport, check_effect_contracts
 from .integrity import check_program_integrity
 from .legacy_generics import prepare_legacy_analysis
-from .mir import lower_graph as lower_mir_graph
 from .lexer import LexerError
+from .mir import lower_graph as lower_mir_graph
 from .parser import ParserError, parse
 from .semantic import ImportedModule, SemanticError, SemanticReport, check as semantic_check
 from .typed_hir import check_typed_hir
+from .typestate_resources_v1 import check_typestate_resources
 
 MODULE_SUFFIX = ".ks"
+ImportResolver = Callable[[Path, str, SourceLocation], Path]
 
 
 class ModuleError(Exception):
@@ -76,40 +76,46 @@ class ModuleGraph:
         return ordered
 
 
-def load_graph(root_path: str | Path) -> ModuleGraph:
+def load_graph(
+    root_path: str | Path,
+    *,
+    import_resolver: ImportResolver | None = None,
+) -> ModuleGraph:
     root = Path(root_path).resolve()
+    resolver = import_resolver or _resolve_sibling_import
     modules: dict[str, Module] = {}
     loading: list[str] = []
 
     def load(path: Path, name: str, location: SourceLocation) -> str:
-        key = str(path)
+        resolved_path = path.resolve(strict=False)
+        key = str(resolved_path)
         if key in loading:
             chain = " -> ".join(
-                Path(item).name for item in loading[loading.index(key):]
+                Path(item).name for item in loading[loading.index(key) :]
             )
             raise ModuleError(
                 "KS1602",
-                f"Döngüsel import: {chain} -> {path.name}. Modüller bir halka "
+                f"Döngüsel import: {chain} -> {resolved_path.name}. Modüller bir halka "
                 "oluşturamaz; ortak kodu üçüncü bir modüle taşıyın.",
                 location,
             )
         if key in modules:
             return key
-        if not path.is_file():
+        if not resolved_path.is_file():
             raise ModuleError(
                 "KS1601",
-                f"Modül dosyası bulunamadı: {path.name} "
-                f"(aranan yer: {path.parent})",
+                f"Modül dosyası bulunamadı: {resolved_path.name} "
+                f"(aranan yer: {resolved_path.parent})",
                 location,
             )
 
-        source = path.read_text(encoding="utf-8")
+        source = resolved_path.read_text(encoding="utf-8")
         try:
             program = parse(source)
         except (LexerError, ParserError) as error:
-            error.source_path = path
+            error.source_path = resolved_path
             raise
-        module = Module(name=name, path=path, program=program)
+        module = Module(name=name, path=resolved_path, program=program)
 
         loading.append(key)
         try:
@@ -122,9 +128,15 @@ def load_graph(root_path: str | Path) -> ModuleGraph:
                         declaration.location,
                     )
                 seen.add(declaration.name)
-                target = path.parent / (declaration.name + MODULE_SUFFIX)
+                target = resolver(
+                    resolved_path,
+                    declaration.name,
+                    declaration.location,
+                )
                 module.imports[declaration.name] = load(
-                    target, declaration.name, declaration.location
+                    target,
+                    declaration.name,
+                    declaration.location,
                 )
         finally:
             loading.pop()
@@ -134,6 +146,14 @@ def load_graph(root_path: str | Path) -> ModuleGraph:
 
     root_key = load(root, root.stem, SourceLocation(1, 1))
     return ModuleGraph(root=root_key, modules=modules)
+
+
+def _resolve_sibling_import(
+    importer: Path,
+    name: str,
+    _location: SourceLocation,
+) -> Path:
+    return importer.parent / (name + MODULE_SUFFIX)
 
 
 def public_api(
@@ -162,14 +182,34 @@ def check_graph(graph: ModuleGraph) -> SemanticReport:
     graph.mir = None
     report: SemanticReport | None = None
     typed_reports = {}
+    effect_reports: dict[str, EffectReport] = {}
+
     for module in graph.in_dependency_order():
         try:
             imports = imported_modules(graph, module)
             check_program_integrity(module.program)
             typed_report = check_typed_hir(module.program, imports)
+            check_typestate_resources(module.program, imports, typed_report)
+            check_affine_resources(module.program, imports, typed_report)
+
+            imported_effects = {
+                alias: effect_reports[target]
+                for alias, target in module.imports.items()
+                if target in effect_reports
+            }
+            effect_report = check_effect_contracts(
+                module.program,
+                imports,
+                typed_report,
+                imported_effects,
+            )
+            effect_reports[str(module.path)] = effect_report
             typed_reports[str(module.path)] = typed_report
+
             legacy_program, legacy_imports = prepare_legacy_analysis(
-                module.program, imports, typed_report
+                module.program,
+                imports,
+                typed_report,
             )
             result = semantic_check(legacy_program, legacy_imports)
         except SemanticError as error:
@@ -220,14 +260,13 @@ def module_imports(graph: ModuleGraph) -> dict[str, dict[str, str]]:
     return {key: dict(module.imports) for key, module in graph.modules.items()}
 
 
-
-
 def struct_declarations(graph: ModuleGraph) -> dict[str, object]:
     result: dict[str, object] = {}
     for module in graph.in_dependency_order():
         for declaration in module.program.structs:
             result[declaration.name] = declaration
     return result
+
 
 def enum_declarations(graph: ModuleGraph) -> dict[str, object]:
     result: dict[str, object] = {}
