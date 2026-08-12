@@ -1,0 +1,21 @@
+{
+  "schema": "koschei.opaque-source-graph/v1",
+  "project_id": "example-project",
+  "objects": [
+    {
+      "object_id": "9f2b6d7a4c81439e8d31a7106d2f4b55",
+      "artifact_hash": "sha256:REQUIRED",
+      "policy_hash": "sha256:REQUIRED",
+      "epoch_alias": "7Q2A9M4K",
+      "provenance": "canonical",
+      "requested_capabilities": []
+    }
+  ],
+  "edges": [],
+  "constraints": {
+    "physical_path_is_authority": false,
+    "semantic_filename_required": false,
+    "plaintext_fallback_allowed": false,
+    "decoy_is_deployable": false
+  }
+}
