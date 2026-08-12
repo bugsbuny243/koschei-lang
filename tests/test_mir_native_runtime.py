@@ -7,11 +7,8 @@ import tempfile
 import unittest
 
 from koschei.mir import require_mir
-from koschei.mir_native_runtime import (
-    MirNativeUnsupported,
-    inspect_native_mir_support,
-    run_mir_native,
-)
+from koschei.mir_ir import MirAstFallback
+from koschei.mir_native_runtime import inspect_native_mir_support, run_mir_native
 from koschei.modules import check_graph, load_graph
 
 
@@ -86,25 +83,57 @@ fn main() {
         self.assertEqual(code, 0)
         self.assertEqual(output.getvalue(), "1\n3\n")
 
-    def test_normalized_for_loop_fails_closed_until_iterator_runtime_lands(self) -> None:
+    def test_list_for_break_and_continue_execute_from_iterator_mir(self) -> None:
         mir = self.checked_mir(
             """
 fn main() {
-    for value in [1, 2, 3] {
+    for value in [1, 2, 3, 4] {
+        if value == 2 {
+            continue
+        }
         println(value)
+        if value == 3 {
+            break
+        }
     }
 }
 """
         )
+        unexpected = [
+            (
+                block.id,
+                instruction.node_kind,
+                instruction.location.line,
+                instruction.location.column,
+            )
+            for block in mir.root_module.functions[0].blocks
+            for instruction in block.instructions
+            if isinstance(instruction, MirAstFallback)
+        ]
+        self.assertEqual(unexpected, [], f"unexpected List-for fallbacks: {unexpected!r}")
         support = inspect_native_mir_support(mir)
-        self.assertFalse(support.supported)
-        self.assertFalse(any("AST fallback" in item for item in support.reasons))
-        self.assertTrue(
-            any("MirList" in item or "MirIter" in item for item in support.reasons),
-            support.reasons,
+        self.assertTrue(support.supported, support.reasons)
+        output = io.StringIO()
+        with redirect_stdout(output):
+            code = run_mir_native(mir)
+        self.assertEqual(code, 0)
+        self.assertEqual(output.getvalue(), "1\n3\n")
+
+    def test_normalized_list_renders_like_koschei_list(self) -> None:
+        mir = self.checked_mir(
+            """
+fn main() {
+    println([1, 2, 3])
+}
+"""
         )
-        with self.assertRaises(MirNativeUnsupported):
-            run_mir_native(mir)
+        support = inspect_native_mir_support(mir)
+        self.assertTrue(support.supported, support.reasons)
+        output = io.StringIO()
+        with redirect_stdout(output):
+            code = run_mir_native(mir)
+        self.assertEqual(code, 0)
+        self.assertEqual(output.getvalue(), "[1, 2, 3]\n")
 
 
 if __name__ == "__main__":
