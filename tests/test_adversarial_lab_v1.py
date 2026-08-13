@@ -90,14 +90,14 @@ class AdversarialLabV1Tests(unittest.TestCase):
         self.assertFalse(result.passed)
         self.assertIn("test-count shrink detected", result.detail)
 
-    def test_baseline_attack_budget_includes_living_synthetic_system(self):
-        self.assertEqual(sum(g.min_tests for g in REQUIRED_GATES), 112)
-        self.assertEqual(MIN_TOTAL_ATTACK_TESTS, 112)
-        shadow = next(g for g in REQUIRED_GATES if g.gate_id == "no-return-shadow-graph")
+    def test_baseline_attack_budget_includes_synthetic_reality_plane(self):
+        self.assertEqual(sum(g.min_tests for g in REQUIRED_GATES), 118)
+        self.assertEqual(MIN_TOTAL_ATTACK_TESTS, 118)
         living = next(g for g in REQUIRED_GATES if g.gate_id == "living-synthetic-system")
-        self.assertEqual(shadow.min_tests, 6)
-        self.assertEqual(living.test_file, "tests/test_living_synthetic_system_v1.py")
+        reality = next(g for g in REQUIRED_GATES if g.gate_id == "synthetic-reality-plane")
         self.assertEqual(living.min_tests, 6)
+        self.assertEqual(reality.test_file, "tests/test_synthetic_reality_plane_v1.py")
+        self.assertEqual(reality.min_tests, 6)
 
 
 if __name__ == "__main__":
