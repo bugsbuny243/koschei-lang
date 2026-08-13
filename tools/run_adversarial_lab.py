@@ -34,6 +34,8 @@ def _write_bootstrap_failure(json_out: str | None, candidate_id: str, exc: BaseE
         "commercial_ready": False,
         "report_sha256": None,
         "bootstrap_error": f"{type(exc).__name__}: {exc}",
+        "minimum_total_tests": None,
+        "total_tests_run": 0,
         "gates": [],
     }
     text = json.dumps(payload, sort_keys=True, indent=2)
@@ -61,12 +63,15 @@ def main() -> int:
         "candidate_id": report.candidate_id,
         "commercial_ready": report.commercial_ready,
         "report_sha256": report.report_sha256,
+        "minimum_total_tests": report.minimum_total_tests,
+        "total_tests_run": report.total_tests_run,
         "gates": [
             {
                 "gate_id": r.gate_id,
                 "test_file": r.test_file,
                 "passed": r.passed,
                 "tests_run": r.tests_run,
+                "min_tests": r.min_tests,
                 "detail": r.detail,
             }
             for r in report.results
