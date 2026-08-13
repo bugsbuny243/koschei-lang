@@ -33,13 +33,11 @@ class AdversarialLabV1Tests(unittest.TestCase):
 
     def test_one_failed_gate_blocks_release(self):
         root = self._root_with_required_suites()
-
         def runner(test_file: str):
             gate = next(g for g in REQUIRED_GATES if g.test_file == test_file)
             if test_file.endswith("test_decoy_attack_simulation_v1.py"):
                 return False, gate.min_tests, "attack escaped expected invariant"
             return True, gate.min_tests, "ok"
-
         report = evaluate_release(candidate_id="rc-2", repo_root=root, runner=runner)
         self.assertFalse(report.commercial_ready)
         self.assertEqual(sum(not r.passed for r in report.results), 1)
@@ -49,12 +47,10 @@ class AdversarialLabV1Tests(unittest.TestCase):
         missing = root / REQUIRED_GATES[0].test_file
         missing.unlink()
         calls = []
-
         def runner(test_file: str):
             calls.append(test_file)
             gate = next(g for g in REQUIRED_GATES if g.test_file == test_file)
             return True, gate.min_tests, "ok"
-
         report = evaluate_release(candidate_id="rc-3", repo_root=root, runner=runner)
         self.assertFalse(report.commercial_ready)
         first = next(r for r in report.results if r.gate_id == REQUIRED_GATES[0].gate_id)
@@ -69,10 +65,8 @@ class AdversarialLabV1Tests(unittest.TestCase):
 
     def test_runner_exception_fails_closed(self):
         root = self._root_with_required_suites()
-
         def runner(_):
             raise RuntimeError("boom")
-
         report = evaluate_release(candidate_id="rc-5", repo_root=root, runner=runner)
         self.assertFalse(report.commercial_ready)
         self.assertTrue(all(r.detail == "runner error: RuntimeError" for r in report.results))
@@ -86,26 +80,24 @@ class AdversarialLabV1Tests(unittest.TestCase):
     def test_per_gate_test_count_shrink_blocks_release(self):
         root = self._root_with_required_suites()
         target = REQUIRED_GATES[0]
-
         def runner(test_file: str):
             gate = next(g for g in REQUIRED_GATES if g.test_file == test_file)
             count = gate.min_tests - 1 if gate.gate_id == target.gate_id else gate.min_tests
             return True, count, "runner green"
-
         report = evaluate_release(candidate_id="rc-shrink", repo_root=root, runner=runner)
         self.assertFalse(report.commercial_ready)
         result = next(r for r in report.results if r.gate_id == target.gate_id)
         self.assertFalse(result.passed)
         self.assertIn("test-count shrink detected", result.detail)
 
-    def test_baseline_attack_budget_includes_event_horizon(self):
-        self.assertEqual(sum(g.min_tests for g in REQUIRED_GATES), 100)
-        self.assertEqual(MIN_TOTAL_ATTACK_TESTS, 100)
-        shaping = next(g for g in REQUIRED_GATES if g.gate_id == "transport-shaping")
+    def test_baseline_attack_budget_includes_no_return_shadow_graph(self):
+        self.assertEqual(sum(g.min_tests for g in REQUIRED_GATES), 106)
+        self.assertEqual(MIN_TOTAL_ATTACK_TESTS, 106)
         horizon = next(g for g in REQUIRED_GATES if g.gate_id == "event-horizon")
-        self.assertEqual(shaping.min_tests, 6)
-        self.assertEqual(horizon.test_file, "tests/test_event_horizon_isolation_v1.py")
+        shadow = next(g for g in REQUIRED_GATES if g.gate_id == "no-return-shadow-graph")
         self.assertEqual(horizon.min_tests, 7)
+        self.assertEqual(shadow.test_file, "tests/test_no_return_shadow_graph_v1.py")
+        self.assertEqual(shadow.min_tests, 6)
 
 
 if __name__ == "__main__":
