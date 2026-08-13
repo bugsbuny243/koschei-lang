@@ -1,25 +1,27 @@
 # Koschei (`.ks`)
 
+> **Özel ticari geliştirme deposu. Koschei proprietary yazılımdır. Bu repoya erişim; yeniden dağıtım, alt lisanslama, satış veya kaynak kodu yayımlama hakkı vermez. Ayrıntılar için `LICENSE` dosyasına bakın.**
+
 **Capability tabanlı güvenli bir programlama dili. İçe aktardığınız bir paket, siz açıkça bir jeton vermedikçe diskinize, ağınıza veya ortam değişkenlerinize dokunamaz.**
 
-Tedarik zinciri saldırılarının çalışma nedeni şu: bir bağımlılık, sürecin sahip olduğu bütün izinleri otomatik olarak devralır. Paketi kurarsınız ve o paket `~/.ssh` dizinini, `.env` dosyanızı okuyabilir veya bir socket açabilir — hiç sormadan. Koschei bu "ortamdan gelen yetki"yi kaldırır: yan etki erişimi, fonksiyona parametre olarak geçirilmesi gereken bir değerdir ve derleyici, kendisine verilmemiş bir yetkiye uzanan programı reddeder.
+Tedarik zinciri saldırılarının çalışma nedeni şu: bir bağımlılık, sürecin sahip olduğu bütün izinleri otomatik olarak devralır. Paketi kurarsınız ve o paket `~/.ssh` dizinini, `.env` dosyanızı okuyabilir veya bir socket açabilir — hiç sormadan. Koschei bu ortamdan gelen yetkiyi kaldırır: yan etki erişimi fonksiyona geçirilmesi gereken bir değerdir ve derleyici, kendisine verilmemiş bir yetkiye uzanan programı reddeder.
 
 English: [README.md](README.md)
 
 ---
 
-## 60 saniyede dene
+## Yetkili geliştirme hızlı başlangıcı
 
-Kasıtlı olarak zararlı hazırlanmış bir paket, bir sır dosyasını okuyup çağırana döndürmeye çalışıyor. Hiç çalışmadığını kendi makinenizde doğrulayın.
+Bu repo özeldir. Aşağıdaki komutlar yalnızca yetkili işbirlikçileri ve lisanslı geliştirme ortamları içindir.
 
 ```bash
-git clone https://github.com/bugsbuny243/koschei-lang
+git clone <yetkili-private-koschei-reposu>
 cd koschei-lang
 pip install .
 ks check examples/supply_chain/main.ks
 ```
 
-Test edilen paket — `examples/supply_chain/analytics.ks`:
+`examples/supply_chain/analytics.ks` içindeki kasıtlı zararlı paket bir sır dosyasını okumaya çalışır. Beklenen sonuç derleme aşamasında reddedilmesidir.
 
 <!-- verify: expect KS2401 -->
 ```ks
@@ -29,7 +31,7 @@ fn track(event: String) -> String or Error {
 }
 ```
 
-Çıktı:
+Beklenen çıktı:
 
 ```text
 KOSCHEI ERROR: KS2401 [line 6, column 18]: Required capability is unavailable
@@ -38,22 +40,22 @@ attempted without the corresponding capability token.
 Hint: run 'ks --lang en explain KS2401' for details.
 ```
 
-Çıkış kodu `1`. Program hiç çalışmadı. Dosya hiç açılmadı. Hiçbir yere hiçbir şey gönderilmedi.
-
-Bu, çağrıyı yakalayan bir runtime sandbox değil. `track` fonksiyonunun içinde `disk` diye bir şey hiç yok — saldırı derleme anında ölüyor.
+Program çalıştırılmaz; dosya açılmaz. Bu bir runtime sandbox yakalaması değildir: `track` içinde `disk` yetkisi olmadığı için saldırı derleme aşamasında reddedilir.
 
 ---
 
-## Kurulum
+## Dağıtım ve kurulum
 
-Python 3.12 veya üstü. Başka hiçbir bağımlılık yok — bir güvenlik dilinin kurulumu, güvenmek zorunda olduğunuz paket sayısını artırmamalı.
+Koschei sınırsız herkese açık kaynak paketi olarak dağıtılmaz. Geliştirme sürümleri yetkili private source veya onaylı lisanslı artifact kanalı üzerinden kurulur.
+
+Yetkili source checkout için:
 
 ```bash
-pip install git+https://github.com/bugsbuny243/koschei-lang
+pip install .
 ks version
 ```
 
-İlk programınız:
+İlk program:
 
 ```bash
 ks new hello-koschei
@@ -61,82 +63,47 @@ cd hello-koschei
 ks run .
 ```
 
-`ks new`, `koschei.toml` ve `src/main.ks` içeren sıfır bağımlılıklı bir proje oluşturur. Komutlar kaynak dosyası, proje dizini veya doğrudan `koschei.toml` yolu kabul eder.
+`ks new`, `koschei.toml` ve `src/main.ks` içeren sıfır bağımlılıklı bir proje oluşturur.
 
 ---
 
 ## Temel ilkeler
 
-- **Ortamdan gelen yetki yok.** Disk, ağ, ortam değişkeni ve process erişimi açık bir capability değeri gerektirir. Kendisine böyle bir değer geçirilmemiş fonksiyon o etkiyi gerçekleştiremez.
-- **Yetkiler daralır, asla genişlemez.** `caps.disk` yalnızca devredebilen bir kök jetondur; `caps.disk.allow(yol)` daraltılmış bir jeton üretir ve bu jeton yeniden genişletilemez (`KS2403`), kök jeton da doğrudan I/O yapamaz (`KS2402`).
-- **`null` yok.** Bulunmayabilecek değerler `Option<T>` ile temsil edilir (`Some` / `None`).
-- **Hatalar birer değerdir.** `Result<T, E>` ve tek bir `or` anahtar sözcüğünün üç biçimi: `or return`, `or default`, `or { blok }`. Ele alınmamış hata değeri derleme hatasıdır (`KS1401`).
+- **Ortamdan gelen yetki yok.** Disk, ağ, ortam değişkeni ve process erişimi açık bir capability değeri gerektirir.
+- **Yetkiler daralır, asla genişlemez.** Daraltılmış capability yeniden genişletilemez.
+- **`null` yok.** Bulunmayabilecek değerler `Option<T>` ile temsil edilir.
+- **Hatalar birer değerdir.** `Result<T, E>` kullanılır ve ele alınmamış hata derleme hatasıdır.
 - **Varsayılan immutable.** Değer değiştirmek için `let mut` gerekir.
-- **Her tanı açıklanabilir.** 33 hata kodu, Türkçe/İngilizce katalog; `ks explain KS2401` nedeni ve çözümü yazdırır.
-
-## Örnek
-
-<!-- verify: compile — çalışma anında dış HTTPS origin gerektirir -->
-```ks
-fn fetch_data(net: NetCaps, url: String) -> String or Error {
-    let response = net.get(url) or return Error("istek başarısız")
-    return response.text()
-}
-
-fn main(caps: SystemCaps) {
-    let api_net = caps.net.allow("https://api.example.com")
-    let response = fetch_data(api_net, "https://api.example.com/v1")
-    println(response)
-}
-```
-
-`fetch_data` tam olarak tek bir origin'e erişebilir. Diske dokunamaz, ortam değişkeni okuyamaz, process başlatamaz — denetlenip "yapmıyor" bulunduğu için değil, buna izin verecek jetonu taşımadığı için.
+- **Tanılar açıklanabilir.** Sabit hata kodları ve Türkçe/İngilizce katalog vardır.
 
 ## Yetki manifestosu
 
-Yetki kaynak kodda açık olduğu için makineyle özetlenebilir. `ks caps`, bir programın erişebildiği her şeyi tüm modül grafiği boyunca raporlar:
+`ks caps`, programın erişebildiği yetkileri tüm modül grafiği boyunca raporlar:
 
 ```bash
 ks caps examples/app.ks
 ks caps --json src/main.ks
-ks caps --deny net src/main.ks   # program ağa erişebiliyorsa 2 ile çıkar
+ks caps --deny net src/main.ks
 ```
 
-Saf bir program için manifesto boştur ve bu, kod incelemesinde verilen bir söz değil, doğrulanabilir bir olgudur:
-
-```text
-KOSCHEI YETKİ MANİFESTOSU: examples/app.ks
-
-Bu program hiçbir yan etki yeteneği taşımıyor.
-Disk, ağ, ortam değişkeni ve süreç erişimi YOKTUR — saf hesaplama.
-```
-
-`--deny` kapısı CI için tasarlandı: bir bağımlılık güncellemesi sessizce erişim ekliyorsa build düşer.
-
-## Dil özellikleri
-
-Bugün çalışan: tipli parametrelerle fonksiyonlar, çıkarımlı generic fonksiyonlar, generic struct ve enumlar, `let` / `let mut`, struct, `List<T>`, immutable `Map<String, V>` (`get`/`set`/`keys`/`contains`), `for`-in, yalnızca `Bool` koşullu `if`/`else`/`while`, exhaustive `match` ile enum'lar, gerçek `Option<T>` / `Result<T, E>`, tam ifade interpolasyonu (`"{items.length()}"`), günlük stdlib (`String` `trim`/`split`/`join`, `List` `sort`/`filter`/`contains`) ve `import risk` yazınca yanındaki `risk.ks` dosyasını bağlayan modül sistemi — manifest yok, build script yok, config yok.
+`--deny` kapısı CI için kullanılır; bağımlılık güncellemesi sessizce yeni erişim eklerse build düşer.
 
 ## Araç zinciri
 
 ```bash
-ks check src/main.ks          # tip, modül ve capability denetimi
-ks run src/main.ks            # interpreter
-ks build src/main.ks -o app   # üretilen Go üzerinden native binary
-ks fmt --write src/           # kanonik biçimlendirme
-ks caps src/main.ks           # yetki manifestosu
-ks explain KS2401             # tanılar, Türkçe için --lang tr
-ks check --json src/main.ks   # editörler için sabit code/message/line/column
-ks mir src/main.ks           # mühürlü ve denetlenmiş backend sözleşmesi
-ks lsp                         # sıfır bağımlılıklı language server
-ks tokens / ks ast / ks emit-go
+ks check src/main.ks
+ks run src/main.ks
+ks build src/main.ks -o app
+ks fmt --write src/
+ks caps src/main.ks
+ks explain KS2401
+ks check --json src/main.ks
+ks mir src/main.ks
+ks lsp
+ks tokens / ks ast
 ```
 
-Hat şöyle: `.ks` → lexer → parser → AST → Typed HIR, bütünlük ve capability denetimleri → normalize talimat/basic block içeren mühürlü MIR v2 → interpreter veya Go native adapter. Tanılar varsayılan olarak İngilizcedir; `--lang tr` veya `KOSCHEI_LANG=tr` aynı hata kodlarıyla Türkçe kataloğu seçer.
-
-## Editör desteği
-
-`editors/vscode` içinde sıfır bağımlılıklı resmi LSP uzantısı var: `.ks` syntax highlighting, canlı tanılar, formatlama, hover, tanıma gitme, belge sembolleri ve completion. Sunucu `ks lsp` üzerinden açılır; `ks-lsp` uyumluluk aliası olarak kalır.
+Koschei'nin uzun vadeli kanonik mimarisi Koschei semantiği ve doğrulanmış execution contract'ları tarafından tanımlanır; geçici bootstrap veya tooling katmanlarının uygulama dili Koschei'nin davranışını tanımlamaz. Dış adapter'lar yalnız interoperability içindir.
 
 ## Testler
 
@@ -144,26 +111,24 @@ Hat şöyle: `.ks` → lexer → parser → AST → Typed HIR, bütünlük ve ca
 python -m unittest discover -s tests -v
 ```
 
-Güncel CI paketi 421 testin yanında native/interpreter çıktı eşliğini, doküman kod bloklarını, sabitlenmiş golden çıktıları ve zararlı `examples/supply_chain/` paketinin hâlâ derlenemediğini doğrular.
+CI paketi compiler/runtime testlerini, parity kontrollerini, capability güvenlik regresyonlarını ve deception-plane saldırı simülasyonlarını içerir.
 
 ## Durum
 
-Koschei **v0.9.0**, alpha aşamasında. Gerçek çok dosyalı programları çalıştırıyor ve capability modeli baştan sona uygulanıyor, ancak sözdizimi ve runtime sözleşmeleri v1.0'a kadar değişebilir. Henüz prodüksiyona koymayın.
+Koschei pre-1.0 aşamasında ve özel ticari geliştirme altında. Sözdizimi, runtime sözleşmeleri, lisanslama, dağıtım ve güvenlik mimarisi ilk production sürümüne kadar değişebilir. Henüz production kullanımı önerilmez.
 
-Native tarafta şu anda uygulanan güvenlik sınırları:
+Korunan source/deception mimarisi aşamalı saldırı dalgalarıyla sertleştirilmektedir. Canonical source identity fiziksel source locator'lardan ayrıdır; decoy view'lar deploy edilemez olarak işaretlenir ve kısa ömürlü epoch-bound read grant'ler ile yetki ayrımı yapılır.
 
-- Güvenli native disk ABI, Linux `openat` / `O_NOFOLLOW` hedefler. Güvenli eşdeğerin bulunmadığı bir platformda disk kullanan build daha zayıf bir yola düşmek yerine `KS4001` ile durur.
-- Process capability'sinin `run` / `spawn`'ı process başlatmaz; hata değeri döndürür.
-- Çalışma anında path traversal, symlink kaçışı ve kapsam dışı yollar `KS3402` verir; salt-okunur jetonla yazma `KS3404` verir; izin verilen origin'den çıkan HTTP redirect reddedilir; çağrı derinliği 512 ile sınırlıdır (`KS3105`).
+## Ticari geliştirme
 
-MIR şema 2 artık normalize çekirdek talimatlar, açık basic block’lar ve terminator’lar içeriyor; desteklenmeyen yapılar `ast_fallback` olarak görünür. Sıradaki V5 kapısı backend’lerin bu düğümleri doğrudan çalıştırması ve fallback’in yapı yapı kaldırılmasıdır. v1.0 kapısı ayrıca dondurulmuş sözdizimi ve capability runtime ABI, SemVer uyumluluk taahhüdü, kilit dosyalı paket çözümleme ve migration testleri ister.
+Koschei proprietary ticari yazılım olarak geliştirilmektedir. Mevcut repo, compiler/runtime güvenlik implementasyonu, deception mekanizmaları, model entegrasyonları veya bunlardan türetilmiş ticari ürünlerin public yeniden dağıtımı ayrı bir yazılı lisans olmadan yetkili değildir.
 
-**Tasarlandı ama yapılmadı** — ve tamamlanmış özellik olarak sunulmuyor: static region inference, C backend, Sentinel / tarpit katmanları. Koschei yetkileri tip sisteminde zorunlu kılar; formel matematiksel kanıt üretmez ve bugün region tabanlı bellek yönetimi kullanan bir dil değildir — mevcut backend Go üretir ve Go'nun çöp toplayıcısını kullanır.
+Gelecekte müşteri dağıtımı; lisanslı SDK/tooling, imzalı binary'ler, private package/artifact kanalları, enterprise policy yönetimi, audit evidence ve destek/SLA paketleri içerebilir.
 
 ## Katkı
 
-Şu anda en faydalı katkı gerçek bir program. Koschei'de küçük bir şey yazın ve dil ayağınıza dolandığında issue açın — eksik bir stdlib fonksiyonu, kafa karıştıran bir tanı, derlenmesi gerekirken derlenmeyen bir kalıp. Problemi tekrar üreten bir `.ks` dosyasıyla gelen hata bildirimleri en hızlı düzelen bildirimlerdir.
+Katkılar yalnızca yetkili private collaboration üzerinden kabul edilir. Dışarıdan kod kabul edilmeden önce IP ve contributor şartları açıkça belirlenmelidir.
 
 ## Lisans
 
-MIT
+**Proprietary — mevcut ve gelecekteki proprietary Koschei sürümleri için tüm hakları saklıdır.** Daha önce MIT altında public yayımlanmış belirli revizyonların geçmiş lisans durumunu ve güncel proprietary şartları `LICENSE` dosyası açıklar.
