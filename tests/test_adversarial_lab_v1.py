@@ -90,14 +90,14 @@ class AdversarialLabV1Tests(unittest.TestCase):
         self.assertFalse(result.passed)
         self.assertIn("test-count shrink detected", result.detail)
 
-    def test_baseline_attack_budget_includes_multi_session_correlation(self):
-        self.assertEqual(sum(g.min_tests for g in REQUIRED_GATES), 124)
-        self.assertEqual(MIN_TOTAL_ATTACK_TESTS, 124)
-        reality = next(g for g in REQUIRED_GATES if g.gate_id == "synthetic-reality-plane")
+    def test_baseline_attack_budget_includes_adaptive_observer(self):
+        self.assertEqual(sum(g.min_tests for g in REQUIRED_GATES), 130)
+        self.assertEqual(MIN_TOTAL_ATTACK_TESTS, 130)
         correlation = next(g for g in REQUIRED_GATES if g.gate_id == "multi-session-correlation")
-        self.assertEqual(reality.min_tests, 6)
-        self.assertEqual(correlation.test_file, "tests/test_multi_session_correlation_attack_v1.py")
+        adaptive = next(g for g in REQUIRED_GATES if g.gate_id == "adaptive-observer-correlation")
         self.assertEqual(correlation.min_tests, 6)
+        self.assertEqual(adaptive.test_file, "tests/test_adaptive_observer_correlation_v1.py")
+        self.assertEqual(adaptive.min_tests, 6)
 
 
 if __name__ == "__main__":

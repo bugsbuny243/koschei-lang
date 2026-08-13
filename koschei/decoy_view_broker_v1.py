@@ -64,7 +64,14 @@ def _token(key: bytes, label: bytes, project_id: str, object_id: str, epoch: int
 
 
 def generate_decoy_source(*, project_id: str, object_id: str, epoch: int, deception_key: bytes) -> bytes:
-    """Generate synthetic Koschei source without reading canonical content."""
+    """Generate synthetic Koschei source without reading canonical content.
+
+    The visible source shape is size-invariant across object/session/epoch inputs:
+    both numeric literals intentionally remain in a two-decimal-digit domain.
+    Identity/content still rotate through keyed function names and marker-derived
+    values, but a passive observer does not get a one-byte classifier from the
+    decimal width of those values.
+    """
     if not isinstance(project_id, str) or not project_id:
         raise DecoyViewError("project_id must be non-empty text")
     oid = _require_object_id(object_id)
@@ -74,11 +81,16 @@ def generate_decoy_source(*, project_id: str, object_id: str, epoch: int, decept
     fn_a = "f_" + _token(key, b"fn-a", project_id, oid, ep, 7)
     fn_b = "f_" + _token(key, b"fn-b", project_id, oid, ep, 7)
     marker = _token(key, b"marker", project_id, oid, ep, 10)
-    delta = int(marker[:2], 36) % 31
+
+    # Keep both decimal literals in [10, 96] / [10, 30] so their textual width
+    # is always exactly two bytes. This removes a source-length side channel
+    # without making the synthetic program static.
+    epoch_term = (ep % 87) + 10
+    delta = (int(marker[:2], 36) % 21) + 10
 
     text = (
         f"fn {fn_a}(seed: Int) -> Int {{\n"
-        f"    let x: Int = seed * 3 + {ep % 97};\n"
+        f"    let x: Int = seed * 3 + {epoch_term};\n"
         f"    return x;\n"
         f"}}\n\n"
         f"fn {fn_b}(seed: Int) -> Int {{\n"
