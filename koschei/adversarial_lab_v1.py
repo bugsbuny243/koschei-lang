@@ -30,11 +30,12 @@ REQUIRED_GATES: tuple[AdversarialGate, ...] = (
     AdversarialGate("entitlement", "tests/test_commercial_entitlement_v1.py", "commercial entitlement tampering fails closed", 5),
     AdversarialGate("activation", "tests/test_commercial_activation_v1.py", "seat/device/lease misuse fails closed", 8),
     AdversarialGate("private-distribution", "tests/test_private_distribution_v1.py", "artifact tamper, revocation and rollback attacks fail closed", 10),
+    AdversarialGate("high-volume", "tests/test_high_volume_attack_profile_v1.py", "100k hostile reads, concurrency and stale correlation never reach canonical source", 3),
     AdversarialGate("compiler-integrity", "tests/test_compiler_integrity.py", "compiler integrity invariants remain enforced", 13),
     AdversarialGate("security-regressions", "tests/test_security_regressions.py", "known security regressions remain blocked", 13),
 )
 
-MIN_TOTAL_ATTACK_TESTS = 81
+MIN_TOTAL_ATTACK_TESTS = 84
 
 
 @dataclass(frozen=True, slots=True)
