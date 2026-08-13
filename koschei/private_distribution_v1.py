@@ -92,33 +92,26 @@ def canonical_manifest_payload(manifest: ChannelManifest) -> bytes:
         seen.add(sha)
         if not isinstance(a.size_bytes, int) or isinstance(a.size_bytes, bool) or a.size_bytes < 1:
             raise PrivateDistributionError("size_bytes must be >= 1")
-        rows.append({
-            "product": _text(a.product, "product"),
-            "version": _text(a.version, "version"),
-            "channel": _text(a.channel, "channel"),
-            "artifact_sha256": sha,
-            "policy_hash": _hex64(a.policy_hash, "policy_hash"),
-            "size_bytes": a.size_bytes,
-        })
+        rows.append({"product":_text(a.product,"product"),"version":_text(a.version,"version"),
+                     "channel":_text(a.channel,"channel"),"artifact_sha256":sha,
+                     "policy_hash":_hex64(a.policy_hash,"policy_hash"),"size_bytes":a.size_bytes})
     obj = {"schema":"koschei/private-channel-manifest/v1","sequence":seq,
            "issued_epoch":issued,"expires_after_epoch":expiry,
-           "artifacts":sorted(rows, key=lambda x:(x["product"],x["version"],x["artifact_sha256"]))}
-    return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
+           "artifacts":sorted(rows,key=lambda x:(x["product"],x["version"],x["artifact_sha256"]))}
+    return json.dumps(obj,sort_keys=True,separators=(",",":"),ensure_ascii=True).encode()
 
 
 def canonical_revocation_payload(snapshot: RevocationSnapshot) -> bytes:
     if not isinstance(snapshot, RevocationSnapshot):
         raise PrivateDistributionError("snapshot must be RevocationSnapshot")
-    obj = {
-        "schema":"koschei/revocation-snapshot/v1",
-        "sequence":_epoch(snapshot.sequence,"sequence"),
-        "issued_epoch":_epoch(snapshot.issued_epoch,"issued_epoch"),
-        "revoked_artifact_sha256":sorted({_hex64(x,"revoked_artifact_sha256") for x in snapshot.revoked_artifact_sha256}),
-        "revoked_entitlement_digests":sorted({_hex64(x,"revoked_entitlement_digest") for x in snapshot.revoked_entitlement_digests}),
-        "revoked_lease_ids":sorted({_text(x,"revoked_lease_id") for x in snapshot.revoked_lease_ids}),
-        "revoked_seat_ids":sorted({_text(x,"revoked_seat_id") for x in snapshot.revoked_seat_ids}),
-    }
-    return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
+    obj = {"schema":"koschei/revocation-snapshot/v1",
+           "sequence":_epoch(snapshot.sequence,"sequence"),
+           "issued_epoch":_epoch(snapshot.issued_epoch,"issued_epoch"),
+           "revoked_artifact_sha256":sorted({_hex64(x,"revoked_artifact_sha256") for x in snapshot.revoked_artifact_sha256}),
+           "revoked_entitlement_digests":sorted({_hex64(x,"revoked_entitlement_digest") for x in snapshot.revoked_entitlement_digests}),
+           "revoked_lease_ids":sorted({_text(x,"revoked_lease_id") for x in snapshot.revoked_lease_ids}),
+           "revoked_seat_ids":sorted({_text(x,"revoked_seat_id") for x in snapshot.revoked_seat_ids})}
+    return json.dumps(obj,sort_keys=True,separators=(",",":"),ensure_ascii=True).encode()
 
 
 def canonical_download_grant_payload(grant: DownloadGrant) -> bytes:
@@ -134,7 +127,7 @@ def canonical_download_grant_payload(grant: DownloadGrant) -> bytes:
            "artifact_sha256":_hex64(grant.artifact_sha256,"artifact_sha256"),
            "channel":_text(grant.channel,"channel"),"not_before_epoch":start,
            "expires_after_epoch":end}
-    return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
+    return json.dumps(obj,sort_keys=True,separators=(",",":"),ensure_ascii=True).encode()
 
 
 def verify_private_download(*, manifest: ChannelManifest, manifest_signature: bytes,
@@ -145,10 +138,21 @@ def verify_private_download(*, manifest: ChannelManifest, manifest_signature: by
                             grant_verifier: Callable[[bytes, bytes], bool],
                             current_epoch: int, expected_channel: str,
                             expected_policy_hash: str, expected_size_bytes: int,
-                            artifact_bytes: bytes) -> bool:
+                            artifact_bytes: bytes, min_manifest_sequence: int = 0,
+                            min_revocation_sequence: int = 0) -> bool:
     """Fail-closed final gate before updater accepts an artifact."""
     try:
         now = _epoch(current_epoch,"current_epoch")
+        min_manifest = _epoch(min_manifest_sequence,"min_manifest_sequence")
+        min_revocation = _epoch(min_revocation_sequence,"min_revocation_sequence")
+        if manifest.sequence < min_manifest or revocations.sequence < min_revocation:
+            return False
+        if not isinstance(manifest_signature, bytes) or not manifest_signature:
+            return False
+        if not isinstance(revocation_signature, bytes) or not revocation_signature:
+            return False
+        if not isinstance(grant_signature, bytes) or not grant_signature:
+            return False
         if not manifest_verifier(canonical_manifest_payload(manifest), manifest_signature):
             return False
         if not revocation_verifier(canonical_revocation_payload(revocations), revocation_signature):
@@ -157,23 +161,30 @@ def verify_private_download(*, manifest: ChannelManifest, manifest_signature: by
             return False
         if now < manifest.issued_epoch or now > manifest.expires_after_epoch:
             return False
+        if revocations.issued_epoch > now:
+            return False
         if now < grant.not_before_epoch or now > grant.expires_after_epoch:
             return False
         channel = _text(expected_channel,"expected_channel")
         if grant.channel != channel:
             return False
+        if not isinstance(artifact_bytes, bytes):
+            return False
         digest = hashlib.sha256(artifact_bytes).hexdigest()
-        if digest != grant.artifact_sha256:
+        if digest != _hex64(grant.artifact_sha256,"grant.artifact_sha256"):
             return False
-        if digest in set(revocations.revoked_artifact_sha256):
+        revoked_artifacts = {_hex64(x,"revoked_artifact_sha256") for x in revocations.revoked_artifact_sha256}
+        if digest in revoked_artifacts:
             return False
-        row = next((a for a in manifest.artifacts if a.artifact_sha256 == digest), None)
-        if row is None or row.channel != channel:
+        row = next((a for a in manifest.artifacts if _hex64(a.artifact_sha256,"artifact_sha256") == digest),None)
+        if row is None or _text(row.channel,"channel") != channel:
             return False
-        if row.policy_hash != _hex64(expected_policy_hash,"expected_policy_hash"):
+        if _hex64(row.policy_hash,"policy_hash") != _hex64(expected_policy_hash,"expected_policy_hash"):
+            return False
+        if not isinstance(expected_size_bytes,int) or isinstance(expected_size_bytes,bool) or expected_size_bytes < 1:
             return False
         if row.size_bytes != expected_size_bytes or len(artifact_bytes) != row.size_bytes:
             return False
         return True
-    except (PrivateDistributionError, TypeError, ValueError):
+    except (PrivateDistributionError,TypeError,ValueError):
         return False
