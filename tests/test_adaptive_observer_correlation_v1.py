@@ -50,17 +50,28 @@ def _rotating_identity_tokens(view):
     out.update(p.package_id for p in system.packages)
     out.update(t.event_token for t in system.traces)
     out.update(c.config_id for c in reality.configs)
+    out.update(m.metric_id for m in reality.telemetry)
     out.update(l.log_id for l in reality.logs)
     out.update(i.incident_id for i in reality.incidents)
     return out
 
 
-def _shape_tokens(view):
-    # Metric identifiers are intentionally a fixed synthetic schema. They are
-    # public shape, not per-object/session identity, and therefore must be
-    # evaluated for label parity rather than uniqueness.
-    reality = view[3]
-    return {m.metric_id for m in reality.telemetry}
+def _public_schema(view):
+    """Return only stable namespace/type shape, never rotating identity values."""
+    env, graph, system, reality = view
+    return (
+        env.provenance,
+        env.deployable,
+        tuple(sorted({n.node_id.split("-", 1)[0] for n in graph.nodes})),
+        tuple(sorted({s.service_id.split("-", 1)[0] for s in system.services})),
+        tuple(sorted({p.package_id.split("-", 1)[0] for p in system.packages})),
+        tuple(sorted({c.config_id.split("-", 1)[0] for c in reality.configs})),
+        tuple(sorted({m.metric_id.split("-", 1)[0] for m in reality.telemetry})),
+        tuple(sorted({l.log_id.split("-", 1)[0] for l in reality.logs})),
+        tuple(sorted({i.incident_id.split("-", 1)[0] for i in reality.incidents})),
+        reality.provenance,
+        reality.deployable,
+    )
 
 
 class AdaptiveObserverCorrelationV1Tests(unittest.TestCase):
@@ -88,11 +99,15 @@ class AdaptiveObserverCorrelationV1Tests(unittest.TestCase):
             b = _rotating_identity_tokens(_view(OID_A, f"right-{i:03d}-bbbbbbbb", i))
             self.assertTrue(a.isdisjoint(b))
 
-    def test_public_shape_schema_is_object_independent(self):
+    def test_public_schema_is_object_independent_without_freezing_identity(self):
         for i in range(32):
-            a = _shape_tokens(_view(OID_A, f"obj-a-{i:03d}-aaaaaaaa", i))
-            b = _shape_tokens(_view(OID_B, f"obj-b-{i:03d}-bbbbbbbb", i))
+            a = _public_schema(_view(OID_A, f"obj-a-{i:03d}-aaaaaaaa", i))
+            b = _public_schema(_view(OID_B, f"obj-b-{i:03d}-bbbbbbbb", i))
             self.assertEqual(a, b)
+
+            a_ids = _rotating_identity_tokens(_view(OID_A, f"obj-a-{i:03d}-aaaaaaaa", i))
+            b_ids = _rotating_identity_tokens(_view(OID_B, f"obj-b-{i:03d}-bbbbbbbb", i))
+            self.assertTrue(a_ids.isdisjoint(b_ids))
 
     def test_long_history_exposes_no_canonical_object_identifiers(self):
         material = []
