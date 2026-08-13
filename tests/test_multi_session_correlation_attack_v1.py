@@ -6,7 +6,7 @@ import unittest
 from koschei.event_horizon_isolation_v1 import enter_event_horizon
 from koschei.no_return_shadow_graph_v1 import build_shadow_graph
 from koschei.living_synthetic_system_v1 import build_living_synthetic_system
-from koschei.synthetic_reality_plane_v1 import build_synthetic_reality_plane
+from koschei.synthetic_reality_plane_v1 import build_synthetic_reality
 
 
 PROJECT = "koschei-correlation-lab"
@@ -30,7 +30,7 @@ def _view(object_id: str, session: str, epoch: int):
     )
     graph = build_shadow_graph(envelope=env, graph_key=GRAPH, width=8)
     system = build_living_synthetic_system(graph=graph, system_key=SYSTEM, trace_length=24)
-    reality = build_synthetic_reality_plane(system=system, reality_key=REALITY)
+    reality = build_synthetic_reality(system=system, graph=graph, reality_key=REALITY)
     return env, graph, system, reality
 
 
@@ -45,7 +45,7 @@ def _public_fingerprint(view) -> str:
             str(len(system.services)),
             str(len(system.packages)),
             str(len(system.traces)),
-            str(len(reality.config)),
+            str(len(reality.configs)),
             str(len(reality.telemetry)),
             str(len(reality.logs)),
             str(len(reality.incidents)),
