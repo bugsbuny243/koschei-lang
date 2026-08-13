@@ -1,12 +1,19 @@
 from __future__ import annotations
 
 import copy
+import json
+from pathlib import Path
+import tempfile
 import unittest
+from unittest import mock
 
 from koschei.epoch_alias_rotation_v1 import (
+    AliasMove,
     AliasRotationError,
+    apply_alias_moves_atomically,
     derive_epoch_alias,
     rotate_graph_payload,
+    rotate_object_store_atomically,
 )
 
 
@@ -106,6 +113,87 @@ class EpochAliasRotationV1Tests(unittest.TestCase):
     def test_invalid_epoch_fails_closed(self):
         with self.assertRaises(AliasRotationError):
             rotate_graph_payload(self.payload(), epoch=-1, rotation_key=b"r" * 32)
+
+    def test_two_phase_storage_rotation_handles_alias_swap(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Path(tmp)
+            (store / "ALIASAAA").write_bytes(b"object-a")
+            (store / "ALIASBBB").write_bytes(b"object-b")
+            moves = (
+                AliasMove("a" * 32, "ALIASAAA", "ALIASBBB"),
+                AliasMove("b" * 32, "ALIASBBB", "ALIASAAA"),
+            )
+            apply_alias_moves_atomically(store, moves)
+            self.assertEqual((store / "ALIASBBB").read_bytes(), b"object-a")
+            self.assertEqual((store / "ALIASAAA").read_bytes(), b"object-b")
+
+    def test_destination_collision_fails_before_any_move(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Path(tmp)
+            (store / "ALIASAAA").write_bytes(b"object-a")
+            (store / "BLOCKEDX").write_bytes(b"unrelated")
+            moves = (AliasMove("a" * 32, "ALIASAAA", "BLOCKEDX"),)
+            with self.assertRaises(AliasRotationError):
+                apply_alias_moves_atomically(store, moves)
+            self.assertEqual((store / "ALIASAAA").read_bytes(), b"object-a")
+            self.assertEqual((store / "BLOCKEDX").read_bytes(), b"unrelated")
+
+    def test_mid_rotation_failure_rolls_back_original_aliases(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Path(tmp)
+            (store / "ALIASAAA").write_bytes(b"object-a")
+            (store / "ALIASBBB").write_bytes(b"object-b")
+            moves = (
+                AliasMove("a" * 32, "ALIASAAA", "NEWAAAAA"),
+                AliasMove("b" * 32, "ALIASBBB", "NEWBBBBB"),
+            )
+
+            import koschei.epoch_alias_rotation_v1 as rotation
+
+            real_replace = rotation.os.replace
+            calls = {"count": 0, "failed": False}
+
+            def fail_once(source, destination):
+                calls["count"] += 1
+                if calls["count"] == 4 and not calls["failed"]:
+                    calls["failed"] = True
+                    raise OSError("simulated rename failure")
+                return real_replace(source, destination)
+
+            with mock.patch.object(rotation.os, "replace", side_effect=fail_once):
+                with self.assertRaises(AliasRotationError):
+                    apply_alias_moves_atomically(store, moves)
+
+            self.assertEqual((store / "ALIASAAA").read_bytes(), b"object-a")
+            self.assertEqual((store / "ALIASBBB").read_bytes(), b"object-b")
+            self.assertFalse((store / "NEWAAAAA").exists())
+            self.assertFalse((store / "NEWBBBBB").exists())
+
+    def test_storage_and_graph_commit_advance_together(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store = root / "objects"
+            store.mkdir()
+            graph = root / "graph.json"
+            payload = self.payload()
+            graph.write_text(json.dumps(payload), encoding="utf-8")
+            (store / "OLDALIAS1").write_bytes(b"object-a")
+            (store / "OLDALIAS2").write_bytes(b"object-b")
+
+            result = rotate_object_store_atomically(
+                graph,
+                store,
+                epoch=77,
+                rotation_key=b"z" * 32,
+            )
+            admitted = json.loads(graph.read_text(encoding="utf-8"))
+            self.assertEqual(result.storage_epoch, 77)
+            self.assertEqual(admitted["storage_epoch"], 77)
+            self.assertFalse((store / "OLDALIAS1").exists())
+            self.assertFalse((store / "OLDALIAS2").exists())
+            aliases = [item["epoch_alias"] for item in admitted["objects"]]
+            self.assertTrue(all((store / alias).is_file() for alias in aliases))
+            self.assertEqual(sorted(path.read_bytes() for path in store.iterdir()), [b"object-a", b"object-b"])
 
 
 if __name__ == "__main__":
