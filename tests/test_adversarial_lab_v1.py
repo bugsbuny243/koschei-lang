@@ -90,14 +90,14 @@ class AdversarialLabV1Tests(unittest.TestCase):
         self.assertFalse(result.passed)
         self.assertIn("test-count shrink detected", result.detail)
 
-    def test_baseline_attack_budget_includes_no_return_shadow_graph(self):
-        self.assertEqual(sum(g.min_tests for g in REQUIRED_GATES), 106)
-        self.assertEqual(MIN_TOTAL_ATTACK_TESTS, 106)
-        horizon = next(g for g in REQUIRED_GATES if g.gate_id == "event-horizon")
+    def test_baseline_attack_budget_includes_living_synthetic_system(self):
+        self.assertEqual(sum(g.min_tests for g in REQUIRED_GATES), 112)
+        self.assertEqual(MIN_TOTAL_ATTACK_TESTS, 112)
         shadow = next(g for g in REQUIRED_GATES if g.gate_id == "no-return-shadow-graph")
-        self.assertEqual(horizon.min_tests, 7)
-        self.assertEqual(shadow.test_file, "tests/test_no_return_shadow_graph_v1.py")
+        living = next(g for g in REQUIRED_GATES if g.gate_id == "living-synthetic-system")
         self.assertEqual(shadow.min_tests, 6)
+        self.assertEqual(living.test_file, "tests/test_living_synthetic_system_v1.py")
+        self.assertEqual(living.min_tests, 6)
 
 
 if __name__ == "__main__":

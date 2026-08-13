@@ -35,11 +35,12 @@ REQUIRED_GATES: tuple[AdversarialGate, ...] = (
     AdversarialGate("transport-shaping", "tests/test_read_transport_shaping_v1.py", "fixed-size transport and timing-floor shaping reduce simple side-channel fingerprints", 6),
     AdversarialGate("event-horizon", "tests/test_event_horizon_isolation_v1.py", "unauthorized reads fall into a one-way session+epoch synthetic universe with no canonical read capability", 7),
     AdversarialGate("no-return-shadow-graph", "tests/test_no_return_shadow_graph_v1.py", "Event Horizon traversal remains inside a closed synthetic dependency namespace with no canonical return edge", 6),
+    AdversarialGate("living-synthetic-system", "tests/test_living_synthetic_system_v1.py", "synthetic services, packages and execution traces remain inside the shadow universe and non-promotable", 6),
     AdversarialGate("compiler-integrity", "tests/test_compiler_integrity.py", "compiler integrity invariants remain enforced", 13),
     AdversarialGate("security-regressions", "tests/test_security_regressions.py", "known security regressions remain blocked", 13),
 )
 
-MIN_TOTAL_ATTACK_TESTS = 106
+MIN_TOTAL_ATTACK_TESTS = 112
 
 
 @dataclass(frozen=True, slots=True)
