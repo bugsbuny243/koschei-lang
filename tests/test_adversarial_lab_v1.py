@@ -98,16 +98,18 @@ class AdversarialLabV1Tests(unittest.TestCase):
         self.assertFalse(result.passed)
         self.assertIn("test-count shrink detected", result.detail)
 
-    def test_baseline_attack_budget_includes_sidechannel_shaping(self):
-        self.assertEqual(sum(g.min_tests for g in REQUIRED_GATES), 93)
-        self.assertEqual(MIN_TOTAL_ATTACK_TESTS, 93)
+    def test_baseline_attack_budget_includes_classifier_resistance(self):
+        self.assertEqual(sum(g.min_tests for g in REQUIRED_GATES), 96)
+        self.assertEqual(MIN_TOTAL_ATTACK_TESTS, 96)
         high_volume = next(g for g in REQUIRED_GATES if g.gate_id == "high-volume")
         million_probe = next(g for g in REQUIRED_GATES if g.gate_id == "million-probe")
         shaping = next(g for g in REQUIRED_GATES if g.gate_id == "transport-shaping")
+        classifier = next(g for g in REQUIRED_GATES if g.gate_id == "classifier-resistance")
         self.assertEqual(high_volume.min_tests, 3)
         self.assertEqual(million_probe.min_tests, 3)
-        self.assertEqual(shaping.test_file, "tests/test_read_transport_shaping_v1.py")
         self.assertEqual(shaping.min_tests, 6)
+        self.assertEqual(classifier.test_file, "tests/test_transport_classifier_resistance_v1.py")
+        self.assertEqual(classifier.min_tests, 3)
 
 
 if __name__ == "__main__":
