@@ -98,12 +98,14 @@ class AdversarialLabV1Tests(unittest.TestCase):
         self.assertFalse(result.passed)
         self.assertIn("test-count shrink detected", result.detail)
 
-    def test_baseline_attack_budget_includes_high_volume_profile(self):
-        self.assertEqual(sum(g.min_tests for g in REQUIRED_GATES), 84)
-        self.assertEqual(MIN_TOTAL_ATTACK_TESTS, 84)
+    def test_baseline_attack_budget_includes_million_probe_profile(self):
+        self.assertEqual(sum(g.min_tests for g in REQUIRED_GATES), 87)
+        self.assertEqual(MIN_TOTAL_ATTACK_TESTS, 87)
         high_volume = next(g for g in REQUIRED_GATES if g.gate_id == "high-volume")
-        self.assertEqual(high_volume.test_file, "tests/test_high_volume_attack_profile_v1.py")
+        million_probe = next(g for g in REQUIRED_GATES if g.gate_id == "million-probe")
         self.assertEqual(high_volume.min_tests, 3)
+        self.assertEqual(million_probe.test_file, "tests/test_million_probe_fingerprint_profile_v1.py")
+        self.assertEqual(million_probe.min_tests, 3)
 
 
 if __name__ == "__main__":
