@@ -54,77 +54,44 @@ def _require_key(key: bytes) -> bytes:
 
 def _token(key: bytes, label: bytes, project_id: str, object_id: str, epoch: int, n: int = 12) -> str:
     message = (
-        b"koschei/decoy-view/v1\x00"
-        + label
-        + b"\x00"
-        + project_id.encode("utf-8")
-        + b"\x00"
-        + object_id.encode("ascii")
-        + b"\x00"
+        b"koschei/decoy-view/v1\x00" + label + b"\x00"
+        + project_id.encode("utf-8") + b"\x00"
+        + object_id.encode("ascii") + b"\x00"
         + str(epoch).encode("ascii")
     )
     digest = hmac.new(key, message, hashlib.sha256).digest()[:n]
     return base64.b32encode(digest).decode("ascii").rstrip("=").lower()
 
 
-def generate_decoy_source(
-    *,
-    project_id: str,
-    object_id: str,
-    epoch: int,
-    deception_key: bytes,
-) -> bytes:
-    """Generate a coherent synthetic Koschei-shaped object without canonical input.
-
-    v1 is deliberately deterministic and model-free so leakage and rotation can be
-    measured before a generative model is connected. A later model may replace the
-    content generator, but it must preserve this no-canonical-read boundary.
-    """
-
+def generate_decoy_source(*, project_id: str, object_id: str, epoch: int, deception_key: bytes) -> bytes:
+    """Generate synthetic Koschei source without reading canonical content."""
     if not isinstance(project_id, str) or not project_id:
         raise DecoyViewError("project_id must be non-empty text")
     oid = _require_object_id(object_id)
     ep = _require_epoch(epoch)
     key = _require_key(deception_key)
 
-    namespace = "n_" + _token(key, b"namespace", project_id, oid, ep, 8)
     fn_a = "f_" + _token(key, b"fn-a", project_id, oid, ep, 7)
     fn_b = "f_" + _token(key, b"fn-b", project_id, oid, ep, 7)
     marker = _token(key, b"marker", project_id, oid, ep, 10)
+    delta = int(marker[:2], 36) % 31
 
-    # Synthetic source intentionally contains no canonical source bytes, names,
-    # hashes, policy values, secrets, paths, or dependency metadata.
     text = (
-        f"namespace {namespace} {{\n"
-        f"  struct R_{marker[:8]} {{ value: Int }}\n\n"
-        f"  fn {fn_a}(seed: Int) -> Int {{\n"
+        f"fn {fn_a}(seed: Int) -> Int {{\n"
         f"    let x: Int = seed * 3 + {ep % 97};\n"
         f"    return x;\n"
-        f"  }}\n\n"
-        f"  fn {fn_b}(seed: Int) -> Int {{\n"
-        f"    let y: Int = {fn_a}(seed) + {int(marker[:2], 36) % 31};\n"
+        f"}}\n\n"
+        f"fn {fn_b}(seed: Int) -> Int {{\n"
+        f"    let y: Int = {fn_a}(seed) + {delta};\n"
         f"    return y;\n"
-        f"  }}\n"
         f"}}\n"
     )
     return text.encode("utf-8")
 
 
-def read_source_view(
-    *,
-    project_id: str,
-    object_id: str,
-    epoch: int,
-    authorized: bool,
-    canonical_reader: CanonicalReader,
-    deception_key: bytes,
-) -> SourceView:
-    """Return canonical bytes only for an admitted read; otherwise return decoy.
-
-    The unauthorized branch never invokes canonical_reader. This is the primary
-    v1 non-leakage invariant and is covered by tests.
-    """
-
+def read_source_view(*, project_id: str, object_id: str, epoch: int, authorized: bool,
+                     canonical_reader: CanonicalReader, deception_key: bytes) -> SourceView:
+    """Return canonical bytes only for admitted reads; otherwise an isolated decoy."""
     oid = _require_object_id(object_id)
     ep = _require_epoch(epoch)
     if not callable(canonical_reader):
@@ -137,29 +104,22 @@ def read_source_view(
         provenance = "canonical"
         deployable = True
     else:
-        content = generate_decoy_source(
-            project_id=project_id,
-            object_id=oid,
-            epoch=ep,
-            deception_key=deception_key,
-        )
+        content = generate_decoy_source(project_id=project_id, object_id=oid, epoch=ep, deception_key=deception_key)
         provenance = "decoy"
         deployable = False
 
-    digest = "sha256:" + hashlib.sha256(content).hexdigest()
     return SourceView(
         object_id=oid,
         epoch=ep,
         provenance=provenance,
         deployable=deployable,
         content=content,
-        view_digest=digest,
+        view_digest="sha256:" + hashlib.sha256(content).hexdigest(),
     )
 
 
 def require_canonical_build_view(view: SourceView) -> None:
     """Fail closed if a decoy/untrusted view reaches build/sign/deploy input."""
-
     if not isinstance(view, SourceView):
         raise DecoyViewError("invalid source view")
     if view.provenance != "canonical" or view.deployable is not True:
