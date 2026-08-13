@@ -33,11 +33,12 @@ REQUIRED_GATES: tuple[AdversarialGate, ...] = (
     AdversarialGate("high-volume", "tests/test_high_volume_attack_profile_v1.py", "100k hostile reads, concurrency and stale correlation never reach canonical source", 3),
     AdversarialGate("million-probe", "tests/test_million_probe_fingerprint_profile_v1.py", "1M hostile reads, process isolation and fingerprint sampling never reach canonical source", 3),
     AdversarialGate("transport-shaping", "tests/test_read_transport_shaping_v1.py", "fixed-size transport and timing-floor shaping reduce simple side-channel fingerprints", 6),
+    AdversarialGate("classifier-resistance", "tests/test_transport_classifier_resistance_v1.py", "observable transport metadata does not provide a trivial canonical-versus-decoy classifier", 3),
     AdversarialGate("compiler-integrity", "tests/test_compiler_integrity.py", "compiler integrity invariants remain enforced", 13),
     AdversarialGate("security-regressions", "tests/test_security_regressions.py", "known security regressions remain blocked", 13),
 )
 
-MIN_TOTAL_ATTACK_TESTS = 93
+MIN_TOTAL_ATTACK_TESTS = 96
 
 
 @dataclass(frozen=True, slots=True)
