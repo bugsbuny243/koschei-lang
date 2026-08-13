@@ -34,11 +34,12 @@ REQUIRED_GATES: tuple[AdversarialGate, ...] = (
     AdversarialGate("million-probe", "tests/test_million_probe_fingerprint_profile_v1.py", "1M hostile reads, process isolation and fingerprint sampling never reach canonical source", 3),
     AdversarialGate("transport-shaping", "tests/test_read_transport_shaping_v1.py", "fixed-size transport and timing-floor shaping reduce simple side-channel fingerprints", 6),
     AdversarialGate("event-horizon", "tests/test_event_horizon_isolation_v1.py", "unauthorized reads fall into a one-way session+epoch synthetic universe with no canonical read capability", 7),
+    AdversarialGate("no-return-shadow-graph", "tests/test_no_return_shadow_graph_v1.py", "Event Horizon traversal remains inside a closed synthetic dependency namespace with no canonical return edge", 6),
     AdversarialGate("compiler-integrity", "tests/test_compiler_integrity.py", "compiler integrity invariants remain enforced", 13),
     AdversarialGate("security-regressions", "tests/test_security_regressions.py", "known security regressions remain blocked", 13),
 )
 
-MIN_TOTAL_ATTACK_TESTS = 100
+MIN_TOTAL_ATTACK_TESTS = 106
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,7 +107,7 @@ def evaluate_release(*, candidate_id: str, runner: Runner, repo_root: str | Path
             elif not count_ok:
                 detail = f"test-count shrink detected: ran {tests_run}, minimum {gate.min_tests}"
             results.append(GateResult(gate.gate_id, gate.test_file, ok, tests_run, gate.min_tests, str(detail)))
-        except Exception as exc:  # fail closed by design
+        except Exception as exc:
             results.append(GateResult(gate.gate_id, gate.test_file, False, 0, gate.min_tests, f"runner error: {type(exc).__name__}"))
     frozen = tuple(results)
     total_tests_run = sum(r.tests_run for r in frozen)
@@ -116,11 +117,4 @@ def evaluate_release(*, candidate_id: str, runner: Runner, repo_root: str | Path
         and total_tests_run >= MIN_TOTAL_ATTACK_TESTS
     )
     digest = hashlib.sha256(_canonical_report_payload(candidate_id, frozen, total_tests_run)).hexdigest()
-    return AdversarialReport(
-        candidate_id,
-        commercial_ready,
-        frozen,
-        total_tests_run,
-        MIN_TOTAL_ATTACK_TESTS,
-        digest,
-    )
+    return AdversarialReport(candidate_id, commercial_ready, frozen, total_tests_run, MIN_TOTAL_ATTACK_TESTS, digest)
