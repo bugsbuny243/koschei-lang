@@ -65,8 +65,11 @@ class HighVolumeAttackProfileV1Tests(unittest.TestCase):
         calls: list[str] = []
 
         def task(i: int):
-            object_id = OID if i % 2 == 0 else OTHER_OID
-            epoch = 20_000 + (i % 32)
+            # Generate the full Cartesian object x epoch surface repeatedly.
+            # Each 64-task block covers both objects at all 32 epochs.
+            offset = i % 64
+            object_id = OID if offset < 32 else OTHER_OID
+            epoch = 20_000 + (offset % 32)
             return object_id, epoch, self._unauthorized_read(object_id=object_id, epoch=epoch, calls=calls)[0]
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=32) as pool:
@@ -80,6 +83,7 @@ class HighVolumeAttackProfileV1Tests(unittest.TestCase):
             self.assertFalse(view.deployable)
             by_identity.setdefault((object_id, epoch), set()).add(view.view_digest)
 
+        self.assertEqual(len(by_identity), 64, "all object x epoch identities must be exercised")
         self.assertTrue(all(len(digests) == 1 for digests in by_identity.values()), "same object+epoch must remain coherent under concurrency")
         for epoch in range(20_000, 20_032):
             left = by_identity[(OID, epoch)]
