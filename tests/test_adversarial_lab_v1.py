@@ -98,16 +98,14 @@ class AdversarialLabV1Tests(unittest.TestCase):
         self.assertFalse(result.passed)
         self.assertIn("test-count shrink detected", result.detail)
 
-    def test_baseline_attack_budget_includes_sidechannel_shaping(self):
-        self.assertEqual(sum(g.min_tests for g in REQUIRED_GATES), 93)
-        self.assertEqual(MIN_TOTAL_ATTACK_TESTS, 93)
-        high_volume = next(g for g in REQUIRED_GATES if g.gate_id == "high-volume")
-        million_probe = next(g for g in REQUIRED_GATES if g.gate_id == "million-probe")
+    def test_baseline_attack_budget_includes_event_horizon(self):
+        self.assertEqual(sum(g.min_tests for g in REQUIRED_GATES), 100)
+        self.assertEqual(MIN_TOTAL_ATTACK_TESTS, 100)
         shaping = next(g for g in REQUIRED_GATES if g.gate_id == "transport-shaping")
-        self.assertEqual(high_volume.min_tests, 3)
-        self.assertEqual(million_probe.min_tests, 3)
-        self.assertEqual(shaping.test_file, "tests/test_read_transport_shaping_v1.py")
+        horizon = next(g for g in REQUIRED_GATES if g.gate_id == "event-horizon")
         self.assertEqual(shaping.min_tests, 6)
+        self.assertEqual(horizon.test_file, "tests/test_event_horizon_isolation_v1.py")
+        self.assertEqual(horizon.min_tests, 7)
 
 
 if __name__ == "__main__":
