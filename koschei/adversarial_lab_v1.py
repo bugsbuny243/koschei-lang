@@ -38,11 +38,12 @@ REQUIRED_GATES: tuple[AdversarialGate, ...] = (
     AdversarialGate("living-synthetic-system", "tests/test_living_synthetic_system_v1.py", "synthetic services, packages and execution traces remain inside the shadow universe and non-promotable", 6),
     AdversarialGate("synthetic-reality-plane", "tests/test_synthetic_reality_plane_v1.py", "synthetic config, telemetry, logs and incidents remain internally consistent and canonical-free", 6),
     AdversarialGate("multi-session-correlation", "tests/test_multi_session_correlation_attack_v1.py", "cross-session/epoch synthetic views resist direct fingerprint linkage and identity reuse", 6),
+    AdversarialGate("adaptive-observer-correlation", "tests/test_adaptive_observer_correlation_v1.py", "long-running observers cannot reuse public identity tokens or derive object labels from stable structural shape", 6),
     AdversarialGate("compiler-integrity", "tests/test_compiler_integrity.py", "compiler integrity invariants remain enforced", 13),
     AdversarialGate("security-regressions", "tests/test_security_regressions.py", "known security regressions remain blocked", 13),
 )
 
-MIN_TOTAL_ATTACK_TESTS = 124
+MIN_TOTAL_ATTACK_TESTS = 130
 
 
 @dataclass(frozen=True, slots=True)
