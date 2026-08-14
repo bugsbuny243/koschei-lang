@@ -15,9 +15,15 @@ EXTRA_GATES: tuple[AdversarialGate, ...] = (
         "sampling and epoch-schedule variation must not create object-label signal",
         5,
     ),
+    AdversarialGate(
+        "cross-key-containment",
+        "tests/test_cross_key_containment_v1.py",
+        "independent key domains must not collapse into reusable identities or interchangeable roles",
+        4,
+    ),
 )
 REQUIRED_GATES = V1_GATES + EXTRA_GATES
-MIN_TOTAL_ATTACK_TESTS = 140
+MIN_TOTAL_ATTACK_TESTS = 144
 
 @dataclass(frozen=True, slots=True)
 class GateResultV2:
@@ -64,5 +70,5 @@ def evaluate_release_v2(*, candidate_id: str, runner: Runner, repo_root: str | P
     frozen = tuple(results)
     total = sum(r.tests_run for r in frozen)
     ready = all(r.passed for r in frozen) and total >= MIN_TOTAL_ATTACK_TESTS
-    payload = json.dumps({"candidate_id": cid, "minimum_total_tests": MIN_TOTAL_ATTACK_TESTS, "total_tests_run": total, "results": [r.__dict__ if hasattr(r, "__dict__") else {"gate_id": r.gate_id, "test_file": r.test_file, "passed": r.passed, "tests_run": r.tests_run, "min_tests": r.min_tests, "detail": r.detail} for r in frozen]}, sort_keys=True, separators=(",", ":")).encode()
+    payload = json.dumps({"candidate_id": cid, "minimum_total_tests": MIN_TOTAL_ATTACK_TESTS, "total_tests_run": total, "results": [{"gate_id": r.gate_id, "test_file": r.test_file, "passed": r.passed, "tests_run": r.tests_run, "min_tests": r.min_tests, "detail": r.detail} for r in frozen]}, sort_keys=True, separators=(",", ":")).encode()
     return AdversarialReportV2(cid, ready, frozen, total, MIN_TOTAL_ATTACK_TESTS, hashlib.sha256(payload).hexdigest())
