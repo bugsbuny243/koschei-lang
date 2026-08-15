@@ -1,5 +1,6 @@
 import json_gateway
 import order_worker
+import state_store
 
 fn handle_payload(body: String) -> String or Error {
     let canonical = json_gateway.canonicalize(body) or return
@@ -15,7 +16,14 @@ fn main(caps: SystemCaps) {
         65536,
         2000,
     )
+    let state = caps.persist.allow(
+        "/tmp/koschei-production-reference/state.txt",
+        65536,
+        2000,
+    )
     let body = server.exchange("accepted") or return
     let result = handle_payload(body) or return
-    println(result)
+    let stored = state_store.save(state, result) or return
+    let verified = state_store.load(state) or return
+    println(verified)
 }
