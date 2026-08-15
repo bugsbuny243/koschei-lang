@@ -1,12 +1,11 @@
 """Koschei launcher enforcement contract v1.
 
 This module does not spawn a process and therefore does not claim OS sandboxing.
-It converts a TrustedLaunchPermit plus exact compiler capability evidence into a
-sandbox enforcement plan and validates whether one concrete platform adapter is
-capable of enforcing that plan fail-closed.
+It binds a trusted launch permit to exact compiler capability evidence and checks
+whether a concrete future platform adapter can enforce that plan fail-closed.
 
-A later platform adapter may turn an enforceable plan into process creation. If
-no adapter can prove the required controls, launch remains unavailable.
+Every dataclass crossing this boundary is independently revalidated from its
+contents. Object construction is never treated as authority.
 """
 
 from __future__ import annotations
@@ -22,6 +21,8 @@ from .trusted_launcher_v1 import TrustedLaunchPermit
 _PLAN_SCHEMA = "koschei.sandbox-enforcement-plan.v1"
 _ADAPTER_SCHEMA = "koschei.sandbox-adapter-descriptor.v1"
 _READINESS_SCHEMA = "koschei.sandbox-readiness.v1"
+_PERMIT_SCHEMA = "koschei.trusted-launch-permit.v1"
+_CAPABILITY_SCHEMA = "koschei.static-capability-request.v1"
 _DOMAINS = frozenset({"disk", "net", "env", "process"})
 
 
@@ -54,10 +55,7 @@ class SandboxEnforcementPlan:
             "capability_request_digest": self.capability_request_digest,
             "launch_permit_digest": self.launch_permit_digest,
             "effective_capabilities": list(self.effective_capabilities),
-            "grants": [
-                {"domain": domain, "scope": scope, "read_only": read_only}
-                for domain, scope, read_only in self.grants
-            ],
+            "grants": _grant_rows(self.grants),
             "denied_domains": list(self.denied_domains),
             "environment_inheritance": self.environment_inheritance,
             "inherited_file_descriptors": self.inherited_file_descriptors,
@@ -125,28 +123,19 @@ def build_sandbox_enforcement_plan(
     permit: TrustedLaunchPermit,
     capability_request: StaticCapabilityRequest,
 ) -> SandboxEnforcementPlan:
-    """Bind the trusted permit to exact narrowed source scopes and default denies."""
-
+    _validate_launch_permit_identity(permit)
+    grants, derived_capabilities = _validate_static_capability_request(
+        capability_request
+    )
     if permit.capability_request_digest != capability_request.request_digest:
         raise LauncherEnforcementError(
             "launch permit is bound to different static capability evidence"
         )
-    if permit.effective_capabilities != capability_request.capabilities:
+    if permit.effective_capabilities != derived_capabilities:
         raise LauncherEnforcementError(
             "launch permit capabilities differ from static capability evidence"
         )
-    if not _is_digest(permit.permit_digest):
-        raise LauncherEnforcementError("launch permit digest is invalid")
-    if not _is_digest(permit.artifact_sha256):
-        raise LauncherEnforcementError("artifact digest is invalid")
-    if not _is_digest(permit.trust_manifest_digest):
-        raise LauncherEnforcementError("trust manifest digest is invalid")
-    if not _is_digest(permit.policy_hash):
-        raise LauncherEnforcementError("policy digest is invalid")
-    if not _is_digest(capability_request.request_digest):
-        raise LauncherEnforcementError("capability request digest is invalid")
 
-    grants = _canonical_grants(capability_request.grants)
     requested_domains = {domain for domain, _scope, _read_only in grants}
     denied_domains = tuple(sorted(_DOMAINS - requested_domains))
     payload = {
@@ -156,11 +145,8 @@ def build_sandbox_enforcement_plan(
         "policy_hash": permit.policy_hash,
         "capability_request_digest": capability_request.request_digest,
         "launch_permit_digest": permit.permit_digest,
-        "effective_capabilities": list(permit.effective_capabilities),
-        "grants": [
-            {"domain": domain, "scope": scope, "read_only": read_only}
-            for domain, scope, read_only in grants
-        ],
+        "effective_capabilities": list(derived_capabilities),
+        "grants": _grant_rows(grants),
         "denied_domains": list(denied_domains),
         "environment_inheritance": "deny_ambient_inheritance",
         "inherited_file_descriptors": "close_all_except_launcher_contract",
@@ -173,7 +159,7 @@ def build_sandbox_enforcement_plan(
         policy_hash=permit.policy_hash,
         capability_request_digest=capability_request.request_digest,
         launch_permit_digest=permit.permit_digest,
-        effective_capabilities=permit.effective_capabilities,
+        effective_capabilities=derived_capabilities,
         grants=grants,
         denied_domains=denied_domains,
         environment_inheritance="deny_ambient_inheritance",
@@ -203,7 +189,7 @@ def build_sandbox_adapter_descriptor(
     platform = _text(platform, "platform")
     config_digest = _require_digest(config_digest, "config_digest")
     domains = _canonical_domains(supported_domains)
-    booleans = {
+    controls = {
         "exact_scope_enforcement": exact_scope_enforcement,
         "default_deny_unrequested_domains": default_deny_unrequested_domains,
         "empty_environment_by_default": empty_environment_by_default,
@@ -211,7 +197,7 @@ def build_sandbox_adapter_descriptor(
         "shell_disabled": shell_disabled,
         "executable_digest_verified_at_spawn": executable_digest_verified_at_spawn,
     }
-    if not all(isinstance(value, bool) for value in booleans.values()):
+    if not all(isinstance(value, bool) for value in controls.values()):
         raise LauncherEnforcementError("sandbox security controls must be booleans")
     payload = {
         "schema_version": _ADAPTER_SCHEMA,
@@ -220,7 +206,7 @@ def build_sandbox_adapter_descriptor(
         "platform": platform,
         "config_digest": config_digest,
         "supported_domains": list(domains),
-        **booleans,
+        **controls,
     }
     return SandboxAdapterDescriptor(
         adapter_id=adapter_id,
@@ -229,7 +215,7 @@ def build_sandbox_adapter_descriptor(
         config_digest=config_digest,
         supported_domains=domains,
         descriptor_digest=_digest(payload),
-        **booleans,
+        **controls,
     )
 
 
@@ -237,8 +223,6 @@ def evaluate_sandbox_readiness(
     plan: SandboxEnforcementPlan,
     descriptor: SandboxAdapterDescriptor,
 ) -> SandboxReadiness:
-    """Fail closed unless one concrete adapter can enforce every required boundary."""
-
     try:
         _validate_plan(plan)
         _validate_descriptor(descriptor)
@@ -246,8 +230,7 @@ def evaluate_sandbox_readiness(
         return _readiness(False, "KS1961", str(error), plan, descriptor)
 
     required_domains = {domain for domain, _scope, _read_only in plan.grants}
-    supported_domains = set(descriptor.supported_domains)
-    missing = tuple(sorted(required_domains - supported_domains))
+    missing = tuple(sorted(required_domains - set(descriptor.supported_domains)))
     if missing:
         return _readiness(
             False,
@@ -256,16 +239,16 @@ def evaluate_sandbox_readiness(
             plan,
             descriptor,
         )
-
-    mandatory_controls = (
-        descriptor.exact_scope_enforcement,
-        descriptor.default_deny_unrequested_domains,
-        descriptor.empty_environment_by_default,
-        descriptor.close_inherited_file_descriptors,
-        descriptor.shell_disabled,
-        descriptor.executable_digest_verified_at_spawn,
-    )
-    if not all(mandatory_controls):
+    if not all(
+        (
+            descriptor.exact_scope_enforcement,
+            descriptor.default_deny_unrequested_domains,
+            descriptor.empty_environment_by_default,
+            descriptor.close_inherited_file_descriptors,
+            descriptor.shell_disabled,
+            descriptor.executable_digest_verified_at_spawn,
+        )
+    ):
         return _readiness(
             False,
             "KS1963",
@@ -273,22 +256,69 @@ def evaluate_sandbox_readiness(
             plan,
             descriptor,
         )
-
     return _readiness(
         True,
         "KS1960",
-        "adapter can enforce exact scopes and mandatory default-deny launch boundaries",
+        "adapter descriptor satisfies exact-scope and mandatory default-deny boundaries",
         plan,
         descriptor,
     )
+
+
+def _validate_launch_permit_identity(permit: TrustedLaunchPermit) -> None:
+    if not isinstance(permit, TrustedLaunchPermit):
+        raise LauncherEnforcementError("invalid trusted launch permit")
+    capabilities = _canonical_launcher_capabilities(permit.effective_capabilities)
+    if capabilities != permit.effective_capabilities:
+        raise LauncherEnforcementError("launch permit capabilities are not canonical")
+    payload = {
+        "schema_version": _PERMIT_SCHEMA,
+        "environment": _text(permit.environment, "environment"),
+        "artifact_sha256": _require_digest(permit.artifact_sha256, "artifact_sha256"),
+        "trust_manifest_digest": _require_digest(permit.trust_manifest_digest, "trust_manifest_digest"),
+        "policy_hash": _require_digest(permit.policy_hash, "policy_hash"),
+        "capability_request_digest": _require_digest(permit.capability_request_digest, "capability_request_digest"),
+        "effective_capabilities": list(capabilities),
+        "launch_decision_digest": _require_digest(permit.launch_decision_digest, "launch_decision_digest"),
+        "deployment_authorization_digest": _require_digest(permit.deployment_authorization_digest, "deployment_authorization_digest"),
+        "authorization_id": _text(permit.authorization_id, "authorization_id"),
+    }
+    if permit.permit_digest != _digest(payload):
+        raise LauncherEnforcementError("trusted launch permit digest does not match contents")
+
+
+def _validate_static_capability_request(
+    request: StaticCapabilityRequest,
+) -> tuple[tuple[tuple[str, str, bool], ...], tuple[str, ...]]:
+    if not isinstance(request, StaticCapabilityRequest):
+        raise LauncherEnforcementError("invalid static capability request")
+    grants = _canonical_grants(request.grants)
+    if grants != request.grants:
+        raise LauncherEnforcementError("static capability grants are not canonical")
+    capabilities = _capabilities_from_grants(grants)
+    if request.capabilities != capabilities:
+        raise LauncherEnforcementError(
+            "static capability list does not match exact narrowed grants"
+        )
+    payload = {
+        "schema_version": _CAPABILITY_SCHEMA,
+        "capabilities": list(capabilities),
+        "grants": _grant_rows(grants),
+    }
+    if request.request_digest != _digest(payload):
+        raise LauncherEnforcementError(
+            "static capability request digest does not match contents"
+        )
+    return grants, capabilities
 
 
 def _validate_plan(plan: SandboxEnforcementPlan) -> None:
     if not isinstance(plan, SandboxEnforcementPlan):
         raise LauncherEnforcementError("invalid sandbox enforcement plan")
     grants = _canonical_grants(plan.grants)
-    if grants != plan.grants:
-        raise LauncherEnforcementError("sandbox grants are not canonical")
+    capabilities = _capabilities_from_grants(grants)
+    if plan.effective_capabilities != capabilities:
+        raise LauncherEnforcementError("sandbox plan capabilities do not match grants")
     denied = tuple(sorted(_DOMAINS - {domain for domain, _scope, _ro in grants}))
     if denied != plan.denied_domains:
         raise LauncherEnforcementError("sandbox denied-domain set is not canonical")
@@ -299,11 +329,8 @@ def _validate_plan(plan: SandboxEnforcementPlan) -> None:
         "policy_hash": _require_digest(plan.policy_hash, "policy_hash"),
         "capability_request_digest": _require_digest(plan.capability_request_digest, "capability_request_digest"),
         "launch_permit_digest": _require_digest(plan.launch_permit_digest, "launch_permit_digest"),
-        "effective_capabilities": list(plan.effective_capabilities),
-        "grants": [
-            {"domain": domain, "scope": scope, "read_only": read_only}
-            for domain, scope, read_only in grants
-        ],
+        "effective_capabilities": list(capabilities),
+        "grants": _grant_rows(grants),
         "denied_domains": list(denied),
         "environment_inheritance": "deny_ambient_inheritance",
         "inherited_file_descriptors": "close_all_except_launcher_contract",
@@ -328,6 +355,16 @@ def _validate_descriptor(descriptor: SandboxAdapterDescriptor) -> None:
     domains = _canonical_domains(descriptor.supported_domains)
     if domains != descriptor.supported_domains:
         raise LauncherEnforcementError("sandbox supported domains are not canonical")
+    controls = (
+        descriptor.exact_scope_enforcement,
+        descriptor.default_deny_unrequested_domains,
+        descriptor.empty_environment_by_default,
+        descriptor.close_inherited_file_descriptors,
+        descriptor.shell_disabled,
+        descriptor.executable_digest_verified_at_spawn,
+    )
+    if not all(isinstance(value, bool) for value in controls):
+        raise LauncherEnforcementError("sandbox security controls must be booleans")
     payload = {
         "schema_version": _ADAPTER_SCHEMA,
         "adapter_id": _text(descriptor.adapter_id, "adapter_id"),
@@ -354,11 +391,7 @@ def _readiness(
     descriptor: SandboxAdapterDescriptor,
 ) -> SandboxReadiness:
     plan_digest = plan.plan_digest if _is_digest(getattr(plan, "plan_digest", "")) else "0" * 64
-    descriptor_digest = (
-        descriptor.descriptor_digest
-        if _is_digest(getattr(descriptor, "descriptor_digest", ""))
-        else "0" * 64
-    )
+    descriptor_digest = descriptor.descriptor_digest if _is_digest(getattr(descriptor, "descriptor_digest", "")) else "0" * 64
     payload = {
         "schema_version": _READINESS_SCHEMA,
         "ready": ready,
@@ -375,6 +408,37 @@ def _readiness(
         adapter_descriptor_digest=descriptor_digest,
         readiness_digest=_digest(payload),
     )
+
+
+def _capabilities_from_grants(
+    grants: tuple[tuple[str, str, bool], ...],
+) -> tuple[str, ...]:
+    capabilities: set[str] = set()
+    for domain, _scope, read_only in grants:
+        if domain == "disk":
+            capabilities.add("disk.read")
+            if not read_only:
+                capabilities.add("disk.write")
+        elif domain == "net":
+            capabilities.add("net.io")
+        elif domain == "env":
+            capabilities.add("env.read")
+        elif domain == "process":
+            capabilities.add("process.exec")
+        else:
+            raise LauncherEnforcementError(f"unsupported sandbox domain: {domain}")
+    return tuple(sorted(capabilities))
+
+
+def _canonical_launcher_capabilities(values: Iterable[str]) -> tuple[str, ...]:
+    allowed = {"disk.read", "disk.write", "net.io", "env.read", "process.exec"}
+    raw = tuple(values)
+    if any(not isinstance(value, str) or value not in allowed for value in raw):
+        raise LauncherEnforcementError("invalid launch permit capability")
+    capabilities = tuple(sorted(set(raw)))
+    if capabilities != raw:
+        raise LauncherEnforcementError("launch permit capabilities are not canonical")
+    return capabilities
 
 
 def _canonical_grants(
@@ -395,8 +459,20 @@ def _canonical_grants(
     return tuple(sorted(normalized))
 
 
+def _grant_rows(grants: tuple[tuple[str, str, bool], ...]) -> list[dict[str, object]]:
+    return [
+        {"domain": domain, "scope": scope, "read_only": read_only}
+        for domain, scope, read_only in grants
+    ]
+
+
 def _canonical_domains(values: Iterable[str]) -> tuple[str, ...]:
-    domains = tuple(sorted({_text(value, "domain") for value in values}))
+    raw = tuple(values)
+    if any(not isinstance(value, str) or not value.strip() for value in raw):
+        raise LauncherEnforcementError("sandbox domain must be non-empty text")
+    domains = tuple(sorted(set(value.strip() for value in raw)))
+    if domains != raw:
+        raise LauncherEnforcementError("sandbox domains are not canonical")
     unknown = set(domains) - _DOMAINS
     if unknown:
         raise LauncherEnforcementError(
