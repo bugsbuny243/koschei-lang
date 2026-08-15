@@ -25,6 +25,8 @@ EXPECTED_OUTPUT = (
     "trade quantity=25 price=10100 notional=252500 buyer_cash=-252626 seller_cash=252450 fees=176 balanced=true\n"
     "trade quantity=0 price=10100 notional=0 buyer_cash=0 seller_cash=0 fees=0 balanced=true\n"
     "trade quantity=0 price=10100 notional=0 buyer_cash=0 seller_cash=0 fees=0 balanced=true\n"
+    '{"a":1,"b":2}\n'
+    "30\n"
 )
 
 
@@ -101,7 +103,7 @@ def _scale_workspace(root: Path, count: int = 32) -> None:
 class ProductionReferenceSystemTests(unittest.TestCase):
     def test_committed_reference_is_real_multi_realm_program(self) -> None:
         workspace = load_workspace(REFERENCE)
-        self.assertEqual(len(workspace.members), 10)
+        self.assertEqual(len(workspace.members), 12)
 
         modules_by_path = {}
         domains_by_member: dict[str, list[str]] = {}
@@ -115,12 +117,14 @@ class ProductionReferenceSystemTests(unittest.TestCase):
         function_count = sum(
             len(module.program.declarations) for module in modules_by_path.values()
         )
-        self.assertEqual(len(modules_by_path), 10)
-        self.assertGreaterEqual(function_count, 30)
+        self.assertEqual(len(modules_by_path), 12)
+        self.assertGreaterEqual(function_count, 40)
         self.assertEqual(domains_by_member["order_worker"], [])
         self.assertEqual(domains_by_member["matching_engine"], [])
         self.assertEqual(domains_by_member["risk_engine"], [])
         self.assertEqual(domains_by_member["ledger_engine"], [])
+        self.assertEqual(domains_by_member["json_gateway"], [])
+        self.assertEqual(domains_by_member["dispatch_runtime"], [])
         self.assertEqual(domains_by_member["market_feed"], ["net"])
 
     def test_reference_runs_through_verified_workspace_lock(self) -> None:
