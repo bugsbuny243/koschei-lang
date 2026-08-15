@@ -11,7 +11,6 @@ from koschei.deployment_authorization_v1 import (
     redeem_deployment_authorization,
 )
 from koschei.trust_plane_v1 import (
-    LocalPolicy,
     StaticCapabilityRequest,
     TrustArtifactManifest,
     build_local_policy,
@@ -86,9 +85,18 @@ class AtomicRedeemer:
         return True
 
 
-def redeem(authorization, *, now=1_050, policy=None, request=None, artifact=None,
-           operation="deploy", environment="production", redeemer=None,
-           signature=None):
+def redeem(
+    authorization,
+    *,
+    now=1_050,
+    policy=None,
+    request=None,
+    artifact=None,
+    operation="deploy",
+    environment="production",
+    redeemer=None,
+    signature=None,
+):
     base_policy, base_request, base_artifact, _ = fixture()
     policy = policy or base_policy
     request = request or base_request
@@ -109,7 +117,7 @@ def redeem(authorization, *, now=1_050, policy=None, request=None, artifact=None
     )
 
 
-def test_exact_signed_authorization_redeems_once():
+def test_exact_signed_authorization_redeems_once_as_evidence():
     policy, request, artifact, authorization = fixture()
     redeemer = AtomicRedeemer()
     signature = sign(authorization)
@@ -139,15 +147,22 @@ def test_exact_signed_authorization_redeems_once():
         capability_request=request,
     )
 
-    assert first is True
-    assert second is False
-    assert redeemer.claims[authorization.authorization_id] == deployment_authorization_digest(authorization)
+    assert first is not None
+    assert second is None
+    assert first.authorization_id == authorization.authorization_id
+    assert first.operation == "deploy"
+    assert first.redeemed_at_epoch == 1_050
+    assert first.authorization_digest == deployment_authorization_digest(authorization)
+    assert len(first.redemption_digest) == 64
+    assert not hasattr(first, "spawn")
+    assert not hasattr(first, "execute")
+    assert redeemer.claims[authorization.authorization_id] == first.authorization_digest
 
 
 def test_invalid_signature_does_not_consume_authorization():
     policy, request, artifact, authorization = fixture()
     redeemer = AtomicRedeemer()
-    assert redeem_deployment_authorization(
+    result = redeem_deployment_authorization(
         authorization,
         signature=b"attacker-signature",
         signature_verifier=verifier,
@@ -158,13 +173,14 @@ def test_invalid_signature_does_not_consume_authorization():
         artifact_manifest=artifact,
         local_policy=policy,
         capability_request=request,
-    ) is False
+    )
+    assert result is None
     assert redeemer.claims == {}
 
 
 def test_authorization_is_not_valid_before_window():
     _, _, _, authorization = fixture()
-    assert redeem(authorization, now=999) is False
+    assert redeem(authorization, now=999) is None
 
 
 def test_authorization_expires_without_expiring_artifact_identity():
@@ -175,57 +191,56 @@ def test_authorization_expires_without_expiring_artifact_identity():
         policy=policy,
         request=request,
         artifact=artifact,
-    ) is False
-    # The long-lived artifact identity is unchanged; only this deploy grant died.
+    ) is None
     assert artifact.artifact_sha256 == authorization.artifact_sha256
     assert artifact.manifest_digest == authorization.trust_manifest_digest
 
 
 def test_operation_swap_is_denied():
     _, _, _, authorization = fixture()
-    assert redeem(authorization, operation="launch") is False
+    assert redeem(authorization, operation="launch") is None
 
 
 def test_environment_swap_is_denied():
     _, _, _, authorization = fixture()
-    assert redeem(authorization, environment="staging") is False
+    assert redeem(authorization, environment="staging") is None
 
 
 def test_policy_swap_is_denied():
     _, _, _, authorization = fixture()
-    staging_policy = build_local_policy(
+    swapped_policy = build_local_policy(
         "production",
         allowed_capabilities=["net.io"],
     )
-    assert redeem(authorization, policy=staging_policy) is False
+    assert redeem(authorization, policy=swapped_policy) is None
 
 
 def test_artifact_swap_is_denied():
     _, _, artifact, authorization = fixture()
     swapped = replace(artifact, artifact_sha256=digest("attacker-artifact"))
-    assert redeem(authorization, artifact=swapped) is False
+    assert redeem(authorization, artifact=swapped) is None
 
 
 def test_trust_manifest_swap_is_denied():
     _, _, artifact, authorization = fixture()
     swapped = replace(artifact, manifest_digest=digest("attacker-trust-manifest"))
-    assert redeem(authorization, artifact=swapped) is False
+    assert redeem(authorization, artifact=swapped) is None
 
 
 def test_static_capability_request_swap_is_denied():
     _, request, _, authorization = fixture()
     swapped = replace(request, request_digest=digest("attacker-capability-request"))
-    assert redeem(authorization, request=swapped) is False
+    assert redeem(authorization, request=swapped) is None
 
 
 def test_signed_payload_mutation_is_denied():
     _, _, _, authorization = fixture()
     signature = sign(authorization)
     mutated = replace(authorization, expires_after_epoch=9_999)
-    assert redeem(mutated, signature=signature) is False
+    assert redeem(mutated, signature=signature) is None
 
 
-def test_redeemer_is_required_for_authority():
+def test_redeemer_is_required_for_redemption():
     policy, request, artifact, authorization = fixture()
     assert redeem_deployment_authorization(
         authorization,
@@ -238,4 +253,4 @@ def test_redeemer_is_required_for_authority():
         artifact_manifest=artifact,
         local_policy=policy,
         capability_request=request,
-    ) is False
+    ) is None
