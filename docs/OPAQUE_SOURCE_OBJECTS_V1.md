@@ -16,7 +16,8 @@ For protected projects:
 - logical developer names exist only in an authorized workspace view;
 - physical path is never semantic identity;
 - dependency and capability edges are resolved from signed object metadata, not directory layout;
-- protected builds reject fallback to semantic filenames or plaintext path-based imports.
+- protected builds reject fallback to semantic filenames or plaintext path-based imports;
+- the exact bytes that pass object-hash verification are the bytes parsed by the compiler; verified objects are not reopened from the filesystem before parsing.
 
 Example physical storage:
 
@@ -49,6 +50,8 @@ A trusted workspace broker may present a human-readable logical view to an autho
 
 The mapping between logical labels and opaque object ids is protected separately and is never accepted by the compiler as an authority grant.
 
+A readable canonical view is not automatically a build-authoritative view. Build/sign/deploy admission requires a separate keyed canonical-view attestation that binds project id, object id, epoch, content digest, and deployability. Public `provenance` or `deployable` fields are metadata, not authority by themselves. A forged or unattested `SourceView` fails closed at the build gate.
+
 ## Rotating aliases
 
 Protected storage MAY rotate physical aliases by epoch:
@@ -69,6 +72,17 @@ Protected projects use an explicit signed object graph. Edges bind object ids, e
 
 A source object cannot gain authority because it is placed under a privileged directory or given a privileged logical label.
 
+The graph parser rejects duplicate JSON object members. This prevents a signer, verifier, and runtime parser from choosing different values for security-critical fields such as constraints, provenance, hashes, or edges.
+
+## Verified-byte boundary
+
+Protected object loading is a two-stage operation:
+
+1. open the opaque locator as a regular non-symlink file, verify file identity remains stable across open, read its bytes once, enforce size/UTF-8 limits, and verify the declared SHA-256;
+2. cache those verified source bytes in memory and provide them to the normal module parser through a sealed source-reader boundary.
+
+The parser does not reopen the object path after the hash check. If a path is replaced, redirected, removed, or no longer maps to the verified cache, the protected build fails instead of falling back to the filesystem. This closes the hash-check/compile time-of-check-to-time-of-use gap.
+
 ## Decoy compatibility
 
 Opaque storage composes with the compromise-decoy plane:
@@ -76,7 +90,8 @@ Opaque storage composes with the compromise-decoy plane:
 - decoy objects use the same opaque naming surface;
 - decoy provenance is cryptographically distinguishable to trusted build/sign/deploy paths;
 - unauthorized reads may resolve to non-authoritative decoy objects;
-- the trusted compiler never accepts decoy provenance as canonical source.
+- the trusted compiler never accepts decoy provenance as canonical source;
+- a caller cannot promote a decoy by constructing a public object with `provenance="canonical"`; canonical build admission requires the keyed attestation.
 
 ## Fail-closed rules
 
@@ -88,7 +103,11 @@ A protected build fails if:
 4. local policy binding does not match;
 5. a physical alias is treated as canonical identity;
 6. a decoy object reaches the canonical compiler path;
-7. an unprotected plaintext fallback is attempted.
+7. an unprotected plaintext fallback is attempted;
+8. the protected graph contains duplicate JSON members or exceeds its bounded input size;
+9. an object locator is a symlink, device, non-regular file, changes identity while being opened, or exceeds the protected-object size bound;
+10. the parser requests bytes that are not present in the verified-byte cache;
+11. a build/sign/deploy source view lacks a valid canonical-view HMAC attestation or its project/object/epoch/content binding was modified.
 
 ## Explicit non-goals
 
@@ -97,9 +116,10 @@ Opaque names do not by themselves stop:
 - arbitrary memory inspection by a compromised kernel/hypervisor;
 - an authorized user copying visible source;
 - behavioral reverse engineering of a running program;
-- a malicious compiler already inside the trusted computing base.
+- a malicious compiler already inside the trusted computing base;
+- an attacker who has already obtained the independent canonical-view attestation key.
 
-The feature reduces structural information leakage and removes predictable filenames/paths as a free architecture map.
+The feature reduces structural information leakage and removes predictable filenames/paths as a free architecture map. The sealed-byte and attestation gates additionally prevent filesystem races and public metadata forgery from being promoted into canonical build authority.
 
 ## Acceptance gates
 
@@ -110,3 +130,8 @@ The feature reduces structural information leakage and removes predictable filen
 - Changing one policy binding fails closed.
 - Rotating aliases changes physical names without changing canonical artifact identity.
 - Decoy objects cannot be signed or deployed as canonical source.
+- Duplicate JSON security fields are rejected instead of using last-key-wins parsing.
+- Symlink/device object locators are rejected.
+- Hash-verified object bytes are not reopened before parsing.
+- A hand-forged `SourceView` with canonical-looking flags cannot pass build admission without the independent canonical-view key.
+- Changing attested content, project id, object id, epoch, digest, deployability, or attestation key fails closed.
