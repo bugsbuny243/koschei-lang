@@ -13,8 +13,7 @@ import sys
 
 from . import codegen_go as _codegen
 from . import serve_authority_v1 as _serve_authority
-from .ast_nodes import MemberExpression
-from .diagnostics import SourceLocation
+from .ast_nodes import MemberExpression, SourceLocation
 
 _INSTALLED = False
 _ORIGINAL_GENERATE = None
@@ -440,7 +439,7 @@ func ksServeWriteAll(connection net.Conn, wire []byte) *KsError {
 			}
 			return ksServeIO("response write başarısız: " + err.Error())
 		}
-		if n == 0 { return ksServeIO("response write sıfır byte ilerleme yaptı") }
+		if n == 0 { return ksServeIO("response write sıfır byte ilerleme yaptı")
 	}
 	return nil
 }
