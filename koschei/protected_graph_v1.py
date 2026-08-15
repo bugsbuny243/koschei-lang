@@ -9,13 +9,17 @@ from __future__ import annotations
 from dataclasses import dataclass
 import hashlib
 import json
+import os
 from pathlib import Path
+import stat
 from typing import Any
 
 from .ast_nodes import SourceLocation
 from .modules import ModuleError, ModuleGraph, load_graph
 
 SCHEMA = "koschei.opaque-source-graph/v1"
+_MAX_GRAPH_BYTES = 4 * 1024 * 1024
+_MAX_OBJECT_BYTES = 16 * 1024 * 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,16 +74,36 @@ def _validate_hash(value: str, field: str) -> str:
 def _safe_alias(alias: str) -> str:
     if alias in {".", ".."} or "/" in alias or "\\" in alias:
         _fail("KS5604", "epoch_alias dizin yolu içeremez; yalnız opaque locator olabilir.")
-    if len(alias) < 8:
-        _fail("KS5604", "epoch_alias anlamsal/kısa dosya adı olamaz.")
+    if len(alias) < 8 or len(alias) > 128:
+        _fail("KS5604", "epoch_alias 8-128 karakterlik opaque locator olmalıdır.")
+    if any(not (ch.isascii() and (ch.isalnum() or ch in "_-")) for ch in alias):
+        _fail("KS5604", "epoch_alias yalnız ASCII harf, rakam, '_' ve '-' içerebilir.")
     return alias
+
+
+def _strict_object_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            _fail("KS5600", f"Protected object graph tekrarlanan JSON alanı içeriyor: {key}")
+        result[key] = value
+    return result
 
 
 def _read_graph(path: Path) -> dict[str, Any]:
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raw = path.read_bytes()
+    except OSError as error:
         _fail("KS5600", f"Protected object graph okunamadı: {error}")
+    if len(raw) > _MAX_GRAPH_BYTES:
+        _fail("KS5600", "Protected object graph boyut sınırını aşıyor.")
+    try:
+        text = raw.decode("utf-8")
+        payload = json.loads(text, object_pairs_hook=_strict_object_pairs)
+    except UnicodeError as error:
+        _fail("KS5600", f"Protected object graph UTF-8 değil: {error}")
+    except json.JSONDecodeError as error:
+        _fail("KS5600", f"Protected object graph JSON olarak okunamadı: {error}")
     if not isinstance(payload, dict):
         _fail("KS5600", "Protected object graph kökü nesne olmalıdır.")
     return payload
@@ -167,22 +191,68 @@ def _validate_constraints(payload: dict[str, Any]) -> None:
             _fail("KS5614", f"Protected graph güvenlik constraint'i ihlal edildi: {name}")
 
 
-def _verify_object_file(item: ProtectedSourceObject, object_store: Path, expected_policy_hash: str) -> Path:
+def _read_verified_object(
+    item: ProtectedSourceObject,
+    object_store: Path,
+    expected_policy_hash: str,
+) -> tuple[Path, str]:
     if item.provenance != "canonical":
         _fail("KS5620", f"Canonical build decoy/non-canonical object reddetti: {item.object_id}")
     if item.policy_hash != expected_policy_hash:
         _fail("KS5621", f"Protected object policy_hash yerel policy ile uyuşmuyor: {item.object_id}")
+
     path = object_store / item.epoch_alias
-    if not path.is_file():
-        _fail("KS5622", f"Protected object fiziksel locator bulunamadı: {item.object_id}")
     try:
-        data = path.read_bytes()
+        before = path.lstat()
     except OSError as error:
-        _fail("KS5622", f"Protected object okunamadı: {error}")
+        _fail("KS5622", f"Protected object fiziksel locator bulunamadı: {item.object_id}: {error}")
+    if stat.S_ISLNK(before.st_mode) or not stat.S_ISREG(before.st_mode):
+        _fail("KS5622", f"Protected object locator normal dosya olmalıdır; symlink/device yasak: {item.object_id}")
+
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        fd = os.open(path, flags)
+    except OSError as error:
+        _fail("KS5622", f"Protected object güvenli açılamadı: {item.object_id}: {error}")
+
+    try:
+        opened = os.fstat(fd)
+        try:
+            after = path.lstat()
+        except OSError as error:
+            _fail("KS5622", f"Protected object locator doğrulama sırasında değişti: {item.object_id}: {error}")
+        if stat.S_ISLNK(after.st_mode) or not stat.S_ISREG(opened.st_mode):
+            _fail("KS5622", f"Protected object locator symlink/device olamaz: {item.object_id}")
+        before_identity = (before.st_dev, before.st_ino)
+        opened_identity = (opened.st_dev, opened.st_ino)
+        after_identity = (after.st_dev, after.st_ino)
+        if before_identity != opened_identity or opened_identity != after_identity:
+            _fail("KS5622", f"Protected object locator doğrulama sırasında değişti: {item.object_id}")
+        if opened.st_size > _MAX_OBJECT_BYTES:
+            _fail("KS5622", f"Protected object boyut sınırını aşıyor: {item.object_id}")
+
+        chunks: list[bytes] = []
+        total = 0
+        while True:
+            chunk = os.read(fd, 1024 * 1024)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > _MAX_OBJECT_BYTES:
+                _fail("KS5622", f"Protected object boyut sınırını aşıyor: {item.object_id}")
+            chunks.append(chunk)
+        data = b"".join(chunks)
+    finally:
+        os.close(fd)
+
     actual = "sha256:" + hashlib.sha256(data).hexdigest()
     if actual != item.artifact_hash:
         _fail("KS5623", f"Protected object artifact hash doğrulaması başarısız: {item.object_id}")
-    return path
+    try:
+        source = data.decode("utf-8")
+    except UnicodeDecodeError:
+        _fail("KS5623", f"Protected object UTF-8 source değildir: {item.object_id}")
+    return path.resolve(strict=False), source
 
 
 def load_protected_graph(
@@ -197,10 +267,23 @@ def load_protected_graph(
     The JSON object graph is trusted metadata only after its surrounding Trust
     Plane signature/authorization gate has admitted it. This function then
     enforces object identity, hash, policy, provenance and dependency binding.
+
+    Canonical object bytes are read once through a symlink/race-resistant file
+    descriptor, hashed, decoded, cached in memory, and passed to the parser through
+    ``source_reader``. The ordinary module loader never reopens those object paths.
     """
 
     graph_file = Path(graph_path).resolve()
-    store = Path(object_store).resolve()
+    store_input = Path(object_store)
+    if store_input.is_symlink():
+        _fail("KS5622", "Protected object_store symlink olamaz.")
+    try:
+        store = store_input.resolve(strict=True)
+    except OSError as error:
+        _fail("KS5622", f"Protected object_store bulunamadı: {error}")
+    if not store.is_dir():
+        _fail("KS5622", "Protected object_store dizin olmalıdır.")
+
     payload = _read_graph(graph_file)
     if payload.get("schema") != SCHEMA:
         _fail("KS5600", f"Desteklenmeyen protected graph schema: {payload.get('schema')!r}")
@@ -214,13 +297,18 @@ def load_protected_graph(
 
     paths: dict[str, Path] = {}
     reverse: dict[str, str] = {}
+    verified_sources: dict[str, str] = {}
     for object_id, item in objects.items():
-        path = _verify_object_file(item, store, policy_hash).resolve()
+        path, source = _read_verified_object(item, store, policy_hash)
+        key = str(path)
+        if key in reverse:
+            _fail("KS5622", "İki protected object aynı fiziksel dosyaya bağlanamaz.")
         paths[object_id] = path
-        reverse[str(path)] = object_id
+        reverse[key] = object_id
+        verified_sources[key] = source
 
     def resolver(importer: Path, name: str, location: SourceLocation) -> Path:
-        importer_id = reverse.get(str(importer.resolve()))
+        importer_id = reverse.get(str(importer))
         if importer_id is None:
             raise ModuleError(
                 "KS5625",
@@ -243,4 +331,18 @@ def load_protected_graph(
             )
         return paths[edge.to_object_id]
 
-    return load_graph(paths[root_id], import_resolver=resolver)
+    def source_reader(path: Path) -> str:
+        source = verified_sources.get(str(path))
+        if source is None:
+            raise ModuleError(
+                "KS5628",
+                "Protected source doğrulanmış byte cache içinde yok; filesystem fallback yasak.",
+                SourceLocation(1, 1),
+            )
+        return source
+
+    return load_graph(
+        paths[root_id],
+        import_resolver=resolver,
+        source_reader=source_reader,
+    )
