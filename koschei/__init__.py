@@ -189,6 +189,14 @@ from .persistence_runtime_alignment_v1 import install_persistence_runtime_alignm
 
 install_persistence_runtime_alignment_v1()
 
+from .persistence_diagnostics_v1 import install_persistence_diagnostics_v1
+
+install_persistence_diagnostics_v1()
+
+from .persistence_catalog_v1 import install_persistence_catalog_v1
+
+install_persistence_catalog_v1()
+
 from .typestate_affine_alignment import install_typestate_affine_alignment
 
 install_typestate_affine_alignment()
