@@ -14,6 +14,7 @@ from koschei.originality_contract_v1 import (
 from koschei.native_reality_v1 import (
     NativeRealityError,
     REALITY_ENVELOPE_BYTES,
+    advance_native_reality_source,
     create_native_reality_project,
     load_native_reality_graph,
     load_native_reality_project,
@@ -34,9 +35,18 @@ class NativeRealityProjectTests(unittest.TestCase):
             project = create_native_reality_project(root, seal_key=SEAL_KEY)
 
             self.assertEqual(project.reality.epoch, 1)
-            self.assertEqual(len(project.reality_path.read_bytes()), REALITY_ENVELOPE_BYTES)
-            self.assertEqual(project.reality_path.relative_to(root).as_posix(), ".koschei/reality")
-            self.assertEqual(project.source_path.parent.relative_to(root).as_posix(), ".koschei/matter")
+            self.assertEqual(
+                len(project.reality_path.read_bytes()),
+                REALITY_ENVELOPE_BYTES,
+            )
+            self.assertEqual(
+                project.reality_path.relative_to(root).as_posix(),
+                ".koschei/reality",
+            )
+            self.assertEqual(
+                project.source_path.parent.relative_to(root).as_posix(),
+                ".koschei/matter",
+            )
             self.assertRegex(project.source_path.name, r"^[0-9a-f]{32}$")
 
             exposed = {
@@ -83,6 +93,13 @@ class NativeRealityProjectTests(unittest.TestCase):
             provenance=provenance,
         )
         self.assertEqual(violations, ())
+
+    def test_invalid_seal_key_does_not_create_partial_project(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "demo"
+            with self.assertRaisesRegex(NativeRealityError, "seal key"):
+                create_native_reality_project(root, seal_key=b"short")
+            self.assertFalse(root.exists())
 
     def test_wrong_seal_key_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -190,6 +207,101 @@ class NativeRealityProjectTests(unittest.TestCase):
                     expected_epoch=1,
                 )
 
+    def test_authenticated_edit_advances_epoch_alias_and_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = create_native_reality_project(
+                Path(temporary) / "demo",
+                seal_key=SEAL_KEY,
+            )
+            old_path = project.source_path
+            replacement = 'fn main() {\n    println("changed")\n}\n'
+            advanced = advance_native_reality_source(
+                project.root,
+                seal_key=SEAL_KEY,
+                expected_project_id=project.reality.project_id,
+                expected_epoch=1,
+                source_text=replacement,
+            )
+
+            self.assertEqual(advanced.reality.epoch, 2)
+            self.assertEqual(advanced.reality.project_id, project.reality.project_id)
+            self.assertEqual(
+                advanced.reality.root_object_id,
+                project.reality.root_object_id,
+            )
+            self.assertNotEqual(
+                advanced.reality.epoch_alias,
+                project.reality.epoch_alias,
+            )
+            self.assertNotEqual(
+                advanced.reality.artifact_digest,
+                project.reality.artifact_digest,
+            )
+            self.assertEqual(
+                advanced.reality.artifact_digest,
+                hashlib.sha256(replacement.encode("utf-8")).digest(),
+            )
+            self.assertEqual(advanced.source_text, replacement)
+            self.assertFalse(old_path.exists())
+
+            with self.assertRaisesRegex(NativeRealityError, "temporal context"):
+                load_native_reality_project(
+                    advanced.root,
+                    seal_key=SEAL_KEY,
+                    expected_project_id=advanced.reality.project_id,
+                    expected_epoch=1,
+                )
+
+    def test_rejected_edit_does_not_switch_authoritative_reality(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = create_native_reality_project(
+                Path(temporary) / "demo",
+                seal_key=SEAL_KEY,
+            )
+            before_reality = project.reality_path.read_bytes()
+            before_alias = project.source_path
+
+            with self.assertRaises(ModuleError) as raised:
+                advance_native_reality_source(
+                    project.root,
+                    seal_key=SEAL_KEY,
+                    expected_project_id=project.reality.project_id,
+                    expected_epoch=1,
+                    source_text="import x\nfn main() {}\n",
+                )
+            self.assertEqual(raised.exception.code, "KS5701")
+            self.assertEqual(project.reality_path.read_bytes(), before_reality)
+            self.assertTrue(before_alias.is_file())
+
+            reloaded = load_native_reality_project(
+                project.root,
+                seal_key=SEAL_KEY,
+                expected_project_id=project.reality.project_id,
+                expected_epoch=1,
+            )
+            self.assertEqual(reloaded.source_text, project.source_text)
+
+    def test_project_root_symlink_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            project = create_native_reality_project(
+                base / "real",
+                seal_key=SEAL_KEY,
+            )
+            link = base / "linked"
+            try:
+                link.symlink_to(project.root, target_is_directory=True)
+            except (OSError, NotImplementedError):
+                self.skipTest("symlinks are unavailable on this platform")
+
+            with self.assertRaisesRegex(NativeRealityError, "project root"):
+                load_native_reality_project(
+                    link,
+                    seal_key=SEAL_KEY,
+                    expected_project_id=project.reality.project_id,
+                    expected_epoch=1,
+                )
+
     def test_symlink_source_locator_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -215,21 +327,35 @@ class NativeRealityProjectTests(unittest.TestCase):
                     expected_epoch=1,
                 )
 
-    def test_v1_imports_fail_closed_without_filename_fallback(self) -> None:
+    def test_v1_imports_are_rejected_before_project_creation(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "demo"
+            with self.assertRaises(ModuleError) as raised:
+                create_native_reality_project(
+                    root,
+                    seal_key=SEAL_KEY,
+                    source_text="import x\nfn main() {}\n",
+                )
+            self.assertEqual(raised.exception.code, "KS5701")
+            self.assertFalse(root.exists())
+
+    def test_valid_single_object_reality_builds_graph(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             project = create_native_reality_project(
                 Path(temporary) / "demo",
                 seal_key=SEAL_KEY,
-                source_text="import x\nfn main() {}\n",
             )
-            with self.assertRaises(ModuleError) as raised:
-                load_native_reality_graph(
-                    project.root,
-                    seal_key=SEAL_KEY,
-                    expected_project_id=project.reality.project_id,
-                    expected_epoch=1,
-                )
-            self.assertEqual(raised.exception.code, "KS5701")
+            graph = load_native_reality_graph(
+                project.root,
+                seal_key=SEAL_KEY,
+                expected_project_id=project.reality.project_id,
+                expected_epoch=1,
+            )
+            self.assertEqual(len(graph.modules), 1)
+            self.assertEqual(
+                graph.root_module.name,
+                project.reality.root_object_id_hex,
+            )
 
 
 if __name__ == "__main__":
