@@ -98,9 +98,56 @@ def _require_bytes(value: object, size: int, field: str) -> bytes:
 
 
 def _seal_key(value: object) -> bytes:
-    if not isinstance(value, bytes) or len(value) != REALITY_SEAL_KEY_BYTES or not any(value):
-        _fail(f"reality seal key must be exactly {REALITY_SEAL_KEY_BYTES} non-zero bytes")
+    if (
+        not isinstance(value, bytes)
+        or len(value) != REALITY_SEAL_KEY_BYTES
+        or not any(value)
+    ):
+        _fail(
+            f"reality seal key must be exactly "
+            f"{REALITY_SEAL_KEY_BYTES} non-zero bytes"
+        )
     return value
+
+
+def _absolute_no_symlink_resolution(path: str | Path) -> Path:
+    # Path.resolve() follows the final project-root symlink before we can reject
+    # it. absolute() preserves the link itself for lstat-based admission checks.
+    return Path(path).absolute()
+
+
+def _source_bytes(source_text: object) -> bytes:
+    if not isinstance(source_text, str):
+        _fail("source_text must be a string")
+    try:
+        payload = source_text.encode("utf-8")
+    except UnicodeError as error:
+        raise NativeRealityError(f"source is not valid UTF-8: {error}") from error
+    if len(payload) > MAX_SOURCE_BYTES:
+        _fail(f"source exceeds the {MAX_SOURCE_BYTES}-byte limit")
+    return payload
+
+
+def _parse_single_object_source(
+    source_text: str,
+    *,
+    source_path: Path | None = None,
+):
+    try:
+        program = parse(source_text)
+    except (LexerError, ParserError) as error:
+        if source_path is not None:
+            error.source_path = source_path
+        raise
+    if program.imports:
+        declaration = program.imports[0]
+        raise ModuleError(
+            "KS5701",
+            "Native reality v1 has no authenticated object-edge table; "
+            "imports fail closed instead of using filename fallback.",
+            declaration.location,
+        )
+    return program
 
 
 def _encode(reality: NativeReality, *, seal_key: bytes) -> bytes:
@@ -108,9 +155,15 @@ def _encode(reality: NativeReality, *, seal_key: bytes) -> bytes:
     project_id = _require_bytes(reality.project_id, _ID_BYTES, "project_id")
     object_id = _require_bytes(reality.root_object_id, _ID_BYTES, "root_object_id")
     policy = _require_bytes(reality.policy_digest, _DIGEST_BYTES, "policy_digest")
-    artifact = _require_bytes(reality.artifact_digest, _DIGEST_BYTES, "artifact_digest")
+    artifact = _require_bytes(
+        reality.artifact_digest, _DIGEST_BYTES, "artifact_digest"
+    )
     alias = _require_bytes(reality.epoch_alias, _ALIAS_BYTES, "epoch_alias")
-    if not isinstance(reality.epoch, int) or isinstance(reality.epoch, bool) or reality.epoch < 1:
+    if (
+        not isinstance(reality.epoch, int)
+        or isinstance(reality.epoch, bool)
+        or reality.epoch < 1
+    ):
         _fail("epoch must be a positive integer")
     if reality.epoch > (1 << 64) - 1:
         _fail("epoch exceeds uint64")
@@ -167,7 +220,10 @@ def _ensure_real_directory(path: Path, label: str) -> None:
     except OSError as error:
         raise NativeRealityError(f"{label} unavailable: {error}") from error
     if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
-        _fail(f"{label} must be a real directory, not a symlink or special file")
+        _fail(
+            f"{label} must be a real directory, "
+            "not a symlink or special file"
+        )
 
 
 def _read_regular_nofollow(
@@ -185,13 +241,17 @@ def _read_regular_nofollow(
     try:
         before = path.lstat()
     except OSError as error:
-        raise NativeRealityError(f"{label} cannot be inspected safely: {error}") from error
+        raise NativeRealityError(
+            f"{label} cannot be inspected safely: {error}"
+        ) from error
     if stat.S_ISLNK(before.st_mode) or not stat.S_ISREG(before.st_mode):
         _fail(f"{label} must be a regular non-symlink file")
     try:
         descriptor = os.open(path, flags)
     except OSError as error:
-        raise NativeRealityError(f"{label} cannot be opened safely: {error}") from error
+        raise NativeRealityError(
+            f"{label} cannot be opened safely: {error}"
+        ) from error
     try:
         info = os.fstat(descriptor)
         if not stat.S_ISREG(info.st_mode):
@@ -284,14 +344,19 @@ def _layout(root: Path) -> tuple[Path, Path, Path]:
 
 
 def is_native_reality_project(path: str | Path) -> bool:
-    requested = Path(path)
-    if not requested.is_dir():
+    requested = _absolute_no_symlink_resolution(path)
+    try:
+        _ensure_real_directory(requested, "project root")
+        reality_root, reality_path, matter_root = _layout(requested)
+        _ensure_real_directory(reality_root, "reality root")
+        _ensure_real_directory(matter_root, "matter root")
+        reality_info = reality_path.lstat()
+    except NativeRealityError:
         return False
-    reality_root, reality_path, matter_root = _layout(requested)
-    return (
-        reality_root.is_dir()
-        and reality_path.is_file()
-        and matter_root.is_dir()
+    except OSError:
+        return False
+    return stat.S_ISREG(reality_info.st_mode) and not stat.S_ISLNK(
+        reality_info.st_mode
     )
 
 
@@ -301,28 +366,23 @@ def create_native_reality_project(
     seal_key: bytes,
     source_text: str = 'fn main() {\n    println("Hello from Koschei reality")\n}\n',
 ) -> NativeRealityProject:
-    if not isinstance(source_text, str):
-        _fail("source_text must be a string")
-    try:
-        source_bytes = source_text.encode("utf-8")
-    except UnicodeError as error:
-        raise NativeRealityError(f"source is not valid UTF-8: {error}") from error
-    if len(source_bytes) > MAX_SOURCE_BYTES:
-        _fail(f"source exceeds the {MAX_SOURCE_BYTES}-byte limit")
+    _seal_key(seal_key)
+    source_bytes = _source_bytes(source_text)
+    # Reject known-unbuildable v1 realities before creating any filesystem state.
+    _parse_single_object_source(source_text)
 
-    root = Path(destination).resolve()
-    existed = root.exists()
-    if existed and (not root.is_dir() or any(root.iterdir())):
-        _fail(f"destination is not empty: {root}")
+    root = _absolute_no_symlink_resolution(destination)
+    existed = root.exists() or root.is_symlink()
+    if existed:
+        _ensure_real_directory(root, "project root")
+        if any(root.iterdir()):
+            _fail(f"destination is not empty: {root}")
 
     created_root = False
     try:
         if not existed:
             root.mkdir(parents=True, mode=0o700)
             created_root = True
-        else:
-            _ensure_real_directory(root, "project root")
-
         reality_root, reality_path, matter_root = _layout(root)
         reality_root.mkdir(mode=0o700)
         matter_root.mkdir(mode=0o700)
@@ -338,7 +398,10 @@ def create_native_reality_project(
             epoch_alias=alias,
         )
         _write_exclusive(source_path, source_bytes)
-        _write_exclusive(reality_path, _encode(reality, seal_key=seal_key))
+        _write_exclusive(
+            reality_path,
+            _encode(reality, seal_key=seal_key),
+        )
         return load_native_reality_project(
             root,
             seal_key=seal_key,
@@ -359,7 +422,8 @@ def load_native_reality_project(
     expected_epoch: int,
     expected_policy_digest: bytes = POLICY_DIGEST_V1,
 ) -> NativeRealityProject:
-    root = Path(path).resolve()
+    _seal_key(seal_key)
+    root = _absolute_no_symlink_resolution(path)
     _ensure_real_directory(root, "project root")
     reality_root, reality_path, matter_root = _layout(root)
     _ensure_real_directory(reality_root, "reality root")
@@ -377,19 +441,25 @@ def load_native_reality_project(
         expected_project_id, _ID_BYTES, "expected_project_id"
     )
     if not hmac.compare_digest(reality.project_id, expected_project):
-        _fail("reality project id does not match the trusted project context")
+        _fail(
+            "reality project id does not match the trusted project context"
+        )
     if (
         not isinstance(expected_epoch, int)
         or isinstance(expected_epoch, bool)
         or expected_epoch < 1
         or reality.epoch != expected_epoch
     ):
-        _fail("reality epoch does not match the trusted temporal context")
+        _fail(
+            "reality epoch does not match the trusted temporal context"
+        )
     expected = _require_bytes(
         expected_policy_digest, _DIGEST_BYTES, "expected_policy_digest"
     )
     if not hmac.compare_digest(reality.policy_digest, expected):
-        _fail("reality policy digest does not match the local policy")
+        _fail(
+            "reality policy digest does not match the local policy"
+        )
 
     alias_text = reality.epoch_alias_text
     if len(alias_text) != 32 or alias_text.lower() != alias_text:
@@ -401,13 +471,16 @@ def load_native_reality_project(
         max_bytes=MAX_SOURCE_BYTES,
     )
     if not hmac.compare_digest(
-        hashlib.sha256(source_bytes).digest(), reality.artifact_digest
+        hashlib.sha256(source_bytes).digest(),
+        reality.artifact_digest,
     ):
         _fail("canonical source object hash mismatch")
     try:
         source_text = source_bytes.decode("utf-8")
     except UnicodeError as error:
-        raise NativeRealityError(f"canonical source object is not UTF-8: {error}") from error
+        raise NativeRealityError(
+            f"canonical source object is not UTF-8: {error}"
+        ) from error
     return NativeRealityProject(
         root=root,
         reality_path=reality_path,
@@ -431,19 +504,10 @@ def load_native_reality_graph(
         expected_project_id=expected_project_id,
         expected_epoch=expected_epoch,
     )
-    try:
-        program = parse(project.source_text)
-    except (LexerError, ParserError) as error:
-        error.source_path = project.source_path
-        raise
-    if program.imports:
-        declaration = program.imports[0]
-        raise ModuleError(
-            "KS5701",
-            "Native reality v1 has no authenticated object-edge table; "
-            "imports fail closed instead of using filename fallback.",
-            declaration.location,
-        )
+    program = _parse_single_object_source(
+        project.source_text,
+        source_path=project.source_path,
+    )
     key = "koschei-object:" + project.reality.root_object_id_hex
     module = Module(
         name=project.reality.root_object_id_hex,
@@ -451,6 +515,96 @@ def load_native_reality_graph(
         program=program,
     )
     return ModuleGraph(root=key, modules={key: module})
+
+
+def _next_alias(current: bytes) -> bytes:
+    candidate = _fresh_nonzero(_ALIAS_BYTES)
+    while candidate == current:
+        candidate = _fresh_nonzero(_ALIAS_BYTES)
+    return candidate
+
+
+def _switch_reality(
+    project: NativeRealityProject,
+    *,
+    seal_key: bytes,
+    source_bytes: bytes,
+    artifact_digest: bytes,
+) -> NativeRealityProject:
+    reality = project.reality
+    if reality.epoch >= (1 << 64) - 1:
+        _fail("epoch counter exhausted")
+
+    new_alias = _next_alias(reality.epoch_alias)
+    new_source_path = project.matter_root / new_alias.hex()
+    _write_exclusive(new_source_path, source_bytes)
+    next_reality = NativeReality(
+        project_id=reality.project_id,
+        root_object_id=reality.root_object_id,
+        policy_digest=reality.policy_digest,
+        artifact_digest=artifact_digest,
+        epoch=reality.epoch + 1,
+        epoch_alias=new_alias,
+    )
+    try:
+        _replace_sealed(
+            project.reality_path,
+            _encode(next_reality, seal_key=seal_key),
+        )
+    except Exception:
+        try:
+            new_source_path.unlink()
+        except FileNotFoundError:
+            pass
+        raise
+
+    # The new envelope is already authoritative. Failure to remove the old
+    # unreferenced alias must never roll authority back to stale reality.
+    try:
+        project.source_path.unlink()
+    except OSError:
+        pass
+
+    return load_native_reality_project(
+        project.root,
+        seal_key=seal_key,
+        expected_project_id=reality.project_id,
+        expected_epoch=reality.epoch + 1,
+    )
+
+
+def advance_native_reality_source(
+    path: str | Path,
+    *,
+    seal_key: bytes,
+    expected_project_id: bytes,
+    expected_epoch: int,
+    source_text: str,
+) -> NativeRealityProject:
+    """Authenticate an edit and advance source identity as one new epoch.
+
+    Direct writes to the current matter alias are never edits: they invalidate
+    the authenticated artifact digest. This operation validates the replacement
+    program before any authority switch, writes it under a fresh opaque alias,
+    advances the epoch and atomically seals the new reality envelope.
+    """
+
+    project = load_native_reality_project(
+        path,
+        seal_key=seal_key,
+        expected_project_id=expected_project_id,
+        expected_epoch=expected_epoch,
+    )
+    source_bytes = _source_bytes(source_text)
+    # Parse and enforce the single-object boundary before filesystem mutation.
+    _parse_single_object_source(source_text)
+    artifact_digest = hashlib.sha256(source_bytes).digest()
+    return _switch_reality(
+        project,
+        seal_key=seal_key,
+        source_bytes=source_bytes,
+        artifact_digest=artifact_digest,
+    )
 
 
 def rotate_native_reality_epoch(
@@ -466,43 +620,10 @@ def rotate_native_reality_epoch(
         expected_project_id=expected_project_id,
         expected_epoch=expected_epoch,
     )
-    reality = project.reality
-    if reality.epoch >= (1 << 64) - 1:
-        _fail("epoch counter exhausted")
-
-    new_alias = _fresh_nonzero(_ALIAS_BYTES)
-    while new_alias == reality.epoch_alias:
-        new_alias = _fresh_nonzero(_ALIAS_BYTES)
-    new_source_path = project.matter_root / new_alias.hex()
     source_bytes = project.source_text.encode("utf-8")
-
-    _write_exclusive(new_source_path, source_bytes)
-    next_reality = NativeReality(
-        project_id=reality.project_id,
-        root_object_id=reality.root_object_id,
-        policy_digest=reality.policy_digest,
-        artifact_digest=reality.artifact_digest,
-        epoch=reality.epoch + 1,
-        epoch_alias=new_alias,
-    )
-    try:
-        _replace_sealed(project.reality_path, _encode(next_reality, seal_key=seal_key))
-    except Exception:
-        try:
-            new_source_path.unlink()
-        except FileNotFoundError:
-            pass
-        raise
-
-    # The new envelope is already authoritative. Failure to remove the old
-    # unreferenced alias must not roll the project back to stale reality.
-    try:
-        project.source_path.unlink()
-    except OSError:
-        pass
-    return load_native_reality_project(
-        project.root,
+    return _switch_reality(
+        project,
         seal_key=seal_key,
-        expected_project_id=reality.project_id,
-        expected_epoch=reality.epoch + 1,
+        source_bytes=source_bytes,
+        artifact_digest=project.reality.artifact_digest,
     )
