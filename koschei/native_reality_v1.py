@@ -10,17 +10,22 @@ fails closed instead of falling back to sibling filenames.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass
 import hashlib
 import hmac
 import os
 from pathlib import Path
 import secrets
-import shutil
 import stat
 import struct
+from typing import Iterator
 
-from .ast_nodes import SourceLocation
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - secure v1 fails closed on this platform.
+    fcntl = None
+
 from .lexer import LexerError
 from .modules import Module, ModuleError, ModuleGraph
 from .parser import ParserError, parse
@@ -42,7 +47,8 @@ _POLICY_BYTES_V1 = (
     b"koschei.native-reality/v1\x00"
     b"no-semantic-path-authority\x00"
     b"no-plaintext-manifest\x00"
-    b"no-implicit-import-fallback"
+    b"no-implicit-import-fallback\x00"
+    b"descriptor-bound-layout"
 )
 POLICY_DIGEST_V1 = hashlib.sha256(_POLICY_BYTES_V1).digest()
 
@@ -85,10 +91,22 @@ class NativeRealityProject:
     reality: NativeReality
     source_path: Path
     source_text: str
+    source_bytes: bytes
 
 
 def _fail(message: str) -> None:
     raise NativeRealityError(message)
+
+
+def _require_secure_platform() -> None:
+    required_flags = ("O_NOFOLLOW", "O_DIRECTORY")
+    if any(not hasattr(os, name) for name in required_flags):
+        _fail("native reality v1 requires O_NOFOLLOW and O_DIRECTORY")
+    required_dirfd = (os.open, os.mkdir, os.unlink, os.rmdir, os.rename)
+    if any(function not in os.supports_dir_fd for function in required_dirfd):
+        _fail("native reality v1 requires descriptor-relative filesystem operations")
+    if fcntl is None:
+        _fail("native reality v1 requires advisory directory locking support")
 
 
 def _require_bytes(value: object, size: int, field: str) -> bytes:
@@ -111,8 +129,6 @@ def _seal_key(value: object) -> bytes:
 
 
 def _absolute_no_symlink_resolution(path: str | Path) -> Path:
-    # Path.resolve() follows the final project-root symlink before we can reject
-    # it. absolute() preserves the link itself for lstat-based admission checks.
     return Path(path).absolute()
 
 
@@ -183,9 +199,7 @@ def _encode(reality: NativeReality, *, seal_key: bytes) -> bytes:
 def _decode(payload: bytes, *, seal_key: bytes) -> NativeReality:
     key = _seal_key(seal_key)
     if not isinstance(payload, bytes) or len(payload) != REALITY_ENVELOPE_BYTES:
-        _fail(
-            f"reality envelope must be exactly {REALITY_ENVELOPE_BYTES} bytes"
-        )
+        _fail(f"reality envelope must be exactly {REALITY_ENVELOPE_BYTES} bytes")
     body, seal = payload[:-_DIGEST_BYTES], payload[-_DIGEST_BYTES:]
     expected_seal = hmac.new(key, body, hashlib.sha256).digest()
     if not hmac.compare_digest(expected_seal, seal):
@@ -214,50 +228,70 @@ def _decode(payload: bytes, *, seal_key: bytes) -> NativeReality:
     )
 
 
-def _ensure_real_directory(path: Path, label: str) -> None:
+def _directory_flags() -> int:
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    if hasattr(os, "O_CLOEXEC"):
+        flags |= os.O_CLOEXEC
+    return flags
+
+
+def _open_directory_path(path: Path, label: str) -> int:
     try:
-        info = path.lstat()
+        before = path.lstat()
     except OSError as error:
         raise NativeRealityError(f"{label} unavailable: {error}") from error
-    if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
-        _fail(
-            f"{label} must be a real directory, "
-            "not a symlink or special file"
-        )
+    if stat.S_ISLNK(before.st_mode) or not stat.S_ISDIR(before.st_mode):
+        _fail(f"{label} must be a real directory, not a symlink or special file")
+    try:
+        descriptor = os.open(path, _directory_flags())
+    except OSError as error:
+        raise NativeRealityError(f"{label} cannot be opened safely: {error}") from error
+    try:
+        after = os.fstat(descriptor)
+        if not stat.S_ISDIR(after.st_mode):
+            _fail(f"{label} must resolve to a directory descriptor")
+        if (before.st_dev, before.st_ino) != (after.st_dev, after.st_ino):
+            _fail(f"{label} changed between inspection and descriptor open")
+        return descriptor
+    except Exception:
+        os.close(descriptor)
+        raise
 
 
-def _read_regular_nofollow(
-    path: Path,
+def _open_directory_at(parent_fd: int, name: str, label: str) -> int:
+    try:
+        descriptor = os.open(name, _directory_flags(), dir_fd=parent_fd)
+    except OSError as error:
+        raise NativeRealityError(f"{label} cannot be opened safely: {error}") from error
+    try:
+        info = os.fstat(descriptor)
+        if not stat.S_ISDIR(info.st_mode):
+            _fail(f"{label} must be a real directory")
+        return descriptor
+    except Exception:
+        os.close(descriptor)
+        raise
+
+
+def _read_regular_at(
+    directory_fd: int,
+    name: str,
     *,
     label: str,
     max_bytes: int,
     exact_bytes: int | None = None,
 ) -> bytes:
-    flags = os.O_RDONLY
+    flags = os.O_RDONLY | os.O_NOFOLLOW
     if hasattr(os, "O_CLOEXEC"):
         flags |= os.O_CLOEXEC
-    if hasattr(os, "O_NOFOLLOW"):
-        flags |= os.O_NOFOLLOW
     try:
-        before = path.lstat()
+        descriptor = os.open(name, flags, dir_fd=directory_fd)
     except OSError as error:
-        raise NativeRealityError(
-            f"{label} cannot be inspected safely: {error}"
-        ) from error
-    if stat.S_ISLNK(before.st_mode) or not stat.S_ISREG(before.st_mode):
-        _fail(f"{label} must be a regular non-symlink file")
-    try:
-        descriptor = os.open(path, flags)
-    except OSError as error:
-        raise NativeRealityError(
-            f"{label} cannot be opened safely: {error}"
-        ) from error
+        raise NativeRealityError(f"{label} cannot be opened safely: {error}") from error
     try:
         info = os.fstat(descriptor)
         if not stat.S_ISREG(info.st_mode):
-            _fail(f"{label} must be a regular file")
-        if (before.st_dev, before.st_ino) != (info.st_dev, info.st_ino):
-            _fail(f"{label} changed between inspection and open")
+            _fail(f"{label} must be a regular non-symlink file")
         if info.st_size > max_bytes:
             _fail(f"{label} exceeds the {max_bytes}-byte limit")
         if exact_bytes is not None and info.st_size != exact_bytes:
@@ -287,42 +321,42 @@ def _read_regular_nofollow(
         os.close(descriptor)
 
 
-def _write_exclusive(path: Path, payload: bytes) -> None:
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+def _write_exclusive_at(directory_fd: int, name: str, payload: bytes) -> None:
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
     if hasattr(os, "O_CLOEXEC"):
         flags |= os.O_CLOEXEC
-    descriptor = os.open(path, flags, 0o600)
+    descriptor = os.open(name, flags, 0o600, dir_fd=directory_fd)
     try:
         view = memoryview(payload)
         written = 0
         while written < len(view):
             count = os.write(descriptor, view[written:])
             if count <= 0:
-                _fail(f"failed to write {path.name}")
+                _fail(f"failed to write opaque object {name}")
             written += count
         os.fsync(descriptor)
     finally:
         os.close(descriptor)
 
 
-def _replace_sealed(path: Path, payload: bytes) -> None:
-    parent = path.parent
-    temporary = parent / (".reality-" + secrets.token_hex(16))
+def _unlink_at(directory_fd: int, name: str) -> None:
+    os.unlink(name, dir_fd=directory_fd)
+
+
+def _replace_sealed_at(reality_fd: int, payload: bytes) -> None:
+    temporary = ".reality-" + secrets.token_hex(16)
     try:
-        _write_exclusive(temporary, payload)
-        os.replace(temporary, path)
-        try:
-            directory_fd = os.open(parent, os.O_RDONLY)
-        except OSError:
-            directory_fd = None
-        if directory_fd is not None:
-            try:
-                os.fsync(directory_fd)
-            finally:
-                os.close(directory_fd)
+        _write_exclusive_at(reality_fd, temporary, payload)
+        os.rename(
+            temporary,
+            REALITY_FILE_NAME,
+            src_dir_fd=reality_fd,
+            dst_dir_fd=reality_fd,
+        )
+        os.fsync(reality_fd)
     finally:
         try:
-            temporary.unlink()
+            _unlink_at(reality_fd, temporary)
         except FileNotFoundError:
             pass
 
@@ -343,130 +377,94 @@ def _layout(root: Path) -> tuple[Path, Path, Path]:
     )
 
 
-def is_native_reality_project(path: str | Path) -> bool:
-    requested = _absolute_no_symlink_resolution(path)
+@contextmanager
+def _open_existing_layout(
+    root: Path,
+) -> Iterator[tuple[int, int, int]]:
+    _require_secure_platform()
+    root_fd = _open_directory_path(root, "project root")
+    reality_fd: int | None = None
+    matter_fd: int | None = None
     try:
-        _ensure_real_directory(requested, "project root")
-        reality_root, reality_path, matter_root = _layout(requested)
-        _ensure_real_directory(reality_root, "reality root")
-        _ensure_real_directory(matter_root, "matter root")
-        reality_info = reality_path.lstat()
-    except NativeRealityError:
-        return False
-    except OSError:
-        return False
-    return stat.S_ISREG(reality_info.st_mode) and not stat.S_ISLNK(
-        reality_info.st_mode
-    )
+        reality_fd = _open_directory_at(root_fd, REALITY_DIR_NAME, "reality root")
+        matter_fd = _open_directory_at(reality_fd, MATTER_DIR_NAME, "matter root")
+        yield root_fd, reality_fd, matter_fd
+    finally:
+        if matter_fd is not None:
+            os.close(matter_fd)
+        if reality_fd is not None:
+            os.close(reality_fd)
+        os.close(root_fd)
 
 
-def create_native_reality_project(
-    destination: str | Path,
-    *,
-    seal_key: bytes,
-    source_text: str = 'fn main() {\n    println("Hello from Koschei reality")\n}\n',
-) -> NativeRealityProject:
-    _seal_key(seal_key)
-    source_bytes = _source_bytes(source_text)
-    # Reject known-unbuildable v1 realities before creating any filesystem state.
-    _parse_single_object_source(source_text)
-
-    root = _absolute_no_symlink_resolution(destination)
-    existed = root.exists() or root.is_symlink()
-    if existed:
-        _ensure_real_directory(root, "project root")
-        if any(root.iterdir()):
-            _fail(f"destination is not empty: {root}")
-
-    created_root = False
+@contextmanager
+def _exclusive_reality_transition(reality_fd: int) -> Iterator[None]:
+    assert fcntl is not None
+    fcntl.flock(reality_fd, fcntl.LOCK_EX)
     try:
-        if not existed:
-            root.mkdir(parents=True, mode=0o700)
-            created_root = True
-        reality_root, reality_path, matter_root = _layout(root)
-        reality_root.mkdir(mode=0o700)
-        matter_root.mkdir(mode=0o700)
-        alias = _fresh_nonzero(_ALIAS_BYTES)
-        source_path = matter_root / alias.hex()
-        artifact = hashlib.sha256(source_bytes).digest()
-        reality = NativeReality(
-            project_id=_fresh_nonzero(_ID_BYTES),
-            root_object_id=_fresh_nonzero(_ID_BYTES),
-            policy_digest=POLICY_DIGEST_V1,
-            artifact_digest=artifact,
-            epoch=1,
-            epoch_alias=alias,
-        )
-        _write_exclusive(source_path, source_bytes)
-        _write_exclusive(
-            reality_path,
-            _encode(reality, seal_key=seal_key),
-        )
-        return load_native_reality_project(
-            root,
-            seal_key=seal_key,
-            expected_project_id=reality.project_id,
-            expected_epoch=1,
-        )
-    except Exception:
-        if created_root:
-            shutil.rmtree(root, ignore_errors=True)
-        raise
+        yield
+    finally:
+        fcntl.flock(reality_fd, fcntl.LOCK_UN)
 
 
-def load_native_reality_project(
-    path: str | Path,
+def _validate_context(
+    reality: NativeReality,
     *,
-    seal_key: bytes,
     expected_project_id: bytes,
     expected_epoch: int,
-    expected_policy_digest: bytes = POLICY_DIGEST_V1,
-) -> NativeRealityProject:
-    _seal_key(seal_key)
-    root = _absolute_no_symlink_resolution(path)
-    _ensure_real_directory(root, "project root")
-    reality_root, reality_path, matter_root = _layout(root)
-    _ensure_real_directory(reality_root, "reality root")
-    _ensure_real_directory(matter_root, "matter root")
-    reality = _decode(
-        _read_regular_nofollow(
-            reality_path,
-            label="reality envelope",
-            max_bytes=REALITY_ENVELOPE_BYTES,
-            exact_bytes=REALITY_ENVELOPE_BYTES,
-        ),
-        seal_key=seal_key,
-    )
+    expected_policy_digest: bytes,
+) -> None:
     expected_project = _require_bytes(
         expected_project_id, _ID_BYTES, "expected_project_id"
     )
     if not hmac.compare_digest(reality.project_id, expected_project):
-        _fail(
-            "reality project id does not match the trusted project context"
-        )
+        _fail("reality project id does not match the trusted project context")
     if (
         not isinstance(expected_epoch, int)
         or isinstance(expected_epoch, bool)
         or expected_epoch < 1
         or reality.epoch != expected_epoch
     ):
-        _fail(
-            "reality epoch does not match the trusted temporal context"
-        )
-    expected = _require_bytes(
+        _fail("reality epoch does not match the trusted temporal context")
+    expected_policy = _require_bytes(
         expected_policy_digest, _DIGEST_BYTES, "expected_policy_digest"
     )
-    if not hmac.compare_digest(reality.policy_digest, expected):
-        _fail(
-            "reality policy digest does not match the local policy"
-        )
+    if not hmac.compare_digest(reality.policy_digest, expected_policy):
+        _fail("reality policy digest does not match the local policy")
 
+
+def _load_from_handles(
+    root: Path,
+    reality_fd: int,
+    matter_fd: int,
+    *,
+    seal_key: bytes,
+    expected_project_id: bytes,
+    expected_epoch: int,
+    expected_policy_digest: bytes = POLICY_DIGEST_V1,
+) -> NativeRealityProject:
+    reality = _decode(
+        _read_regular_at(
+            reality_fd,
+            REALITY_FILE_NAME,
+            label="reality envelope",
+            max_bytes=REALITY_ENVELOPE_BYTES,
+            exact_bytes=REALITY_ENVELOPE_BYTES,
+        ),
+        seal_key=seal_key,
+    )
+    _validate_context(
+        reality,
+        expected_project_id=expected_project_id,
+        expected_epoch=expected_epoch,
+        expected_policy_digest=expected_policy_digest,
+    )
     alias_text = reality.epoch_alias_text
     if len(alias_text) != 32 or alias_text.lower() != alias_text:
         _fail("epoch alias is not canonical lowercase 128-bit hex")
-    source_path = matter_root / alias_text
-    source_bytes = _read_regular_nofollow(
-        source_path,
+    source_bytes = _read_regular_at(
+        matter_fd,
+        alias_text,
         label="canonical source object",
         max_bytes=MAX_SOURCE_BYTES,
     )
@@ -481,14 +479,173 @@ def load_native_reality_project(
         raise NativeRealityError(
             f"canonical source object is not UTF-8: {error}"
         ) from error
+    reality_root, reality_path, matter_root = _layout(root)
+    del reality_root
     return NativeRealityProject(
         root=root,
         reality_path=reality_path,
         matter_root=matter_root,
         reality=reality,
-        source_path=source_path,
+        source_path=matter_root / alias_text,
         source_text=source_text,
+        source_bytes=source_bytes,
     )
+
+
+def is_native_reality_project(path: str | Path) -> bool:
+    root = _absolute_no_symlink_resolution(path)
+    try:
+        with _open_existing_layout(root) as (_, reality_fd, _):
+            _read_regular_at(
+                reality_fd,
+                REALITY_FILE_NAME,
+                label="reality envelope",
+                max_bytes=REALITY_ENVELOPE_BYTES,
+                exact_bytes=REALITY_ENVELOPE_BYTES,
+            )
+    except (NativeRealityError, OSError):
+        return False
+    return True
+
+
+def _safe_remove_created_root(root: Path, identity: tuple[int, int]) -> None:
+    try:
+        info = root.lstat()
+        if (
+            stat.S_ISDIR(info.st_mode)
+            and not stat.S_ISLNK(info.st_mode)
+            and (info.st_dev, info.st_ino) == identity
+        ):
+            root.rmdir()
+    except OSError:
+        pass
+
+
+def create_native_reality_project(
+    destination: str | Path,
+    *,
+    seal_key: bytes,
+    source_text: str = 'fn main() {\n    println("Hello from Koschei reality")\n}\n',
+) -> NativeRealityProject:
+    _require_secure_platform()
+    _seal_key(seal_key)
+    source_bytes = _source_bytes(source_text)
+    _parse_single_object_source(source_text)
+
+    root = _absolute_no_symlink_resolution(destination)
+    existed = root.exists() or root.is_symlink()
+    if not existed:
+        root.mkdir(parents=True, mode=0o700)
+
+    root_fd: int | None = None
+    reality_fd: int | None = None
+    matter_fd: int | None = None
+    alias_text: str | None = None
+    created_reality = False
+    root_identity: tuple[int, int] | None = None
+    success = False
+    try:
+        root_fd = _open_directory_path(root, "project root")
+        root_info = os.fstat(root_fd)
+        root_identity = (root_info.st_dev, root_info.st_ino)
+        if os.listdir(root_fd):
+            _fail(f"destination is not empty: {root}")
+
+        os.mkdir(REALITY_DIR_NAME, 0o700, dir_fd=root_fd)
+        created_reality = True
+        reality_fd = _open_directory_at(root_fd, REALITY_DIR_NAME, "reality root")
+        os.mkdir(MATTER_DIR_NAME, 0o700, dir_fd=reality_fd)
+        matter_fd = _open_directory_at(reality_fd, MATTER_DIR_NAME, "matter root")
+
+        alias = _fresh_nonzero(_ALIAS_BYTES)
+        alias_text = alias.hex()
+        artifact = hashlib.sha256(source_bytes).digest()
+        reality = NativeReality(
+            project_id=_fresh_nonzero(_ID_BYTES),
+            root_object_id=_fresh_nonzero(_ID_BYTES),
+            policy_digest=POLICY_DIGEST_V1,
+            artifact_digest=artifact,
+            epoch=1,
+            epoch_alias=alias,
+        )
+        _write_exclusive_at(matter_fd, alias_text, source_bytes)
+        os.fsync(matter_fd)
+        _write_exclusive_at(
+            reality_fd,
+            REALITY_FILE_NAME,
+            _encode(reality, seal_key=seal_key),
+        )
+        os.fsync(reality_fd)
+        os.fsync(root_fd)
+        success = True
+    finally:
+        if not success:
+            if matter_fd is not None and alias_text is not None:
+                try:
+                    _unlink_at(matter_fd, alias_text)
+                except OSError:
+                    pass
+            if reality_fd is not None:
+                try:
+                    _unlink_at(reality_fd, REALITY_FILE_NAME)
+                except OSError:
+                    pass
+            if matter_fd is not None:
+                os.close(matter_fd)
+                matter_fd = None
+            if reality_fd is not None:
+                try:
+                    os.rmdir(MATTER_DIR_NAME, dir_fd=reality_fd)
+                except OSError:
+                    pass
+                os.close(reality_fd)
+                reality_fd = None
+            if root_fd is not None and created_reality:
+                try:
+                    os.rmdir(REALITY_DIR_NAME, dir_fd=root_fd)
+                except OSError:
+                    pass
+        if matter_fd is not None:
+            os.close(matter_fd)
+        if reality_fd is not None:
+            os.close(reality_fd)
+        if root_fd is not None:
+            os.close(root_fd)
+
+    if not success:
+        if not existed and root_identity is not None:
+            _safe_remove_created_root(root, root_identity)
+        _fail("native reality project creation failed")
+
+    return load_native_reality_project(
+        root,
+        seal_key=seal_key,
+        expected_project_id=reality.project_id,
+        expected_epoch=1,
+    )
+
+
+def load_native_reality_project(
+    path: str | Path,
+    *,
+    seal_key: bytes,
+    expected_project_id: bytes,
+    expected_epoch: int,
+    expected_policy_digest: bytes = POLICY_DIGEST_V1,
+) -> NativeRealityProject:
+    _require_secure_platform()
+    _seal_key(seal_key)
+    root = _absolute_no_symlink_resolution(path)
+    with _open_existing_layout(root) as (_, reality_fd, matter_fd):
+        return _load_from_handles(
+            root,
+            reality_fd,
+            matter_fd,
+            seal_key=seal_key,
+            expected_project_id=expected_project_id,
+            expected_epoch=expected_epoch,
+            expected_policy_digest=expected_policy_digest,
+        )
 
 
 def load_native_reality_graph(
@@ -517,60 +674,114 @@ def load_native_reality_graph(
     return ModuleGraph(root=key, modules={key: module})
 
 
-def _next_alias(current: bytes) -> bytes:
-    candidate = _fresh_nonzero(_ALIAS_BYTES)
-    while candidate == current:
-        candidate = _fresh_nonzero(_ALIAS_BYTES)
-    return candidate
+def _fresh_alias_write(
+    matter_fd: int,
+    *,
+    previous_alias: bytes,
+    source_bytes: bytes,
+) -> tuple[bytes, str]:
+    for _ in range(16):
+        alias = _fresh_nonzero(_ALIAS_BYTES)
+        if alias == previous_alias:
+            continue
+        alias_text = alias.hex()
+        try:
+            _write_exclusive_at(matter_fd, alias_text, source_bytes)
+        except FileExistsError:
+            continue
+        os.fsync(matter_fd)
+        return alias, alias_text
+    _fail("unable to allocate a fresh opaque source alias")
 
 
-def _switch_reality(
-    project: NativeRealityProject,
+def _transition_reality(
+    path: str | Path,
     *,
     seal_key: bytes,
-    source_bytes: bytes,
-    artifact_digest: bytes,
+    expected_project_id: bytes,
+    expected_epoch: int,
+    replacement_source_bytes: bytes | None,
+    replacement_artifact_digest: bytes | None,
 ) -> NativeRealityProject:
-    reality = project.reality
-    if reality.epoch >= (1 << 64) - 1:
-        _fail("epoch counter exhausted")
+    _require_secure_platform()
+    _seal_key(seal_key)
+    root = _absolute_no_symlink_resolution(path)
+    with _open_existing_layout(root) as (_, reality_fd, matter_fd):
+        with _exclusive_reality_transition(reality_fd):
+            current = _load_from_handles(
+                root,
+                reality_fd,
+                matter_fd,
+                seal_key=seal_key,
+                expected_project_id=expected_project_id,
+                expected_epoch=expected_epoch,
+            )
+            reality = current.reality
+            if reality.epoch >= (1 << 64) - 1:
+                _fail("epoch counter exhausted")
 
-    new_alias = _next_alias(reality.epoch_alias)
-    new_source_path = project.matter_root / new_alias.hex()
-    _write_exclusive(new_source_path, source_bytes)
-    next_reality = NativeReality(
-        project_id=reality.project_id,
-        root_object_id=reality.root_object_id,
-        policy_digest=reality.policy_digest,
-        artifact_digest=artifact_digest,
-        epoch=reality.epoch + 1,
-        epoch_alias=new_alias,
-    )
-    try:
-        _replace_sealed(
-            project.reality_path,
-            _encode(next_reality, seal_key=seal_key),
-        )
-    except Exception:
-        try:
-            new_source_path.unlink()
-        except FileNotFoundError:
-            pass
-        raise
+            source_bytes = (
+                current.source_bytes
+                if replacement_source_bytes is None
+                else replacement_source_bytes
+            )
+            artifact_digest = (
+                reality.artifact_digest
+                if replacement_artifact_digest is None
+                else _require_bytes(
+                    replacement_artifact_digest,
+                    _DIGEST_BYTES,
+                    "replacement_artifact_digest",
+                )
+            )
+            if not hmac.compare_digest(
+                hashlib.sha256(source_bytes).digest(),
+                artifact_digest,
+            ):
+                _fail("replacement artifact digest does not match source bytes")
 
-    # The new envelope is already authoritative. Failure to remove the old
-    # unreferenced alias must never roll authority back to stale reality.
-    try:
-        project.source_path.unlink()
-    except OSError:
-        pass
+            new_alias, new_alias_text = _fresh_alias_write(
+                matter_fd,
+                previous_alias=reality.epoch_alias,
+                source_bytes=source_bytes,
+            )
+            next_reality = NativeReality(
+                project_id=reality.project_id,
+                root_object_id=reality.root_object_id,
+                policy_digest=reality.policy_digest,
+                artifact_digest=artifact_digest,
+                epoch=reality.epoch + 1,
+                epoch_alias=new_alias,
+            )
+            switched = False
+            try:
+                _replace_sealed_at(
+                    reality_fd,
+                    _encode(next_reality, seal_key=seal_key),
+                )
+                switched = True
+            finally:
+                if not switched:
+                    try:
+                        _unlink_at(matter_fd, new_alias_text)
+                        os.fsync(matter_fd)
+                    except OSError:
+                        pass
 
-    return load_native_reality_project(
-        project.root,
-        seal_key=seal_key,
-        expected_project_id=reality.project_id,
-        expected_epoch=reality.epoch + 1,
-    )
+            try:
+                _unlink_at(matter_fd, reality.epoch_alias_text)
+                os.fsync(matter_fd)
+            except OSError:
+                pass
+
+            return _load_from_handles(
+                root,
+                reality_fd,
+                matter_fd,
+                seal_key=seal_key,
+                expected_project_id=reality.project_id,
+                expected_epoch=reality.epoch + 1,
+            )
 
 
 def advance_native_reality_source(
@@ -581,29 +792,17 @@ def advance_native_reality_source(
     expected_epoch: int,
     source_text: str,
 ) -> NativeRealityProject:
-    """Authenticate an edit and advance source identity as one new epoch.
+    """Authenticate an edit and advance source identity as one new epoch."""
 
-    Direct writes to the current matter alias are never edits: they invalidate
-    the authenticated artifact digest. This operation validates the replacement
-    program before any authority switch, writes it under a fresh opaque alias,
-    advances the epoch and atomically seals the new reality envelope.
-    """
-
-    project = load_native_reality_project(
+    source_bytes = _source_bytes(source_text)
+    _parse_single_object_source(source_text)
+    return _transition_reality(
         path,
         seal_key=seal_key,
         expected_project_id=expected_project_id,
         expected_epoch=expected_epoch,
-    )
-    source_bytes = _source_bytes(source_text)
-    # Parse and enforce the single-object boundary before filesystem mutation.
-    _parse_single_object_source(source_text)
-    artifact_digest = hashlib.sha256(source_bytes).digest()
-    return _switch_reality(
-        project,
-        seal_key=seal_key,
-        source_bytes=source_bytes,
-        artifact_digest=artifact_digest,
+        replacement_source_bytes=source_bytes,
+        replacement_artifact_digest=hashlib.sha256(source_bytes).digest(),
     )
 
 
@@ -614,16 +813,11 @@ def rotate_native_reality_epoch(
     expected_project_id: bytes,
     expected_epoch: int,
 ) -> NativeRealityProject:
-    project = load_native_reality_project(
+    return _transition_reality(
         path,
         seal_key=seal_key,
         expected_project_id=expected_project_id,
         expected_epoch=expected_epoch,
-    )
-    source_bytes = project.source_text.encode("utf-8")
-    return _switch_reality(
-        project,
-        seal_key=seal_key,
-        source_bytes=source_bytes,
-        artifact_digest=project.reality.artifact_digest,
+        replacement_source_bytes=None,
+        replacement_artifact_digest=None,
     )
