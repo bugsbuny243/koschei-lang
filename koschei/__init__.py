@@ -123,6 +123,10 @@ from .integer_division_mir_v1 import install_integer_division_mir_v1
 
 install_integer_division_mir_v1()
 
+from .direct_mir_type_integrity_v1 import install_direct_mir_type_integrity_v1
+
+install_direct_mir_type_integrity_v1()
+
 from .typestate_affine_alignment import install_typestate_affine_alignment
 
 install_typestate_affine_alignment()
