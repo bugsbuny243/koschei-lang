@@ -1,0 +1,27 @@
+schema_version = "koschei.workspace/v1"
+
+[workspace]
+members = [
+  "realms/order_core",
+  "realms/market_rules",
+  "realms/risk_engine",
+  "realms/fee_engine",
+  "realms/matching_engine",
+  "realms/ledger_engine",
+  "realms/settlement_engine",
+  "realms/report_engine",
+  "realms/market_feed",
+  "realms/order_worker",
+]
+
+[dependencies]
+order_core = []
+market_rules = ["order_core"]
+risk_engine = ["order_core"]
+fee_engine = []
+matching_engine = ["order_core", "market_rules", "risk_engine"]
+ledger_engine = []
+settlement_engine = ["matching_engine", "fee_engine", "ledger_engine"]
+report_engine = ["matching_engine", "settlement_engine"]
+market_feed = []
+order_worker = ["matching_engine", "settlement_engine", "report_engine"]
