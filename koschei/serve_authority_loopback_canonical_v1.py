@@ -3,7 +3,8 @@
 The authority layer must not validate the *name* ``localhost`` and later ask the
 host resolver what that name means. This guard converts the bootstrap alias to a
 literal loopback address before a ServePolicy is created and before manifest scope
-is rendered.
+is rendered. IPv6 v1 is accepted only in bracketed host:port form so every backend
+shares one unambiguous endpoint grammar.
 """
 
 from __future__ import annotations
@@ -30,6 +31,13 @@ def _canonical_bind(raw: str) -> str | None:
         if not 1 <= port <= 65535:
             return None
         return f"127.0.0.1:{port}"
+
+    # Unbracketed IPv6 is deliberately rejected even though the earlier parser
+    # could split it at the last colon. Native and interpreter backends must have
+    # one canonical authority grammar: [::1]:port.
+    if not text.startswith("[") and text.count(":") > 1:
+        return None
+
     parsed = _ORIGINAL_PARSE(text)
     if parsed is None:
         return None
