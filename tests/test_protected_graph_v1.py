@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from koschei.modules import ModuleError, check_graph
 from koschei.protected_graph_v1 import load_protected_graph
@@ -137,6 +138,58 @@ class ProtectedGraphV1Tests(unittest.TestCase):
                     expected_policy_hash="sha256:" + ("22" * 32),
                 )
             self.assertEqual(caught.exception.code, "KS5621")
+
+    def test_duplicate_json_member_is_rejected_before_graph_admission(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            graph_path, store = self.write_graph(Path(temp))
+            original = graph_path.read_text(encoding="utf-8")
+            duplicate = original[:-1] + ', "schema": "koschei.opaque-source-graph/v1"}'
+            graph_path.write_text(duplicate, encoding="utf-8")
+            with self.assertRaises(ModuleError) as caught:
+                load_protected_graph(
+                    graph_path,
+                    store,
+                    ROOT_ID,
+                    expected_policy_hash=POLICY,
+                )
+            self.assertEqual(caught.exception.code, "KS5600")
+
+    def test_symlink_object_locator_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp)
+            graph_path, store = self.write_graph(directory)
+            target = directory / "outside.ks"
+            target.write_text("fn value() -> Int { return 7 }\n", encoding="utf-8")
+            dep_path = store / "P19MX8D4"
+            dep_path.unlink()
+            try:
+                dep_path.symlink_to(target)
+            except (OSError, NotImplementedError):
+                self.skipTest("symlink creation unavailable on this platform")
+            with self.assertRaises(ModuleError) as caught:
+                load_protected_graph(
+                    graph_path,
+                    store,
+                    ROOT_ID,
+                    expected_policy_hash=POLICY,
+                )
+            self.assertEqual(caught.exception.code, "KS5622")
+
+    def test_verified_source_bytes_are_not_reopened_by_module_loader(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            graph_path, store = self.write_graph(Path(temp))
+            with patch(
+                "pathlib.Path.read_text",
+                side_effect=AssertionError("protected module source must not be reopened"),
+            ):
+                graph = load_protected_graph(
+                    graph_path,
+                    store,
+                    ROOT_ID,
+                    expected_policy_hash=POLICY,
+                )
+            report = check_graph(graph)
+            self.assertIsNotNone(report)
 
 
 if __name__ == "__main__":
