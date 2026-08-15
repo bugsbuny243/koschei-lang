@@ -2,7 +2,7 @@
 
 This is an acceptance workload for the language and toolchain, not a marketing demo and not a claim that Koschei is already production-ready.
 
-The committed workspace now exercises a realistic financial order-processing path across fourteen independently owned realms:
+The committed workspace exercises a realistic financial order-processing path across fourteen independently owned realms:
 
 - `order_core` — order validity and exact integer notional calculation.
 - `market_rules` — crossing and execution rules.
@@ -42,7 +42,8 @@ The test suite requires all of the following:
 13. The complete 11-module `order_worker` dependency graph executes through direct MIR and preserves deterministic worker output.
 14. A locked `http_ingress` workspace accepts a real loopback TCP POST, canonicalizes the JSON body, invokes the production order worker, atomically persists the resulting state through an exact-object token, reloads it, and returns a bounded HTTP response.
 15. The persisted state file must contain the exact expected canonical state and be created with mode `0600` on the tested POSIX path.
-16. Native `http_ingress` build must fail closed with `KS4001` until the persistence ABI has native parity; the reference does not preserve a stale native-success claim by skipping the new persistence boundary.
+16. On Linux with Go available, the locked native `http_ingress` artifact must perform the same real TCP -> JSON -> order core -> exact-object commit -> reload path and match the interpreter's stdout, response wire, persisted bytes, file mode and workspace digest.
+17. Non-Linux native persistence remains fail-closed with `KS4001` until a backend with equivalent descriptor and durability semantics exists.
 
 ## Manual deterministic-worker commands
 
@@ -72,16 +73,18 @@ The lock command writes a control artifact into the workspace. Do not commit a l
 
 ## Persistence truth
 
-Persistence v1 is not a database and not a transaction manager. Interpreter `PersistCaps.commit` uses a same-directory temporary object, a full-write loop, file `fsync`, atomic replacement and parent-directory `fsync`. A pre-replace failure leaves the prior canonical object unchanged. A failure after replacement but before durability confirmation is reported separately as `KS3423` because pretending that state rolled back would make blind retry unsafe.
+Persistence v1 is not a database and not a transaction manager. Interpreter and Linux native-Go implementations use the same high-level commit protocol: same-directory temporary object, full-write loop, file `fsync`, descriptor-relative atomic replacement and parent-directory `fsync`. A pre-replace failure leaves the prior canonical object unchanged. A failure after replacement but before durability confirmation is reported separately as `KS3423` because pretending that state rolled back would make blind retry unsafe.
 
-The byte budget is hard-enforced in the interpreter implementation. The current deadline is only a cooperative monotonic sequence deadline checked around filesystem syscalls; it cannot safely preempt an indefinitely blocked kernel filesystem call. Native persistence parity is not implemented yet. Therefore the stdlib `persist` operations remain **reserved**, not supported.
+Both implementations anchor the exact parent directory and do not let `load` or `commit` choose another path. Linux native target-shape probing uses a metadata-only `O_PATH | O_NOFOLLOW` descriptor, and the actual load open is non-blocking until `fstat` confirms a regular file. This prevents type probing or a file-to-FIFO race from silently becoming an ambient blocking channel.
 
-Concurrent authorized writers also do not receive compare-and-swap, transaction isolation or lost-update prevention in v1. Atomic replacement prevents a torn canonical file; it does not decide which of two valid competing commits should win.
+The byte budget is hard-enforced in both implementations. The current deadline is still only a cooperative monotonic sequence deadline checked around filesystem syscalls; neither backend claims safe preemption of an indefinitely blocked kernel filesystem call. Hosted parity tests also have not executed while GitHub runner allocation remains billing-blocked. Therefore the stdlib `persist` operations remain **reserved**, not supported, despite interpreter + Linux native implementation source existing.
+
+Concurrent authorized writers do not receive compare-and-swap, transaction isolation or lost-update prevention in v1. Atomic replacement prevents a torn canonical file; it does not decide which of two valid competing commits should win.
 
 ## What this proves — and what it does not
 
-Passing these gates would prove that the current compiler/runtime can carry a non-trivial multi-package program, preserve explicit authority boundaries, lock source identity, execute deterministic core work, and drive that core through a bounded loopback ingress into a narrowly scoped atomic persistence boundary at the tested scale.
+If the acceptance gates execute and pass, they prove that the current compiler/runtime can carry a non-trivial multi-package program, preserve explicit authority boundaries, lock source identity, execute deterministic core work, and drive that core through a bounded loopback ingress into a narrowly scoped atomic persistence boundary on the tested interpreter and Linux native paths.
 
-It does **not** prove that Koschei can already replace a mature general-purpose language for every large system. It does not make `ServeCaps.exchange` a production HTTP framework, and it does not make `PersistCaps` a transactional database. Public ingress, TLS, routing, long-running handlers, true syscall-preemptive I/O deadlines, native persistence parity, concurrent-write coordination/CAS, database adapters, observability, package distribution, profiling and larger graph/compile stress remain separate gates.
+The existence of source/tests alone does **not** establish that proof while CI has not run. It also does not make `ServeCaps.exchange` a production HTTP framework or `PersistCaps` a transactional database. Public ingress, TLS, routing, long-running handlers, true syscall-preemptive I/O deadlines, non-Linux persistence parity, concurrent-write coordination/CAS, database adapters, observability, package distribution, profiling and larger graph/compile stress remain separate gates.
 
 The point of this reference is to turn those long-term requirements into executable work: future revisions must grow this same system and fix compiler/runtime/stdlib gaps exposed by the workload instead of shrinking the workload to preserve a claim.
