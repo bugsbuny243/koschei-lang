@@ -33,9 +33,15 @@ Verify an existing artifact:
 ks-model-curriculum verify build/koschei-model-curriculum-v1.json
 ```
 
-The build first constructs the existing `koschei.language-foundation-corpus.v1`
-artifact in memory. That reuses its exact-commit and clean-source checks and
-binds the curriculum to the resulting foundation corpus SHA-256.
+The official `ks-model-curriculum build` path first requires the supplied commit
+to equal Git `HEAD` and requires the complete non-ignored worktree to be clean.
+This is deliberately stricter than foundation export because curriculum labels
+depend not only on docs and examples, but also on the compiler and generator
+implementation bytes.
+
+The build then constructs the existing `koschei.language-foundation-corpus.v1`
+artifact in memory and binds the curriculum to the resulting foundation corpus
+SHA-256.
 
 ## What each case records
 
