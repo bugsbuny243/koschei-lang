@@ -189,6 +189,10 @@ from .persistence_runtime_alignment_v1 import install_persistence_runtime_alignm
 
 install_persistence_runtime_alignment_v1()
 
+from .persistence_parent_integrity_v1 import install_persistence_parent_integrity_v1
+
+install_persistence_parent_integrity_v1()
+
 from .persistence_semantic_alignment_v1 import install_persistence_semantic_alignment_v1
 
 install_persistence_semantic_alignment_v1()
