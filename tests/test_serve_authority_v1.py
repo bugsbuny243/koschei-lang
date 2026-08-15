@@ -6,6 +6,7 @@ from contextlib import redirect_stderr, redirect_stdout
 
 from koschei.capabilities import analyze, render
 from koschei.codegen_go import CodegenError, GoCodegen
+from koschei.diagnostics import CATALOG, ENGLISH_CATALOG
 from koschei.interpreter import run
 from koschei.parser import parse
 from koschei.semantic import SemanticError, check
@@ -86,6 +87,15 @@ class ServeAuthorityV1Tests(unittest.TestCase):
                 "}"
             )
 
+    def test_serve_root_cannot_be_laundered_through_list(self) -> None:
+        with self.assertRaisesRegex(SemanticError, "KS2401"):
+            self.checked(
+                "fn main(caps: SystemCaps) { "
+                "let root = caps.serve "
+                "let hidden = [root] "
+                "}"
+            )
+
     def test_serve_capability_cannot_be_laundered_through_list(self) -> None:
         with self.assertRaisesRegex(SemanticError, "KS2401"):
             self.checked(
@@ -112,6 +122,13 @@ class ServeAuthorityV1Tests(unittest.TestCase):
         )
         with self.assertRaisesRegex(CodegenError, "KS4001"):
             GoCodegen(program).generate()
+
+    def test_serve_diagnostics_are_explainable_in_both_catalogs(self) -> None:
+        for code in ("KS2410", "KS2411"):
+            self.assertIn(code, CATALOG)
+            self.assertIn(code, ENGLISH_CATALOG)
+            self.assertIn(code, CATALOG[code].render())
+            self.assertIn(code, ENGLISH_CATALOG[code].render("en"))
 
 
 if __name__ == "__main__":
