@@ -24,42 +24,37 @@ def install_persistence_catalog_v1() -> None:
             _catalog.Operation(
                 name="allow",
                 status="reserved",
-                interpreter=True,
-                native_go=False,
                 capability="PersistRoot",
                 security_sensitive=True,
                 note=(
-                    "Interpreter exact-object authority exists. Native Go remains fail-closed "
-                    "until the same descriptor/durability ABI is implemented."
+                    "An interpreter authority implementation exists, but catalog backend flags "
+                    "remain false until the operation is promoted through executed parity gates."
                 ),
             ),
             _catalog.Operation(
                 name="load",
                 status="reserved",
-                interpreter=True,
-                native_go=False,
                 capability="PersistCaps",
                 required_budgets=("bytes", "deadline"),
                 enforced_budgets=("bytes",),
                 security_sensitive=True,
                 note=(
-                    "Load is descriptor-anchored and hard byte-bounded. The v1 deadline is "
-                    "checked around syscalls but cannot preempt a blocking kernel filesystem call."
+                    "Interpreter load is descriptor-anchored and hard byte-bounded. The v1 "
+                    "deadline is checked around syscalls but cannot preempt a blocking kernel "
+                    "filesystem call, and native parity is not yet promoted."
                 ),
             ),
             _catalog.Operation(
                 name="commit",
                 status="reserved",
-                interpreter=True,
-                native_go=False,
                 capability="PersistCaps",
                 required_budgets=("bytes", "deadline"),
                 enforced_budgets=("bytes",),
                 security_sensitive=True,
                 note=(
-                    "Commit uses same-directory temp write, full-write loop, file fsync, atomic "
-                    "replace and directory fsync. Post-replace durability uncertainty is KS3423. "
-                    "Deadline preemption and native parity are not yet claimed."
+                    "Interpreter commit uses same-directory temp write, full-write loop, file "
+                    "fsync, atomic replace and directory fsync. Post-replace durability "
+                    "uncertainty is KS3423. Deadline preemption/native parity are not claimed."
                 ),
             ),
         ),
