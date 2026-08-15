@@ -39,13 +39,20 @@ This does not weaken the existing scalar/capability checks around parallel worke
 
 ## Integer division
 
-Direct MIR uses the same integer division semantics as the aligned interpreter and
-native Go backend:
+The direct runtime implementation uses the same integer division arithmetic as the
+aligned interpreter/native backends: Int / Int truncates toward zero, zero is an
+Error, and `INT_MIN / -1` is signed-64 overflow.
 
-- Int / Int truncates toward zero;
-- division by zero returns an Error value;
-- `INT_MIN / -1` returns the signed-64 overflow Error;
-- non-integer numeric division remains ordinary numeric division.
+Admission is intentionally narrower than the runtime implementation in v1. The
+direct-MIR support inspector accepts division only when the denominator is a
+compile-time numeric constant that is non-zero. Int division by `-1` additionally
+requires a compile-time numerator proven not to be `INT_MIN`. Dynamic divisors
+remain unsupported until fallible arithmetic and function-return runtime contracts
+are fully normalized.
+
+This conservative rule is sufficient for the production-reference fee path, whose
+denominator is the literal `10000`, without claiming unsafe dynamic division is
+already AST-free production surface.
 
 ## Interpolated strings
 
@@ -71,7 +78,8 @@ The direct-MIR acceptance test requires the full 11-module worker graph to:
 ## Non-claims
 
 This contract does not mean every Koschei construct is direct-MIR executable.
-Structs, enums, arbitrary value-member access, other fallible operators and other
-explicitly unsupported MIR surfaces remain fail-closed. The locked workspace
-runner also remains a separate compatibility execution path until it is
-intentionally switched after equivalent coverage exists.
+Structs, enums, arbitrary value-member access, dynamic/fallible division, other
+fallible operators and other explicitly unsupported MIR surfaces remain
+fail-closed. The locked workspace runner also remains a separate compatibility
+execution path until it is intentionally switched after equivalent coverage
+exists.
