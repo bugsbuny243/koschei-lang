@@ -16,7 +16,15 @@ import hashlib
 import json
 from typing import Callable
 
-from .trust_plane_v1 import LocalPolicy, StaticCapabilityRequest, TrustArtifactManifest
+from .trust_plane_v1 import (
+    LocalPolicy,
+    StaticCapabilityRequest,
+    TrustArtifactManifest,
+    TrustPlaneError,
+    _validate_artifact_manifest,
+    _validate_capability_request,
+    _validate_policy,
+)
 
 _SCHEMA = "koschei.deployment-authorization.v1"
 _REDEMPTION_SCHEMA = "koschei.deployment-authorization-redemption.v1"
@@ -136,18 +144,19 @@ def redeem_deployment_authorization(
     local_policy: LocalPolicy,
     capability_request: StaticCapabilityRequest,
 ) -> RedeemedAuthorization | None:
-    """Verify and atomically consume one authorization, returning evidence only.
-
-    A non-None result proves one signed grant was atomically redeemed for the
-    supplied bindings. It does not by itself authorize process creation; the
-    Trusted Launcher must combine it with a valid deterministic launch decision.
-    """
+    """Verify and atomically consume one authorization, returning evidence only."""
 
     try:
         if not isinstance(signature, bytes) or not signature:
             return None
         if not callable(signature_verifier) or not callable(atomic_redeemer):
             return None
+
+        # Evidence objects are authority-adjacent inputs. Revalidate their own
+        # canonical identities here instead of trusting dataclass construction.
+        _validate_policy(local_policy)
+        _validate_capability_request(capability_request)
+        _validate_artifact_manifest(artifact_manifest)
 
         payload = canonical_deployment_authorization_payload(authorization)
         if not signature_verifier(payload, signature):
@@ -175,9 +184,16 @@ def redeem_deployment_authorization(
             return None
         if artifact_manifest.capability_request_digest != capability_request.request_digest:
             return None
+        if artifact_manifest.requested_capabilities != capability_request.capabilities:
+            return None
         if artifact_manifest.policy_hash != local_policy.policy_hash:
             return None
         if now < authorization.not_before_epoch or now > authorization.expires_after_epoch:
+            return None
+
+        requested = set(capability_request.capabilities)
+        allowed = set(local_policy.allowed_capabilities)
+        if not requested.issubset(allowed):
             return None
 
         authorization_digest = hashlib.sha256(payload).hexdigest()
@@ -208,7 +224,12 @@ def redeem_deployment_authorization(
             redeemed_at_epoch=now,
             redemption_digest=_digest(redemption_payload),
         )
-    except (DeploymentAuthorizationError, TypeError, ValueError):
+    except (
+        DeploymentAuthorizationError,
+        TrustPlaneError,
+        TypeError,
+        ValueError,
+    ):
         return None
 
 
