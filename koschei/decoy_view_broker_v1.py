@@ -68,6 +68,24 @@ def _require_canonical_view_key(key: bytes | None) -> bytes:
     return key
 
 
+def _require_digest(value: str) -> str:
+    if not isinstance(value, str) or not value.startswith("sha256:"):
+        raise DecoyViewError("source view digest must be sha256 text")
+    digest = value[7:]
+    if len(digest) != 64 or any(ch not in "0123456789abcdef" for ch in digest):
+        raise DecoyViewError("source view digest is malformed")
+    return value
+
+
+def _require_attestation(value: str) -> str:
+    if not isinstance(value, str) or not value.startswith("hmac-sha256:"):
+        raise DecoyViewError("canonical source view attestation is missing or malformed")
+    digest = value[12:]
+    if len(digest) != 64 or any(ch not in "0123456789abcdef" for ch in digest):
+        raise DecoyViewError("canonical source view attestation is malformed")
+    return value
+
+
 def _frame(value: bytes) -> bytes:
     return len(value).to_bytes(8, "big") + value
 
@@ -222,10 +240,12 @@ def require_canonical_build_view(
     if not isinstance(view.content, bytes):
         raise DecoyViewError("canonical source content must be bytes")
 
+    claimed_digest = _require_digest(view.view_digest)
     digest = "sha256:" + hashlib.sha256(view.content).hexdigest()
-    if not hmac.compare_digest(digest, view.view_digest):
+    if not hmac.compare_digest(digest, claimed_digest):
         raise DecoyViewError("canonical source view digest mismatch")
 
+    claimed_attestation = _require_attestation(view.canonical_attestation)
     expected = _canonical_attestation(
         key=key,
         project_id=project,
@@ -234,5 +254,5 @@ def require_canonical_build_view(
         content_digest=digest,
         deployable=view.deployable,
     )
-    if not hmac.compare_digest(expected, view.canonical_attestation):
-        raise DecoyViewError("canonical source view attestation is missing or invalid")
+    if not hmac.compare_digest(expected, claimed_attestation):
+        raise DecoyViewError("canonical source view attestation is invalid")
