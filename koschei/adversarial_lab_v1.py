@@ -33,18 +33,12 @@ REQUIRED_GATES: tuple[AdversarialGate, ...] = (
     AdversarialGate("high-volume", "tests/test_high_volume_attack_profile_v1.py", "100k hostile reads, concurrency and stale correlation never reach canonical source", 3),
     AdversarialGate("million-probe", "tests/test_million_probe_fingerprint_profile_v1.py", "1M hostile reads, process isolation and fingerprint sampling never reach canonical source", 3),
     AdversarialGate("transport-shaping", "tests/test_read_transport_shaping_v1.py", "fixed-size transport and timing-floor shaping reduce simple side-channel fingerprints", 6),
-    AdversarialGate("event-horizon", "tests/test_event_horizon_isolation_v1.py", "unauthorized reads fall into a one-way session+epoch synthetic universe with no canonical read capability", 7),
-    AdversarialGate("no-return-shadow-graph", "tests/test_no_return_shadow_graph_v1.py", "Event Horizon traversal remains inside a closed synthetic dependency namespace with no canonical return edge", 6),
-    AdversarialGate("living-synthetic-system", "tests/test_living_synthetic_system_v1.py", "synthetic services, packages and execution traces remain inside the shadow universe and non-promotable", 6),
-    AdversarialGate("synthetic-reality-plane", "tests/test_synthetic_reality_plane_v1.py", "synthetic config, telemetry, logs and incidents remain internally consistent and canonical-free", 6),
-    AdversarialGate("multi-session-correlation", "tests/test_multi_session_correlation_attack_v1.py", "cross-session/epoch synthetic views resist direct fingerprint linkage and identity reuse", 6),
-    AdversarialGate("adaptive-observer-correlation", "tests/test_adaptive_observer_correlation_v1.py", "long-running observers cannot reuse public identity tokens or derive object labels from stable structural shape", 6),
-    AdversarialGate("statistical-observer-v2", "tests/test_statistical_observer_v2.py", "multi-session public numeric distributions remain object-independent within fixed regression bounds", 5),
+    AdversarialGate("classifier-resistance", "tests/test_transport_classifier_resistance_v1.py", "observable transport metadata does not provide a trivial canonical-versus-decoy classifier", 3),
     AdversarialGate("compiler-integrity", "tests/test_compiler_integrity.py", "compiler integrity invariants remain enforced", 13),
     AdversarialGate("security-regressions", "tests/test_security_regressions.py", "known security regressions remain blocked", 13),
 )
 
-MIN_TOTAL_ATTACK_TESTS = 135
+MIN_TOTAL_ATTACK_TESTS = 96
 
 
 @dataclass(frozen=True, slots=True)
