@@ -140,7 +140,12 @@ def verify_private_download(*, manifest: ChannelManifest, manifest_signature: by
                             expected_policy_hash: str, expected_size_bytes: int,
                             artifact_bytes: bytes, min_manifest_sequence: int = 0,
                             min_revocation_sequence: int = 0) -> bool:
-    """Fail-closed final gate before updater accepts an artifact."""
+    """Fail-closed final gate before updater accepts an artifact.
+
+    Revocation is evaluated against both the artifact and the entitlement bound
+    into the signed download grant. A revoked entitlement cannot continue to use
+    an otherwise-valid, unrevoked artifact grant.
+    """
     try:
         now = _epoch(current_epoch,"current_epoch")
         min_manifest = _epoch(min_manifest_sequence,"min_manifest_sequence")
@@ -173,9 +178,22 @@ def verify_private_download(*, manifest: ChannelManifest, manifest_signature: by
         digest = hashlib.sha256(artifact_bytes).hexdigest()
         if digest != _hex64(grant.artifact_sha256,"grant.artifact_sha256"):
             return False
-        revoked_artifacts = {_hex64(x,"revoked_artifact_sha256") for x in revocations.revoked_artifact_sha256}
+
+        revoked_artifacts = {
+            _hex64(x,"revoked_artifact_sha256")
+            for x in revocations.revoked_artifact_sha256
+        }
         if digest in revoked_artifacts:
             return False
+
+        entitlement = _hex64(grant.entitlement_digest,"grant.entitlement_digest")
+        revoked_entitlements = {
+            _hex64(x,"revoked_entitlement_digest")
+            for x in revocations.revoked_entitlement_digests
+        }
+        if entitlement in revoked_entitlements:
+            return False
+
         row = next((a for a in manifest.artifacts if _hex64(a.artifact_sha256,"artifact_sha256") == digest),None)
         if row is None or _text(row.channel,"channel") != channel:
             return False
