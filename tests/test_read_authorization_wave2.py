@@ -49,7 +49,13 @@ class ReadAuthorizationWave2Tests(unittest.TestCase):
             deception_key=DECEPTION_KEY, authorization_key=AUTH_KEY,
             canonical_view_key=BUILD_VIEW_KEY,
         )
-        require_canonical_build_view(view, canonical_view_key=BUILD_VIEW_KEY)
+        require_canonical_build_view(
+            view,
+            canonical_view_key=BUILD_VIEW_KEY,
+            expected_project_id="p-01",
+            expected_object_id=OID,
+            expected_epoch=101,
+        )
 
     def test_mac_bit_flip_falls_to_decoy_without_canonical_read(self):
         grant = self.grant()
