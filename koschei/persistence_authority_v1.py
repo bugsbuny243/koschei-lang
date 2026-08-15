@@ -136,10 +136,13 @@ class PersistRoot(_runtime._NarrowedCapability):
 
 
 class PersistCaps(_runtime._NarrowedCapability):
-    __slots__ = ("policy",)
+    __slots__ = ("policy", "_parent_fd", "_name", "_open_error")
 
     def __init__(self, policy: PersistPolicy) -> None:
         self.policy = policy
+        self._parent_fd = None
+        self._name = os.path.basename(policy.path)
+        self._open_error = None
 
 
 _BaseSystemCaps = _runtime.SystemCaps
