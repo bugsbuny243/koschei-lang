@@ -393,17 +393,18 @@ def install_bounded_persistence_v1() -> None:
     if _INSTALLED:
         return
 
-    # PersistCaps instances created after this installer carry a descriptor anchor.
-    PersistCaps.__slots__ = ("policy", "_parent_fd", "_name", "_open_error")
+    # PersistCaps allocates descriptor slots in persistence_authority_v1 at class
+    # creation time. Do not mutate __slots__ after class creation: doing so changes
+    # metadata but cannot create new slot descriptors and makes installer order
+    # misleading.
     PersistCaps.__init__ = _persist_init
     PersistCaps.__del__ = _persist_del
     PersistCaps.load = _load
     PersistCaps.commit = _commit
 
-    _semantic.NARROWED_METHODS["PersistCaps"] = {
-        "load": "String or Error",
-        "commit": "Void or Error",
-    }
+    methods = {"load", "commit"}
+    _semantic.NARROWED_METHODS["PersistCaps"] = methods
+    _semantic.GUARDED_METHODS.update(methods)
 
     _ORIGINAL_CHECK_METHOD_CALL = _semantic.SemanticChecker._check_method_call
     _semantic.SemanticChecker._check_method_call = _check_method_call
