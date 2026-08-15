@@ -95,11 +95,21 @@ from .deterministic_parallel_map_v1 import install_deterministic_parallel_map_v1
 
 install_deterministic_parallel_map_v1()
 
+from .deterministic_parallel_map_mir_shape_v1 import (
+    install_deterministic_parallel_map_mir_shape_v1,
+)
+
+install_deterministic_parallel_map_mir_shape_v1()
+
 from .mir_native_module_shadow_guard_v1 import (
     install_mir_native_module_shadow_guard_v1,
 )
 
 install_mir_native_module_shadow_guard_v1()
+
+from .fallible_mir_v1 import install_fallible_mir_v1
+
+install_fallible_mir_v1()
 
 from .typestate_affine_alignment import install_typestate_affine_alignment
 
