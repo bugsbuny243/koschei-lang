@@ -217,7 +217,7 @@ class BoundedPersistenceV1Tests(unittest.TestCase):
             )
             check(program)
 
-    def test_native_codegen_remains_explicitly_fail_closed(self) -> None:
+    def test_linux_native_codegen_contains_persistence_runtime(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             target = str(Path(temporary) / "state.txt")
             program = parse(
@@ -227,8 +227,24 @@ class BoundedPersistenceV1Tests(unittest.TestCase):
                 "}"
             )
             check(program)
-            with self.assertRaises(CodegenError) as context:
-                generate_go(program)
+            with patch("koschei.persistence_native_go_v1.sys.platform", "linux"):
+                generated = generate_go(program)
+            self.assertIn("type ksPersistCaps struct", generated)
+            self.assertIn("syscall.Renameat", generated)
+
+    def test_non_linux_native_codegen_remains_explicitly_fail_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            target = str(Path(temporary) / "state.txt")
+            program = parse(
+                "fn main(caps: SystemCaps) { "
+                f'let state = caps.persist.allow("{target}", 4096, 2000) '
+                'let wrote = state.commit("hello") or return '
+                "}"
+            )
+            check(program)
+            with patch("koschei.persistence_native_go_v1.sys.platform", "darwin"):
+                with self.assertRaises(CodegenError) as context:
+                    generate_go(program)
             self.assertEqual(context.exception.code, "KS4001")
 
     def test_stdlib_catalog_keeps_persistence_reserved(self) -> None:
