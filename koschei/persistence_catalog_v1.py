@@ -27,8 +27,9 @@ def install_persistence_catalog_v1() -> None:
                 capability="PersistRoot",
                 security_sensitive=True,
                 note=(
-                    "An interpreter authority implementation exists, but catalog backend flags "
-                    "remain false until the operation is promoted through executed parity gates."
+                    "Interpreter and Linux native-Go exact-object authority implementations "
+                    "exist, but reserved operations keep backend flags false until real parity "
+                    "gates execute and the operation is explicitly promoted."
                 ),
             ),
             _catalog.Operation(
@@ -39,9 +40,10 @@ def install_persistence_catalog_v1() -> None:
                 enforced_budgets=("bytes",),
                 security_sensitive=True,
                 note=(
-                    "Interpreter load is descriptor-anchored and hard byte-bounded. The v1 "
-                    "deadline is checked around syscalls but cannot preempt a blocking kernel "
-                    "filesystem call, and native parity is not yet promoted."
+                    "Interpreter and Linux native-Go loads are descriptor-anchored and hard "
+                    "byte-bounded. The v1 deadline is checked around syscalls but cannot "
+                    "preempt a blocking kernel filesystem call, so deadline is not promoted "
+                    "as an enforced budget."
                 ),
             ),
             _catalog.Operation(
@@ -52,9 +54,10 @@ def install_persistence_catalog_v1() -> None:
                 enforced_budgets=("bytes",),
                 security_sensitive=True,
                 note=(
-                    "Interpreter commit uses same-directory temp write, full-write loop, file "
-                    "fsync, atomic replace and directory fsync. Post-replace durability "
-                    "uncertainty is KS3423. Deadline preemption/native parity are not claimed."
+                    "Interpreter and Linux native-Go commits use same-directory temp write, "
+                    "full-write loop, file fsync, descriptor-relative atomic replace and "
+                    "directory fsync. Post-replace durability uncertainty is KS3423. Real CI "
+                    "and syscall-preemptive deadline semantics are still required for promotion."
                 ),
             ),
         ),
