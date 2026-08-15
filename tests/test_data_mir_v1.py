@@ -7,7 +7,11 @@ import tempfile
 import unittest
 
 from koschei.mir import require_mir
-from koschei.mir_native_runtime import inspect_native_mir_support, run_mir_native
+from koschei.mir_native_runtime import (
+    MirNativeProgramError,
+    inspect_native_mir_support,
+    run_mir_native,
+)
 from koschei.modules import check_graph, load_graph
 
 
@@ -23,13 +27,13 @@ class DataMirV1Tests(unittest.TestCase):
 
     def test_parse_and_encode_json_execute_from_direct_mir(self) -> None:
         mir = self.checked_mir(
-            r'''
+            """
 fn main() {
-    let data = parse_json("{\"b\":2,\"a\":1}") or return Error("parse failed")
+    let data = parse_json("{\\"b\\":2,\\"a\\":1}") or return Error("parse failed")
     let encoded = encode_json(data) or return Error("encode failed")
     println(encoded)
 }
-'''
+"""
         )
         support = inspect_native_mir_support(mir)
         self.assertTrue(support.supported, support.reasons)
@@ -41,18 +45,16 @@ fn main() {
 
     def test_invalid_json_returns_replacement_error_without_ast_fallback(self) -> None:
         mir = self.checked_mir(
-            r'''
+            """
 fn main() {
     let data = parse_json("{") or return Error("invalid payload")
     let encoded = encode_json(data) or return Error("encode failed")
     println(encoded)
 }
-'''
+"""
         )
         support = inspect_native_mir_support(mir)
         self.assertTrue(support.supported, support.reasons)
-
-        from koschei.mir_native_runtime import MirNativeProgramError
 
         with self.assertRaisesRegex(MirNativeProgramError, "invalid payload"):
             run_mir_native(mir)
