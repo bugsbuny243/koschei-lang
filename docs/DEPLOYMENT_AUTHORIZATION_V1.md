@@ -6,38 +6,22 @@ Deployment Authorization answers a different question from artifact identity:
 
 - build/release/static-capability evidence answers **what is this artifact?**
 - local policy answers **what authority could this environment grant?**
-- deployment authorization answers **may this exact artifact perform this exact
-  launch/deploy operation in this exact environment during this authorization
-  window?**
+- deployment authorization answers **may this exact artifact perform this exact launch/deploy operation in this exact environment during this authorization window?**
 
 These lifetimes and authorities must not be collapsed into one object.
 
 ## 1. External signing boundary
 
-Koschei Lang does not store or derive the production deployment signing key in
-this module.
+Koschei Lang does not store or derive the production deployment signing key in this module. A deployment authority signs the exact canonical payload externally. The launcher receives the authorization object, signature bytes, and a verifier callback backed by the configured trust root.
 
-A deployment authority signs the exact canonical payload externally. The trusted
-launcher receives only:
-
-- the authorization object;
-- signature bytes;
-- a verifier callback backed by the configured trust root.
-
-The module intentionally follows the existing private-distribution pattern of
-canonical payload + external verifier rather than embedding an application HMAC
-secret as deployment authority.
-
-The cryptographic algorithm and key custody mechanism therefore remain a
-launcher/deployment-infrastructure decision. Switching trust roots must not
-change the canonical authorization semantics.
+The cryptographic algorithm and key custody mechanism remain deployment-infrastructure decisions. Switching trust roots must not change canonical authorization semantics.
 
 ## 2. Signed fields
 
-`koschei.deployment-authorization.v1` signs:
+`koschei.deployment-authorization.v1` signs exactly:
 
 - `authorization_id`
-- `operation` — exactly `launch` or `deploy`
+- `operation` — `launch` or `deploy`
 - `environment`
 - `artifact_sha256`
 - `trust_manifest_digest`
@@ -47,114 +31,65 @@ change the canonical authorization semantics.
 - `expires_after_epoch`
 - `nonce`
 
-No unsigned extension field may grant additional authority.
+No unsigned extension field may grant authority.
 
 ## 3. Time boundary
 
-`not_before_epoch` and `expires_after_epoch` belong only to the deployment
-authorization.
+`not_before_epoch` and `expires_after_epoch` belong only to deployment authorization. Expiration does not invalidate source identity, build evidence, artifact bytes, static capability evidence, release proof, or Trust Plane artifact identity.
 
-Expiration does **not** invalidate:
+Because authorization uses wall-clock epoch bounds, correct trusted time is an explicit operational dependency and threat-model assumption.
 
-- source identity;
-- native build manifest;
-- artifact bytes;
-- static capability evidence;
-- release proof;
-- Trust Plane artifact manifest.
+## 4. Replay resistance and redemption evidence
 
-It only invalidates this authorization to launch/deploy them.
-
-Because authorization uses wall-clock epoch bounds, correct trusted time is an
-explicit operational dependency and threat-model assumption for this layer.
-Future launcher deployments must document their trusted-clock source and rollback
-behavior.
-
-## 4. Replay resistance
-
-Signature verification alone is insufficient. A valid signed authorization that
-can be replayed forever is still dangerous.
-
-The v1 redemption API therefore requires an `atomic_redeemer` callback. It must
-atomically claim the pair:
+Signature verification alone is insufficient. V1 therefore requires an `atomic_redeemer` that atomically claims:
 
 `authorization_id + authorization_payload_digest`
 
-and return true only for the first successful claim.
+and succeeds only on the first claim. Read-then-write replay checks are not compliant.
 
-A read-then-write sequence is not compliant because two concurrent launchers can
-both observe "unused" before either writes.
+A successful claim returns a `RedeemedAuthorization` evidence object. It contains the exact authorization digest, artifact/policy/capability bindings, redemption epoch, and a canonical `redemption_digest` over those fields.
 
-If trusted replay storage is missing or unavailable, authorization fails closed.
-A failed signature or failed binding check is never redeemed.
+`RedeemedAuthorization` is deliberately **not executable authority**. It has no spawn/deploy primitive. The Trusted Launcher must combine it with a valid deterministic Trust Plane launch decision before any launch permit exists.
 
-The authorization is consumed before the later process-execution layer receives
-a launch permit. If process creation subsequently fails, the authorization stays
-consumed. Availability loses to authority safety.
+If replay storage is missing or unavailable, redemption fails closed. Failed signatures and failed bindings never consume the authorization. If a later process-creation layer fails after redemption, the grant stays consumed; authority safety wins over availability.
 
-## 5. Exact binding
+## 5. Evidence revalidation
 
-Redemption requires all of these to match simultaneously:
+Deployment redemption does not trust dataclass construction. Before a signed authorization can be redeemed it independently revalidates:
 
-- expected operation;
-- expected environment;
-- local-policy environment;
-- local `policy_hash`;
-- artifact SHA;
-- Trust Plane artifact-manifest digest;
-- static-capability request digest;
-- authorization time window;
-- external signature;
-- successful atomic first-use claim.
+- the canonical local-policy hash;
+- the canonical static-capability request digest;
+- the canonical Trust Artifact Manifest digest;
+- manifest requested capabilities against static source capabilities;
+- requested capabilities against local policy grants.
 
-A staging authorization cannot silently authorize production. A launch grant
-cannot silently become a deploy grant. A valid authorization for artifact A
-cannot authorize artifact B, even when both artifacts request the same
-capabilities.
+A forged policy/request/manifest object therefore cannot manufacture redemption evidence merely by supplying plausible-looking SHA-256 strings.
 
-## 6. No ambient signer authority
+## 6. Exact binding
 
-Ordinary Koschei application source cannot request `deploy.execute` or
-`signing.request` through its static capability manifest.
+Redemption requires simultaneous agreement on operation, environment, local policy, artifact SHA, Trust Artifact Manifest digest, static capability request digest, requested capability set, authorization time window, external signature, and atomic first-use claim.
 
-Those are reserved trusted-launcher/broker authorities. Deployment Authorization
-is one input into those future brokers; it does not hand a signing key or deploy
-credential to application code.
+A staging authorization cannot become production authority. A launch grant cannot become a deploy grant. An authorization for artifact A cannot authorize artifact B.
 
-## 7. Failure behavior
+## 7. No ambient signer authority
 
-Any malformed payload, invalid signature, time-window failure, operation mismatch,
-environment mismatch, policy mismatch, artifact substitution, trust-manifest
-substitution, static-capability substitution, or failed atomic redemption returns
-false.
+Ordinary Koschei source cannot request `deploy.execute` or `signing.request` through the language-level static capability manifest. Those remain trusted broker/launcher authorities. Deployment Authorization never hands a signing key or deployment credential to application code.
+
+## 8. Failure behavior
+
+Malformed evidence, invalid signatures, forged canonical identities, time-window failures, operation/environment/policy mismatches, artifact substitution, trust-manifest substitution, static-capability substitution, capability escalation, or failed atomic redemption return no redemption evidence.
 
 No partial authority is granted.
 
-## 8. Required adversarial tests
+## 9. Required adversarial coverage
 
-The v1 test matrix covers:
+The v1 matrix covers single successful redemption, replay denial, bad-signature non-consumption, time bounds, operation/environment/policy substitution, artifact and manifest substitution, static capability substitution/escalation, post-signature mutation, forged canonical evidence, and missing atomic redemption storage.
 
-1. exact signed authorization succeeds once;
-2. the same authorization cannot redeem twice;
-3. an invalid signature does not consume the grant;
-4. not-yet-valid authorization is denied;
-5. expired authorization is denied without expiring artifact identity;
-6. operation substitution is denied;
-7. environment substitution is denied;
-8. policy substitution is denied;
-9. artifact substitution is denied;
-10. Trust Plane manifest substitution is denied;
-11. static capability evidence substitution is denied;
-12. mutation after signing is denied;
-13. missing atomic redemption authority is denied.
+## 10. Trusted Launcher relationship
 
-## 9. Next launcher contract
+Trusted Launcher v1 requires both:
 
-A future Trusted Launcher v1 must require **both**:
+1. successful deterministic Trust Plane evaluation for the exact artifact, provenance, static capability request, and local policy; and
+2. a valid atomically single-use `RedeemedAuthorization`.
 
-1. a successful deterministic Trust Plane launch decision for the exact artifact,
-   build/release provenance, static capability request and local policy; and
-2. successful single-use Deployment Authorization redemption.
-
-Only then may it create a launch permit. OS/process sandbox enforcement remains a
-separate boundary and must not be claimed by this authorization module.
+The resulting `TrustedLaunchPermit` binds the authorization payload digest **and** the atomic `redemption_digest`. OS/process enforcement remains a separate boundary and must prove its own controls before process authority exists.
