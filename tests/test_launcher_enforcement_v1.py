@@ -58,6 +58,7 @@ def trusted_permit(request: StaticCapabilityRequest) -> TrustedLaunchPermit:
         "effective_capabilities": list(request.capabilities),
         "launch_decision_digest": digest("launch-decision"),
         "deployment_authorization_digest": digest("deployment-authorization"),
+        "authorization_redemption_digest": digest("authorization-redemption"),
         "authorization_id": "launch-auth-test-0001",
     }
     return TrustedLaunchPermit(
@@ -69,6 +70,7 @@ def trusted_permit(request: StaticCapabilityRequest) -> TrustedLaunchPermit:
         effective_capabilities=request.capabilities,
         launch_decision_digest=payload["launch_decision_digest"],
         deployment_authorization_digest=payload["deployment_authorization_digest"],
+        authorization_redemption_digest=payload["authorization_redemption_digest"],
         authorization_id=payload["authorization_id"],
         permit_digest=digest(payload),
     )
@@ -93,12 +95,12 @@ def strong_adapter(*, domains=("disk", "net")):
 def test_exact_permit_and_request_build_scope_preserving_plan():
     request = capability_request()
     permit = trusted_permit(request)
-
     plan = build_sandbox_enforcement_plan(permit, request)
 
     assert plan.effective_capabilities == ("disk.read", "net.io")
     assert plan.grants == request.grants
     assert plan.denied_domains == ("env", "process")
+    assert plan.authorization_redemption_digest == permit.authorization_redemption_digest
     assert plan.environment_inheritance == "deny_ambient_inheritance"
     assert plan.inherited_file_descriptors == "close_all_except_launcher_contract"
     assert plan.shell_execution == "disabled"
@@ -109,7 +111,17 @@ def test_forged_permit_with_valid_looking_digest_is_rejected():
     request = capability_request()
     permit = trusted_permit(request)
     forged = replace(permit, artifact_sha256=digest("attacker-artifact"))
+    with pytest.raises(LauncherEnforcementError):
+        build_sandbox_enforcement_plan(forged, request)
 
+
+def test_redemption_digest_swap_is_rejected():
+    request = capability_request()
+    permit = trusted_permit(request)
+    forged = replace(
+        permit,
+        authorization_redemption_digest=digest("attacker-redemption"),
+    )
     with pytest.raises(LauncherEnforcementError):
         build_sandbox_enforcement_plan(forged, request)
 
@@ -118,7 +130,6 @@ def test_permit_capability_request_substitution_is_rejected():
     request = capability_request()
     permit = trusted_permit(request)
     forged = replace(permit, capability_request_digest=digest("other-request"))
-
     with pytest.raises(LauncherEnforcementError):
         build_sandbox_enforcement_plan(forged, request)
 
@@ -127,7 +138,6 @@ def test_forged_static_request_digest_is_rejected():
     request = capability_request()
     permit = trusted_permit(request)
     forged = replace(request, request_digest=digest("attacker-request"))
-
     with pytest.raises(LauncherEnforcementError):
         build_sandbox_enforcement_plan(permit, forged)
 
@@ -136,7 +146,6 @@ def test_static_capabilities_must_match_exact_grants():
     request = capability_request()
     permit = trusted_permit(request)
     forged = replace(request, capabilities=("disk.read", "net.io", "process.exec"))
-
     with pytest.raises(LauncherEnforcementError):
         build_sandbox_enforcement_plan(permit, forged)
 
@@ -145,7 +154,6 @@ def test_missing_requested_domain_is_not_ready():
     request = capability_request()
     plan = build_sandbox_enforcement_plan(trusted_permit(request), request)
     readiness = evaluate_sandbox_readiness(plan, strong_adapter(domains=("disk",)))
-
     assert readiness.ready is False
     assert readiness.code == "KS1962"
 
@@ -153,14 +161,11 @@ def test_missing_requested_domain_is_not_ready():
 def test_any_missing_mandatory_boundary_is_not_ready():
     request = capability_request()
     plan = build_sandbox_enforcement_plan(trusted_permit(request), request)
-    descriptor = strong_adapter()
-    descriptor = replace(descriptor, shell_disabled=False)
+    descriptor = replace(strong_adapter(), shell_disabled=False)
     payload = descriptor.to_dict()
     payload.pop("descriptor_digest")
     descriptor = replace(descriptor, descriptor_digest=digest(payload))
-
     readiness = evaluate_sandbox_readiness(plan, descriptor)
-
     assert readiness.ready is False
     assert readiness.code == "KS1963"
 
@@ -169,7 +174,6 @@ def test_strong_descriptor_is_readiness_only_and_succeeds_deterministically():
     request = capability_request()
     plan = build_sandbox_enforcement_plan(trusted_permit(request), request)
     descriptor = strong_adapter()
-
     first = evaluate_sandbox_readiness(plan, descriptor)
     second = evaluate_sandbox_readiness(plan, descriptor)
 
@@ -184,9 +188,7 @@ def test_tampered_descriptor_digest_is_rejected():
     request = capability_request()
     plan = build_sandbox_enforcement_plan(trusted_permit(request), request)
     descriptor = replace(strong_adapter(), descriptor_digest=digest("tampered"))
-
     readiness = evaluate_sandbox_readiness(plan, descriptor)
-
     assert readiness.ready is False
     assert readiness.code == "KS1961"
 
@@ -195,8 +197,18 @@ def test_tampered_plan_is_rejected():
     request = capability_request()
     plan = build_sandbox_enforcement_plan(trusted_permit(request), request)
     plan = replace(plan, denied_domains=("env",))
-
     readiness = evaluate_sandbox_readiness(plan, strong_adapter())
+    assert readiness.ready is False
+    assert readiness.code == "KS1961"
 
+
+def test_tampered_plan_redemption_binding_is_rejected():
+    request = capability_request()
+    plan = build_sandbox_enforcement_plan(trusted_permit(request), request)
+    plan = replace(
+        plan,
+        authorization_redemption_digest=digest("different-redemption"),
+    )
+    readiness = evaluate_sandbox_readiness(plan, strong_adapter())
     assert readiness.ready is False
     assert readiness.code == "KS1961"
