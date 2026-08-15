@@ -225,6 +225,12 @@ from .persistence_native_go_parent_integrity_v1 import (
 
 install_persistence_native_go_parent_integrity_v1()
 
+from .persistence_native_go_exact_object_integrity_v1 import (
+    install_persistence_native_go_exact_object_integrity_v1,
+)
+
+install_persistence_native_go_exact_object_integrity_v1()
+
 from .persistence_diagnostics_v1 import install_persistence_diagnostics_v1
 
 install_persistence_diagnostics_v1()
