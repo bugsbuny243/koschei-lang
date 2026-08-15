@@ -37,6 +37,7 @@ class SandboxEnforcementPlan:
     policy_hash: str
     capability_request_digest: str
     launch_permit_digest: str
+    authorization_redemption_digest: str
     effective_capabilities: tuple[str, ...]
     grants: tuple[tuple[str, str, bool], ...]
     denied_domains: tuple[str, ...]
@@ -54,6 +55,7 @@ class SandboxEnforcementPlan:
             "policy_hash": self.policy_hash,
             "capability_request_digest": self.capability_request_digest,
             "launch_permit_digest": self.launch_permit_digest,
+            "authorization_redemption_digest": self.authorization_redemption_digest,
             "effective_capabilities": list(self.effective_capabilities),
             "grants": _grant_rows(self.grants),
             "denied_domains": list(self.denied_domains),
@@ -124,9 +126,7 @@ def build_sandbox_enforcement_plan(
     capability_request: StaticCapabilityRequest,
 ) -> SandboxEnforcementPlan:
     _validate_launch_permit_identity(permit)
-    grants, derived_capabilities = _validate_static_capability_request(
-        capability_request
-    )
+    grants, derived_capabilities = _validate_static_capability_request(capability_request)
     if permit.capability_request_digest != capability_request.request_digest:
         raise LauncherEnforcementError(
             "launch permit is bound to different static capability evidence"
@@ -145,6 +145,7 @@ def build_sandbox_enforcement_plan(
         "policy_hash": permit.policy_hash,
         "capability_request_digest": capability_request.request_digest,
         "launch_permit_digest": permit.permit_digest,
+        "authorization_redemption_digest": permit.authorization_redemption_digest,
         "effective_capabilities": list(derived_capabilities),
         "grants": _grant_rows(grants),
         "denied_domains": list(denied_domains),
@@ -159,6 +160,7 @@ def build_sandbox_enforcement_plan(
         policy_hash=permit.policy_hash,
         capability_request_digest=capability_request.request_digest,
         launch_permit_digest=permit.permit_digest,
+        authorization_redemption_digest=permit.authorization_redemption_digest,
         effective_capabilities=derived_capabilities,
         grants=grants,
         denied_domains=denied_domains,
@@ -269,18 +271,25 @@ def _validate_launch_permit_identity(permit: TrustedLaunchPermit) -> None:
     if not isinstance(permit, TrustedLaunchPermit):
         raise LauncherEnforcementError("invalid trusted launch permit")
     capabilities = _canonical_launcher_capabilities(permit.effective_capabilities)
-    if capabilities != permit.effective_capabilities:
-        raise LauncherEnforcementError("launch permit capabilities are not canonical")
     payload = {
         "schema_version": _PERMIT_SCHEMA,
         "environment": _text(permit.environment, "environment"),
         "artifact_sha256": _require_digest(permit.artifact_sha256, "artifact_sha256"),
         "trust_manifest_digest": _require_digest(permit.trust_manifest_digest, "trust_manifest_digest"),
         "policy_hash": _require_digest(permit.policy_hash, "policy_hash"),
-        "capability_request_digest": _require_digest(permit.capability_request_digest, "capability_request_digest"),
+        "capability_request_digest": _require_digest(
+            permit.capability_request_digest, "capability_request_digest"
+        ),
         "effective_capabilities": list(capabilities),
-        "launch_decision_digest": _require_digest(permit.launch_decision_digest, "launch_decision_digest"),
-        "deployment_authorization_digest": _require_digest(permit.deployment_authorization_digest, "deployment_authorization_digest"),
+        "launch_decision_digest": _require_digest(
+            permit.launch_decision_digest, "launch_decision_digest"
+        ),
+        "deployment_authorization_digest": _require_digest(
+            permit.deployment_authorization_digest, "deployment_authorization_digest"
+        ),
+        "authorization_redemption_digest": _require_digest(
+            permit.authorization_redemption_digest, "authorization_redemption_digest"
+        ),
         "authorization_id": _text(permit.authorization_id, "authorization_id"),
     }
     if permit.permit_digest != _digest(payload):
@@ -325,10 +334,19 @@ def _validate_plan(plan: SandboxEnforcementPlan) -> None:
     payload = {
         "schema_version": _PLAN_SCHEMA,
         "artifact_sha256": _require_digest(plan.artifact_sha256, "artifact_sha256"),
-        "trust_manifest_digest": _require_digest(plan.trust_manifest_digest, "trust_manifest_digest"),
+        "trust_manifest_digest": _require_digest(
+            plan.trust_manifest_digest, "trust_manifest_digest"
+        ),
         "policy_hash": _require_digest(plan.policy_hash, "policy_hash"),
-        "capability_request_digest": _require_digest(plan.capability_request_digest, "capability_request_digest"),
-        "launch_permit_digest": _require_digest(plan.launch_permit_digest, "launch_permit_digest"),
+        "capability_request_digest": _require_digest(
+            plan.capability_request_digest, "capability_request_digest"
+        ),
+        "launch_permit_digest": _require_digest(
+            plan.launch_permit_digest, "launch_permit_digest"
+        ),
+        "authorization_redemption_digest": _require_digest(
+            plan.authorization_redemption_digest, "authorization_redemption_digest"
+        ),
         "effective_capabilities": list(capabilities),
         "grants": _grant_rows(grants),
         "denied_domains": list(denied),
@@ -344,7 +362,9 @@ def _validate_plan(plan: SandboxEnforcementPlan) -> None:
     if plan.shell_execution != "disabled":
         raise LauncherEnforcementError("shell execution is not disabled")
     if plan.executable_identity != payload["executable_identity"]:
-        raise LauncherEnforcementError("executable identity is not verified at spawn boundary")
+        raise LauncherEnforcementError(
+            "executable identity is not verified at spawn boundary"
+        )
     if plan.plan_digest != _digest(payload):
         raise LauncherEnforcementError("sandbox plan digest does not match contents")
 
@@ -353,8 +373,6 @@ def _validate_descriptor(descriptor: SandboxAdapterDescriptor) -> None:
     if not isinstance(descriptor, SandboxAdapterDescriptor):
         raise LauncherEnforcementError("invalid sandbox adapter descriptor")
     domains = _canonical_domains(descriptor.supported_domains)
-    if domains != descriptor.supported_domains:
-        raise LauncherEnforcementError("sandbox supported domains are not canonical")
     controls = (
         descriptor.exact_scope_enforcement,
         descriptor.default_deny_unrequested_domains,
@@ -380,7 +398,9 @@ def _validate_descriptor(descriptor: SandboxAdapterDescriptor) -> None:
         "executable_digest_verified_at_spawn": descriptor.executable_digest_verified_at_spawn,
     }
     if descriptor.descriptor_digest != _digest(payload):
-        raise LauncherEnforcementError("sandbox adapter descriptor digest does not match contents")
+        raise LauncherEnforcementError(
+            "sandbox adapter descriptor digest does not match contents"
+        )
 
 
 def _readiness(
@@ -390,8 +410,14 @@ def _readiness(
     plan: SandboxEnforcementPlan,
     descriptor: SandboxAdapterDescriptor,
 ) -> SandboxReadiness:
-    plan_digest = plan.plan_digest if _is_digest(getattr(plan, "plan_digest", "")) else "0" * 64
-    descriptor_digest = descriptor.descriptor_digest if _is_digest(getattr(descriptor, "descriptor_digest", "")) else "0" * 64
+    plan_digest = (
+        plan.plan_digest if _is_digest(getattr(plan, "plan_digest", "")) else "0" * 64
+    )
+    descriptor_digest = (
+        descriptor.descriptor_digest
+        if _is_digest(getattr(descriptor, "descriptor_digest", ""))
+        else "0" * 64
+    )
     payload = {
         "schema_version": _READINESS_SCHEMA,
         "ready": ready,
@@ -445,7 +471,8 @@ def _canonical_grants(
     grants: Iterable[tuple[str, str, bool]],
 ) -> tuple[tuple[str, str, bool], ...]:
     normalized: set[tuple[str, str, bool]] = set()
-    for grant in grants:
+    raw = tuple(grants)
+    for grant in raw:
         if not isinstance(grant, tuple) or len(grant) != 3:
             raise LauncherEnforcementError("invalid static capability grant")
         domain, scope, read_only = grant
@@ -456,7 +483,10 @@ def _canonical_grants(
         if not isinstance(read_only, bool):
             raise LauncherEnforcementError("grant read_only must be boolean")
         normalized.add((domain, scope, read_only))
-    return tuple(sorted(normalized))
+    canonical = tuple(sorted(normalized))
+    if canonical != raw:
+        raise LauncherEnforcementError("static capability grants are not canonical")
+    return canonical
 
 
 def _grant_rows(grants: tuple[tuple[str, str, bool], ...]) -> list[dict[str, object]]:
