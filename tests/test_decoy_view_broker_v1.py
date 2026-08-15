@@ -15,9 +15,20 @@ from koschei.parser import parse
 
 
 OID = "0123456789abcdef0123456789abcdef"
+OTHER_OID = "fedcba9876543210fedcba9876543210"
 KEY = b"d" * 32
 BUILD_VIEW_KEY = b"b" * 32
 SECRET_SOURCE = b"fn vault_secret() -> Int { return 424242; }\n"
+
+
+def require_current_build_view(view, *, key: bytes = BUILD_VIEW_KEY) -> None:
+    require_canonical_build_view(
+        view,
+        canonical_view_key=key,
+        expected_project_id="p-01",
+        expected_object_id=OID,
+        expected_epoch=500,
+    )
 
 
 class DecoyViewBrokerV1Tests(unittest.TestCase):
@@ -87,7 +98,7 @@ class DecoyViewBrokerV1Tests(unittest.TestCase):
         with self.assertRaises(DecoyViewError):
             require_canonical_build_view(view, canonical_view_key=BUILD_VIEW_KEY)
 
-    def test_canonical_view_passes_build_gate_only_with_attestation(self):
+    def test_canonical_view_passes_build_gate_only_with_attestation_and_context(self):
         view = read_source_view(
             project_id="p-01",
             object_id=OID,
@@ -98,7 +109,7 @@ class DecoyViewBrokerV1Tests(unittest.TestCase):
             canonical_view_key=BUILD_VIEW_KEY,
         )
         self.assertTrue(view.canonical_attestation.startswith("hmac-sha256:"))
-        require_canonical_build_view(view, canonical_view_key=BUILD_VIEW_KEY)
+        require_current_build_view(view)
 
     def test_unattested_canonical_view_fails_build_gate(self):
         view = read_source_view(
@@ -110,7 +121,7 @@ class DecoyViewBrokerV1Tests(unittest.TestCase):
             deception_key=KEY,
         )
         with self.assertRaises(DecoyViewError):
-            require_canonical_build_view(view, canonical_view_key=BUILD_VIEW_KEY)
+            require_current_build_view(view)
 
     def test_public_dataclass_forgery_cannot_enter_build_gate(self):
         digest = "sha256:" + hashlib.sha256(SECRET_SOURCE).hexdigest()
@@ -125,7 +136,7 @@ class DecoyViewBrokerV1Tests(unittest.TestCase):
             canonical_attestation="hmac-sha256:" + ("0" * 64),
         )
         with self.assertRaises(DecoyViewError):
-            require_canonical_build_view(forged, canonical_view_key=BUILD_VIEW_KEY)
+            require_current_build_view(forged)
 
     def test_attested_content_tamper_fails_build_gate(self):
         view = read_source_view(
@@ -142,7 +153,7 @@ class DecoyViewBrokerV1Tests(unittest.TestCase):
             content=b"fn vault_secret() -> Int { return 1; }\n",
         )
         with self.assertRaises(DecoyViewError):
-            require_canonical_build_view(tampered, canonical_view_key=BUILD_VIEW_KEY)
+            require_current_build_view(tampered)
 
     def test_wrong_build_view_key_fails_closed(self):
         view = read_source_view(
@@ -155,7 +166,57 @@ class DecoyViewBrokerV1Tests(unittest.TestCase):
             canonical_view_key=BUILD_VIEW_KEY,
         )
         with self.assertRaises(DecoyViewError):
-            require_canonical_build_view(view, canonical_view_key=b"c" * 32)
+            require_current_build_view(view, key=b"c" * 32)
+
+    def test_missing_expected_context_fails_closed(self):
+        view = read_source_view(
+            project_id="p-01",
+            object_id=OID,
+            epoch=500,
+            authorized=True,
+            canonical_reader=lambda _: SECRET_SOURCE,
+            deception_key=KEY,
+            canonical_view_key=BUILD_VIEW_KEY,
+        )
+        with self.assertRaises(DecoyViewError):
+            require_canonical_build_view(view, canonical_view_key=BUILD_VIEW_KEY)
+
+    def test_old_epoch_attestation_cannot_replay_into_current_build(self):
+        stale = read_source_view(
+            project_id="p-01",
+            object_id=OID,
+            epoch=499,
+            authorized=True,
+            canonical_reader=lambda _: SECRET_SOURCE,
+            deception_key=KEY,
+            canonical_view_key=BUILD_VIEW_KEY,
+        )
+        with self.assertRaises(DecoyViewError):
+            require_current_build_view(stale)
+
+    def test_cross_project_and_cross_object_attestations_cannot_replay(self):
+        wrong_project = read_source_view(
+            project_id="p-shadow",
+            object_id=OID,
+            epoch=500,
+            authorized=True,
+            canonical_reader=lambda _: SECRET_SOURCE,
+            deception_key=KEY,
+            canonical_view_key=BUILD_VIEW_KEY,
+        )
+        wrong_object = read_source_view(
+            project_id="p-01",
+            object_id=OTHER_OID,
+            epoch=500,
+            authorized=True,
+            canonical_reader=lambda _: SECRET_SOURCE,
+            deception_key=KEY,
+            canonical_view_key=BUILD_VIEW_KEY,
+        )
+        with self.assertRaises(DecoyViewError):
+            require_current_build_view(wrong_project)
+        with self.assertRaises(DecoyViewError):
+            require_current_build_view(wrong_object)
 
     def test_weak_deception_key_fails_closed(self):
         with self.assertRaises(DecoyViewError):
