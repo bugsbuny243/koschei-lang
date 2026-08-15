@@ -65,26 +65,43 @@ invalidates the artifact digest and the next trusted load fails closed.
 `advance_native_reality_source()` is the v1 write boundary. A successful source
 change is one temporal transition:
 
-1. authenticate the existing reality against the external seal key, expected
-   project id and expected epoch;
-2. validate the replacement UTF-8/source-size limits and parse it before any
-   filesystem mutation;
-3. reject imports before mutation because v1 has no authenticated object-edge
-   table;
-4. hash the replacement bytes;
-5. write and fsync the replacement under a fresh 128-bit opaque alias;
-6. construct epoch `N+1` with the same project id and root object id but the new
+1. validate the replacement UTF-8/source-size limits and parse it before touching
+   project state;
+2. reject imports because v1 has no authenticated object-edge table;
+3. open the project/reality/matter directories as no-follow directory descriptors;
+4. take the exclusive reality transition lock;
+5. authenticate the current envelope against the external seal key, expected
+   project id and expected epoch **after acquiring that lock**;
+6. hash the replacement bytes and write/fsync them under a fresh 128-bit opaque
+   alias using descriptor-relative I/O;
+7. construct epoch `N+1` with the same project id and root object id but the new
    artifact digest and alias;
-7. HMAC-seal the new reality and atomically switch authority to it; and
-8. remove the old now-unreferenced alias on a best-effort basis.
+8. HMAC-seal and atomically rename the new envelope inside the already-open
+   reality directory; and
+9. remove the old now-unreferenced alias on a best-effort basis.
 
-A parse failure, import-policy failure, wrong project id, wrong epoch or wrong
-seal key therefore occurs before the authority switch. Tests assert that rejected
-edits leave the old reality bytes and source alias authoritative.
+A rejected source, wrong project id, stale epoch or wrong seal key therefore does
+not become authoritative. Tests assert that rejected edits leave the old reality
+and source alias valid.
 
-The edit preserves **object identity**, not physical identity. This is deliberate:
-the same canonical program object evolves through authenticated epochs instead of
-being defined by one permanent human-readable file path.
+The edit preserves **object identity**, not physical identity. The same canonical
+program object evolves through authenticated epochs instead of being defined by
+one permanent human-readable path.
+
+## Concurrent writers
+
+Authorized writers serialize on the already-open reality directory. After a
+writer obtains the exclusive transition lock it re-reads and re-authenticates the
+current envelope before changing anything.
+
+Therefore two writers both claiming epoch `N` cannot silently overwrite one
+another. The first may advance to `N+1`; the second then observes that its trusted
+`expected_epoch=N` is stale and fails closed. An isolated two-process attack
+harness verifies this behavior.
+
+The lock is not treated as cryptographic authority. A filesystem attacker may
+ignore advisory locking and cause denial of service, but cannot create an accepted
+new reality without the external seal key and matching trusted temporal context.
 
 ## Epoch rotation
 
@@ -97,34 +114,39 @@ epoch 2  root object -> 91...0c
 epoch 3  root object -> b4...77
 ```
 
-The implementation uses copy-switch-cleanup ordering:
+Rotation uses the same locked descriptor-bound transition machinery as source
+advance. The new source alias is durable before the authenticated envelope switch.
+A crash before the switch leaves the previous reality authoritative; a crash
+after the switch can leave a stale unreferenced copy but does not make that copy
+authoritative again.
 
-1. write and fsync the new opaque source alias;
-2. write and fsync a newly authenticated reality envelope;
-3. atomically replace the old envelope;
-4. remove the now-unreferenced old alias.
+## Descriptor-bound filesystem boundary
 
-A crash before the envelope switch leaves the previous reality valid. A crash
-after the switch may leave an unreferenced stale copy, but never makes that stale
-copy authoritative again.
+A final-file `O_NOFOLLOW` check is not enough. If `.koschei/matter` were checked by
+pathname and then replaced before a write, a parent-directory swap could redirect
+new plaintext source bytes to another location.
 
-## Read hardening
+Native Reality v1 therefore requires a platform with:
 
-Reality and source files are read fail-closed:
+- `O_NOFOLLOW` and `O_DIRECTORY`;
+- descriptor-relative open/mkdir/unlink/rmdir/rename operations; and
+- advisory directory locking.
 
-- a project-root final-component symlink is rejected rather than normalized away;
-- reality/matter directory symlinks are rejected;
-- source and reality final-component symlinks are rejected;
-- non-regular files are rejected;
-- `O_NOFOLLOW` is used where the platform provides it;
-- `lstat`/`fstat` identity is compared to detect replacement races;
-- source size is bounded to 4 MiB;
-- the reality envelope has an exact byte length;
-- source bytes must be valid UTF-8;
-- source SHA-256 must match the authenticated envelope.
+It fails closed when those primitives are unavailable.
 
-The parser receives the already verified source bytes. It does not reopen the
-source path between verification and parse.
+The project-root final component is inspected with `lstat`, then opened as a
+no-follow directory and its device/inode identity is compared. From that point,
+`.koschei`, `matter`, reality reads, source reads, new source writes, cleanup and
+atomic reality replacement are performed relative to the admitted open directory
+descriptors. Internal pathname-parent replacement therefore cannot redirect an
+ongoing trusted operation.
+
+Source and reality files are additionally required to be regular files, source is
+bounded to 4 MiB, the reality envelope has an exact byte length, source must be
+valid UTF-8, and its SHA-256 must match the authenticated envelope.
+
+The parser receives already verified in-memory source bytes. It does not reopen
+the source pathname after verification.
 
 ## Why v1 rejects imports
 
@@ -166,8 +188,7 @@ not by itself protect against:
 - arbitrary inspection of plaintext source after an authorized read;
 - a compromised compiler or kernel inside the trusted computing base;
 - stale-source remnants that an operating system fails to delete physically;
-- symlinks or mount substitutions in untrusted ancestor directories outside the
-  admitted project-root final component;
+- hostile mount/namespace behavior outside the admitted project-root descriptor;
 - disclosure through runtime behavior or generated binaries.
 
 Source objects in v1 are still plaintext at rest. HMAC authenticates authority;
@@ -176,8 +197,8 @@ with key custody that does not reintroduce ambient read authority.
 
 The purpose of v1 is narrower and testable: remove semantic file paths and
 plaintext package manifests from project authority, authenticate the canonical
-root, bind it to a trusted temporal context, and make filename fallback fail
-closed.
+root, bind it to a trusted temporal context, make internal filesystem operations
+descriptor-bound, and make filename fallback fail closed.
 
 ## Next required slice
 
