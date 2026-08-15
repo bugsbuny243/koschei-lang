@@ -6,7 +6,9 @@ authority gates and emits a tamper-evident launch permit only when both succeed:
 1. deterministic Trust Plane artifact/policy/static-capability verification;
 2. externally signed, time-bounded, atomically single-use launch authorization.
 
-OS sandbox enforcement and process creation are later layers.
+The permit binds the actual atomic redemption evidence, not merely the signed
+authorization payload. OS sandbox enforcement and process creation are later
+layers.
 """
 
 from __future__ import annotations
@@ -20,7 +22,6 @@ from typing import Callable
 from .build_manifest import NativeBuildManifest
 from .deployment_authorization_v1 import (
     DeploymentAuthorization,
-    deployment_authorization_digest,
     redeem_deployment_authorization,
 )
 from .release_proof import ReleaseProof
@@ -45,6 +46,7 @@ class TrustedLaunchPermit:
     effective_capabilities: tuple[str, ...]
     launch_decision_digest: str
     deployment_authorization_digest: str
+    authorization_redemption_digest: str
     authorization_id: str
     permit_digest: str
 
@@ -59,6 +61,7 @@ class TrustedLaunchPermit:
             "effective_capabilities": list(self.effective_capabilities),
             "launch_decision_digest": self.launch_decision_digest,
             "deployment_authorization_digest": self.deployment_authorization_digest,
+            "authorization_redemption_digest": self.authorization_redemption_digest,
             "authorization_id": self.authorization_id,
             "permit_digest": self.permit_digest,
         }
@@ -116,12 +119,18 @@ def authorize_trusted_launch(
         local_policy=local_policy,
         capability_request=capability_request,
     )
-    if not redeemed:
+    if redeemed is None:
         return None
 
-    authorization_digest = deployment_authorization_digest(
-        deployment_authorization
-    )
+    if not _redemption_matches(
+        redeemed,
+        artifact_manifest=artifact_manifest,
+        local_policy=local_policy,
+        capability_request=capability_request,
+        authorization_id=deployment_authorization.authorization_id,
+    ):
+        return None
+
     payload = {
         "schema_version": _SCHEMA,
         "environment": local_policy.environment,
@@ -131,8 +140,9 @@ def authorize_trusted_launch(
         "capability_request_digest": capability_request.request_digest,
         "effective_capabilities": list(launch_decision.effective_capabilities),
         "launch_decision_digest": launch_decision.decision_digest,
-        "deployment_authorization_digest": authorization_digest,
-        "authorization_id": deployment_authorization.authorization_id,
+        "deployment_authorization_digest": redeemed.authorization_digest,
+        "authorization_redemption_digest": redeemed.redemption_digest,
+        "authorization_id": redeemed.authorization_id,
     }
     return TrustedLaunchPermit(
         environment=local_policy.environment,
@@ -142,8 +152,9 @@ def authorize_trusted_launch(
         capability_request_digest=capability_request.request_digest,
         effective_capabilities=launch_decision.effective_capabilities,
         launch_decision_digest=launch_decision.decision_digest,
-        deployment_authorization_digest=authorization_digest,
-        authorization_id=deployment_authorization.authorization_id,
+        deployment_authorization_digest=redeemed.authorization_digest,
+        authorization_redemption_digest=redeemed.redemption_digest,
+        authorization_id=redeemed.authorization_id,
         permit_digest=_digest(payload),
     )
 
@@ -161,6 +172,27 @@ def _launch_decision_matches(
         and decision.policy_hash == local_policy.policy_hash
         and decision.capability_request_digest == capability_request.request_digest
         and decision.effective_capabilities == capability_request.capabilities
+    )
+
+
+def _redemption_matches(
+    redemption: object,
+    *,
+    artifact_manifest: TrustArtifactManifest,
+    local_policy: LocalPolicy,
+    capability_request: StaticCapabilityRequest,
+    authorization_id: str,
+) -> bool:
+    return (
+        getattr(redemption, "authorization_id", None) == authorization_id
+        and getattr(redemption, "operation", None) == "launch"
+        and getattr(redemption, "environment", None) == local_policy.environment
+        and getattr(redemption, "artifact_sha256", None) == artifact_manifest.artifact_sha256
+        and getattr(redemption, "trust_manifest_digest", None) == artifact_manifest.manifest_digest
+        and getattr(redemption, "policy_hash", None) == local_policy.policy_hash
+        and getattr(redemption, "capability_request_digest", None) == capability_request.request_digest
+        and isinstance(getattr(redemption, "authorization_digest", None), str)
+        and isinstance(getattr(redemption, "redemption_digest", None), str)
     )
 
 
