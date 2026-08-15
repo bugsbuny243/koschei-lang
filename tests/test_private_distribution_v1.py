@@ -66,6 +66,22 @@ class PrivateDistributionV1Tests(unittest.TestCase):
         k = self.kwargs(); k["revocations"] = rev; k["revocation_signature"] = self.sign(canonical_revocation_payload(rev)); k["min_revocation_sequence"] = 9
         self.assertFalse(verify_private_download(**k))
 
+    def test_revoked_entitlement_is_rejected_even_when_artifact_remains_valid(self):
+        rev = RevocationSnapshot(9, 110, (), (self.entitlement,), (), ())
+        k = self.kwargs(); k["revocations"] = rev; k["revocation_signature"] = self.sign(canonical_revocation_payload(rev)); k["min_revocation_sequence"] = 9
+        self.assertFalse(verify_private_download(**k))
+
+    def test_unrelated_entitlement_revocation_does_not_block_valid_grant(self):
+        other = hashlib.sha256(b"other-entitlement").hexdigest()
+        rev = RevocationSnapshot(9, 110, (), (other,), (), ())
+        k = self.kwargs(); k["revocations"] = rev; k["revocation_signature"] = self.sign(canonical_revocation_payload(rev)); k["min_revocation_sequence"] = 9
+        self.assertTrue(verify_private_download(**k))
+
+    def test_malformed_revoked_entitlement_digest_fails_closed(self):
+        rev = RevocationSnapshot(9, 110, (), ("not-a-digest",), (), ())
+        k = self.kwargs(); k["revocations"] = rev; k["revocation_signature"] = b"signed-but-malformed"; k["min_revocation_sequence"] = 9
+        self.assertFalse(verify_private_download(**k))
+
     def test_old_signed_manifest_replay_is_rejected(self):
         k = self.kwargs(); k["min_manifest_sequence"] = 13
         self.assertFalse(verify_private_download(**k))
