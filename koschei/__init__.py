@@ -139,11 +139,21 @@ from .serve_loopback_exchange_v1 import install_serve_loopback_exchange_v1
 
 install_serve_loopback_exchange_v1()
 
+from .serve_loopback_http_strict_v1 import install_serve_loopback_http_strict_v1
+
+install_serve_loopback_http_strict_v1()
+
 from .serve_loopback_exchange_diagnostics_v1 import (
     install_serve_loopback_exchange_diagnostics_v1,
 )
 
 install_serve_loopback_exchange_diagnostics_v1()
+
+from .serve_loopback_exchange_catalog_v1 import (
+    install_serve_loopback_exchange_catalog_v1,
+)
+
+install_serve_loopback_exchange_catalog_v1()
 
 from .typestate_affine_alignment import install_typestate_affine_alignment
 
