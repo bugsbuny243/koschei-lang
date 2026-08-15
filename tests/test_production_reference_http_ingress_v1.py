@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import socket
+import subprocess
 import tempfile
 import threading
 import time
@@ -11,12 +12,12 @@ from pathlib import Path
 import shutil
 
 from koschei.capabilities import analyze_graph
-from koschei.codegen_go import CodegenError
 from koschei.modules import check_graph
 from koschei.workspace import WorkspaceError, load_workspace, write_workspace_lock
 from koschei.workspace_execution import (
     build_locked_workspace_package,
     run_locked_workspace_package,
+    verify_workspace_build,
 )
 from koschei.workspace_modules import load_workspace_member_graph
 from koschei.workspace_package_lock import build_workspace_package_lock
@@ -96,6 +97,24 @@ def _connect_thread(port: int, thread: threading.Thread) -> socket.socket:
     raise AssertionError(f"workspace ingress listener did not become ready: {last_error}")
 
 
+def _connect_process(port: int, process: subprocess.Popen[str]) -> socket.socket:
+    deadline = time.monotonic() + 4.0
+    last_error: OSError | None = None
+    while time.monotonic() < deadline:
+        if process.poll() is not None:
+            break
+        try:
+            return socket.create_connection(("127.0.0.1", port), timeout=0.2)
+        except OSError as error:
+            last_error = error
+            time.sleep(0.01)
+    stdout, stderr = process.communicate(timeout=1)
+    raise AssertionError(
+        f"native workspace ingress listener did not become ready: {last_error}; "
+        f"returncode={process.returncode}; stdout={stdout!r}; stderr={stderr!r}"
+    )
+
+
 class ProductionReferenceHttpIngressV1Tests(unittest.TestCase):
     def test_ingress_composes_serve_and_persist_without_contaminating_worker(self) -> None:
         workspace = load_workspace(REFERENCE)
@@ -169,20 +188,47 @@ class ProductionReferenceHttpIngressV1Tests(unittest.TestCase):
             run_locked_workspace_package(workspace, "http_ingress")
         self.assertFalse(state_path.exists())
 
-    def test_native_full_ingress_fails_closed_until_persistence_backend_parity(self) -> None:
+    @unittest.skipUnless(shutil.which("go"), "Go is required for native persistence parity")
+    @unittest.skipUnless(__import__("sys").platform.startswith("linux"), "Native persistence v1 Linux-only")
+    def test_native_locked_workspace_http_persistence_matches_interpreter_contract(self) -> None:
         port = _free_loopback_port()
-        temporary, root, _state_path = _copy_reference_with_runtime(port)
+        temporary, root, state_path = _copy_reference_with_runtime(port)
         self.addCleanup(temporary.cleanup)
-        workspace, _ = _lock(root)
+        workspace, lock = _lock(root)
+        result = build_locked_workspace_package(
+            workspace,
+            "http_ingress",
+            output=root / "http-ingress",
+        )
+        verify_workspace_build(result)
+        self.assertEqual(result.workspace_digest, lock.workspace_digest)
 
-        with self.assertRaises(CodegenError) as context:
-            build_locked_workspace_package(
-                workspace,
-                "http_ingress",
-                output=root / "http-ingress",
-            )
-        self.assertEqual(context.exception.code, "KS4001")
-        self.assertIn("Persist", context.exception.message)
+        process = subprocess.Popen(
+            [str(result.artifact)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        self.addCleanup(lambda: process.poll() is None and process.kill())
+
+        with _connect_process(port, process) as client:
+            client.settimeout(2.0)
+            client.sendall(_request())
+            response = bytearray()
+            while True:
+                chunk = client.recv(4096)
+                if not chunk:
+                    break
+                response.extend(chunk)
+
+        stdout, stderr = process.communicate(timeout=4)
+        self.assertEqual(process.returncode, 0, stderr)
+        self.assertEqual(stderr, "")
+        self.assertEqual(stdout, EXPECTED_OUTPUT)
+        self.assertEqual(state_path.read_text(encoding="utf-8"), EXPECTED_STATE)
+        self.assertEqual(state_path.stat().st_mode & 0o777, 0o600)
+        self.assertIn(b"HTTP/1.1 200 OK\r\n", response)
+        self.assertTrue(response.endswith(b"\r\n\r\naccepted"), response)
 
 
 if __name__ == "__main__":
