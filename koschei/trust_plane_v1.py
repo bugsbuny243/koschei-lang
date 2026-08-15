@@ -1,12 +1,13 @@
 """Koschei Trust Plane v1 — deterministic, fail-closed launch authorization.
 
 This module deliberately does not execute a process, read secrets, sign payloads,
-or deploy anything.  It decides whether an already-built, reproducible artifact
-is eligible to receive a bounded capability set under one exact local policy.
+or deploy anything. It decides whether an already-built, reproducible artifact
+is eligible to receive the exact capability surface proven by static analysis
+under one exact local policy.
 
 Authority model:
-- the artifact asks for capabilities;
-- the artifact manifest binds to one canonical local policy hash;
+- source analysis determines the artifact's requested capability surface;
+- the trust manifest binds that request to one exact local policy hash;
 - the local policy is authoritative for what may be granted;
 - the release proof is provenance evidence, not deployment authority;
 - artifact lifetime and deployment authorization lifetime are separate concerns.
@@ -21,9 +22,11 @@ from pathlib import Path
 from typing import Iterable
 
 from .build_manifest import NativeBuildManifest
+from .capabilities import Manifest as CapabilityManifest
 from .release_proof import ReleaseProof
 
 _POLICY_SCHEMA = "koschei.trust-policy.v1"
+_CAPABILITY_SCHEMA = "koschei.static-capability-request.v1"
 _ARTIFACT_SCHEMA = "koschei.trust-artifact-manifest.v1"
 _DECISION_SCHEMA = "koschei.trust-launch-decision.v1"
 
@@ -40,6 +43,13 @@ KNOWN_CAPABILITIES = frozenset(
         "signing.request",
         "deploy.execute",
     }
+)
+
+# The current Koschei language-level SystemCaps surface can statically prove only
+# these capabilities. Secret/sign/deploy authority belongs to later trusted
+# broker layers and cannot be requested by ordinary source code in v1.
+_SOURCE_CAPABILITIES = frozenset(
+    {"disk.read", "disk.write", "net.io", "env.read", "process.exec"}
 )
 
 
@@ -66,11 +76,30 @@ class LocalPolicy:
 
 
 @dataclass(frozen=True)
+class StaticCapabilityRequest:
+    capabilities: tuple[str, ...]
+    grants: tuple[tuple[str, str, bool], ...]
+    request_digest: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "schema_version": _CAPABILITY_SCHEMA,
+            "capabilities": list(self.capabilities),
+            "grants": [
+                {"domain": domain, "scope": scope, "read_only": read_only}
+                for domain, scope, read_only in self.grants
+            ],
+            "request_digest": self.request_digest,
+        }
+
+
+@dataclass(frozen=True)
 class TrustArtifactManifest:
     artifact_sha256: str
     build_manifest_digest: str
     release_proof_digest: str
     policy_hash: str
+    capability_request_digest: str
     requested_capabilities: tuple[str, ...]
     manifest_digest: str
 
@@ -81,6 +110,7 @@ class TrustArtifactManifest:
             "build_manifest_digest": self.build_manifest_digest,
             "release_proof_digest": self.release_proof_digest,
             "policy_hash": self.policy_hash,
+            "capability_request_digest": self.capability_request_digest,
             "requested_capabilities": list(self.requested_capabilities),
             "manifest_digest": self.manifest_digest,
         }
@@ -93,6 +123,7 @@ class LaunchDecision:
     reason: str
     artifact_sha256: str
     policy_hash: str
+    capability_request_digest: str
     effective_capabilities: tuple[str, ...]
     decision_digest: str
 
@@ -104,6 +135,7 @@ class LaunchDecision:
             "reason": self.reason,
             "artifact_sha256": self.artifact_sha256,
             "policy_hash": self.policy_hash,
+            "capability_request_digest": self.capability_request_digest,
             "effective_capabilities": list(self.effective_capabilities),
             "decision_digest": self.decision_digest,
         }
@@ -128,35 +160,86 @@ def build_local_policy(
     )
 
 
+def build_static_capability_request(
+    manifest: CapabilityManifest,
+) -> StaticCapabilityRequest:
+    """Convert exact compiler capability analysis into launcher authority evidence."""
+
+    if not manifest.is_exact:
+        raise TrustPlaneError(
+            "KS1958",
+            "source capability manifest is not exact; dynamic or caller-supplied authority remains",
+        )
+
+    grants = tuple(
+        sorted(
+            {
+                (grant.domain, grant.scope, grant.read_only)
+                for grant in manifest.grants
+            }
+        )
+    )
+    capabilities: set[str] = set()
+    for domain, _scope, read_only in grants:
+        if domain == "disk":
+            capabilities.add("disk.read")
+            if not read_only:
+                capabilities.add("disk.write")
+        elif domain == "net":
+            capabilities.add("net.io")
+        elif domain == "env":
+            capabilities.add("env.read")
+        elif domain == "process":
+            capabilities.add("process.exec")
+        else:
+            raise TrustPlaneError("KS1958", f"unsupported source capability domain: {domain}")
+
+    requested = tuple(sorted(capabilities))
+    if not set(requested).issubset(_SOURCE_CAPABILITIES):
+        raise TrustPlaneError("KS1958", "source requested a non-language launcher capability")
+    payload = {
+        "schema_version": _CAPABILITY_SCHEMA,
+        "capabilities": list(requested),
+        "grants": [
+            {"domain": domain, "scope": scope, "read_only": read_only}
+            for domain, scope, read_only in grants
+        ],
+    }
+    return StaticCapabilityRequest(
+        capabilities=requested,
+        grants=grants,
+        request_digest=_digest(payload),
+    )
+
+
 def build_trust_artifact_manifest(
     build: NativeBuildManifest,
     release_proof: ReleaseProof,
+    capability_request: StaticCapabilityRequest,
     *,
     policy_hash: str,
-    requested_capabilities: Iterable[str],
 ) -> TrustArtifactManifest:
     _validate_build_manifest_identity(build)
     _validate_release_proof_identity(release_proof)
     _validate_release_link(build, release_proof)
+    _validate_capability_request(capability_request)
     policy = _digest_field(policy_hash, "policy_hash")
-    requested = _canonical_capabilities(
-        requested_capabilities,
-        field="requested_capabilities",
-    )
     payload = {
         "schema_version": _ARTIFACT_SCHEMA,
         "artifact_sha256": build.artifact_sha256,
         "build_manifest_digest": build.manifest_digest,
         "release_proof_digest": release_proof.proof_digest,
         "policy_hash": policy,
-        "requested_capabilities": list(requested),
+        "capability_request_digest": capability_request.request_digest,
+        "requested_capabilities": list(capability_request.capabilities),
     }
     return TrustArtifactManifest(
         artifact_sha256=build.artifact_sha256,
         build_manifest_digest=build.manifest_digest,
         release_proof_digest=release_proof.proof_digest,
         policy_hash=policy,
-        requested_capabilities=requested,
+        capability_request_digest=capability_request.request_digest,
+        requested_capabilities=capability_request.capabilities,
         manifest_digest=_digest(payload),
     )
 
@@ -165,6 +248,7 @@ def evaluate_launch(
     artifact_manifest: TrustArtifactManifest,
     *,
     local_policy: LocalPolicy,
+    capability_request: StaticCapabilityRequest,
     build: NativeBuildManifest,
     release_proof: ReleaseProof,
     artifact: str | Path | None = None,
@@ -173,6 +257,7 @@ def evaluate_launch(
 
     try:
         _validate_policy(local_policy)
+        _validate_capability_request(capability_request)
         _validate_artifact_manifest(artifact_manifest)
         _validate_build_manifest_identity(build)
         _validate_release_proof_identity(release_proof)
@@ -208,8 +293,22 @@ def evaluate_launch(
             "KS1955",
             "artifact policy hash does not match the authoritative local policy",
         )
+    if artifact_manifest.capability_request_digest != capability_request.request_digest:
+        return _deny(
+            artifact_manifest,
+            local_policy,
+            "KS1959",
+            "artifact manifest is bound to different static capability evidence",
+        )
+    if artifact_manifest.requested_capabilities != capability_request.capabilities:
+        return _deny(
+            artifact_manifest,
+            local_policy,
+            "KS1959",
+            "artifact requested capabilities differ from static source analysis",
+        )
 
-    requested = set(artifact_manifest.requested_capabilities)
+    requested = set(capability_request.capabilities)
     allowed = set(local_policy.allowed_capabilities)
     excess = tuple(sorted(requested - allowed))
     if excess:
@@ -241,10 +340,11 @@ def evaluate_launch(
     return _decision(
         allowed=True,
         code="KS1950",
-        reason="exact artifact, release proof, policy, and requested capabilities verified",
+        reason="exact artifact, provenance, static capabilities, and local policy verified",
         artifact_sha256=artifact_manifest.artifact_sha256,
         policy_hash=local_policy.policy_hash,
-        effective_capabilities=artifact_manifest.requested_capabilities,
+        capability_request_digest=capability_request.request_digest,
+        effective_capabilities=capability_request.capabilities,
     )
 
 
@@ -267,11 +367,50 @@ def _validate_policy(policy: LocalPolicy) -> None:
         raise TrustPlaneError("KS1951", "local policy hash does not match policy contents")
 
 
+def _validate_capability_request(request: StaticCapabilityRequest) -> None:
+    capabilities = _canonical_capabilities(
+        request.capabilities,
+        field="capabilities",
+    )
+    if capabilities != request.capabilities:
+        raise TrustPlaneError("KS1951", "static capabilities are not canonical")
+    if not set(capabilities).issubset(_SOURCE_CAPABILITIES):
+        raise TrustPlaneError("KS1951", "static request contains privileged launcher authority")
+
+    grants = tuple(sorted(set(request.grants)))
+    if grants != request.grants:
+        raise TrustPlaneError("KS1951", "static capability grants are not canonical")
+    for domain, scope, read_only in grants:
+        if domain not in {"disk", "net", "env", "process"}:
+            raise TrustPlaneError("KS1951", f"unknown static capability domain: {domain}")
+        if not isinstance(scope, str) or not scope:
+            raise TrustPlaneError("KS1951", "static capability scope must be non-empty text")
+        if not isinstance(read_only, bool):
+            raise TrustPlaneError("KS1951", "read_only must be boolean")
+
+    expected = _digest(
+        {
+            "schema_version": _CAPABILITY_SCHEMA,
+            "capabilities": list(capabilities),
+            "grants": [
+                {"domain": domain, "scope": scope, "read_only": read_only}
+                for domain, scope, read_only in grants
+            ],
+        }
+    )
+    if request.request_digest != expected:
+        raise TrustPlaneError("KS1951", "static capability request digest does not match contents")
+
+
 def _validate_artifact_manifest(manifest: TrustArtifactManifest) -> None:
     artifact = _digest_field(manifest.artifact_sha256, "artifact_sha256")
     build_digest = _digest_field(manifest.build_manifest_digest, "build_manifest_digest")
     proof_digest = _digest_field(manifest.release_proof_digest, "release_proof_digest")
     policy_hash = _digest_field(manifest.policy_hash, "policy_hash")
+    capability_digest = _digest_field(
+        manifest.capability_request_digest,
+        "capability_request_digest",
+    )
     capabilities = _canonical_capabilities(
         manifest.requested_capabilities,
         field="requested_capabilities",
@@ -285,6 +424,7 @@ def _validate_artifact_manifest(manifest: TrustArtifactManifest) -> None:
             "build_manifest_digest": build_digest,
             "release_proof_digest": proof_digest,
             "policy_hash": policy_hash,
+            "capability_request_digest": capability_digest,
             "requested_capabilities": list(capabilities),
         }
     )
@@ -302,6 +442,8 @@ def _validate_build_manifest_identity(build: NativeBuildManifest) -> None:
     if digest != _digest(unsigned):
         raise TrustPlaneError("KS1951", "build manifest digest does not match contents")
     _digest_field(build.artifact_sha256, "artifact_sha256")
+    if build.backend != "go-native":
+        raise TrustPlaneError("KS1951", "unsupported build backend")
 
 
 def _validate_release_proof_identity(proof: ReleaseProof) -> None:
@@ -313,8 +455,23 @@ def _validate_release_proof_identity(proof: ReleaseProof) -> None:
     unsigned.pop("proof_digest", None)
     if digest != _digest(unsigned):
         raise TrustPlaneError("KS1951", "release proof digest does not match contents")
+
+    if proof.state != "verified_reproducible_release_candidate":
+        raise TrustPlaneError("KS1951", "release proof state is not verified")
+    if proof.authority != "release_candidate_evidence_only":
+        raise TrustPlaneError("KS1951", "release proof authority is invalid")
     if proof.byte_reproducible is not True:
         raise TrustPlaneError("KS1951", "release proof is not byte reproducible")
+    if proof.owner_approval_required is not True:
+        raise TrustPlaneError("KS1951", "release proof does not require owner approval")
+    if proof.automatic_publish_allowed is not False:
+        raise TrustPlaneError("KS1951", "release proof unexpectedly allows automatic publish")
+    if proof.package_registry_write_allowed is not False:
+        raise TrustPlaneError("KS1951", "release proof unexpectedly allows registry writes")
+    if proof.production_integration_allowed is not False:
+        raise TrustPlaneError("KS1951", "release proof unexpectedly grants production authority")
+    if proof.release_artifact_sha256 != proof.witness_artifact_sha256:
+        raise TrustPlaneError("KS1951", "release proof witness artifact differs")
 
 
 def _validate_release_link(build: NativeBuildManifest, proof: ReleaseProof) -> None:
@@ -322,6 +479,14 @@ def _validate_release_link(build: NativeBuildManifest, proof: ReleaseProof) -> N
         raise TrustPlaneError("KS1951", "release proof does not bind the supplied build manifest")
     if proof.release_artifact_sha256 != build.artifact_sha256:
         raise TrustPlaneError("KS1951", "release proof does not bind the supplied artifact")
+    if proof.module_lock_digest != build.module_lock_digest:
+        raise TrustPlaneError("KS1951", "release proof module lock differs from build manifest")
+    if proof.mir_fingerprint != build.mir_fingerprint:
+        raise TrustPlaneError("KS1951", "release proof MIR fingerprint differs from build manifest")
+    if proof.compiler_version != build.compiler_version:
+        raise TrustPlaneError("KS1951", "release proof compiler version differs from build manifest")
+    if proof.backend != build.backend or proof.backend_toolchain != build.backend_toolchain:
+        raise TrustPlaneError("KS1951", "release proof backend identity differs from build manifest")
 
 
 def _canonical_capabilities(values: Iterable[str], *, field: str) -> tuple[str, ...]:
@@ -344,12 +509,18 @@ def _deny(
 ) -> LaunchDecision:
     artifact_sha256 = manifest.artifact_sha256 if _is_digest(manifest.artifact_sha256) else "0" * 64
     policy_hash = policy.policy_hash if _is_digest(policy.policy_hash) else "0" * 64
+    capability_digest = (
+        manifest.capability_request_digest
+        if _is_digest(manifest.capability_request_digest)
+        else "0" * 64
+    )
     return _decision(
         allowed=False,
         code=code,
         reason=reason,
         artifact_sha256=artifact_sha256,
         policy_hash=policy_hash,
+        capability_request_digest=capability_digest,
         effective_capabilities=(),
     )
 
@@ -361,6 +532,7 @@ def _decision(
     reason: str,
     artifact_sha256: str,
     policy_hash: str,
+    capability_request_digest: str,
     effective_capabilities: tuple[str, ...],
 ) -> LaunchDecision:
     payload = {
@@ -370,6 +542,7 @@ def _decision(
         "reason": reason,
         "artifact_sha256": artifact_sha256,
         "policy_hash": policy_hash,
+        "capability_request_digest": capability_request_digest,
         "effective_capabilities": list(effective_capabilities),
     }
     return LaunchDecision(
@@ -378,6 +551,7 @@ def _decision(
         reason=reason,
         artifact_sha256=artifact_sha256,
         policy_hash=policy_hash,
+        capability_request_digest=capability_request_digest,
         effective_capabilities=effective_capabilities,
         decision_digest=_digest(payload),
     )
