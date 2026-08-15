@@ -13,6 +13,10 @@ from .data_language_v1 import install_data_language_v1
 
 install_data_language_v1()
 
+from .data_mir_v1 import install_data_mir_v1
+
+install_data_mir_v1()
+
 from .data_public_abi_v1 import install_data_public_abi_v1
 
 install_data_public_abi_v1()
