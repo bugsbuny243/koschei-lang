@@ -5,8 +5,8 @@ server was installed only as the separate ``ks-lsp`` executable. This adapter
 keeps the existing CLI implementation stable, exposes ``ks lsp``, attaches V5
 interpreter runtime budgets to the public ``ks run`` path, enforces optional
 locked native builds and manifests, and hosts the sealed foreign-contract,
-maturity, differential-fuzzing, module-lock, native-build verification,
-reproducibility, release proof, and maturity-attestation commands.
+maturity, differential-fuzzing, foundation-export, module-lock, native-build
+verification, reproducibility, release proof, and maturity-attestation commands.
 """
 
 from __future__ import annotations
@@ -27,6 +27,7 @@ from .build_manifest import (
 from .build_manifest_cli import add_build_verify_parser, command_build_verify
 from .differential_fuzz_cli import add_differential_fuzz_parser, command_differential_fuzz
 from .foreign_cli import add_foreign_parser, command_foreign
+from .foundation_export_cli import add_foundation_export_parser, command_foundation_export
 from .lock_cli import add_lock_parser, command_lock
 from .maturity_attestation_cli import add_maturity_attest_parser, command_maturity_attest
 from .maturity_cli import add_maturity_parser, command_maturity
@@ -85,6 +86,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_maturity_parser(subcommands)
     add_maturity_attest_parser(subcommands)
     add_differential_fuzz_parser(subcommands)
+    add_foundation_export_parser(subcommands)
     add_lock_parser(subcommands)
     add_build_verify_parser(subcommands)
     add_build_compare_parser(subcommands)
@@ -285,6 +287,8 @@ def main(argv: list[str] | None = None) -> int:
         return command_maturity_attest(args)
     if args.command == "differential-fuzz":
         return command_differential_fuzz(args)
+    if args.command == "foundation-export":
+        return command_foundation_export(args)
     if args.command == "lock":
         return command_lock(args)
     if args.command == "build-verify":

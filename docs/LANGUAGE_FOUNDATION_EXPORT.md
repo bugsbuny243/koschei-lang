@@ -1,58 +1,57 @@
-# Koschei Language Foundation Export v1
+# Koschei Language Foundation Corpus v1
 
-Status: offline model-training handoff. This is not compiler/runtime integration and grants no authority to a model.
+Koschei Sentinel must learn Koschei from repository truth before it is trained to teach or assist with the language. The language repository therefore owns the authoritative export boundary.
 
-The exporter produces the exact source corpus contract consumed by Koschei Sentinel's language-foundation release gate:
+## What v1 exports
 
-- schema: `koschei.language-foundation-corpus.v1`;
-- generator: `koschei-foundation-export/v1`;
-- repository: `bugsbuny243/koschei-lang`;
-- one exact lowercase 40-character Git commit SHA;
-- SHA-256 for every selected source document;
-- content-derived document IDs;
-- deterministic leakage families;
-- one canonical corpus SHA-256.
+`ks foundation-export build` collects only Git-tracked language material:
 
-## Security boundary
+- `README.md` and `README.tr.md` when present;
+- Markdown files under `docs/`;
+- Koschei `.ks` source files under `examples/`.
 
-The exporter does **not** read selected training documents from the mutable working tree. It enumerates the exact pinned commit with Git and reads each selected blob by object SHA. Therefore untracked files and dirty working-tree edits cannot be mislabeled as content from the pinned commit.
+The result uses schema `koschei.language-foundation-corpus.v1`. Every document carries its path, kind, family, source SHA-256 and a content-derived document ID. The complete corpus is bound to an explicit 40-character source commit and a canonical corpus SHA-256.
 
-Selected source categories are deliberately narrow:
+This is source material, not synthetic instruction data. The exporter does not ask another model to invent answers about Koschei.
 
-- root `README.md`, `README.tr.md`, and `README.en.md` when present;
-- Markdown references below `docs/`;
-- Koschei source files below `examples/`.
+## Build
 
-Implementation-language source such as Python or Go is not exported as a syntax template. Compiler-oracle generated cases remain a separate training stage governed by `MODEL_TRAINING_CONTRACT.md`.
-
-A selected symlink, non-UTF-8 source, unsafe path, mutable revision name such as `main`/`HEAD`, abbreviated SHA, duplicate output path, or insufficient leakage families causes a hard failure.
-
-## Usage
-
-From a checkout that contains the desired commit object:
-
-```text
-ks-foundation-export \
+```bash
+ks foundation-export build \
   --repo-root . \
-  --source-commit <exact-40-char-commit-sha> \
-  --output build/model/language-foundation-corpus.json
+  --source-commit <exact-koschei-lang-commit> \
+  --output build/koschei-language-foundation.json
 ```
 
-The output path is no-replace. Re-running into an existing path fails instead of overwriting a previously trusted corpus.
+Trusted export requires the supplied commit to equal the checked-out Git `HEAD`. The exporter rejects dirty or untracked foundation paths and enumerates candidates through Git's tracked-file index, so ignored or untracked files cannot silently enter a corpus attributed to the commit.
 
-The command reports the corpus SHA-256. That digest and the exact source commit are the two independent values Sentinel must be given when it builds a leakage-safe train/validation/test release.
+Verify an existing artifact with:
 
-## Family rule
+```bash
+ks foundation-export verify build/koschei-language-foundation.json
+```
 
-Family assignment intentionally matches Sentinel v1 exactly:
+Verification rejects malformed UTF-8, ambiguous duplicate JSON object members, empty corpora, unsafe paths, hash/ID mismatches and family mismatches. The output file is no-replace; a pre-existing artifact is never silently overwritten.
 
-- all root README language variants share `reference:README`;
-- `*.tr.md` / `*.en.md` reference translations share the base Markdown path;
-- top-level `examples/*.ks` share `example:top-level`;
-- files under `examples/<project>/...` share `example:<project>`.
+## Leakage boundary
 
-A family is indivisible during Sentinel splitting, preventing sibling modules and translated reference variants from leaking across train, validation, and test.
+Documents are assigned a `family` before they leave this repository. All `.ks` files inside one example directory belong to the same family. For example:
 
-## Trust rule
+```text
+examples/supply_chain/main.ks
+examples/supply_chain/analytics.ks
+```
 
-The model learns Koschei from pinned language evidence, but the model never becomes the language authority. Compiler behavior and deterministic capability/security rules remain authoritative as defined by `MODEL_TRAINING_CONTRACT.md`.
+both belong to `example:supply_chain`.
+
+All `.ks` files directly under `examples/` belong to `example:top-level`. This deliberately keeps adjacent imported modules such as `examples/app.ks` and `examples/risk.ks` together instead of risking train/evaluation leakage.
+
+Translated reference variants also share a family: `README.md` and `README.tr.md` are both `reference:README`, while `.en.md` and `.tr.md` documentation variants normalize to the same base Markdown family.
+
+A downstream dataset builder must keep a family entirely inside one of train, validation or test. This prevents a multi-file program or translated near-duplicate from teaching the model in train and then appearing as evaluation material.
+
+## Trust boundary
+
+The trusted build path proves which exported bytes came from the clean checked-out Koschei language commit and emits a canonical corpus SHA-256 for downstream pinning. The digest is not a digital signature; a downstream consumer must obtain the expected commit and corpus digest through its trusted handoff rather than trusting values copied from an untrusted artifact.
+
+The corpus does not claim that every sentence in documentation is a formal language specification, that every example is production-safe, or that a model trained on the corpus understands Koschei. Those are separate validation gates.
