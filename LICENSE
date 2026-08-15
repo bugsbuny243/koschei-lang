@@ -1,21 +1,30 @@
-MIT License
+Koschei Proprietary License Notice
 
-Copyright (c) 2026 Onur
+Copyright (c) 2026 Onur Sel. All rights reserved.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+This repository and the current Koschei source code, binaries, documentation,
+security mechanisms, model integrations, build artifacts, and related materials
+(the "Software") are proprietary and confidential unless a separate written
+license agreement expressly states otherwise.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+No permission is granted to copy, modify, publish, distribute, sublicense, sell,
+reverse engineer, create derivative works from, or otherwise use the Software
+except as expressly authorized in writing by the copyright holder or under a
+separate commercial license issued for the Software.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+Access to this private repository does not itself grant a license to redistribute
+or commercialize the Software.
+
+Third-party components, if any, remain subject to their own license terms.
+
+IMPORTANT HISTORICAL NOTICE
+
+Earlier Koschei source revisions that were previously released publicly under
+the MIT License remain governed by the license terms that applied to those
+specific revisions when they were released. This proprietary notice applies to
+the current and future proprietary Koschei codebase and does not revoke rights
+already granted under an earlier license.
+
+THE SOFTWARE IS PROVIDED WITHOUT WARRANTY TO THE MAXIMUM EXTENT PERMITTED BY
+APPLICABLE LAW, EXCEPT TO THE EXTENT A SEPARATE WRITTEN COMMERCIAL AGREEMENT
+EXPRESSLY PROVIDES OTHERWISE.

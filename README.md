@@ -1,5 +1,7 @@
 # Koschei (`.ks`)
 
+> **Private commercial development repository. Koschei is proprietary software. Access to this repository does not grant redistribution, sublicensing, resale, or publication rights. See `LICENSE`.**
+
 **A capability-secure programming language. An imported package cannot touch your disk, network, or environment unless you hand it a token.**
 
 Most supply-chain attacks work because a dependency inherits every permission the process has. Install a package, and it can read `~/.ssh`, your `.env`, or open a socket — without asking. Koschei removes that ambient authority: side-effect access is a value that must be passed in, and the compiler rejects a program that reaches for authority it was never given.
@@ -8,18 +10,18 @@ Türkçe: [README.tr.md](README.tr.md)
 
 ---
 
-## Try it in 60 seconds
+## Internal development quickstart
 
-A deliberately malicious package tries to read a secrets file and return it to the caller. Verify on your own machine that it never runs.
+This repository is private. The commands below are for authorized collaborators and licensed development environments only.
 
 ```bash
-git clone https://github.com/bugsbuny243/koschei-lang
+git clone <authorized-private-koschei-repository>
 cd koschei-lang
 pip install .
 ks check examples/supply_chain/main.ks
 ```
 
-The package under test — `examples/supply_chain/analytics.ks`:
+A deliberately malicious package in `examples/supply_chain/analytics.ks` tries to read a secrets file and return it to the caller. The expected result is compile-time rejection:
 
 <!-- verify: expect KS2401 -->
 ```ks
@@ -29,7 +31,7 @@ fn track(event: String) -> String or Error {
 }
 ```
 
-Output:
+Expected output:
 
 ```text
 KOSCHEI ERROR: KS2401 [line 6, column 18]: Required capability is unavailable
@@ -44,12 +46,14 @@ This is not a runtime sandbox catching the call. `disk` does not exist inside `t
 
 ---
 
-## Install
+## Distribution and installation
 
-Python 3.12 or newer. No other dependencies — a security language should not increase the number of packages you are forced to trust.
+Koschei is not distributed as an unrestricted public source package. Development builds are installed from authorized private source or an approved licensed artifact channel.
+
+For an authorized source checkout:
 
 ```bash
-pip install git+https://github.com/bugsbuny243/koschei-lang
+pip install .
 ks version
 ```
 
@@ -122,17 +126,17 @@ Implemented today: functions with typed parameters, inferred generic functions, 
 ```bash
 ks check src/main.ks          # types, modules, capability rules
 ks run src/main.ks            # interpreter
-ks build src/main.ks -o app   # native binary via generated Go
+ks build src/main.ks -o app   # current native build path
 ks fmt --write src/           # canonical formatting
 ks caps src/main.ks           # capability manifest
 ks explain KS2401             # diagnostics, --lang tr for Turkish
 ks check --json src/main.ks   # stable code/message/line/column for editors
-ks mir src/main.ks           # sealed checked backend contract
-ks lsp                         # zero-dependency language server
-ks tokens / ks ast / ks emit-go
+ks mir src/main.ks            # sealed checked backend contract
+ks lsp                        # zero-dependency language server
+ks tokens / ks ast
 ```
 
-The pipeline is `.ks` → lexer → parser → AST → Typed HIR, integrity and capability checks → sealed MIR v2 with normalized instructions/basic blocks → interpreter or Go native adapter. Diagnostics default to English; `--lang tr` or `KOSCHEI_LANG=tr` selects the Turkish catalog with identical error codes.
+Koschei's long-term canonical architecture is defined by Koschei semantics and verified execution contracts, not by the implementation language of temporary bootstrap/tooling layers. External adapters are non-authoritative interoperability mechanisms.
 
 ## Editor support
 
@@ -144,26 +148,26 @@ The pipeline is `.ks` → lexer → parser → AST → Typed HIR, integrity and 
 python -m unittest discover -s tests -v
 ```
 
-The current CI suite runs 421 tests, plus native/interpreter parity, repository documentation examples, committed golden outputs, and a check that the malicious `examples/supply_chain/` package still fails to compile.
+The CI suite includes compiler/runtime tests, native/interpreter parity checks, repository documentation examples, committed golden outputs, capability-security regression tests, and deception-plane attack simulations.
 
 ## Status
 
-Koschei is at **v0.9.0**, alpha. It runs real multi-file programs and the capability model is enforced end to end, but syntax and runtime contracts may change before v1.0. Do not put it in production yet.
+Koschei is pre-1.0 and under active private commercial development. Syntax, runtime contracts, licensing, distribution, and security architecture may change before the first production release. Do not put it in production yet.
 
-Security boundaries currently enforced in the native path:
+Security boundaries currently enforced in the native path include capability denial, narrowed authority, path traversal/symlink escape protection, read-only enforcement, redirect-origin enforcement, call-depth bounds, opaque protected-source object identity, epoch-scoped alias rotation, decoy source views, and epoch-bound read grants. Security claims must continue to be backed by tests and evidence; the project does not claim that any software system is mathematically impossible to compromise.
 
-- The safe native disk ABI targets Linux `openat` / `O_NOFOLLOW`. On a platform without a safe equivalent, a disk-using build stops with `KS4001` rather than falling back to something weaker.
-- The process capability's `run` / `spawn` does not start a process; it returns an error value.
-- At runtime, path traversal, symlink escape and out-of-scope paths give `KS3402`; a write through a read-only token gives `KS3404`; an HTTP redirect leaving the allowed origin is rejected; call depth is capped at 512 (`KS3105`).
+The protected-source/deception architecture is being hardened through staged attack waves. Canonical source identity remains separate from physical source locators, and decoy views are non-deployable by construction.
 
-MIR schema 2 now contains normalized core instructions, explicit basic blocks, and terminators, with unsupported constructs exposed as `ast_fallback`. The next V5 gate makes backends execute these nodes directly and removes fallback construct by construct. The v1.0 release gate additionally requires frozen syntax and capability runtime ABI, a SemVer compatibility commitment, package resolution with a lock file, and migration tests.
+## Commercial development
 
-**Designed but not built**, and not presented as features: static region inference, the C backend, and the Sentinel / tarpit layers. Koschei enforces capabilities in its type system — it does not produce formal mathematical proofs, and it is not a memory-managed-by-region language today; the current backend generates Go and uses Go's garbage collector.
+Koschei is being developed as proprietary commercial software. Public redistribution of the current repository, compiler/runtime security implementation, deception mechanisms, model integrations, or derivative commercial products is not authorized unless a separate written license expressly permits it.
 
-## Contributing
+Future customer-facing distribution may include licensed SDK/tooling, signed binaries, private package/artifact channels, enterprise policy management, audit evidence, and support/SLA offerings. Those distribution rights will be defined by separate commercial terms rather than repository access alone.
 
-The most useful thing right now is a real program. Write something small in Koschei, and open an issue when the language gets in your way — a missing stdlib function, a confusing diagnostic, a pattern that should compile and doesn't. Bug reports that come with a `.ks` file that reproduces the problem are the fastest path to a fix.
+## Contributions
+
+Contributions are accepted only through authorized private collaboration. Before accepting external code into the proprietary core, contributor/IP terms must be established so ownership and commercial licensing rights remain unambiguous.
 
 ## License
 
-MIT
+**Proprietary — all rights reserved for current and future proprietary Koschei revisions.** See `LICENSE` for the historical MIT notice covering only revisions previously released under MIT and for the current proprietary terms.

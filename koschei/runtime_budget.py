@@ -1,23 +1,33 @@
-"""Fail-closed interpreter resource budgets for Koschei V5.
+"""Fail-closed runtime resource budgets for Koschei V5.
 
-This first runtime-policy slice meters the existing checked interpreter path.
-The sealed MIR remains the authority for the program identity and static resource
-shape; dynamic step and call-depth counters stop execution when the operator's
-budget is exhausted. Native budget parity is deliberately not claimed yet.
+Normalized graphs that the direct MIR runtime can execute are now routed through
+that backend. Graphs containing not-yet-normalized language constructs remain on
+the checked AST compatibility interpreter. Both paths preserve explicit step and
+call-depth budgets; the selected mode is deterministic and inspectable.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 import sys
-from typing import Any
+from typing import Any, Literal
 
 from .ast_nodes import SourceLocation
 from .diagnostics import CATALOG, ENGLISH_CATALOG, Diagnostic
 from .interpreter import Interpreter, KoscheiRuntimeError, KsError
+from .mir_native_runtime import (
+    MirNativeCallDepthExceeded,
+    MirNativeProgramError,
+    MirNativeRuntimeError,
+    MirNativeStepBudgetExceeded,
+    inspect_native_mir_support,
+    run_mir_native,
+)
+from .mir_scope_safety import inspect_mir_scope_safety
 
 DEFAULT_MAX_STEPS = 1_000_000
 HARD_MAX_CALL_DEPTH = Interpreter.MAX_CALL_DEPTH
+RuntimeExecutionMode = Literal["mir_native_v1", "ast_compat_v1"]
 
 
 @dataclass(slots=True)
@@ -65,7 +75,7 @@ class RuntimeBudget:
 
 
 class BudgetedInterpreter(Interpreter):
-    """Interpreter variant that meters statements, expressions, and calls."""
+    """AST compatibility interpreter with statement/expression metering."""
 
     def __init__(self, *args: Any, budget: RuntimeBudget, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
@@ -98,6 +108,14 @@ class BudgetedInterpreter(Interpreter):
             self.runtime_budget.leave_call()
 
 
+def runtime_execution_mode(mir_graph) -> RuntimeExecutionMode:
+    """Report which checked runtime lane will execute this sealed graph."""
+
+    native = inspect_native_mir_support(mir_graph)
+    scope = inspect_mir_scope_safety(mir_graph)
+    return "mir_native_v1" if native.supported and scope.safe else "ast_compat_v1"
+
+
 def run_mir_with_budget(
     mir_graph,
     argv: list[str] | None = None,
@@ -105,11 +123,42 @@ def run_mir_with_budget(
     max_steps: int = DEFAULT_MAX_STEPS,
     max_call_depth: int = HARD_MAX_CALL_DEPTH,
 ) -> int:
-    """Execute a sealed MIR graph under an explicit interpreter budget."""
+    """Execute a sealed MIR graph under explicit resource budgets."""
 
     mir_graph.assert_sealed()
-    root = mir_graph.root_module
     budget = RuntimeBudget(max_steps=max_steps, max_call_depth=max_call_depth)
+    if runtime_execution_mode(mir_graph) == "mir_native_v1":
+        try:
+            return run_mir_native(
+                mir_graph,
+                max_steps=budget.max_steps,
+                max_call_depth=budget.max_call_depth,
+            )
+        except MirNativeStepBudgetExceeded as exc:
+            raise KoscheiRuntimeError(
+                "KS3601",
+                f"Çalıştırma adım bütçesi tükendi ({budget.max_steps}); "
+                "sonsuz döngü veya beklenmeyen ölçüde pahalı hesap olabilir.",
+                SourceLocation(1, 1),
+            ) from exc
+        except MirNativeCallDepthExceeded as exc:
+            raise KoscheiRuntimeError(
+                "KS3602",
+                f"Kullanıcı çağrı derinliği bütçesi aşıldı "
+                f"({budget.max_call_depth}); özyineleme durmuyor olabilir.",
+                SourceLocation(1, 1),
+            ) from exc
+        except MirNativeProgramError as exc:
+            print(f"KOSCHEI RUNTIME ERROR: {exc}", file=sys.stderr)
+            return 1
+        except MirNativeRuntimeError as exc:
+            raise KoscheiRuntimeError(
+                "KS3401",
+                f"Native MIR runtime sözleşmesi ihlal edildi: {exc}",
+                SourceLocation(1, 1),
+            ) from exc
+
+    root = mir_graph.root_module
     result = BudgetedInterpreter(
         root.program,
         list(argv or []),

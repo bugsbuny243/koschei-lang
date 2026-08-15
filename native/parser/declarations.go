@@ -21,9 +21,14 @@ func (parser *Parser) importDeclaration() (syntax.ImportDeclaration, error) {
 }
 
 func (parser *Parser) structDeclaration(depth int) (syntax.StructDeclaration, error) {
-	start, err := parser.consume(lexer.STRUCT, "expected 'struct'")
+	start := parser.peek()
+	stateful := parser.match(lexer.STATEFUL)
+	structToken, err := parser.consume(lexer.STRUCT, "expected 'struct'")
 	if err != nil {
 		return syntax.StructDeclaration{}, err
+	}
+	if !stateful {
+		start = structToken
 	}
 	if err := parser.ensureDepth(depth, start); err != nil {
 		return syntax.StructDeclaration{}, err
@@ -36,6 +41,23 @@ func (parser *Parser) structDeclaration(depth int) (syntax.StructDeclaration, er
 	if err != nil {
 		return syntax.StructDeclaration{}, err
 	}
+
+	initialState := ""
+	if stateful {
+		starts, err := parser.consume(lexer.IDENTIFIER, "expected contextual 'starts' after stateful struct type parameters")
+		if err != nil {
+			return syntax.StructDeclaration{}, err
+		}
+		if starts.Value != "starts" {
+			return syntax.StructDeclaration{}, parser.failure(starts, "expected contextual 'starts' after stateful struct type parameters", nil)
+		}
+		marker, err := parser.consume(lexer.TYPE, "stateful initial state must be an uppercase type")
+		if err != nil {
+			return syntax.StructDeclaration{}, err
+		}
+		initialState = marker.Value
+	}
+
 	if _, err := parser.consume(lexer.LEFTBRACE, "expected '{' after struct name"); err != nil {
 		return syntax.StructDeclaration{}, err
 	}
@@ -68,7 +90,7 @@ func (parser *Parser) structDeclaration(depth int) (syntax.StructDeclaration, er
 	}
 	return syntax.StructDeclaration{
 		Kind: "StructDeclaration", Name: name.Value, TypeParameters: typeParameters,
-		Fields: fields, Location: location(start),
+		Fields: fields, Stateful: stateful, InitialState: initialState, Location: location(start),
 	}, nil
 }
 
@@ -132,9 +154,19 @@ func (parser *Parser) enumDeclaration(depth int) (syntax.EnumDeclaration, error)
 }
 
 func (parser *Parser) functionDeclaration(depth int) (syntax.FunctionDeclaration, error) {
-	start, err := parser.consume(lexer.FN, "function declaration must start with 'fn'")
+	start := parser.peek()
+	pure := parser.match(lexer.PURE)
+	transition := false
+	if parser.check(lexer.IDENTIFIER) && parser.peek().Value == "transition" {
+		parser.advance()
+		transition = true
+	}
+	fnToken, err := parser.consume(lexer.FN, "function declaration must start with 'fn'")
 	if err != nil {
 		return syntax.FunctionDeclaration{}, err
+	}
+	if !pure && !transition {
+		start = fnToken
 	}
 	if err := parser.ensureDepth(depth, start); err != nil {
 		return syntax.FunctionDeclaration{}, err
@@ -186,7 +218,8 @@ func (parser *Parser) functionDeclaration(depth int) (syntax.FunctionDeclaration
 	}
 	return syntax.FunctionDeclaration{
 		Kind: "FunctionDeclaration", Name: name.Value, TypeParameters: typeParameters,
-		Parameters: parameters, ReturnType: returnType, Body: body, Location: location(start),
+		Parameters: parameters, ReturnType: returnType, Body: body,
+		Pure: pure, Transition: transition, Location: location(start),
 	}, nil
 }
 

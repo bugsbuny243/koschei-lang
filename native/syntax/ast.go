@@ -61,6 +61,8 @@ type StructDeclaration struct {
 	Name           string          `json:"name"`
 	TypeParameters []TypeParameter `json:"type_parameters"`
 	Fields         []StructField   `json:"fields"`
+	Stateful       bool            `json:"stateful,omitempty"`
+	InitialState   string          `json:"initial_state,omitempty"`
 	Location       Location        `json:"location"`
 }
 
@@ -91,6 +93,8 @@ type FunctionDeclaration struct {
 	Parameters     []Parameter     `json:"parameters"`
 	ReturnType     *TypeRef        `json:"return_type,omitempty"`
 	Body           Block           `json:"body"`
+	Pure           bool            `json:"pure,omitempty"`
+	Transition     bool            `json:"transition,omitempty"`
 	Location       Location        `json:"location"`
 }
 

@@ -1,10 +1,20 @@
-"""V5 parser facade adding generic declarations to the v0.9 parser."""
+"""V5 parser facade adding generic and high-assurance declarations."""
 
 from __future__ import annotations
 
 from ._parser_v09 import Parser as _ParserV09
-from ._parser_v09 import ParserError
-from .ast_nodes import EnumVariant, Expression, Parameter, StructField, TypeRef
+from ._parser_v09 import ParserError, _OR_RETURN_STOP
+from .ast_nodes import (
+    EnumVariant,
+    Expression,
+    OrBlockExpression,
+    OrElseExpression,
+    OrReturnExpression,
+    Parameter,
+    Program,
+    StructField,
+    TypeRef,
+)
 from .generic_nodes import (
     GenericEnumDeclaration,
     GenericFunctionDeclaration,
@@ -18,10 +28,91 @@ class Parser(_ParserV09):
     def from_source(cls, source: str) -> "Parser":
         return cls(tokenize(source))
 
+    def _match_contextual(self, value: str) -> bool:
+        if self._check(TokenType.IDENTIFIER) and self._peek().value == value:
+            self._advance()
+            return True
+        return False
+
+    def _consume_contextual(self, value: str, message: str):
+        if self._match_contextual(value):
+            return self._previous()
+        self._error(self._peek(), message)
+        raise AssertionError("unreachable")
+
+    def parse(self) -> Program:
+        declarations = []
+        structs = []
+        enums = []
+        imports = []
+
+        while not self._is_at_end():
+            if self._check(TokenType.IMPORT):
+                imports.append(self._import_declaration())
+            elif self._check(TokenType.STATEFUL) or self._check(TokenType.STRUCT):
+                structs.append(self._struct_declaration())
+            elif self._check(TokenType.ENUM):
+                enums.append(self._enum_declaration())
+            else:
+                declarations.append(self._function_declaration())
+
+        return Program(
+            tuple(declarations), tuple(structs), tuple(imports), tuple(enums)
+        )
+
+    def _or_handler(self) -> Expression:
+        expression = self._logical_or()
+
+        while self._match(TokenType.OR):
+            or_token = self._previous()
+
+            if self._match(TokenType.RETURN):
+                return_token = self._previous()
+                error: Expression | None = None
+                next_token = self._peek()
+                if (
+                    next_token.type not in _OR_RETURN_STOP
+                    and next_token.line == return_token.line
+                ):
+                    error = self._logical_or()
+                expression = OrReturnExpression(
+                    expression, error, self._location(or_token)
+                )
+                continue
+
+            if self._check(TokenType.LEFT_BRACE):
+                handler = self._block()
+                expression = OrBlockExpression(
+                    expression, handler, self._location(or_token)
+                )
+                continue
+
+            fallback = self._logical_or()
+            expression = OrElseExpression(
+                expression, fallback, self._location(or_token)
+            )
+
+        return expression
+
     def _struct_declaration(self) -> GenericStructDeclaration:
+        is_stateful = self._match(TokenType.STATEFUL)
+        stateful_token = self._previous() if is_stateful else None
         struct_token = self._consume(TokenType.STRUCT, "'struct' bekleniyordu.")
         name = self._consume(TokenType.TYPE, "Struct adı büyük harfle başlamalıdır.")
         type_parameters = self._type_parameters("Struct")
+
+        initial_state: str | None = None
+        if is_stateful:
+            self._consume_contextual(
+                "starts",
+                "stateful struct tip parametresinden sonra 'starts State' bekleniyordu.",
+            )
+            marker = self._consume(
+                TokenType.TYPE,
+                "stateful struct başlangıç state'i büyük harfle başlayan bir tip olmalıdır.",
+            )
+            initial_state = marker.value
+
         self._consume(TokenType.LEFT_BRACE, "Struct adından sonra '{' bekleniyordu.")
 
         fields: list[StructField] = []
@@ -37,10 +128,12 @@ class Parser(_ParserV09):
 
         self._consume(TokenType.RIGHT_BRACE, "Struct sonunda '}' bekleniyordu.")
         return GenericStructDeclaration(
-            name.value,
-            tuple(fields),
-            self._location(struct_token),
-            type_parameters,
+            name=name.value,
+            fields=tuple(fields),
+            location=self._location(stateful_token or struct_token),
+            type_parameters=type_parameters,
+            is_stateful=is_stateful,
+            initial_state=initial_state,
         )
 
     def _enum_declaration(self) -> GenericEnumDeclaration:
@@ -78,6 +171,10 @@ class Parser(_ParserV09):
         )
 
     def _function_declaration(self) -> GenericFunctionDeclaration:
+        is_pure = self._match(TokenType.PURE)
+        pure_token = self._previous() if is_pure else None
+        is_transition = self._match_contextual("transition")
+        transition_token = self._previous() if is_transition else None
         fn_token = self._consume(TokenType.FN, "Fonksiyon 'fn' ile başlamalıdır.")
         name = self._consume(TokenType.IDENTIFIER, "Fonksiyon adı bekleniyordu.")
         type_parameters = self._type_parameters("Fonksiyon")
@@ -104,8 +201,10 @@ class Parser(_ParserV09):
             parameters=tuple(parameters),
             return_type=return_type,
             body=body,
-            location=self._location(fn_token),
+            location=self._location(pure_token or transition_token or fn_token),
+            is_pure=is_pure,
             type_parameters=type_parameters,
+            is_transition=is_transition,
         )
 
     def _type_parameters(self, subject: str = "Bildirim") -> tuple[str, ...]:

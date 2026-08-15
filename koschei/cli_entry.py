@@ -15,6 +15,7 @@ import argparse
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 from . import cli as _cli
@@ -31,6 +32,7 @@ from .lock_cli import add_lock_parser, command_lock
 from .maturity_attestation_cli import add_maturity_attest_parser, command_maturity_attest
 from .maturity_cli import add_maturity_parser, command_maturity
 from .mir import require_mir
+from .mir_go_native import generate_go_mir_native, inspect_mir_go_support
 from .module_lock import load_module_lock, verify_module_lock
 from .modules import check_graph
 from .release_proof_cli import add_release_proof_parser, command_release_proof
@@ -155,6 +157,51 @@ def _run_with_public_budget(args: argparse.Namespace) -> int:
         _cli.command_run = original
 
 
+def _compile_mir_go(go_source: str, target: Path, locale: str) -> int:
+    go_binary = shutil.which("go")
+    if go_binary is None:
+        message = (
+            "KOSCHEI ERROR: 'go' was not found. Install Go for native builds "
+            "or use 'ks run'."
+            if locale == "en"
+            else "KOSCHEI ERROR: 'go' bulunamadı. Native derleme için Go kurun "
+            "veya 'ks run' kullanın."
+        )
+        print(message, file=sys.stderr)
+        return 1
+
+    with tempfile.TemporaryDirectory(prefix="koschei-mir-build-") as workspace:
+        directory = Path(workspace)
+        (directory / "main.go").write_text(go_source, encoding="utf-8")
+        (directory / "go.mod").write_text(
+            "module koscheiprogram\n\ngo 1.21\n", encoding="utf-8"
+        )
+        completed = subprocess.run(
+            [go_binary, "build", "-o", str(target), "."],
+            cwd=directory,
+            capture_output=True,
+            text=True,
+        )
+    if completed.returncode != 0:
+        message = (
+            "KOSCHEI ERROR: MIR-Go compilation failed. This is a compiler bug; "
+            "report it with the source file.\n"
+            if locale == "en"
+            else "KOSCHEI ERROR: MIR-Go derlemesi başarısız oldu. Bu bir derleyici "
+            "hatasıdır; kaynak dosyayla birlikte bildirin.\n"
+        )
+        print(message + completed.stderr.strip(), file=sys.stderr)
+        return 1
+    print(f"KOSCHEI BUILD: {target}")
+    return 0
+
+
+def native_build_mode(mir) -> str:
+    """Return the deterministic backend selected for a checked native build."""
+
+    return "mir_go_v1" if inspect_mir_go_support(mir).supported else "ast_go_compat_v1"
+
+
 def _build_with_public_lock(args: argparse.Namespace) -> int:
     """Verify the lock before native build work and optionally attest the artifact."""
 
@@ -182,7 +229,11 @@ def _build_with_public_lock(args: argparse.Namespace) -> int:
         graph = _cli.open_graph(path)
         check_graph(graph)
         mir = require_mir(graph)
-        result = original(path, output, locale)
+        target = (Path(output) if output else source.with_suffix("")).resolve()
+        if native_build_mode(mir) == "mir_go_v1":
+            result = _compile_mir_go(generate_go_mir_native(mir), target, locale)
+        else:
+            result = original(path, output, locale)
         if result != 0 or manifest_path is None:
             return result
         if verified_lock is None:
@@ -200,7 +251,6 @@ def _build_with_public_lock(args: argparse.Namespace) -> int:
         if toolchain.returncode != 0 or not toolchain.stdout.strip():
             raise BuildManifestError("KS1910", "could not read Go toolchain identity")
 
-        target = (Path(output) if output else source.with_suffix("")).resolve()
         manifest = build_native_manifest(
             target,
             module_lock_digest=verified_lock.lock_digest,

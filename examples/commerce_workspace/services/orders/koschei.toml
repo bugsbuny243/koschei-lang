@@ -1,0 +1,10 @@
+[package]
+name = "orders"
+version = "0.1.0"
+entry = "src/main.ks"
+
+[capabilities]
+disk = []
+net = []
+env = []
+process = false

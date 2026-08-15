@@ -77,6 +77,7 @@ def erase_function(function: FunctionDeclaration) -> FunctionDeclaration:
         erase_type_ref(function.return_type, parameters),
         function.body,
         function.location,
+        function.is_pure,
     )
 
 

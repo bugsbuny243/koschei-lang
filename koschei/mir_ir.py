@@ -1,9 +1,11 @@
 """Normalized MIR nodes and control-flow lowering for Koschei V5.
 
-The lowering is intentionally incremental. Core scalar expressions and structured
-`if`/`while` statements become explicit instructions and basic blocks. Language
-constructs that still need semantic design are represented by an explicit
-`MirAstFallback` node instead of being silently erased or misrepresented.
+The lowering is intentionally incremental. Core scalar expressions, List
+literals, and structured control flow become explicit instructions and basic
+blocks. Lexical local bindings are resolved to stable function-unique MIR names
+during lowering, so backends do not need to rediscover source-language scope.
+Language constructs that still need semantic design are represented by an
+explicit `MirAstFallback` node instead of being silently erased or misrepresented.
 """
 
 from __future__ import annotations
@@ -15,7 +17,9 @@ from .ast_nodes import (
     AssignmentExpression,
     BinaryExpression,
     Block,
+    BreakStatement,
     CallExpression,
+    ContinueStatement,
     Expression,
     ExpressionStatement,
     ForStatement,
@@ -23,6 +27,7 @@ from .ast_nodes import (
     Identifier,
     IfStatement,
     LetStatement,
+    ListLiteral,
     Literal,
     MemberExpression,
     ReturnStatement,
@@ -31,7 +36,7 @@ from .ast_nodes import (
     UnaryExpression,
     WhileStatement,
 )
-from .type_system import TypeNode, UnknownType, render_type
+from .type_system import BOOL, GenericType, TypeNode, UnknownType, render_type
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,6 +92,38 @@ class MirBinary:
 
 
 @dataclass(frozen=True, slots=True)
+class MirList:
+    target: int
+    items: tuple[int, ...]
+    type: TypeNode
+    location: SourceLocation
+
+
+@dataclass(frozen=True, slots=True)
+class MirIterInit:
+    target: int
+    iterable: int
+    type: TypeNode
+    location: SourceLocation
+
+
+@dataclass(frozen=True, slots=True)
+class MirIterHasNext:
+    target: int
+    iterator: int
+    type: TypeNode
+    location: SourceLocation
+
+
+@dataclass(frozen=True, slots=True)
+class MirIterNext:
+    target: int
+    iterator: int
+    type: TypeNode
+    location: SourceLocation
+
+
+@dataclass(frozen=True, slots=True)
 class MirMember:
     target: int
     object: int
@@ -121,6 +158,10 @@ MirInstruction: TypeAlias = (
     | MirStore
     | MirUnary
     | MirBinary
+    | MirList
+    | MirIterInit
+    | MirIterHasNext
+    | MirIterNext
     | MirMember
     | MirCall
     | MirAstFallback
@@ -174,9 +215,16 @@ class _FunctionLowerer:
         self.current = 0
         self.next_block = 1
         self.next_value = 0
+        self.next_binding = 0
+        self.loop_targets: list[tuple[int, int]] = []
+        parameter_scope = {
+            parameter.name: parameter.name for parameter in declaration.parameters
+        }
+        self.scopes: list[dict[str, str]] = [parameter_scope]
+        self.used_binding_names: set[str] = set(parameter_scope.values())
 
     def lower(self) -> tuple[MirBasicBlock, ...]:
-        self._lower_block(self.declaration.body)
+        self._lower_block(self.declaration.body, scoped=False)
         current = self.blocks[self.current]
         if current.terminator is None:
             current.terminator = MirReturn(None)
@@ -210,6 +258,26 @@ class _FunctionLowerer:
         self.blocks[block] = _MutableBlock(block, [])
         return block
 
+    def _new_binding_name(self, source_name: str) -> str:
+        if source_name not in self.used_binding_names:
+            internal = source_name
+        else:
+            while True:
+                internal = f"{source_name}$mir{self.next_binding}"
+                self.next_binding += 1
+                if internal not in self.used_binding_names:
+                    break
+        self.used_binding_names.add(internal)
+        self.scopes[-1][source_name] = internal
+        return internal
+
+    def _resolve_binding_name(self, source_name: str) -> str | None:
+        for scope in reversed(self.scopes):
+            resolved = scope.get(source_name)
+            if resolved is not None:
+                return resolved
+        return None
+
     def _emit(self, instruction: MirInstruction) -> None:
         block = self.blocks[self.current]
         if block.terminator is not None:
@@ -222,18 +290,25 @@ class _FunctionLowerer:
             raise ValueError(f"MIR block {block.id} already has a terminator")
         block.terminator = terminator
 
-    def _lower_block(self, block: Block) -> None:
-        for statement in block.statements:
-            if self.blocks[self.current].terminator is not None:
-                break
-            self._lower_statement(statement)
+    def _lower_block(self, block: Block, *, scoped: bool = True) -> None:
+        if scoped:
+            self.scopes.append({})
+        try:
+            for statement in block.statements:
+                if self.blocks[self.current].terminator is not None:
+                    break
+                self._lower_statement(statement)
+        finally:
+            if scoped:
+                self.scopes.pop()
 
     def _lower_statement(self, statement: Statement) -> None:
         if isinstance(statement, LetStatement):
             value = self._lower_expression(statement.value)
+            binding_name = self._new_binding_name(statement.name)
             self._emit(
                 MirBind(
-                    statement.name,
+                    binding_name,
                     value,
                     statement.is_mutable,
                     self._type_of(statement.value),
@@ -259,14 +334,29 @@ class _FunctionLowerer:
             self._lower_while(statement)
             return
         if isinstance(statement, ForStatement):
-            self._emit(
-                MirAstFallback(
-                    None,
-                    type(statement).__name__,
-                    UnknownType(),
-                    statement.location,
+            if _list_item_type(self._type_of(statement.iterable)) is not None:
+                self._lower_for(statement)
+            else:
+                self._emit(
+                    MirAstFallback(
+                        None,
+                        type(statement).__name__,
+                        UnknownType(),
+                        statement.location,
+                    )
                 )
-            )
+            return
+        if isinstance(statement, BreakStatement):
+            if not self.loop_targets:
+                raise ValueError("break cannot be lowered outside a loop")
+            break_target, _ = self.loop_targets[-1]
+            self._terminate(MirJump(break_target))
+            return
+        if isinstance(statement, ContinueStatement):
+            if not self.loop_targets:
+                raise ValueError("continue cannot be lowered outside a loop")
+            _, continue_target = self.loop_targets[-1]
+            self._terminate(MirJump(continue_target))
             return
         self._emit(
             MirAstFallback(
@@ -310,7 +400,62 @@ class _FunctionLowerer:
         self._terminate(MirBranch(condition, body_block, exit_block))
 
         self.current = body_block
-        self._lower_block(statement.body)
+        self.loop_targets.append((exit_block, condition_block))
+        try:
+            self._lower_block(statement.body)
+        finally:
+            self.loop_targets.pop()
+        if self.blocks[self.current].terminator is None:
+            self._terminate(MirJump(condition_block))
+
+        self.current = exit_block
+
+    def _lower_for(self, statement: ForStatement) -> None:
+        iterable_type = self._type_of(statement.iterable)
+        item_type = _list_item_type(iterable_type)
+        if item_type is None:
+            raise ValueError("List for-loop lowering requires List<T>")
+
+        iterable = self._lower_expression(statement.iterable)
+        iterator = self._new_value()
+        self._emit(
+            MirIterInit(
+                iterator,
+                iterable,
+                GenericType("Iterator", (item_type,)),
+                statement.location,
+            )
+        )
+        condition_block = self._new_block()
+        body_block = self._new_block()
+        exit_block = self._new_block()
+        self._terminate(MirJump(condition_block))
+
+        self.current = condition_block
+        has_next = self._new_value()
+        self._emit(MirIterHasNext(has_next, iterator, BOOL, statement.location))
+        self._terminate(MirBranch(has_next, body_block, exit_block))
+
+        self.current = body_block
+        self.scopes.append({})
+        self.loop_targets.append((exit_block, condition_block))
+        try:
+            item = self._new_value()
+            self._emit(MirIterNext(item, iterator, item_type, statement.location))
+            binding_name = self._new_binding_name(statement.variable)
+            self._emit(
+                MirBind(
+                    binding_name,
+                    item,
+                    False,
+                    item_type,
+                    statement.location,
+                )
+            )
+            self._lower_block(statement.body, scoped=False)
+        finally:
+            self.loop_targets.pop()
+            self.scopes.pop()
         if self.blocks[self.current].terminator is None:
             self._terminate(MirJump(condition_block))
 
@@ -322,9 +467,17 @@ class _FunctionLowerer:
             target = self._new_value()
             self._emit(MirConst(target, expression.value, result_type, expression.location))
             return target
+        if isinstance(expression, ListLiteral):
+            item_type = _list_item_type(result_type)
+            if item_type is not None:
+                items = tuple(self._lower_expression(item) for item in expression.items)
+                target = self._new_value()
+                self._emit(MirList(target, items, result_type, expression.location))
+                return target
         if isinstance(expression, Identifier):
             target = self._new_value()
-            self._emit(MirLoad(target, expression.name, result_type, expression.location))
+            name = self._resolve_binding_name(expression.name) or expression.name
+            self._emit(MirLoad(target, name, result_type, expression.location))
             return target
         if isinstance(expression, UnaryExpression):
             operand = self._lower_expression(expression.operand)
@@ -380,9 +533,12 @@ class _FunctionLowerer:
         if isinstance(expression, AssignmentExpression):
             value = self._lower_expression(expression.value)
             if isinstance(expression.target, Identifier):
+                name = self._resolve_binding_name(expression.target.name)
+                if name is None:
+                    name = expression.target.name
                 self._emit(
                     MirStore(
-                        expression.target.name,
+                        name,
                         value,
                         result_type,
                         expression.location,
@@ -399,6 +555,13 @@ class _FunctionLowerer:
             )
         )
         return target
+
+
+def _list_item_type(type_node: TypeNode) -> TypeNode | None:
+    if isinstance(type_node, GenericType) and type_node.name == "List":
+        if len(type_node.arguments) == 1:
+            return type_node.arguments[0]
+    return None
 
 
 def lower_function_blocks(declaration, typed_report) -> tuple[MirBasicBlock, ...]:
@@ -461,12 +624,23 @@ def validate_blocks(blocks: tuple[MirBasicBlock, ...]) -> None:
                 if target in definitions:
                     raise ValueError(f"MIR value %{target} is defined more than once")
                 definitions.add(target)
-            for name in ("source", "operand", "left", "right", "object", "callee"):
+            for name in (
+                "source",
+                "operand",
+                "left",
+                "right",
+                "object",
+                "callee",
+                "iterable",
+                "iterator",
+            ):
                 value = getattr(instruction, name, None)
                 if isinstance(value, int):
                     uses.add(value)
             arguments = getattr(instruction, "arguments", ())
             uses.update(value for value in arguments if isinstance(value, int))
+            items = getattr(instruction, "items", ())
+            uses.update(value for value in items if isinstance(value, int))
         terminator = block.terminator
         if isinstance(terminator, MirJump):
             if terminator.target not in ids:
