@@ -11,6 +11,8 @@ members = [
   "realms/settlement_engine",
   "realms/report_engine",
   "realms/market_feed",
+  "realms/json_gateway",
+  "realms/dispatch_runtime",
   "realms/order_worker",
 ]
 
@@ -24,4 +26,6 @@ ledger_engine = []
 settlement_engine = ["matching_engine", "fee_engine", "ledger_engine"]
 report_engine = ["matching_engine", "settlement_engine"]
 market_feed = []
-order_worker = ["matching_engine", "settlement_engine", "report_engine"]
+json_gateway = []
+dispatch_runtime = []
+order_worker = ["matching_engine", "settlement_engine", "report_engine", "json_gateway", "dispatch_runtime"]
