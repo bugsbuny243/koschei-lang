@@ -6,6 +6,11 @@ import unittest
 from pathlib import Path
 
 from koschei.modules import ModuleError
+from koschei.originality_contract_v1 import (
+    LEGACY_SCAFFOLD_PATH_DEBT_V1,
+    SurfaceProvenance,
+    audit_scaffold_surface,
+)
 from koschei.native_reality_v1 import (
     NativeRealityError,
     REALITY_ENVELOPE_BYTES,
@@ -44,6 +49,40 @@ class NativeRealityProjectTests(unittest.TestCase):
             self.assertNotIn("koschei.toml", exposed)
             self.assertNotIn("README.md", exposed)
             self.assertNotIn(".gitignore", exposed)
+
+    def test_native_layout_passes_originality_gate_with_explicit_provenance(self) -> None:
+        native_static = {".koschei", ".koschei/reality", ".koschei/matter"}
+        provenance = {
+            ".koschei": SurfaceProvenance(
+                invariant="protected-source-reality",
+                rationale=(
+                    "Owns the hidden Koschei reality namespace without "
+                    "reusing a mainstream source-tree convention."
+                ),
+                collision_reviewed=True,
+            ),
+            ".koschei/reality": SurfaceProvenance(
+                invariant="temporal-source-identity",
+                rationale=(
+                    "Carries authenticated project identity and epoch context "
+                    "instead of a human-readable entry manifest."
+                ),
+                collision_reviewed=True,
+            ),
+            ".koschei/matter": SurfaceProvenance(
+                invariant="protected-source-reality",
+                rationale=(
+                    "Contains role-free opaque source aliases whose physical "
+                    "names are never canonical program identity."
+                ),
+                collision_reviewed=True,
+            ),
+        }
+        violations = audit_scaffold_surface(
+            set(LEGACY_SCAFFOLD_PATH_DEBT_V1) | native_static,
+            provenance=provenance,
+        )
+        self.assertEqual(violations, ())
 
     def test_wrong_seal_key_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
