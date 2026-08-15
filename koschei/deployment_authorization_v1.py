@@ -5,7 +5,9 @@ may be launched or deployed. Artifact identity remains long-lived evidence;
 deployment authorization is a separate, externally signed object.
 
 Production signing is deliberately external. This module never stores or derives
-a deployment signing key.
+a deployment signing key. A successful authorization is also atomically redeemed
+by the trusted state layer before authority is returned, preventing check-then-use
+replay races.
 """
 
 from __future__ import annotations
@@ -102,32 +104,33 @@ def deployment_authorization_digest(
     ).hexdigest()
 
 
-def verify_deployment_authorization(
+def redeem_deployment_authorization(
     authorization: DeploymentAuthorization,
     *,
     signature: bytes,
     signature_verifier: Callable[[bytes, bytes], bool],
+    atomic_redeemer: Callable[[str, str], bool],
     current_epoch: int,
     expected_operation: str,
     expected_environment: str,
     artifact_manifest: TrustArtifactManifest,
     local_policy: LocalPolicy,
     capability_request: StaticCapabilityRequest,
-    replay_checker: Callable[[str], bool] | None = None,
 ) -> bool:
-    """Fail closed before a trusted launcher may redeem this authorization.
+    """Verify and atomically consume one deployment authorization.
 
-    ``replay_checker`` is observational only: it returns True when the
-    authorization ID is already consumed. Atomic claim/consume belongs to the
-    trusted launcher's state store; this pure verification helper does not claim
-    replay resistance by itself.
+    ``atomic_redeemer(authorization_id, authorization_digest)`` must perform a
+    single atomic claim in trusted storage and return True only for the first
+    successful claim. Merely checking a consumed flag and writing later is not a
+    valid implementation of this callback.
     """
 
     try:
         if not isinstance(signature, bytes) or not signature:
             return False
-        if not callable(signature_verifier):
+        if not callable(signature_verifier) or not callable(atomic_redeemer):
             return False
+
         payload = canonical_deployment_authorization_payload(authorization)
         if not signature_verifier(payload, signature):
             return False
@@ -167,12 +170,13 @@ def verify_deployment_authorization(
         if now > authorization.expires_after_epoch:
             return False
 
-        if replay_checker is not None:
-            if not callable(replay_checker):
-                return False
-            if replay_checker(authorization.authorization_id):
-                return False
-        return True
+        authorization_digest = hashlib.sha256(payload).hexdigest()
+        return bool(
+            atomic_redeemer(
+                authorization.authorization_id,
+                authorization_digest,
+            )
+        )
     except (DeploymentAuthorizationError, TypeError, ValueError):
         return False
 
