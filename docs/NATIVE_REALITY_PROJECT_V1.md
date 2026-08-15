@@ -57,6 +57,35 @@ The trusted epoch cannot be learned solely from the untrusted project tree; doin
 so would make rollback detection circular. A later session broker/Trust Plane must
 hold the current project-id/epoch context outside the source tree.
 
+## Authenticated source advance
+
+A direct write to the active file in `.koschei/matter/` is **not an edit**. It
+invalidates the artifact digest and the next trusted load fails closed.
+
+`advance_native_reality_source()` is the v1 write boundary. A successful source
+change is one temporal transition:
+
+1. authenticate the existing reality against the external seal key, expected
+   project id and expected epoch;
+2. validate the replacement UTF-8/source-size limits and parse it before any
+   filesystem mutation;
+3. reject imports before mutation because v1 has no authenticated object-edge
+   table;
+4. hash the replacement bytes;
+5. write and fsync the replacement under a fresh 128-bit opaque alias;
+6. construct epoch `N+1` with the same project id and root object id but the new
+   artifact digest and alias;
+7. HMAC-seal the new reality and atomically switch authority to it; and
+8. remove the old now-unreferenced alias on a best-effort basis.
+
+A parse failure, import-policy failure, wrong project id, wrong epoch or wrong
+seal key therefore occurs before the authority switch. Tests assert that rejected
+edits leave the old reality bytes and source alias authoritative.
+
+The edit preserves **object identity**, not physical identity. This is deliberate:
+the same canonical program object evolves through authenticated epochs instead of
+being defined by one permanent human-readable file path.
+
 ## Epoch rotation
 
 Rotation keeps canonical identity and source digest stable while changing the
@@ -83,7 +112,9 @@ copy authoritative again.
 
 Reality and source files are read fail-closed:
 
-- final-component symlinks are rejected;
+- a project-root final-component symlink is rejected rather than normalized away;
+- reality/matter directory symlinks are rejected;
+- source and reality final-component symlinks are rejected;
 - non-regular files are rejected;
 - `O_NOFOLLOW` is used where the platform provides it;
 - `lstat`/`fstat` identity is compared to detect replacement races;
@@ -100,6 +131,10 @@ source path between verification and parse.
 Native Reality v1 has one authenticated root object. It intentionally rejects any
 `import` declaration with `KS5701` because there is not yet an authenticated
 multi-object edge table in this format.
+
+Creation and authenticated source advance both reject importing source before
+creating/switching project authority. The graph loader retains the same defensive
+check for malformed or older inputs.
 
 Falling back to `name.ks` beside the opaque object would immediately restore the
 very filename/path authority this design removes. Multi-object support must first
@@ -131,7 +166,13 @@ not by itself protect against:
 - arbitrary inspection of plaintext source after an authorized read;
 - a compromised compiler or kernel inside the trusted computing base;
 - stale-source remnants that an operating system fails to delete physically;
+- symlinks or mount substitutions in untrusted ancestor directories outside the
+  admitted project-root final component;
 - disclosure through runtime behavior or generated binaries.
+
+Source objects in v1 are still plaintext at rest. HMAC authenticates authority;
+it does not encrypt bytes. At-rest confidentiality requires a separate design
+with key custody that does not reintroduce ambient read authority.
 
 The purpose of v1 is narrower and testable: remove semantic file paths and
 plaintext package manifests from project authority, authenticate the canonical
@@ -147,8 +188,8 @@ Before this can replace the legacy default project model:
    custody;
 3. wire `check`, `run`, `mir`, capability analysis and build to the native reality
    loader;
-4. provide an authenticated editing/reseal operation rather than allowing direct
-   source mutation;
+4. design at-rest source confidentiality without storing the decryption key beside
+   the source objects;
 5. migrate the grammar itself away from legacy mainstream-shaped syntax; and
 6. retire the old scaffold through the originality ratchet only after full test
    parity is proven.
