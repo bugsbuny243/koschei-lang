@@ -115,6 +115,14 @@ from .fallible_mir_v1 import install_fallible_mir_v1
 
 install_fallible_mir_v1()
 
+from .interpolation_mir_v1 import install_interpolation_mir_v1
+
+install_interpolation_mir_v1()
+
+from .integer_division_mir_v1 import install_integer_division_mir_v1
+
+install_integer_division_mir_v1()
+
 from .typestate_affine_alignment import install_typestate_affine_alignment
 
 install_typestate_affine_alignment()
