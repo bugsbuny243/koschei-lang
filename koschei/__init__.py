@@ -177,6 +177,18 @@ from .serve_loopback_exchange_catalog_v1 import (
 
 install_serve_loopback_exchange_catalog_v1()
 
+from .persistence_authority_v1 import install_persistence_authority_v1
+
+install_persistence_authority_v1()
+
+from .bounded_persistence_v1 import install_bounded_persistence_v1
+
+install_bounded_persistence_v1()
+
+from .persistence_runtime_alignment_v1 import install_persistence_runtime_alignment_v1
+
+install_persistence_runtime_alignment_v1()
+
 from .typestate_affine_alignment import install_typestate_affine_alignment
 
 install_typestate_affine_alignment()
