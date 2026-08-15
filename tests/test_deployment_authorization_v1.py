@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 import hashlib
 import hmac
+import json
 
 from koschei.deployment_authorization_v1 import (
     DeploymentAuthorization,
@@ -20,8 +21,14 @@ from koschei.trust_plane_v1 import (
 TEST_SIGNING_KEY = b"deployment-authorization-test-key-32-bytes!!"
 
 
-def digest(label: str) -> str:
-    return hashlib.sha256(label.encode("utf-8")).hexdigest()
+def digest(value: object) -> str:
+    encoded = json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def fixture():
@@ -29,22 +36,45 @@ def fixture():
         "production",
         allowed_capabilities=["net.io", "env.read"],
     )
-    request = StaticCapabilityRequest(
-        capabilities=("env.read", "net.io"),
-        grants=(
-            ("env", "KOSCHEI_PUBLIC_", False),
-            ("net", "https://api.example", False),
-        ),
-        request_digest=digest("static-capability-request"),
+    grants = (
+        ("env", "KOSCHEI_PUBLIC_", False),
+        ("net", "https://api.example", False),
     )
+    capabilities = ("env.read", "net.io")
+    request_payload = {
+        "schema_version": "koschei.static-capability-request.v1",
+        "capabilities": list(capabilities),
+        "grants": [
+            {"domain": domain, "scope": scope, "read_only": read_only}
+            for domain, scope, read_only in grants
+        ],
+    }
+    request = StaticCapabilityRequest(
+        capabilities=capabilities,
+        grants=grants,
+        request_digest=digest(request_payload),
+    )
+
+    artifact_sha = hashlib.sha256(b"artifact").hexdigest()
+    build_digest = hashlib.sha256(b"build-manifest").hexdigest()
+    release_digest = hashlib.sha256(b"release-proof").hexdigest()
+    artifact_payload = {
+        "schema_version": "koschei.trust-artifact-manifest.v1",
+        "artifact_sha256": artifact_sha,
+        "build_manifest_digest": build_digest,
+        "release_proof_digest": release_digest,
+        "policy_hash": policy.policy_hash,
+        "capability_request_digest": request.request_digest,
+        "requested_capabilities": list(request.capabilities),
+    }
     artifact = TrustArtifactManifest(
-        artifact_sha256=digest("artifact"),
-        build_manifest_digest=digest("build-manifest"),
-        release_proof_digest=digest("release-proof"),
+        artifact_sha256=artifact_sha,
+        build_manifest_digest=build_digest,
+        release_proof_digest=release_digest,
         policy_hash=policy.policy_hash,
         capability_request_digest=request.request_digest,
         requested_capabilities=request.capabilities,
-        manifest_digest=digest("trust-artifact-manifest"),
+        manifest_digest=digest(artifact_payload),
     )
     authorization = DeploymentAuthorization(
         authorization_id="deploy-auth-0000000001",
@@ -215,22 +245,56 @@ def test_policy_swap_is_denied():
     assert redeem(authorization, policy=swapped_policy) is None
 
 
+def test_forged_policy_object_is_denied():
+    policy, _, _, authorization = fixture()
+    forged = replace(policy, environment="staging")
+    assert redeem(authorization, policy=forged) is None
+
+
 def test_artifact_swap_is_denied():
     _, _, artifact, authorization = fixture()
-    swapped = replace(artifact, artifact_sha256=digest("attacker-artifact"))
+    swapped = replace(
+        artifact,
+        artifact_sha256=hashlib.sha256(b"attacker-artifact").hexdigest(),
+    )
     assert redeem(authorization, artifact=swapped) is None
+
+
+def test_forged_manifest_digest_is_denied_before_redemption():
+    _, _, artifact, authorization = fixture()
+    forged = replace(
+        artifact,
+        manifest_digest=hashlib.sha256(b"forged-manifest").hexdigest(),
+    )
+    redeemer = AtomicRedeemer()
+    assert redeem(authorization, artifact=forged, redeemer=redeemer) is None
+    assert redeemer.claims == {}
 
 
 def test_trust_manifest_swap_is_denied():
     _, _, artifact, authorization = fixture()
-    swapped = replace(artifact, manifest_digest=digest("attacker-trust-manifest"))
+    swapped = replace(
+        artifact,
+        manifest_digest=hashlib.sha256(b"attacker-trust-manifest").hexdigest(),
+    )
     assert redeem(authorization, artifact=swapped) is None
 
 
 def test_static_capability_request_swap_is_denied():
     _, request, _, authorization = fixture()
-    swapped = replace(request, request_digest=digest("attacker-capability-request"))
+    swapped = replace(
+        request,
+        request_digest=hashlib.sha256(b"attacker-capability-request").hexdigest(),
+    )
     assert redeem(authorization, request=swapped) is None
+
+
+def test_forged_static_request_contents_are_denied_before_redemption():
+    _, request, _, authorization = fixture()
+    forged = replace(request, capabilities=("env.read", "net.io", "process.exec"))
+    redeemer = AtomicRedeemer()
+    assert redeem(authorization, request=forged, redeemer=redeemer) is None
+    assert redeemer.claims == {}
 
 
 def test_signed_payload_mutation_is_denied():
