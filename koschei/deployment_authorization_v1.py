@@ -5,9 +5,8 @@ may be launched or deployed. Artifact identity remains long-lived evidence;
 deployment authorization is a separate, externally signed object.
 
 Production signing is deliberately external. This module never stores or derives
-a deployment signing key. A successful authorization is also atomically redeemed
-by the trusted state layer before authority is returned, preventing check-then-use
-replay races.
+a deployment signing key. Successful redemption produces evidence of one atomic
+single-use claim; that evidence is deliberately not executable authority.
 """
 
 from __future__ import annotations
@@ -20,6 +19,7 @@ from typing import Callable
 from .trust_plane_v1 import LocalPolicy, StaticCapabilityRequest, TrustArtifactManifest
 
 _SCHEMA = "koschei.deployment-authorization.v1"
+_REDEMPTION_SCHEMA = "koschei.deployment-authorization-redemption.v1"
 _ALLOWED_OPERATIONS = frozenset({"launch", "deploy"})
 
 
@@ -41,11 +41,38 @@ class DeploymentAuthorization:
     nonce: str
 
 
+@dataclass(frozen=True, slots=True)
+class RedeemedAuthorization:
+    authorization_id: str
+    operation: str
+    environment: str
+    authorization_digest: str
+    artifact_sha256: str
+    trust_manifest_digest: str
+    policy_hash: str
+    capability_request_digest: str
+    redeemed_at_epoch: int
+    redemption_digest: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "schema_version": _REDEMPTION_SCHEMA,
+            "authorization_id": self.authorization_id,
+            "operation": self.operation,
+            "environment": self.environment,
+            "authorization_digest": self.authorization_digest,
+            "artifact_sha256": self.artifact_sha256,
+            "trust_manifest_digest": self.trust_manifest_digest,
+            "policy_hash": self.policy_hash,
+            "capability_request_digest": self.capability_request_digest,
+            "redeemed_at_epoch": self.redeemed_at_epoch,
+            "redemption_digest": self.redemption_digest,
+        }
+
+
 def canonical_deployment_authorization_payload(
     authorization: DeploymentAuthorization,
 ) -> bytes:
-    """Return the exact bytes an external deployment authority signs."""
-
     if not isinstance(authorization, DeploymentAuthorization):
         raise DeploymentAuthorizationError(
             "authorization must be DeploymentAuthorization"
@@ -65,24 +92,16 @@ def canonical_deployment_authorization_payload(
 
     payload = {
         "schema_version": _SCHEMA,
-        "authorization_id": _text(
-            authorization.authorization_id,
-            "authorization_id",
-        ),
+        "authorization_id": _text(authorization.authorization_id, "authorization_id"),
         "operation": operation,
         "environment": _text(authorization.environment, "environment"),
-        "artifact_sha256": _hex64(
-            authorization.artifact_sha256,
-            "artifact_sha256",
-        ),
+        "artifact_sha256": _hex64(authorization.artifact_sha256, "artifact_sha256"),
         "trust_manifest_digest": _hex64(
-            authorization.trust_manifest_digest,
-            "trust_manifest_digest",
+            authorization.trust_manifest_digest, "trust_manifest_digest"
         ),
         "policy_hash": _hex64(authorization.policy_hash, "policy_hash"),
         "capability_request_digest": _hex64(
-            authorization.capability_request_digest,
-            "capability_request_digest",
+            authorization.capability_request_digest, "capability_request_digest"
         ),
         "not_before_epoch": start,
         "expires_after_epoch": end,
@@ -116,69 +135,81 @@ def redeem_deployment_authorization(
     artifact_manifest: TrustArtifactManifest,
     local_policy: LocalPolicy,
     capability_request: StaticCapabilityRequest,
-) -> bool:
-    """Verify and atomically consume one deployment authorization.
+) -> RedeemedAuthorization | None:
+    """Verify and atomically consume one authorization, returning evidence only.
 
-    ``atomic_redeemer(authorization_id, authorization_digest)`` must perform a
-    single atomic claim in trusted storage and return True only for the first
-    successful claim. Merely checking a consumed flag and writing later is not a
-    valid implementation of this callback.
+    A non-None result proves one signed grant was atomically redeemed for the
+    supplied bindings. It does not by itself authorize process creation; the
+    Trusted Launcher must combine it with a valid deterministic launch decision.
     """
 
     try:
         if not isinstance(signature, bytes) or not signature:
-            return False
+            return None
         if not callable(signature_verifier) or not callable(atomic_redeemer):
-            return False
+            return None
 
         payload = canonical_deployment_authorization_payload(authorization)
         if not signature_verifier(payload, signature):
-            return False
+            return None
 
         now = _epoch(current_epoch, "current_epoch")
         operation = _text(expected_operation, "expected_operation")
         if operation not in _ALLOWED_OPERATIONS:
-            return False
+            return None
         environment = _text(expected_environment, "expected_environment")
 
         if authorization.operation != operation:
-            return False
+            return None
         if authorization.environment != environment:
-            return False
+            return None
         if local_policy.environment != environment:
-            return False
+            return None
         if authorization.policy_hash != local_policy.policy_hash:
-            return False
+            return None
         if authorization.artifact_sha256 != artifact_manifest.artifact_sha256:
-            return False
+            return None
         if authorization.trust_manifest_digest != artifact_manifest.manifest_digest:
-            return False
-        if (
-            authorization.capability_request_digest
-            != capability_request.request_digest
-        ):
-            return False
-        if (
-            artifact_manifest.capability_request_digest
-            != capability_request.request_digest
-        ):
-            return False
+            return None
+        if authorization.capability_request_digest != capability_request.request_digest:
+            return None
+        if artifact_manifest.capability_request_digest != capability_request.request_digest:
+            return None
         if artifact_manifest.policy_hash != local_policy.policy_hash:
-            return False
-        if now < authorization.not_before_epoch:
-            return False
-        if now > authorization.expires_after_epoch:
-            return False
+            return None
+        if now < authorization.not_before_epoch or now > authorization.expires_after_epoch:
+            return None
 
         authorization_digest = hashlib.sha256(payload).hexdigest()
-        return bool(
-            atomic_redeemer(
-                authorization.authorization_id,
-                authorization_digest,
-            )
+        if not atomic_redeemer(authorization.authorization_id, authorization_digest):
+            return None
+
+        redemption_payload = {
+            "schema_version": _REDEMPTION_SCHEMA,
+            "authorization_id": authorization.authorization_id,
+            "operation": authorization.operation,
+            "environment": authorization.environment,
+            "authorization_digest": authorization_digest,
+            "artifact_sha256": authorization.artifact_sha256,
+            "trust_manifest_digest": authorization.trust_manifest_digest,
+            "policy_hash": authorization.policy_hash,
+            "capability_request_digest": authorization.capability_request_digest,
+            "redeemed_at_epoch": now,
+        }
+        return RedeemedAuthorization(
+            authorization_id=authorization.authorization_id,
+            operation=authorization.operation,
+            environment=authorization.environment,
+            authorization_digest=authorization_digest,
+            artifact_sha256=authorization.artifact_sha256,
+            trust_manifest_digest=authorization.trust_manifest_digest,
+            policy_hash=authorization.policy_hash,
+            capability_request_digest=authorization.capability_request_digest,
+            redeemed_at_epoch=now,
+            redemption_digest=_digest(redemption_payload),
         )
     except (DeploymentAuthorizationError, TypeError, ValueError):
-        return False
+        return None
 
 
 def _text(value: object, field: str) -> str:
@@ -200,3 +231,13 @@ def _epoch(value: object, field: str) -> int:
             f"{field} must be a non-negative integer"
         )
     return value
+
+
+def _digest(value: object) -> str:
+    encoded = json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
