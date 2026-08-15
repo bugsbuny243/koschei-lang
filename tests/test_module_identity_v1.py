@@ -44,6 +44,9 @@ class ModuleIdentityTests(unittest.TestCase):
         mir = require_mir(graph)
         self.assertEqual(mir.root, graph.root)
         self.assertEqual(set(mir.modules), set(graph.modules))
+        self.assertTrue(
+            all(module.key == key for key, module in mir.modules.items())
+        )
         self.assertEqual(
             mir.root_module.imports["dep"],
             "koschei-object:22222222222222222222222222222222",
