@@ -184,7 +184,17 @@ def check_graph(graph: ModuleGraph) -> SemanticReport:
     typed_reports = {}
     effect_reports: dict[str, EffectReport] = {}
 
+    # Module.path is a diagnostic/source locator, not semantic identity. Ordinary
+    # path-based projects currently use path strings as graph keys, but stronger
+    # project systems may use authenticated object identities. Never reconstruct
+    # analysis identity from the locator or imported effect propagation can be
+    # silently skipped when a non-path graph key is used.
+    key_by_module_identity = {
+        id(module): key for key, module in graph.modules.items()
+    }
+
     for module in graph.in_dependency_order():
+        module_key = key_by_module_identity[id(module)]
         try:
             imports = imported_modules(graph, module)
             check_program_integrity(module.program)
@@ -203,8 +213,8 @@ def check_graph(graph: ModuleGraph) -> SemanticReport:
                 typed_report,
                 imported_effects,
             )
-            effect_reports[str(module.path)] = effect_report
-            typed_reports[str(module.path)] = typed_report
+            effect_reports[module_key] = effect_report
+            typed_reports[module_key] = typed_report
 
             legacy_program, legacy_imports = prepare_legacy_analysis(
                 module.program,
@@ -215,7 +225,7 @@ def check_graph(graph: ModuleGraph) -> SemanticReport:
         except SemanticError as error:
             error.source_path = module.path
             raise
-        if module.path == graph.root_module.path:
+        if module_key == graph.root:
             report = result
     assert report is not None
     graph.mir = lower_mir_graph(graph, typed_reports)
