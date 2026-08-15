@@ -22,6 +22,8 @@ from typing import Callable
 from .build_manifest import NativeBuildManifest
 from .deployment_authorization_v1 import (
     DeploymentAuthorization,
+    RedeemedAuthorization,
+    deployment_authorization_digest,
     redeem_deployment_authorization,
 )
 from .release_proof import ReleaseProof
@@ -34,6 +36,7 @@ from .trust_plane_v1 import (
 )
 
 _SCHEMA = "koschei.trusted-launch-permit.v1"
+_REDEMPTION_SCHEMA = "koschei.deployment-authorization-redemption.v1"
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,12 +84,7 @@ def authorize_trusted_launch(
     atomic_redeemer: Callable[[str, str], bool],
     current_epoch: int,
 ) -> TrustedLaunchPermit | None:
-    """Return a one-operation launch permit or fail closed with ``None``.
-
-    The deployment authorization is redeemed only after deterministic artifact
-    eligibility succeeds. A failed artifact/provenance/policy check therefore
-    never burns a valid authorization.
-    """
+    """Return a one-operation launch permit or fail closed with ``None``."""
 
     launch_decision = evaluate_launch(
         artifact_manifest,
@@ -98,7 +96,6 @@ def authorize_trusted_launch(
     )
     if not launch_decision.allowed:
         return None
-
     if not _launch_decision_matches(
         launch_decision,
         artifact_manifest=artifact_manifest,
@@ -121,13 +118,13 @@ def authorize_trusted_launch(
     )
     if redeemed is None:
         return None
-
     if not _redemption_matches(
         redeemed,
+        deployment_authorization=deployment_authorization,
         artifact_manifest=artifact_manifest,
         local_policy=local_policy,
         capability_request=capability_request,
-        authorization_id=deployment_authorization.authorization_id,
+        current_epoch=current_epoch,
     ):
         return None
 
@@ -176,24 +173,53 @@ def _launch_decision_matches(
 
 
 def _redemption_matches(
-    redemption: object,
+    redemption: RedeemedAuthorization,
     *,
+    deployment_authorization: DeploymentAuthorization,
     artifact_manifest: TrustArtifactManifest,
     local_policy: LocalPolicy,
     capability_request: StaticCapabilityRequest,
-    authorization_id: str,
+    current_epoch: int,
 ) -> bool:
-    return (
-        getattr(redemption, "authorization_id", None) == authorization_id
-        and getattr(redemption, "operation", None) == "launch"
-        and getattr(redemption, "environment", None) == local_policy.environment
-        and getattr(redemption, "artifact_sha256", None) == artifact_manifest.artifact_sha256
-        and getattr(redemption, "trust_manifest_digest", None) == artifact_manifest.manifest_digest
-        and getattr(redemption, "policy_hash", None) == local_policy.policy_hash
-        and getattr(redemption, "capability_request_digest", None) == capability_request.request_digest
-        and isinstance(getattr(redemption, "authorization_digest", None), str)
-        and isinstance(getattr(redemption, "redemption_digest", None), str)
-    )
+    if not isinstance(redemption, RedeemedAuthorization):
+        return False
+    try:
+        expected_authorization_digest = deployment_authorization_digest(
+            deployment_authorization
+        )
+        if redemption.authorization_digest != expected_authorization_digest:
+            return False
+        if redemption.authorization_id != deployment_authorization.authorization_id:
+            return False
+        if redemption.operation != "launch":
+            return False
+        if redemption.environment != local_policy.environment:
+            return False
+        if redemption.artifact_sha256 != artifact_manifest.artifact_sha256:
+            return False
+        if redemption.trust_manifest_digest != artifact_manifest.manifest_digest:
+            return False
+        if redemption.policy_hash != local_policy.policy_hash:
+            return False
+        if redemption.capability_request_digest != capability_request.request_digest:
+            return False
+        if redemption.redeemed_at_epoch != current_epoch:
+            return False
+        redemption_payload = {
+            "schema_version": _REDEMPTION_SCHEMA,
+            "authorization_id": redemption.authorization_id,
+            "operation": redemption.operation,
+            "environment": redemption.environment,
+            "authorization_digest": redemption.authorization_digest,
+            "artifact_sha256": redemption.artifact_sha256,
+            "trust_manifest_digest": redemption.trust_manifest_digest,
+            "policy_hash": redemption.policy_hash,
+            "capability_request_digest": redemption.capability_request_digest,
+            "redeemed_at_epoch": redemption.redeemed_at_epoch,
+        }
+        return redemption.redemption_digest == _digest(redemption_payload)
+    except (TypeError, ValueError):
+        return False
 
 
 def _digest(value: object) -> str:
