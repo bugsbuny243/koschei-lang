@@ -33,13 +33,11 @@ class AdversarialLabV1Tests(unittest.TestCase):
 
     def test_one_failed_gate_blocks_release(self):
         root = self._root_with_required_suites()
-
         def runner(test_file: str):
             gate = next(g for g in REQUIRED_GATES if g.test_file == test_file)
             if test_file.endswith("test_decoy_attack_simulation_v1.py"):
                 return False, gate.min_tests, "attack escaped expected invariant"
             return True, gate.min_tests, "ok"
-
         report = evaluate_release(candidate_id="rc-2", repo_root=root, runner=runner)
         self.assertFalse(report.commercial_ready)
         self.assertEqual(sum(not r.passed for r in report.results), 1)
@@ -49,12 +47,10 @@ class AdversarialLabV1Tests(unittest.TestCase):
         missing = root / REQUIRED_GATES[0].test_file
         missing.unlink()
         calls = []
-
         def runner(test_file: str):
             calls.append(test_file)
             gate = next(g for g in REQUIRED_GATES if g.test_file == test_file)
             return True, gate.min_tests, "ok"
-
         report = evaluate_release(candidate_id="rc-3", repo_root=root, runner=runner)
         self.assertFalse(report.commercial_ready)
         first = next(r for r in report.results if r.gate_id == REQUIRED_GATES[0].gate_id)
@@ -69,10 +65,8 @@ class AdversarialLabV1Tests(unittest.TestCase):
 
     def test_runner_exception_fails_closed(self):
         root = self._root_with_required_suites()
-
         def runner(_):
             raise RuntimeError("boom")
-
         report = evaluate_release(candidate_id="rc-5", repo_root=root, runner=runner)
         self.assertFalse(report.commercial_ready)
         self.assertTrue(all(r.detail == "runner error: RuntimeError" for r in report.results))
@@ -86,12 +80,10 @@ class AdversarialLabV1Tests(unittest.TestCase):
     def test_per_gate_test_count_shrink_blocks_release(self):
         root = self._root_with_required_suites()
         target = REQUIRED_GATES[0]
-
         def runner(test_file: str):
             gate = next(g for g in REQUIRED_GATES if g.test_file == test_file)
             count = gate.min_tests - 1 if gate.gate_id == target.gate_id else gate.min_tests
             return True, count, "runner green"
-
         report = evaluate_release(candidate_id="rc-shrink", repo_root=root, runner=runner)
         self.assertFalse(report.commercial_ready)
         result = next(r for r in report.results if r.gate_id == target.gate_id)

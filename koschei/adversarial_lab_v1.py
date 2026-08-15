@@ -106,7 +106,7 @@ def evaluate_release(*, candidate_id: str, runner: Runner, repo_root: str | Path
             elif not count_ok:
                 detail = f"test-count shrink detected: ran {tests_run}, minimum {gate.min_tests}"
             results.append(GateResult(gate.gate_id, gate.test_file, ok, tests_run, gate.min_tests, str(detail)))
-        except Exception as exc:  # fail closed by design
+        except Exception as exc:
             results.append(GateResult(gate.gate_id, gate.test_file, False, 0, gate.min_tests, f"runner error: {type(exc).__name__}"))
     frozen = tuple(results)
     total_tests_run = sum(r.tests_run for r in frozen)
@@ -116,11 +116,4 @@ def evaluate_release(*, candidate_id: str, runner: Runner, repo_root: str | Path
         and total_tests_run >= MIN_TOTAL_ATTACK_TESTS
     )
     digest = hashlib.sha256(_canonical_report_payload(candidate_id, frozen, total_tests_run)).hexdigest()
-    return AdversarialReport(
-        candidate_id,
-        commercial_ready,
-        frozen,
-        total_tests_run,
-        MIN_TOTAL_ATTACK_TESTS,
-        digest,
-    )
+    return AdversarialReport(candidate_id, commercial_ready, frozen, total_tests_run, MIN_TOTAL_ATTACK_TESTS, digest)
