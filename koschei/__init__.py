@@ -153,6 +153,12 @@ from .serve_loopback_exchange_go_v1 import install_serve_loopback_exchange_go_v1
 
 install_serve_loopback_exchange_go_v1()
 
+from .serve_loopback_exchange_go_integrity_v1 import (
+    install_serve_loopback_exchange_go_integrity_v1,
+)
+
+install_serve_loopback_exchange_go_integrity_v1()
+
 from .serve_loopback_exchange_diagnostics_v1 import (
     install_serve_loopback_exchange_diagnostics_v1,
 )
