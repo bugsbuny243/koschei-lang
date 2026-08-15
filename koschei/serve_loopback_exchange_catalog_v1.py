@@ -1,8 +1,10 @@
 """Truthful stdlib catalog overlay for experimental loopback ingress.
 
-The catalog's `supported` state means interpreter/native-Go parity. Exchange v1 is
-intentionally interpreter-only while the native listener ABI remains fail-closed,
-so it is recorded as `reserved`, never `supported`.
+The catalog's `supported` state means executed interpreter/native-Go parity, not
+merely that two backend implementations exist in source. Exchange v1 now has an
+interpreter implementation plus a Linux native-Go implementation and parity tests,
+but hosted CI has not executed those gates because runner allocation is blocked.
+It therefore remains `reserved`.
 """
 
 from __future__ import annotations
@@ -41,9 +43,9 @@ def install_serve_loopback_exchange_catalog_v1() -> None:
                 enforced_budgets=(),
                 security_sensitive=True,
                 note=(
-                    "Experimental interpreter path enforces the authority budgets for "
-                    "a one-shot loopback exchange, but the stdlib catalog does not "
-                    "claim backend support until native-Go parity exists."
+                    "Interpreter and Linux native-Go implementations plus parity tests "
+                    "exist, including exact backlog, byte and I/O-deadline contracts. "
+                    "The operation remains reserved until real CI executes those gates."
                 ),
             ),
             _catalog.Operation(
