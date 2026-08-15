@@ -10,7 +10,7 @@ from pathlib import Path
 
 from koschei.capabilities import analyze_graph
 from koschei.modules import check_graph
-from koschei.workspace import load_workspace, write_workspace_lock
+from koschei.workspace import WorkspaceError, load_workspace, write_workspace_lock
 from koschei.workspace_execution import (
     build_locked_workspace_package,
     run_locked_workspace_package,
@@ -103,18 +103,20 @@ class ProductionReferenceSystemTests(unittest.TestCase):
         workspace = load_workspace(REFERENCE)
         self.assertEqual(len(workspace.members), 10)
 
-        module_count = 0
-        function_count = 0
+        modules_by_path = {}
         domains_by_member: dict[str, list[str]] = {}
         for name in workspace.build_order:
             graph = load_workspace_member_graph(workspace, name)
-            report = check_graph(graph)
-            module_count += len(graph.modules)
-            function_count += report.functions
+            check_graph(graph)
+            for module in graph.modules.values():
+                modules_by_path[module.path] = module
             domains_by_member[name] = analyze_graph(graph).domains()
 
-        self.assertGreaterEqual(module_count, 10)
-        self.assertGreaterEqual(function_count, 25)
+        function_count = sum(
+            len(module.program.declarations) for module in modules_by_path.values()
+        )
+        self.assertEqual(len(modules_by_path), 10)
+        self.assertGreaterEqual(function_count, 30)
         self.assertEqual(domains_by_member["order_worker"], [])
         self.assertEqual(domains_by_member["matching_engine"], [])
         self.assertEqual(domains_by_member["risk_engine"], [])
@@ -146,7 +148,7 @@ class ProductionReferenceSystemTests(unittest.TestCase):
 
         output = io.StringIO()
         with redirect_stdout(output):
-            with self.assertRaisesRegex(Exception, "risk_engine"):
+            with self.assertRaisesRegex(WorkspaceError, "risk_engine"):
                 run_locked_workspace_package(workspace, "order_worker")
         self.assertEqual(output.getvalue(), "")
 
@@ -183,11 +185,14 @@ class ProductionReferenceSystemTests(unittest.TestCase):
             _scale_workspace(root, 32)
             workspace, _ = _lock(root)
             graph = load_workspace_member_graph(workspace, "scale31")
-            report = check_graph(graph)
+            check_graph(graph)
+            declaration_count = sum(
+                len(module.program.declarations) for module in graph.modules.values()
+            )
 
             self.assertEqual(len(workspace.members), 32)
             self.assertEqual(len(graph.modules), 32)
-            self.assertGreaterEqual(report.functions, 64)
+            self.assertEqual(declaration_count, 64)
 
             output = io.StringIO()
             with redirect_stdout(output):
