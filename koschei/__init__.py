@@ -181,6 +181,10 @@ from .persistence_authority_v1 import install_persistence_authority_v1
 
 install_persistence_authority_v1()
 
+from .persistence_policy_canonical_v1 import install_persistence_policy_canonical_v1
+
+install_persistence_policy_canonical_v1()
+
 from .bounded_persistence_v1 import install_bounded_persistence_v1
 
 install_bounded_persistence_v1()
@@ -192,6 +196,10 @@ install_persistence_runtime_alignment_v1()
 from .persistence_parent_integrity_v1 import install_persistence_parent_integrity_v1
 
 install_persistence_parent_integrity_v1()
+
+from .persistence_target_integrity_v1 import install_persistence_target_integrity_v1
+
+install_persistence_target_integrity_v1()
 
 from .persistence_semantic_alignment_v1 import install_persistence_semantic_alignment_v1
 
