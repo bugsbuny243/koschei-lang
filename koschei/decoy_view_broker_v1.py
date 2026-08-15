@@ -226,8 +226,16 @@ def require_canonical_build_view(
     view: SourceView,
     *,
     canonical_view_key: bytes | None = None,
+    expected_project_id: str | None = None,
+    expected_object_id: str | None = None,
+    expected_epoch: int | None = None,
 ) -> None:
-    """Fail closed unless a canonical view carries a valid build attestation."""
+    """Fail closed unless a canonical view is attested for the expected context.
+
+    The expected project/object/epoch values come from the caller's current build
+    authority context. They are intentionally not inferred from the view itself:
+    doing so would make a valid old attestation replayable into a later build.
+    """
     if not isinstance(view, SourceView):
         raise DecoyViewError("invalid source view")
     if view.provenance != "canonical" or view.deployable is not True:
@@ -239,6 +247,16 @@ def require_canonical_build_view(
     ep = _require_epoch(view.epoch)
     if not isinstance(view.content, bytes):
         raise DecoyViewError("canonical source content must be bytes")
+
+    if expected_project_id is None or expected_object_id is None or expected_epoch is None:
+        raise DecoyViewError(
+            "canonical build admission requires expected project, object and epoch context"
+        )
+    expected_project = _require_project_id(expected_project_id)
+    expected_oid = _require_object_id(expected_object_id)
+    expected_ep = _require_epoch(expected_epoch)
+    if project != expected_project or oid != expected_oid or ep != expected_ep:
+        raise DecoyViewError("canonical source view does not match current build context")
 
     claimed_digest = _require_digest(view.view_digest)
     digest = "sha256:" + hashlib.sha256(view.content).hexdigest()
