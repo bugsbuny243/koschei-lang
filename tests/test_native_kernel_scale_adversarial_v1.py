@@ -33,6 +33,18 @@ class NativeKernelScaleAdversarialV1Tests(unittest.TestCase):
             parse_native_kernel(source)
         self.assertEqual(caught.exception.code, "KN1201")
 
+    def test_leading_zero_decimal_aliases_are_not_canonical_source(self) -> None:
+        for spelling in ("00", "01", "0000000000000000001"):
+            with self.subTest(spelling=spelling):
+                source = f"witness answer {spelling}\nresolve answer\n"
+                with self.assertRaises(NativeKernelError) as caught:
+                    parse_native_kernel(source)
+                self.assertEqual(caught.exception.code, "KN1200")
+
+    def test_single_zero_is_the_only_zero_literal_spelling(self) -> None:
+        kernel = parse_native_kernel("witness answer 0\nresolve answer\n")
+        self.assertEqual(evaluate_native_kernel(kernel), 0)
+
     def test_max_int64_decimal_boundary_is_admitted_exactly(self) -> None:
         maximum = (1 << 63) - 1
         kernel = parse_native_kernel(f"witness answer {maximum}\nresolve answer\n")
