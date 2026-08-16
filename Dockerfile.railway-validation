@@ -1,0 +1,9 @@
+FROM golang:1.24-bookworm AS go
+FROM python:3.13-bookworm
+COPY --from=go /usr/local/go /usr/local/go
+ENV PATH="/usr/local/go/bin:${PATH}"
+WORKDIR /app
+COPY . .
+RUN go version
+RUN python -m unittest -v tests.test_mir_native_runtime tests.test_mir_native_module_shadow_guard_v1 tests.test_production_reference_system_v1
+CMD ["python", "-c", "import time; print('native-mir-modules-v1 go+python validation passed'); time.sleep(3600)"]
