@@ -1,5 +1,5 @@
 [build]
-buildCommand = "python -m unittest -v tests.test_object_space_v1 tests.test_object_space_adversarial_v1 tests.test_temporal_access_rollback_v1 tests.test_crypto_profile_integrity_v1 tests.test_object_space_redteam_round2_v1 tests.test_object_space_redteam_round3_v1 tests.test_object_space_redteam_round4_v1"
+buildCommand = "python -m unittest -v tests.test_object_space_v1 tests.test_object_space_adversarial_v1 tests.test_temporal_access_rollback_v1 tests.test_crypto_profile_integrity_v1 tests.test_object_space_redteam_round2_v1 tests.test_object_space_redteam_round3_v1 tests.test_object_space_redteam_round4_v1 tests.test_object_space_graph_v1"
 
 [deploy]
 startCommand = "python -c \"import time; print('object-space redteam passed'); time.sleep(3600)\""
