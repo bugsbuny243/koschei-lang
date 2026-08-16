@@ -1,9 +1,11 @@
+import dataclasses
 import hashlib
 import hmac
 import unittest
 
 from koschei.commercial_activation_v1 import (
     ActivationLease,
+    CommercialActivationError,
     canonical_activation_payload,
     device_binding_digest,
     verify_activation,
@@ -92,6 +94,40 @@ class CommercialActivationV1Tests(unittest.TestCase):
 
     def test_revoked_seat_fails(self):
         self.assertFalse(self._verify(revoked_seat_ids={"seat-01"}))
+
+    def test_canonicalized_lease_id_cannot_bypass_revocation(self):
+        lease = dataclasses.replace(self.lease, lease_id=" lease-001 ")
+        self.assertFalse(
+            self._verify(
+                lease=lease,
+                lease_signature=self._lease_sig(lease),
+                revoked_lease_ids={"lease-001"},
+            )
+        )
+
+    def test_canonicalized_seat_id_cannot_bypass_revocation(self):
+        lease = dataclasses.replace(self.lease, seat_id=" seat-01 ")
+        self.assertFalse(
+            self._verify(
+                lease=lease,
+                lease_signature=self._lease_sig(lease),
+                revoked_seat_ids={"seat-01"},
+            )
+        )
+
+    def test_single_string_revocation_input_fails_closed(self):
+        self.assertFalse(self._verify(revoked_lease_ids="some-other-lease"))
+        self.assertFalse(self._verify(revoked_seat_ids="some-other-seat"))
+
+    def test_device_binding_rejects_nul_delimiter_collisions(self):
+        with self.assertRaises(CommercialActivationError):
+            device_binding_digest(customer_id="cust\x00device", device_public_id="alpha")
+        with self.assertRaises(CommercialActivationError):
+            device_binding_digest(customer_id="cust", device_public_id="device\x00alpha")
+
+    def test_non_boolean_online_mode_fails_closed(self):
+        self.assertFalse(self._verify(online=1))
+        self.assertFalse(self._verify(online="false"))
 
     def test_online_expiry_fails_but_offline_grace_can_continue(self):
         self.assertFalse(self._verify(current_epoch=210, online=True))

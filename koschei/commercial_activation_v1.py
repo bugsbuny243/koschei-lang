@@ -35,6 +35,8 @@ class ActivationLease:
 def _nonempty(value: str, field: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise CommercialActivationError(f"{field} must be non-empty text")
+    if "\x00" in value:
+        raise CommercialActivationError(f"{field} cannot contain NUL")
     return value.strip()
 
 
@@ -49,6 +51,15 @@ def _epoch(value: int, field: str) -> int:
     if not isinstance(value, int) or isinstance(value, bool) or value < 0:
         raise CommercialActivationError(f"{field} must be a non-negative integer")
     return value
+
+
+def _revoked_ids(values: Collection[str], field: str) -> set[str]:
+    # A single string is a Collection[str] at runtime but is not a valid
+    # revocation collection. Treat malformed caller input as fail-closed rather
+    # than silently iterating characters and missing the revoked identifier.
+    if isinstance(values, (str, bytes)):
+        raise CommercialActivationError(f"{field} must be a collection of identifiers")
+    return {_nonempty(value, field) for value in values}
 
 
 def device_binding_digest(*, customer_id: str, device_public_id: str) -> str:
@@ -97,20 +108,33 @@ def verify_activation(*, lease: ActivationLease, lease_signature: bytes,
         now = _epoch(current_epoch, "current_epoch")
         expected_channel = _nonempty(expected_channel, "expected_channel")
         expected_binding = _hex64(expected_device_binding, "expected_device_binding")
+        if not isinstance(online, bool):
+            return False
+
         payload = canonical_activation_payload(lease)
         if not isinstance(lease_signature, bytes) or not lease_signature:
             return False
         if not bool(lease_verifier(payload, lease_signature)):
             return False
-        if lease.lease_id in set(revoked_lease_ids) or lease.seat_id in set(revoked_seat_ids):
+
+        lease_id = _nonempty(lease.lease_id, "lease_id")
+        seat_id = _nonempty(lease.seat_id, "seat_id")
+        lease_channel = _nonempty(lease.channel, "channel")
+        lease_customer = _nonempty(lease.customer_id, "customer_id")
+        lease_entitlement = _hex64(lease.entitlement_digest, "entitlement_digest")
+        lease_binding = _hex64(lease.device_binding, "device_binding")
+
+        if lease_id in _revoked_ids(revoked_lease_ids, "revoked_lease_id"):
             return False
-        if lease.channel != expected_channel or entitlement.artifact.channel != expected_channel:
+        if seat_id in _revoked_ids(revoked_seat_ids, "revoked_seat_id"):
             return False
-        if lease.customer_id != entitlement.customer_id:
+        if lease_channel != expected_channel or _nonempty(entitlement.artifact.channel, "entitlement.channel") != expected_channel:
             return False
-        if lease.entitlement_digest != entitlement_digest(entitlement):
+        if lease_customer != _nonempty(entitlement.customer_id, "entitlement.customer_id"):
             return False
-        if lease.device_binding != expected_binding:
+        if lease_entitlement != entitlement_digest(entitlement):
+            return False
+        if lease_binding != expected_binding:
             return False
         if now < lease.issued_epoch:
             return False
