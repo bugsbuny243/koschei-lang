@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from pathlib import Path
 import unittest
 
 from koschei.ast_nodes import BinaryExpression, LetStatement, ReturnStatement
+from koschei.modules import Module, ModuleGraph, check_graph
 from koschei.native_kernel_originality_v1 import audit_native_kernel_surface_v1
 from koschei.native_kernel_v1 import (
     check_native_kernel,
@@ -30,6 +32,26 @@ class NativeKernelV1Tests(unittest.TestCase):
         )
         self.assertEqual(checked.semantic.functions, 1)
         self.assertEqual(checked.semantic.variables, 4)
+
+    def test_native_lowering_satisfies_full_current_module_graph_backend_abi(self) -> None:
+        checked = check_native_kernel(
+            "witness base 40\n"
+            "witness fee 2\n"
+            "witness total sum base fee\n"
+            "resolve total\n"
+        )
+        module = Module(
+            name="<native-kernel-test>",
+            path=Path("<native-kernel-test>"),
+            program=checked.lowered,
+            imports={},
+        )
+        graph = ModuleGraph(root="native", modules={"native": module})
+        report = check_graph(graph)
+        self.assertEqual(report.functions, 1)
+        self.assertEqual(report.variables, 3)
+        self.assertIsNotNone(graph.mir)
+        self.assertIn("native", graph.mir.modules)
 
     def test_source_clause_order_is_not_execution_order(self) -> None:
         first = parse_native_kernel(
