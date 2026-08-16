@@ -129,6 +129,16 @@ from .object_space_check_adversarial_guard_v1 import (
 
 install_object_space_check_adversarial_guard_v1()
 
+from .object_space_codegen_alignment_v1 import (
+    install_object_space_codegen_alignment_v1,
+)
+
+install_object_space_codegen_alignment_v1()
+
+from .object_space_commands_v1 import install_object_space_commands_v1
+
+install_object_space_commands_v1()
+
 from .typestate_affine_alignment import install_typestate_affine_alignment
 
 install_typestate_affine_alignment()
