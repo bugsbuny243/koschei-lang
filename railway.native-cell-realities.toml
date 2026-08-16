@@ -1,0 +1,6 @@
+[build]
+buildCommand = "python -m unittest -v tests.test_native_cell_realities_v1 tests.test_native_cell_realities_adversarial_v1 tests.test_native_cell_realities_scale_v1"
+
+[deploy]
+startCommand = "python -c \"import time; print('native-cell functional+redteam+scale passed'); time.sleep(3600)\""
+restartPolicyType = "NEVER"
