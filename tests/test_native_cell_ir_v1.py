@@ -10,7 +10,7 @@ from koschei.native_cell_ir_v1 import (
     lower_checked_cell_projection_to_native_ir_v1,
 )
 from koschei.native_cell_projection_v1 import NativeCellProjectionCheckV1
-from koschei.native_conduit_ir_v1 import execute_native_conduit_ir_v1
+from koschei.native_ir_v1 import execute_native_ir_v1
 from koschei.native_value_domains_v1 import GLYPHS, TRUTH, WHOLE, NativeValue
 
 
@@ -43,7 +43,7 @@ class NativeCellIrV1Tests(unittest.TestCase):
         checked = self._checked(NativeValue(WHOLE, 2))
         source = "witness fee conduit 0\nwitness base 40\nwitness total sum base fee\nresolve total\n"
         ir = feed_checked_cell_projection_to_conduit_ir_v1(checked, source=source)
-        self.assertEqual(execute_native_conduit_ir_v1(ir), NativeValue(WHOLE, 42))
+        self.assertEqual(execute_native_ir_v1(ir), NativeValue(WHOLE, 42))
 
     def test_selected_value_must_match_proven_full_schema(self):
         checked = self._checked(NativeValue(WHOLE, 2))
