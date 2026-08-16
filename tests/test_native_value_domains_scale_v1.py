@@ -30,7 +30,10 @@ class NativeValueDomainsScaleV1Tests(unittest.TestCase):
         checked = check_native_value_domains("\n".join(lines) + "\n")
         self.assertEqual(len(checked.graph.witnesses), 4096)
         self.assertEqual(checked.value.domain, GLYPHS)
-        self.assertEqual(len(checked.value.value.encode("utf-8")), 4096)
+        # Two seed witnesses plus 4094 merge witnesses fill the 4096-witness
+        # graph cap. Only one seed is on the resolved merge chain, so the final
+        # canonical payload contains 4095 bytes, not 4096.
+        self.assertEqual(len(checked.value.value.encode("utf-8")), 4095)
 
     def test_glyph_result_budget_accepts_exact_limit_and_rejects_one_doubling_more(self) -> None:
         seed = "a" * 65536
