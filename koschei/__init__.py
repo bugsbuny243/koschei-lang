@@ -149,6 +149,10 @@ from .native_relationship_alignment_v1 import install_native_relationship_alignm
 
 install_native_relationship_alignment_v1()
 
+from .native_value_domain_alignment_v1 import install_native_value_domain_alignment_v1
+
+install_native_value_domain_alignment_v1()
+
 from .typestate_affine_alignment import install_typestate_affine_alignment
 
 install_typestate_affine_alignment()
