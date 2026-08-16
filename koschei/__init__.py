@@ -113,6 +113,12 @@ from .object_space_redteam_round3_v1 import install_object_space_redteam_round3_
 
 install_object_space_redteam_round3_v1()
 
+from .object_space_diagnostic_privacy_v1 import (
+    install_object_space_diagnostic_privacy_v1,
+)
+
+install_object_space_diagnostic_privacy_v1()
+
 from .object_space_check_v1 import install_object_space_check_v1
 
 install_object_space_check_v1()
