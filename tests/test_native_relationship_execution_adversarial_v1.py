@@ -13,6 +13,8 @@ from koschei.interpreter import Interpreter
 from koschei.native_relationship_v1 import (
     NativeRelationshipError,
     NativeRelationshipSpecV1,
+    _HEADER,
+    _OBJECT,
     encode_native_relationship_graph_secret,
 )
 from koschei.object_space_check_v1 import object_space_check_session
@@ -94,16 +96,24 @@ class NativeRelationshipExecutionAdversarialV1Tests(unittest.TestCase):
             root = Path(temporary) / "space"
             project, handle = self._create(root)
             payload = bytearray(project.graph_secret)
-            payload[-1] ^= 1
+
+            # Do not flip an arbitrary bit: the final record bytes include a
+            # legitimate resource ceiling, so some bit flips can still describe a
+            # valid (merely looser) contract. Target the authority ceiling itself
+            # and inflate it from canonical zero to one. Native relationships v1
+            # expressly forbid that authority, so admission must stop before run.
+            relation_start = _HEADER.size + len(project.records) * _OBJECT.size
+            authority_offset = relation_start + 16 + 16 + 4 + 16 + 32 + 32 + 8 + 8
+            payload[authority_offset + 7] = 1
             forged = replace(project, graph_secret=bytes(payload))
 
             with object_space_check_session(self._opener(handle, project_override=forged)):
                 with patch.object(
                     Interpreter,
                     "execute_main",
-                    side_effect=AssertionError("interpreter reached after relationship tamper"),
+                    side_effect=AssertionError("interpreter reached after authority inflation"),
                 ) as execute:
-                    with self.assertRaises(NativeRelationshipError):
+                    with self.assertRaisesRegex(NativeRelationshipError, "authority"):
                         cli.command_run(str(root))
                     execute.assert_not_called()
 
