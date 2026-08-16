@@ -101,6 +101,10 @@ from .object_space_adversarial_guard_v1 import (
 
 install_object_space_adversarial_guard_v1()
 
+from .object_space_redteam_round2_v1 import install_object_space_redteam_round2_v1
+
+install_object_space_redteam_round2_v1()
+
 from .typestate_affine_alignment import install_typestate_affine_alignment
 
 install_typestate_affine_alignment()
