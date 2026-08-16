@@ -27,6 +27,14 @@ class ReadGrant:
     mac: str
 
 
+def _valid_project_id(value: str) -> str:
+    if not isinstance(value, str) or not value:
+        raise ReadAuthorizationError("project_id must be non-empty text")
+    if "\x00" in value:
+        raise ReadAuthorizationError("project_id cannot contain NUL")
+    return value
+
+
 def _valid_oid(value: str) -> str:
     if not isinstance(value, str):
         raise ReadAuthorizationError("object_id must be text")
@@ -42,25 +50,39 @@ def _valid_epoch(value: int, field: str) -> int:
     return value
 
 
+def _valid_nonce(value: str) -> str:
+    if not isinstance(value, str) or len(value) < 16:
+        raise ReadAuthorizationError("nonce must contain at least 16 characters")
+    if "\x00" in value:
+        raise ReadAuthorizationError("nonce cannot contain NUL")
+    return value
+
+
 def _valid_key(key: bytes) -> bytes:
     if not isinstance(key, bytes) or len(key) < 32:
         raise ReadAuthorizationError("authorization_key must contain at least 256 bits")
     return key
 
 
+def _valid_mac(value: str) -> str:
+    if not isinstance(value, str) or len(value) != 64:
+        raise ReadAuthorizationError("grant mac must be a SHA-256 HMAC hex digest")
+    if any(ch not in "0123456789abcdef" for ch in value):
+        raise ReadAuthorizationError("grant mac must be lowercase hexadecimal")
+    return value
+
+
 def _message(project_id: str, object_id: str, start: int, end: int, nonce: str) -> bytes:
-    if not isinstance(project_id, str) or not project_id:
-        raise ReadAuthorizationError("project_id must be non-empty text")
+    project = _valid_project_id(project_id)
     oid = _valid_oid(object_id)
     start = _valid_epoch(start, "not_before_epoch")
     end = _valid_epoch(end, "expires_after_epoch")
     if end < start:
         raise ReadAuthorizationError("authorization expiry cannot precede start")
-    if not isinstance(nonce, str) or len(nonce) < 16:
-        raise ReadAuthorizationError("nonce must contain at least 16 characters")
+    nonce = _valid_nonce(nonce)
     return (
         b"koschei/read-grant/v1\x00"
-        + project_id.encode("utf-8") + b"\x00"
+        + project.encode("utf-8") + b"\x00"
         + oid.encode("ascii") + b"\x00"
         + str(start).encode("ascii") + b"\x00"
         + str(end).encode("ascii") + b"\x00"
@@ -73,7 +95,14 @@ def issue_read_grant(*, project_id: str, object_id: str, not_before_epoch: int,
     key = _valid_key(authorization_key)
     message = _message(project_id, object_id, not_before_epoch, expires_after_epoch, nonce)
     mac = hmac.new(key, message, hashlib.sha256).hexdigest()
-    return ReadGrant(project_id, _valid_oid(object_id), not_before_epoch, expires_after_epoch, nonce, mac)
+    return ReadGrant(
+        _valid_project_id(project_id),
+        _valid_oid(object_id),
+        _valid_epoch(not_before_epoch, "not_before_epoch"),
+        _valid_epoch(expires_after_epoch, "expires_after_epoch"),
+        _valid_nonce(nonce),
+        mac,
+    )
 
 
 def verify_read_grant(grant: ReadGrant, *, project_id: str, object_id: str,
@@ -82,25 +111,44 @@ def verify_read_grant(grant: ReadGrant, *, project_id: str, object_id: str,
         return False
     try:
         key = _valid_key(authorization_key)
+        project = _valid_project_id(project_id)
         oid = _valid_oid(object_id)
         ep = _valid_epoch(epoch, "epoch")
-        if grant.project_id != project_id or grant.object_id != oid:
+
+        grant_project = _valid_project_id(grant.project_id)
+        grant_oid = _valid_oid(grant.object_id)
+        grant_start = _valid_epoch(grant.not_before_epoch, "grant.not_before_epoch")
+        grant_end = _valid_epoch(grant.expires_after_epoch, "grant.expires_after_epoch")
+        if grant_end < grant_start:
             return False
-        if ep < grant.not_before_epoch or ep > grant.expires_after_epoch:
+        grant_nonce = _valid_nonce(grant.nonce)
+        grant_mac = _valid_mac(grant.mac)
+
+        if grant_project != project or grant_oid != oid:
+            return False
+        if ep < grant_start or ep > grant_end:
             return False
         expected = hmac.new(
             key,
-            _message(grant.project_id, grant.object_id, grant.not_before_epoch,
-                     grant.expires_after_epoch, grant.nonce),
+            _message(grant_project, grant_oid, grant_start, grant_end, grant_nonce),
             hashlib.sha256,
         ).hexdigest()
-        return hmac.compare_digest(expected, grant.mac)
+        return hmac.compare_digest(expected, grant_mac)
     except ReadAuthorizationError:
         return False
 
 
-def read_with_grant(*, project_id: str, object_id: str, epoch: int, grant: ReadGrant,
-                    canonical_reader, deception_key: bytes, authorization_key: bytes) -> SourceView:
+def read_with_grant(
+    *,
+    project_id: str,
+    object_id: str,
+    epoch: int,
+    grant: ReadGrant,
+    canonical_reader,
+    deception_key: bytes,
+    authorization_key: bytes,
+    canonical_view_key: bytes | None = None,
+) -> SourceView:
     authorized = verify_read_grant(
         grant,
         project_id=project_id,
@@ -115,4 +163,5 @@ def read_with_grant(*, project_id: str, object_id: str, epoch: int, grant: ReadG
         authorized=authorized,
         canonical_reader=canonical_reader,
         deception_key=deception_key,
+        canonical_view_key=canonical_view_key,
     )

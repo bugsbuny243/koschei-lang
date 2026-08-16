@@ -26,6 +26,7 @@ from .typestate_resources_v1 import check_typestate_resources
 
 MODULE_SUFFIX = ".ks"
 ImportResolver = Callable[[Path, str, SourceLocation], Path]
+SourceReader = Callable[[Path], str]
 
 
 class ModuleError(Exception):
@@ -80,7 +81,18 @@ def load_graph(
     root_path: str | Path,
     *,
     import_resolver: ImportResolver | None = None,
+    source_reader: SourceReader | None = None,
 ) -> ModuleGraph:
+    """Load one module graph.
+
+    ``source_reader`` is a security boundary for callers that have already
+    authenticated source bytes (for example the protected-object loader). When
+    supplied, the ordinary filesystem file-existence/read path is not used; the
+    caller-provided reader is the only source of parser input. This prevents a
+    verified object from being reopened and changed between verification and
+    parsing.
+    """
+
     root = Path(root_path).resolve()
     resolver = import_resolver or _resolve_sibling_import
     modules: dict[str, Module] = {}
@@ -101,15 +113,34 @@ def load_graph(
             )
         if key in modules:
             return key
-        if not resolved_path.is_file():
-            raise ModuleError(
-                "KS1601",
-                f"Modül dosyası bulunamadı: {resolved_path.name} "
-                f"(aranan yer: {resolved_path.parent})",
-                location,
-            )
 
-        source = resolved_path.read_text(encoding="utf-8")
+        if source_reader is None:
+            if not resolved_path.is_file():
+                raise ModuleError(
+                    "KS1601",
+                    f"Modül dosyası bulunamadı: {resolved_path.name} "
+                    f"(aranan yer: {resolved_path.parent})",
+                    location,
+                )
+            source = resolved_path.read_text(encoding="utf-8")
+        else:
+            try:
+                source = source_reader(resolved_path)
+            except ModuleError:
+                raise
+            except Exception as error:
+                raise ModuleError(
+                    "KS1604",
+                    "Önceden doğrulanmış modül kaynağı alınamadı; filesystem fallback yasak.",
+                    location,
+                ) from error
+            if not isinstance(source, str):
+                raise ModuleError(
+                    "KS1604",
+                    "Önceden doğrulanmış modül kaynağı UTF-8 text olmalıdır; filesystem fallback yasak.",
+                    location,
+                )
+
         try:
             program = parse(source)
         except (LexerError, ParserError) as error:
