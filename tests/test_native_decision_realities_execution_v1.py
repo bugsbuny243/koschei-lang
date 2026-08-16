@@ -44,8 +44,8 @@ class NativeDecisionRealitiesExecutionV1Tests(unittest.TestCase):
         self.source = (
             "witness gate truth yes\n"
             "witness chosen glyphs 2 ok\n"
-            "witness rejected glyphs 6 secret\n"
-            "witness result settle gate chosen rejected\n"
+            "witness inactivexqz glyphs 6 secret\n"
+            "witness result settle gate chosen inactivexqz\n"
             "resolve result\n"
         ).encode("utf-8")
         self.objects = {self.root_id: self.source}
@@ -89,32 +89,32 @@ class NativeDecisionRealitiesExecutionV1Tests(unittest.TestCase):
             (
                 "witness gate truth yes\n"
                 "witness chosen 42\n"
-                "witness rejected 7\n"
-                "witness result settle gate chosen rejected\n"
+                "witness inactivexqz 7\n"
+                "witness result settle gate chosen inactivexqz\n"
                 "resolve result\n",
                 42,
             ),
             (
                 "witness gate truth no\n"
                 "witness chosen truth yes\n"
-                "witness rejected truth no\n"
-                "witness result settle gate chosen rejected\n"
+                "witness inactivexqz truth no\n"
+                "witness result settle gate chosen inactivexqz\n"
                 "resolve result\n",
                 False,
             ),
             (
                 "witness gate truth yes\n"
                 "witness chosen glyphs 2 ok\n"
-                "witness rejected glyphs 2 no\n"
-                "witness result settle gate chosen rejected\n"
+                "witness inactivexqz glyphs 2 no\n"
+                "witness result settle gate chosen inactivexqz\n"
                 "resolve result\n",
                 "ok",
             ),
         ):
             with self.subTest(expected=expected):
                 checked, runtime = execute_lowered(source)
-                self.assertEqual(runtime, expected)
-                self.assertEqual(checked.value.value, expected)
+                self.assertEqual(runtime, expected, f"backend mismatch for expected {expected!r}")
+                self.assertEqual(checked.value.value, expected, f"frontend mismatch for expected {expected!r}")
 
     def test_real_object_space_run_executes_only_selected_decision_reality(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -134,26 +134,37 @@ class NativeDecisionRealitiesExecutionV1Tests(unittest.TestCase):
                     mir_graph.module_imports(),
                     mir_graph.structs(),
                 ).execute_main()
-                self.assertEqual(runtime_value, "ok")
-                self.assertEqual(cli.command_run(str(root)), 0)
+                self.assertEqual(runtime_value, "ok", "Object Space MIR did not realize selected value")
+                self.assertEqual(cli.command_run(str(root)), 0, "public run did not preserve success-status ABI")
 
     def test_public_mir_and_native_source_omit_unselected_witness_identity(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "space"
             project, handle = self.create(root)
-            captured = io.StringIO()
             with object_space_check_session(self.opener(handle)):
+                project_checked, graph = commands._checked(str(root))
+                mir_text = repr(commands._public_mir_payload(graph, project_checked))
+                go_source = commands._object_space_go_source(str(root))[1]
+
+                # Check the emitted application function rather than generic runtime
+                # diagnostics, which may legitimately contain arbitrary English words.
+                main_start = go_source.rfind("func main()")
+                self.assertGreaterEqual(main_start, 0)
+                application_go = go_source[main_start:]
+
+                captured = io.StringIO()
                 with redirect_stdout(captured), redirect_stderr(captured):
-                    self.assertEqual(cli.command_mir(str(root)), 0)
-                    self.assertEqual(cli.command_emit_go(str(root)), 0)
                     self.assertEqual(cli.command_caps(str(root), True, None), 0)
-            text = captured.getvalue()
-            self.assertNotIn("rejected", text)
-            self.assertNotIn("secret", text)
+
+            for text in (mir_text, application_go, captured.getvalue()):
+                self.assertNotIn("inactivexqz", text)
+                self.assertNotIn("secret", text)
             needles = [self.project_id.hex(), self.root_id.hex()]
             needles.extend(record.locator_text for record in project.records)
             for needle in needles:
-                self.assertNotIn(needle, text)
+                self.assertNotIn(needle, mir_text)
+                self.assertNotIn(needle, application_go)
+                self.assertNotIn(needle, captured.getvalue())
 
     def test_frontend_tamper_is_rejected_before_interpreter_execution(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
