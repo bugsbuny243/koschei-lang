@@ -170,10 +170,11 @@ def _name(token: str, *, line: int) -> str:
 
 def _atom(token: str, *, line: int) -> NativeAtom:
     if token.isdigit():
-        value = int(token)
-        if value > INT_MAX:
+        # Int64 has at most 19 decimal digits. Reject before host conversion so
+        # Python's own decimal-string safety limit never becomes language behavior.
+        if len(token) > 19 or (len(token) == 19 and token > str(INT_MAX)):
             _fail("KN1201", "Int literal exceeds signed Int64 range", line, 1)
-        return NativeAtom(literal=value)
+        return NativeAtom(literal=int(token))
     return NativeAtom(witness=_name(token, line=line))
 
 
@@ -204,9 +205,6 @@ def parse_native_kernel(source: str) -> NativeKernel:
     resolve_location: SourceLocation | None = None
 
     for line_number, line in enumerate(lines, start=1):
-        # The native frontend never tokenizes legacy punctuation. Make that
-        # boundary explicit so a future permissive tokenizer cannot create a
-        # hidden compatibility fallback.
         for symbol in _LEGACY_DEBT_SYMBOLS:
             if symbol in line:
                 _fail(
@@ -260,7 +258,7 @@ def parse_native_kernel(source: str) -> NativeKernel:
         _fail("KN1103", "native graph must contain exactly one resolve clause")
 
     kernel = NativeKernel(tuple(witnesses), resolve_name, resolve_location)
-    dependency_order(kernel)  # admission validates references/cycles/dead nodes.
+    dependency_order(kernel)
     return kernel
 
 
@@ -269,9 +267,15 @@ def _dependencies(witness: NativeWitness) -> tuple[str, ...]:
 
 
 def dependency_order(kernel: NativeKernel) -> tuple[str, ...]:
-    """Return canonical dependency order; physical source line order is irrelevant."""
+    """Return canonical dependency order without host recursion.
+
+    V1 admits 4096 witnesses. A recursive DFS would make Python's call-stack
+    limit an accidental language limit, so graph admission uses an explicit stack.
+    """
 
     by_name = kernel.by_name()
+    if len(by_name) != len(kernel.witnesses):
+        _fail("KN1101", "native kernel contains duplicate witness identities")
     if kernel.resolve not in by_name:
         _fail(
             "KN1105",
@@ -283,32 +287,54 @@ def dependency_order(kernel: NativeKernel) -> tuple[str, ...]:
     state: dict[str, int] = {}
     ordered: list[str] = []
     reachable: set[str] = set()
+    trail: list[str] = []
+    stack: list[tuple[str, int]] = [(kernel.resolve, 0)]
 
-    def visit(name: str, trail: tuple[str, ...]) -> None:
-        witness = by_name.get(name)
-        if witness is None:
-            owner = by_name[trail[-1]] if trail else by_name[kernel.resolve]
-            _fail(
-                "KN1105",
-                f"witness {owner.name!r} references unknown witness {name!r}",
-                owner.location.line,
-                owner.location.column,
-            )
-        mark = state.get(name, 0)
-        if mark == 1:
-            cycle = " -> ".join((*trail, name))
-            _fail("KN1106", f"native witness graph contains a cycle: {cycle}", witness.location.line, 1)
-        if mark == 2:
+    while stack:
+        name, next_dependency = stack[-1]
+        witness = by_name[name]
+        if state.get(name, 0) == 0:
+            state[name] = 1
             reachable.add(name)
-            return
-        state[name] = 1
-        reachable.add(name)
-        for dependency in _dependencies(witness):
-            visit(dependency, (*trail, name))
+            trail.append(name)
+
+        dependencies = _dependencies(witness)
+        if next_dependency < len(dependencies):
+            dependency = dependencies[next_dependency]
+            stack[-1] = (name, next_dependency + 1)
+            target = by_name.get(dependency)
+            if target is None:
+                _fail(
+                    "KN1105",
+                    f"witness {name!r} references unknown witness {dependency!r}",
+                    witness.location.line,
+                    witness.location.column,
+                )
+            mark = state.get(dependency, 0)
+            if mark == 1:
+                try:
+                    cycle_start = trail.index(dependency)
+                except ValueError:
+                    cycle_start = 0
+                cycle = " -> ".join((*trail[cycle_start:], dependency))
+                _fail(
+                    "KN1106",
+                    f"native witness graph contains a cycle: {cycle}",
+                    target.location.line,
+                    1,
+                )
+            if mark == 0:
+                stack.append((dependency, 0))
+            else:
+                reachable.add(dependency)
+            continue
+
+        stack.pop()
+        if trail and trail[-1] == name:
+            trail.pop()
         state[name] = 2
         ordered.append(name)
 
-    visit(kernel.resolve, ())
     dormant = sorted(set(by_name) - reachable)
     if dormant:
         first = by_name[dormant[0]]
@@ -357,7 +383,7 @@ def evaluate_native_kernel(kernel: NativeKernel) -> int:
                 value = left - right
             elif term.operation == "product":
                 value = left * right
-            else:  # defensive: NativeTerm is public but admission stays closed.
+            else:
                 _fail("KN1005", f"unknown native operation {term.operation!r}", witness.location.line, 1)
             value = _checked_int(value, operation=term.operation, location=witness.location)
         values[name] = value
@@ -409,9 +435,6 @@ def lower_native_kernel(kernel: NativeKernel) -> Program:
             kernel.resolve_location,
         )
     )
-    # `main` exists only below the native frontend because current MIR/runtime
-    # activation still uses that internal ABI. It is not a native grammar word,
-    # object filename, entry declaration, or programmer-selected root identity.
     origin = FunctionDeclaration(
         "main",
         (),
