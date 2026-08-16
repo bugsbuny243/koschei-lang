@@ -81,7 +81,10 @@ def lower_authenticated_object_space_to_native_ir_v1(
             "legacy/source-sniff fallback is forbidden"
         )
 
-    records = decode_authenticated_frontend_graph(project)
+    try:
+        records = decode_authenticated_frontend_graph(project)
+    except ObjectSpaceFrontendIdentityError as error:
+        raise ObjectSpaceNativeIrDispatchError(str(error)) from error
     if len(records) != 1:
         _fail("authenticated witness Native IR v1 requires exactly one root object")
     record = records[0]
