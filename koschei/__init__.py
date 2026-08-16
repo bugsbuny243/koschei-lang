@@ -95,6 +95,10 @@ from .deterministic_parallel_map_v1 import install_deterministic_parallel_map_v1
 
 install_deterministic_parallel_map_v1()
 
+from .object_space_error_boundary_v1 import install_object_space_error_boundary_v1
+
+install_object_space_error_boundary_v1()
+
 from .object_space_adversarial_guard_v1 import (
     install_object_space_adversarial_guard_v1,
 )
