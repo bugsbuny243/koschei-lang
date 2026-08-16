@@ -175,7 +175,7 @@ class ObjectSpaceCheckAdversarialV1Tests(unittest.TestCase):
                 code, out, err = self.invoke(["check", str(root)])
             self.assertEqual(code, 1)
             self.assertEqual(out, "")
-            self.assertIn("missing_name", err)
+            self.assertIn("KS1101", err)
             self.assertNotIn(root_id.hex(), err)
             self.assertNotIn(project_id.hex(), err)
             for record in project.records:
