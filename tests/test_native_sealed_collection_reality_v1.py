@@ -46,6 +46,18 @@ class NativeSealedCollectionRealityV1Tests(unittest.TestCase):
         self.assertEqual(project_collection_count_v1(reality).value.value, 3)
         self.assertEqual(project_collection_sum_v1(reality).value.value, 60)
 
+    def test_collection_reality_has_no_public_subscript_protocol(self):
+        sealed = seal_collection_contract_v1(whole_contract(), KEY)
+        reality = admit_collection_reality_v1(sealed, KEY, current_epoch=12, items=(10, 20))
+        with self.assertRaises(TypeError):
+            _ = reality[0]
+
+    def test_collection_digest_binds_item_order(self):
+        sealed = seal_collection_contract_v1(whole_contract(), KEY)
+        left = admit_collection_reality_v1(sealed, KEY, current_epoch=12, items=(10, 20))
+        right = admit_collection_reality_v1(sealed, KEY, current_epoch=12, items=(20, 10))
+        self.assertNotEqual(left.digest, right.digest)
+
     def test_cardinality_ceiling_is_fail_closed(self):
         sealed = seal_collection_contract_v1(whole_contract(), KEY)
         with self.assertRaisesRegex(NativeSealedCollectionError, "cardinality"):
