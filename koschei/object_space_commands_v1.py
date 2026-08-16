@@ -1,31 +1,38 @@
 """Route executable/compiler commands through one trusted Object Space session.
 
 Object Space has no semantic entry filename and accepts no raw crypto/temporal
-secrets on the CLI.  A trusted embedding installs one scoped opener through
+secrets on the CLI. A trusted embedding installs one scoped opener through
 ``object_space_session``; run, mir, caps, emit-go and build then consume exactly
 the authenticated graph returned by that opener.
 
-Legacy file projects keep their existing command paths.  A directory that looks
+Legacy file projects keep their existing command paths. A directory that looks
 like Object Space never silently falls back to the legacy resolver.
+
+Object Space native build has an additional confidentiality rule: generated Go
+source may not be staged in a normal disk-backed temporary directory. The current
+Linux implementation requires an admitted tmpfs scratch root (``/dev/shm``) and
+fails closed if it cannot prove that property.
 """
 
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
 
 from . import cli as _cli
+from . import object_space_check_v1 as _check
 from .capabilities import analyze_graph, render as render_manifest
 from .capabilities import to_dict as manifest_to_dict
 from .codegen_go import generate_go_mir
 from .interpreter import run_mir as interpret_mir
 from .mir import require_mir, to_dict as mir_to_dict
 from .object_space_check_v1 import (
-    _looks_like_object_space,
     _open_scoped_project,
     object_space_check_session,
 )
@@ -47,6 +54,13 @@ _ORIGINAL_COMMAND_MIR = None
 _ORIGINAL_COMMAND_CAPS = None
 _ORIGINAL_COMMAND_EMIT_GO = None
 _ORIGINAL_COMMAND_BUILD = None
+
+
+def _looks_like_object_space(path: str | Path) -> bool:
+    # Resolve the routing guard dynamically. The adversarial guard intentionally
+    # replaces this predicate during package installation; caching an older
+    # function object would make installer order part of the security boundary.
+    return _check._looks_like_object_space(path)
 
 
 def _checked(path: str) -> tuple[ObjectSpaceProject, object]:
@@ -181,14 +195,71 @@ def _object_space_command_emit_go(path: str) -> int:
     return 0
 
 
-def _target_inside_project(target: Path, project: ObjectSpaceProject) -> bool:
-    root = project.root.resolve()
-    resolved = target.resolve()
+def _relative_to(candidate: Path, root: Path) -> bool:
     try:
-        resolved.relative_to(root)
+        candidate.relative_to(root)
     except ValueError:
         return False
     return True
+
+
+def _target_inside_project(target: Path, project: ObjectSpaceProject) -> bool:
+    # Check both lexical and symlink-resolved location. A path such as
+    # <project>/artifact -> /outside must still be rejected: merely opening a
+    # semantic output name inside k0/k1 reality violates the canonical surface
+    # even if the symlink ultimately points elsewhere.
+    lexical_root = Path(os.path.abspath(os.fspath(project.root)))
+    lexical_target = Path(os.path.abspath(os.fspath(target)))
+    if _relative_to(lexical_target, lexical_root):
+        return True
+
+    resolved_root = project.root.resolve()
+    resolved_target = target.resolve()
+    return _relative_to(resolved_target, resolved_root)
+
+
+def _unescape_mount_field(value: str) -> str:
+    # Linux mountinfo escapes space/tab/newline/backslash as octal sequences.
+    return (
+        value.replace("\\040", " ")
+        .replace("\\011", "\t")
+        .replace("\\012", "\n")
+        .replace("\\134", "\\")
+    )
+
+
+def _memory_backed_workspace_root() -> Path | None:
+    """Return a proven tmpfs scratch root or None.
+
+    v1 deliberately recognizes only Linux /dev/shm mounted as tmpfs. This is a
+    narrow proof surface, not a heuristic such as trusting TMPDIR.
+    """
+
+    candidate = Path("/dev/shm")
+    try:
+        info = candidate.lstat()
+    except OSError:
+        return None
+    if not stat.S_ISDIR(info.st_mode) or stat.S_ISLNK(info.st_mode):
+        return None
+
+    try:
+        lines = Path("/proc/self/mountinfo").read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+    for line in lines:
+        fields = line.split()
+        try:
+            separator = fields.index("-")
+        except ValueError:
+            continue
+        if separator < 6 or separator + 1 >= len(fields):
+            continue
+        mount_point = _unescape_mount_field(fields[4])
+        fs_type = fields[separator + 1]
+        if mount_point == "/dev/shm" and fs_type == "tmpfs":
+            return candidate
+    return None
 
 
 def _object_space_command_build(path: str, output: str | None, locale: str) -> int:
@@ -202,11 +273,13 @@ def _object_space_command_build(path: str, output: str | None, locale: str) -> i
             "Object Space build requires an explicit -o/--output because the "
             "project has no semantic entry filename from which to derive a binary name"
         )
-    target = Path(output).resolve()
-    if _target_inside_project(target, project):
+
+    requested_target = Path(output)
+    if _target_inside_project(requested_target, project):
         raise ObjectSpaceCommandError(
             "Object Space build output cannot be written inside the canonical k0/k1 project root"
         )
+    target = requested_target.resolve()
 
     go_binary = shutil.which("go")
     if go_binary is None:
@@ -220,13 +293,28 @@ def _object_space_command_build(path: str, output: str | None, locale: str) -> i
         print(message, file=sys.stderr)
         return 1
 
-    with tempfile.TemporaryDirectory(prefix="koschei-native-") as workspace:
+    scratch_root = _memory_backed_workspace_root()
+    if scratch_root is None:
+        raise ObjectSpaceCommandError(
+            "Object Space native build requires a proven memory-backed tmpfs scratch "
+            "workspace; generated backend source will not be written to disk-backed temp storage"
+        )
+
+    with tempfile.TemporaryDirectory(
+        prefix="koschei-native-",
+        dir=scratch_root,
+    ) as workspace:
         directory = Path(workspace)
-        (directory / "main.go").write_text(go_source, encoding="utf-8")
-        (directory / "go.mod").write_text(
+        os.chmod(directory, 0o700)
+        source_file = directory / "main.go"
+        module_file = directory / "go.mod"
+        source_file.write_text(go_source, encoding="utf-8")
+        module_file.write_text(
             "module koscheiprogram\n\ngo 1.21\n",
             encoding="utf-8",
         )
+        os.chmod(source_file, 0o600)
+        os.chmod(module_file, 0o600)
         completed = subprocess.run(
             [go_binary, "build", "-o", str(target), "."],
             cwd=directory,
