@@ -20,10 +20,12 @@ from . import object_space_adversarial_guard_v1 as _guard
 _INSTALLED = False
 _ORIGINAL_COMMIT_ROOT_SWITCH = None
 
-# Authoritative objects are capped at MAX_OBJECTS. A bounded stale/cover-cell
-# allowance keeps cleanup-failure semantics possible without allowing unbounded
-# directory reconnaissance cost inside the trusted runtime.
-MAX_INERT_PHYSICAL_CELLS_V1 = 1024
+# A valid rotation may leave the complete previous physical generation behind if
+# best-effort cleanup fails after k0 has already switched. The loader must remain
+# available in that state even at MAX_OBJECTS scale. Admit exactly one full stale
+# generation plus a small bounded inert/cover reserve; a second accumulating stale
+# generation still hits a hard ceiling instead of allowing unbounded directory DoS.
+MAX_INERT_PHYSICAL_CELLS_V1 = _space.MAX_OBJECTS + 1024
 MAX_PHYSICAL_CELLS_V1 = _space.MAX_OBJECTS + MAX_INERT_PHYSICAL_CELLS_V1
 
 
