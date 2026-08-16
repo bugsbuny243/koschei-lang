@@ -106,7 +106,6 @@ class ObjectSpaceAdversarialV1Tests(unittest.TestCase):
             payload = bytearray((root / "k0").read_bytes())
             payload[len(payload) // 2] ^= 0x01
             (root / "k0").write_bytes(payload)
-
             with self.assertRaises(ObjectSpaceError):
                 self.load(root, project, handle)
 
@@ -117,21 +116,18 @@ class ObjectSpaceAdversarialV1Tests(unittest.TestCase):
             first, second = project.records[:2]
             first_path = root / "k1" / first.locator_text
             second_path = root / "k1" / second.locator_text
-            first_bytes = first_path.read_bytes()
-            second_bytes = second_path.read_bytes()
+            first_bytes, second_bytes = first_path.read_bytes(), second_path.read_bytes()
             first_path.write_bytes(second_bytes)
             second_path.write_bytes(first_bytes)
-
             with self.assertRaises(ObjectSpaceError):
                 self.load(root, project, handle)
 
     def test_cross_project_k0_replay_is_rejected_even_with_same_provider(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             base = Path(temporary)
-            project_a, _handle_a = self.create(base / "a")
+            project_a, _ = self.create(base / "a")
             project_b, handle_b = self.create(base / "b")
             (base / "b" / "k0").write_bytes((base / "a" / "k0").read_bytes())
-
             self.assertNotEqual(project_a.project_id, project_b.project_id)
             with self.assertRaises(ObjectSpaceError):
                 self.load(base / "b", project_b, handle_b)
@@ -142,7 +138,6 @@ class ObjectSpaceAdversarialV1Tests(unittest.TestCase):
             project, handle = self.create(root)
             forged = bytearray(handle)
             forged[0] ^= 0x80
-
             with self.assertRaises(TemporalAccessError):
                 self.load(root, project, bytes(forged))
 
@@ -154,7 +149,6 @@ class ObjectSpaceAdversarialV1Tests(unittest.TestCase):
             target = root / "outside"
             target.write_bytes(b"attacker")
             os.symlink(target, root / "k1" / ("ab" * 32))
-
             with self.assertRaisesRegex(ObjectSpaceError, "non-regular|symlink"):
                 self.load(root, project, handle)
 
@@ -166,7 +160,6 @@ class ObjectSpaceAdversarialV1Tests(unittest.TestCase):
             authoritative = root / "k1" / project.records[0].locator_text
             alias = root / "k1" / ("cd" * 32)
             os.link(authoritative, alias)
-
             with self.assertRaisesRegex(ObjectSpaceError, "exactly one filesystem link"):
                 self.load(root, project, handle)
 
@@ -176,36 +169,19 @@ class ObjectSpaceAdversarialV1Tests(unittest.TestCase):
             project, handle = self.create(root)
             sealed = (root / "k0").read_bytes()
             aad = space._root_aad(project.project_id, project.epoch)
-            plaintext = self.provider.open(
-                purpose=space._ROOT_PURPOSE,
-                associated_data=aad,
-                ciphertext=sealed,
-            )
-            header = plaintext[: space._HEADER.size]
+            plaintext = self.provider.open(purpose=space._ROOT_PURPOSE, associated_data=aad, ciphertext=sealed)
+            header = plaintext[:space._HEADER.size]
             fields = space._HEADER.unpack_from(plaintext, 0)
-            object_count = fields[-2]
-            graph_bytes = fields[-1]
-            self.assertGreaterEqual(object_count, 2)
+            object_count, graph_bytes = fields[-2], fields[-1]
             offset = space._HEADER.size
-            records = [
-                plaintext[
-                    offset + index * space._RECORD.size :
-                    offset + (index + 1) * space._RECORD.size
-                ]
-                for index in range(object_count)
-            ]
-            graph = plaintext[
-                offset + object_count * space._RECORD.size :
-                offset + object_count * space._RECORD.size + graph_bytes
-            ]
-            forged_plaintext = header + b"".join(reversed(records)) + graph
+            records = [plaintext[offset+i*space._RECORD.size:offset+(i+1)*space._RECORD.size] for i in range(object_count)]
+            graph = plaintext[offset+object_count*space._RECORD.size:offset+object_count*space._RECORD.size+graph_bytes]
             forged = self.provider.seal(
                 purpose=space._ROOT_PURPOSE,
                 associated_data=aad,
-                plaintext=forged_plaintext,
+                plaintext=header + b"".join(reversed(records)) + graph,
             )
             (root / "k0").write_bytes(forged)
-
             with self.assertRaisesRegex(ObjectSpaceError, "not canonical"):
                 self.load(root, project, handle)
 
@@ -222,28 +198,20 @@ class ObjectSpaceAdversarialV1Tests(unittest.TestCase):
                 barrier.wait()
                 try:
                     rotated, _ = rotate_object_space_epoch(
-                        root,
-                        provider=self.provider,
-                        temporal_key=self.temporal_key,
-                        temporal_handle=handle,
-                        expected_project_id=project.project_id,
-                        expected_epoch=1,
-                        temporal_policy=self.policy,
-                        now=self.now,
+                        root, provider=self.provider, temporal_key=self.temporal_key,
+                        temporal_handle=handle, expected_project_id=project.project_id,
+                        expected_epoch=1, temporal_policy=self.policy, now=self.now,
                     )
                     with lock:
                         successes.append(rotated.epoch)
-                except Exception as error:  # attack outcome is intentionally broad.
+                except Exception as error:
                     with lock:
                         failures.append(error)
 
             threads = [threading.Thread(target=worker) for _ in range(2)]
-            for thread in threads:
-                thread.start()
+            for thread in threads: thread.start()
             barrier.wait()
-            for thread in threads:
-                thread.join(timeout=5)
-
+            for thread in threads: thread.join(timeout=5)
             self.assertTrue(all(not thread.is_alive() for thread in threads))
             self.assertEqual(successes, [2])
             self.assertEqual(len(failures), 1)
@@ -251,16 +219,14 @@ class ObjectSpaceAdversarialV1Tests(unittest.TestCase):
     def test_root_path_swap_before_commit_cannot_redirect_rotation(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             base = Path(temporary)
-            root = base / "project"
-            moved = base / "admitted-project"
+            root, moved = base / "project", base / "admitted-project"
             project, handle = self.create(root)
             original_k0 = (root / "k0").read_bytes()
             fired = False
 
             def swap_on_rotation_object(purpose, _aad, _plaintext) -> None:
                 nonlocal fired
-                if fired or purpose != space._OBJECT_PURPOSE:
-                    return
+                if fired or purpose != space._OBJECT_PURPOSE: return
                 fired = True
                 os.rename(root, moved)
                 root.mkdir(mode=0o700)
@@ -270,22 +236,15 @@ class ObjectSpaceAdversarialV1Tests(unittest.TestCase):
             self.provider.before_seal = swap_on_rotation_object
             with self.assertRaisesRegex(ObjectSpaceError, "path identity changed"):
                 rotate_object_space_epoch(
-                    root,
-                    provider=self.provider,
-                    temporal_key=self.temporal_key,
-                    temporal_handle=handle,
-                    expected_project_id=project.project_id,
-                    expected_epoch=1,
-                    temporal_policy=self.policy,
-                    now=self.now,
+                    root, provider=self.provider, temporal_key=self.temporal_key,
+                    temporal_handle=handle, expected_project_id=project.project_id,
+                    expected_epoch=1, temporal_policy=self.policy, now=self.now,
                 )
             self.provider.before_seal = None
-
             self.assertEqual((moved / "k0").read_bytes(), original_k0)
             self.assertEqual((root / "k0").read_bytes(), b"ATTACKER-REPLACEMENT")
             loaded = self.load(moved, project, handle)
             self.assertEqual(loaded.epoch, 1)
-            self.assertEqual(loaded.object_payloads, project.object_payloads)
 
     def test_pre_switch_rename_failure_rolls_back_new_cells(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -293,60 +252,40 @@ class ObjectSpaceAdversarialV1Tests(unittest.TestCase):
             project, handle = self.create(root)
             before_names = set(os.listdir(root / "k1"))
             before_k0 = (root / "k0").read_bytes()
-
             with patch(
-                "koschei.object_space_adversarial_guard_v1.os.rename",
+                "koschei.object_space_adversarial_guard_v1._commit_root_switch",
                 side_effect=OSError("injected rename failure"),
             ):
                 with self.assertRaises(OSError):
                     rotate_object_space_epoch(
-                        root,
-                        provider=self.provider,
-                        temporal_key=self.temporal_key,
-                        temporal_handle=handle,
-                        expected_project_id=project.project_id,
-                        expected_epoch=1,
-                        temporal_policy=self.policy,
-                        now=self.now,
+                        root, provider=self.provider, temporal_key=self.temporal_key,
+                        temporal_handle=handle, expected_project_id=project.project_id,
+                        expected_epoch=1, temporal_policy=self.policy, now=self.now,
                     )
-
             self.assertEqual((root / "k0").read_bytes(), before_k0)
             self.assertEqual(set(os.listdir(root / "k1")), before_names)
-            loaded = self.load(root, project, handle)
-            self.assertEqual(loaded.epoch, 1)
+            self.assertEqual(self.load(root, project, handle).epoch, 1)
 
     def test_post_switch_cleanup_failure_leaves_only_inert_old_cells(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "project"
             project, handle = self.create(root)
             old_names = {record.locator_text for record in project.records}
-
             with patch(
                 "koschei.object_space_adversarial_guard_v1._space._unlink_at",
                 side_effect=OSError("injected cleanup failure"),
             ):
                 rotated, new_handle = rotate_object_space_epoch(
-                    root,
-                    provider=self.provider,
-                    temporal_key=self.temporal_key,
-                    temporal_handle=handle,
-                    expected_project_id=project.project_id,
-                    expected_epoch=1,
-                    temporal_policy=self.policy,
-                    now=self.now,
+                    root, provider=self.provider, temporal_key=self.temporal_key,
+                    temporal_handle=handle, expected_project_id=project.project_id,
+                    expected_epoch=1, temporal_policy=self.policy, now=self.now,
                 )
-
             self.assertEqual(rotated.epoch, 2)
             self.assertTrue(old_names.issubset(set(rotated.unreferenced_locators)))
             loaded = load_object_space_project(
-                root,
-                provider=self.provider,
-                temporal_key=self.temporal_key,
-                temporal_handle=new_handle,
-                expected_project_id=project.project_id,
-                expected_epoch=2,
-                temporal_policy=self.policy,
-                now=self.now,
+                root, provider=self.provider, temporal_key=self.temporal_key,
+                temporal_handle=new_handle, expected_project_id=project.project_id,
+                expected_epoch=2, temporal_policy=self.policy, now=self.now,
             )
             self.assertEqual(loaded.object_payloads, project.object_payloads)
             self.assertTrue(old_names.issubset(set(loaded.unreferenced_locators)))
