@@ -121,7 +121,12 @@ class MirGraph:
 
     def assert_sealed(self) -> None:
         try:
-            for module in self.modules.values():
+            for key, module in self.modules.items():
+                if module.key != key:
+                    raise ValueError(
+                        "MIR module identity does not match graph key: "
+                        f"{module.key!r} != {key!r}"
+                    )
                 for function in module.functions:
                     validate_blocks(function.blocks)
                     expected_resources = _resource_contract(
@@ -180,12 +185,22 @@ class MirGraph:
         return result
 
 
+def _contract_import_target(target: str) -> str:
+    # Authenticated object graph keys are already semantic identities and must
+    # never be reinterpreted through host filesystem path rules. Legacy path
+    # graphs retain their historical module-stem fingerprint contract.
+    if target.startswith("koschei-object:"):
+        return target
+    return Path(target).stem
+
+
 def _module_contract(module: MirModule) -> dict[str, Any]:
     return {
         "name": module.name,
         "program": asdict(module.program),
         "imports": sorted(
-            (alias, Path(target).stem) for alias, target in module.imports.items()
+            (alias, _contract_import_target(target))
+            for alias, target in module.imports.items()
         ),
         "functions": [
             {
@@ -286,7 +301,12 @@ def _resource_contract(
     )
 
 
-def lower_module(module: Any, typed_report: TypedHIRReport) -> MirModule:
+def lower_module(
+    module: Any,
+    typed_report: TypedHIRReport,
+    *,
+    key: str | None = None,
+) -> MirModule:
     effect_contracts = infer_effects(module.program)
     functions = tuple(
         MirFunction(
@@ -313,7 +333,7 @@ def lower_module(module: Any, typed_report: TypedHIRReport) -> MirModule:
         for blocks in (lower_function_blocks(declaration, typed_report),)
     )
     return MirModule(
-        str(module.path),
+        str(module.path) if key is None else key,
         module.name,
         module.path,
         module.program,
@@ -325,7 +345,7 @@ def lower_module(module: Any, typed_report: TypedHIRReport) -> MirModule:
 
 def lower_graph(graph: Any, typed_reports: Mapping[str, TypedHIRReport]) -> MirGraph:
     modules = {
-        key: lower_module(module, typed_reports[key])
+        key: lower_module(module, typed_reports[key], key=key)
         for key, module in graph.modules.items()
     }
     result = MirGraph(graph.root, MappingProxyType(modules), "")
