@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 import unittest
 
+from koschei.native_external_boundary_v1 import NativeExternalBoundaryError
 from koschei.native_nested_external_projection_v1 import (
     NativeNestedExternalProjectionError,
     NestedProjectionContractV1,
@@ -80,7 +81,7 @@ class NativeNestedExternalProjectionV1Tests(unittest.TestCase):
         sealed = seal_nested_projection_v1(contract(), KEY)
         data = payload()
         data["order"]["amount"] = "40"
-        with self.assertRaisesRegex(NativeNestedExternalProjectionError, "without coercion"):
+        with self.assertRaisesRegex(NativeExternalBoundaryError, "without coercion"):
             admit_nested_external_json_v1(sealed, KEY, current_epoch=12, payload=data)
 
     def test_sealed_contract_tamper_is_rejected(self):
