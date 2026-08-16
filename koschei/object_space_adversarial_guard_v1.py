@@ -60,11 +60,7 @@ def _strict_decode_root(*args, **kwargs):
     _space._bytes_exact(root_object_id, _space._OBJECT_ID_BYTES, "root object id")
     for record in records:
         _space._bytes_exact(record.object_id, _space._OBJECT_ID_BYTES, "object id")
-        _space._bytes_exact(
-            record.artifact_digest,
-            _space._DIGEST_BYTES,
-            "artifact digest",
-        )
+        _space._bytes_exact(record.artifact_digest, _space._DIGEST_BYTES, "artifact digest")
         _space._bytes_exact(record.locator, _space._LOCATOR_BYTES, "locator")
     canonical = tuple(sorted(records, key=lambda item: item.object_id))
     if records != canonical:
@@ -86,25 +82,23 @@ def _root_path_matches_fd(root: Path, root_fd: int) -> bool:
     )
 
 
-def _load_from_admitted_handles(
-    *,
-    root: Path,
-    root_fd: int,
-    store_fd: int,
-    crypto,
-    temporal_key: bytes,
-    temporal_handle: bytes,
-    expected_project_id: bytes,
-    expected_epoch: int,
-    profile,
-    temporal_policy,
-    now,
-) -> _space.ObjectSpaceProject:
-    project = _space._bytes_exact(
-        expected_project_id,
-        _space._PROJECT_ID_BYTES,
-        "expected project id",
+def _commit_root_switch(*, pending: str, store_fd: int, root_fd: int) -> None:
+    """Single atomic authority switch seam, isolated for precise fault injection."""
+    os.rename(
+        pending,
+        _space.ROOT_CAPSULE_NAME,
+        src_dir_fd=store_fd,
+        dst_dir_fd=root_fd,
     )
+
+
+def _load_from_admitted_handles(
+    *, root: Path, root_fd: int, store_fd: int, crypto,
+    temporal_key: bytes, temporal_handle: bytes,
+    expected_project_id: bytes, expected_epoch: int,
+    profile, temporal_policy, now,
+) -> _space.ObjectSpaceProject:
+    project = _space._bytes_exact(expected_project_id, _space._PROJECT_ID_BYTES, "expected project id")
     epoch = _space._epoch(expected_epoch)
     verify_temporal_handle(
         temporal_handle,
@@ -116,10 +110,8 @@ def _load_from_admitted_handles(
     )
 
     sealed_root = _space._read_regular_at(
-        root_fd,
-        _space.ROOT_CAPSULE_NAME,
-        label="sealed k0 root capsule",
-        max_bytes=_space.MAX_SEALED_ROOT_BYTES,
+        root_fd, _space.ROOT_CAPSULE_NAME,
+        label="sealed k0 root capsule", max_bytes=_space.MAX_SEALED_ROOT_BYTES,
     )
     root_plaintext = _space._safe_open(
         crypto,
@@ -143,20 +135,13 @@ def _load_from_admitted_handles(
     payloads: dict[bytes, bytes] = {}
     for record in records:
         sealed = _space._read_regular_at(
-            store_fd,
-            record.locator_text,
-            label="sealed k1 object cell",
-            max_bytes=_space.MAX_SEALED_OBJECT_BYTES,
+            store_fd, record.locator_text,
+            label="sealed k1 object cell", max_bytes=_space.MAX_SEALED_OBJECT_BYTES,
         )
         plaintext = _space._safe_open(
             crypto,
             purpose=_space._OBJECT_PURPOSE,
-            associated_data=_space._object_aad(
-                project,
-                epoch,
-                record.object_id,
-                record.locator,
-            ),
+            associated_data=_space._object_aad(project, epoch, record.object_id, record.locator),
             ciphertext=sealed,
         )
         if len(plaintext) > _space.MAX_SOURCE_BYTES:
@@ -180,18 +165,13 @@ def _load_from_admitted_handles(
 
 def _locked_rotate_object_space_epoch(
     path: str | Path,
-    *,
-    provider,
-    temporal_key: bytes,
-    temporal_handle: bytes,
-    expected_project_id: bytes,
-    expected_epoch: int,
+    *, provider, temporal_key: bytes, temporal_handle: bytes,
+    expected_project_id: bytes, expected_epoch: int,
     profile=_space.OBJECT_SPACE_PQ1,
     temporal_policy=_space.TemporalAccessPolicy(),
     now: float | int | None = None,
 ):
     """Rotate one admitted reality with lock-after-admission reauthentication."""
-
     _space._require_secure_platform()
     if fcntl is None:
         _space._fail("object-space rotation requires advisory descriptor locking")
@@ -204,26 +184,12 @@ def _locked_rotate_object_space_epoch(
     switched = False
     try:
         fcntl.flock(root_fd, fcntl.LOCK_EX)
-        store_fd = _space._open_directory_at(
-            root_fd,
-            _space.OBJECT_STORE_NAME,
-            "k1 object store",
-        )
-
-        # Critical: authenticate current k0 only after acquiring the transition
-        # lock, through the exact descriptors that will be mutated.
+        store_fd = _space._open_directory_at(root_fd, _space.OBJECT_STORE_NAME, "k1 object store")
         current = _load_from_admitted_handles(
-            root=root,
-            root_fd=root_fd,
-            store_fd=store_fd,
-            crypto=crypto,
-            temporal_key=temporal_key,
-            temporal_handle=temporal_handle,
-            expected_project_id=expected_project_id,
-            expected_epoch=expected_epoch,
-            profile=profile,
-            temporal_policy=temporal_policy,
-            now=now,
+            root=root, root_fd=root_fd, store_fd=store_fd, crypto=crypto,
+            temporal_key=temporal_key, temporal_handle=temporal_handle,
+            expected_project_id=expected_project_id, expected_epoch=expected_epoch,
+            profile=profile, temporal_policy=temporal_policy, now=now,
         )
         next_epoch = current.epoch + 1
         if next_epoch > (1 << 64) - 1:
@@ -237,12 +203,7 @@ def _locked_rotate_object_space_epoch(
             sealed = _space._safe_seal(
                 crypto,
                 purpose=_space._OBJECT_PURPOSE,
-                associated_data=_space._object_aad(
-                    current.project_id,
-                    next_epoch,
-                    old.object_id,
-                    locator,
-                ),
+                associated_data=_space._object_aad(current.project_id, next_epoch, old.object_id, locator),
                 plaintext=payload,
             )
             if len(sealed) > _space.MAX_SEALED_OBJECT_BYTES:
@@ -250,13 +211,7 @@ def _locked_rotate_object_space_epoch(
             name = locator.hex()
             _space._write_exclusive_at(store_fd, name, sealed)
             new_names.append(name)
-            records.append(
-                _space.ObjectSpaceRecord(
-                    old.object_id,
-                    hashlib.sha256(payload).digest(),
-                    locator,
-                )
-            )
+            records.append(_space.ObjectSpaceRecord(old.object_id, hashlib.sha256(payload).digest(), locator))
         os.fsync(store_fd)
 
         root_plaintext = _space._encode_root(
@@ -279,18 +234,10 @@ def _locked_rotate_object_space_epoch(
         _space._write_exclusive_at(store_fd, pending, sealed_root)
         os.fsync(store_fd)
 
-        # An attacker may rename/replace the path while we hold descriptors. The
-        # descriptor protects mutation from redirection, but before the authority
-        # commit we also require the public path to still name this admitted inode.
         if not _root_path_matches_fd(root, root_fd):
             _space._fail("project root path identity changed before k0 authority switch")
 
-        os.rename(
-            pending,
-            _space.ROOT_CAPSULE_NAME,
-            src_dir_fd=store_fd,
-            dst_dir_fd=root_fd,
-        )
+        _commit_root_switch(pending=pending, store_fd=store_fd, root_fd=root_fd)
         pending = None
         os.fsync(root_fd)
         switched = True
@@ -309,20 +256,11 @@ def _locked_rotate_object_space_epoch(
             now=now,
             policy=temporal_policy,
         )
-        # Validate the committed next reality through the same admitted handles
-        # before releasing the transition lock.
         next_project = _load_from_admitted_handles(
-            root=root,
-            root_fd=root_fd,
-            store_fd=store_fd,
-            crypto=crypto,
-            temporal_key=temporal_key,
-            temporal_handle=next_handle,
-            expected_project_id=current.project_id,
-            expected_epoch=next_epoch,
-            profile=profile,
-            temporal_policy=temporal_policy,
-            now=now,
+            root=root, root_fd=root_fd, store_fd=store_fd, crypto=crypto,
+            temporal_key=temporal_key, temporal_handle=next_handle,
+            expected_project_id=current.project_id, expected_epoch=next_epoch,
+            profile=profile, temporal_policy=temporal_policy, now=now,
         )
         return next_project, next_handle
     finally:
