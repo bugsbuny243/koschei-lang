@@ -7,9 +7,13 @@ from koschei.native_value_domains_v1 import check_native_value_domains
 
 
 class NativeValueDomainBackendMaterializationV1Tests(unittest.TestCase):
+    def _function(self, checked):
+        self.assertEqual(len(checked.lowered.declarations), 1)
+        return checked.lowered.declarations[0]
+
     def _assert_all_witnesses_materialized(self, source: str) -> None:
         checked = check_native_value_domains(source)
-        function = checked.lowered.functions[0]
+        function = self._function(checked)
         witness_statements = [
             statement
             for statement in function.body.statements
@@ -50,7 +54,7 @@ class NativeValueDomainBackendMaterializationV1Tests(unittest.TestCase):
             "witness left 40\n"
             "resolve answer\n"
         )
-        function = checked.lowered.functions[0]
+        function = self._function(checked)
         lowered_names = tuple(
             statement.name
             for statement in function.body.statements
