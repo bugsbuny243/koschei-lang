@@ -95,6 +95,50 @@ from .deterministic_parallel_map_v1 import install_deterministic_parallel_map_v1
 
 install_deterministic_parallel_map_v1()
 
+from .object_space_error_boundary_v1 import install_object_space_error_boundary_v1
+
+install_object_space_error_boundary_v1()
+
+from .object_space_adversarial_guard_v1 import (
+    install_object_space_adversarial_guard_v1,
+)
+
+install_object_space_adversarial_guard_v1()
+
+from .object_space_redteam_round2_v1 import install_object_space_redteam_round2_v1
+
+install_object_space_redteam_round2_v1()
+
+from .object_space_redteam_round3_v1 import install_object_space_redteam_round3_v1
+
+install_object_space_redteam_round3_v1()
+
+from .object_space_diagnostic_privacy_v1 import (
+    install_object_space_diagnostic_privacy_v1,
+)
+
+install_object_space_diagnostic_privacy_v1()
+
+from .object_space_check_v1 import install_object_space_check_v1
+
+install_object_space_check_v1()
+
+from .object_space_check_adversarial_guard_v1 import (
+    install_object_space_check_adversarial_guard_v1,
+)
+
+install_object_space_check_adversarial_guard_v1()
+
+from .object_space_codegen_alignment_v1 import (
+    install_object_space_codegen_alignment_v1,
+)
+
+install_object_space_codegen_alignment_v1()
+
+from .object_space_commands_v1 import install_object_space_commands_v1
+
+install_object_space_commands_v1()
+
 from .typestate_affine_alignment import install_typestate_affine_alignment
 
 install_typestate_affine_alignment()
