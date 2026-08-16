@@ -18,7 +18,17 @@ from .native_value_domains_v1 import GLYPHS, TRUTH, WHOLE, MAX_GLYPHS_RESULT_BYT
 from .semantic import INT_MAX, INT_MIN
 
 
+def _ir_atom(atom) -> NativeIrAtomV1:
+    return NativeIrAtomV1(literal=atom.literal, witness=atom.witness)
+
+
 def lower_decision_graph_to_native_ir_v1(source: str) -> NativeIrRealityV1:
+    """Lower the structurally admitted graph into its selected runtime reality.
+
+    Structural admission validates both settle candidates. Native IR carries only
+    the truth condition plus the already-selected candidate, so the inactive
+    reality never becomes runtime dependency or hidden branch payload.
+    """
     graph = parse_native_decision_graph(source)
     values = evaluate_native_decision_graph(graph)
     order = active_order_native_decision_graph(graph, values)
@@ -26,7 +36,13 @@ def lower_decision_graph_to_native_ir_v1(source: str) -> NativeIrRealityV1:
     lowered: list[NativeIrWitnessV1] = []
     for name in order:
         witness = by_name[name]
-        atoms = tuple(NativeIrAtomV1(literal=atom.literal, witness=atom.witness) for atom in witness.term.atoms)
+        if witness.term.operation == SETTLE:
+            condition, affirmative, negative = witness.term.atoms
+            condition_value = condition.literal if condition.literal is not None else values[condition.witness]
+            chosen = affirmative if bool(condition_value.value) else negative
+            atoms = (_ir_atom(condition), _ir_atom(chosen))
+        else:
+            atoms = tuple(_ir_atom(atom) for atom in witness.term.atoms)
         lowered.append(NativeIrWitnessV1(name, witness.term.operation, atoms))
     return NativeIrRealityV1(tuple(lowered), graph.resolve)
 
@@ -49,16 +65,13 @@ def execute_native_decision_ir_v1(ir: NativeIrRealityV1) -> NativeValue:
                 raise NativeIrError("native decision literal/reference witness has invalid arity")
             value = atom_value(witness.atoms[0])
         elif witness.operation == SETTLE:
-            if len(witness.atoms) != 3:
-                raise NativeIrError("settle requires exactly three native IR atoms")
+            if len(witness.atoms) != 2:
+                raise NativeIrError("settle realization requires condition plus selected candidate")
             condition = atom_value(witness.atoms[0])
-            affirmative = atom_value(witness.atoms[1])
-            negative = atom_value(witness.atoms[2])
+            selected = atom_value(witness.atoms[1])
             if condition.domain != TRUTH:
                 raise NativeIrError("settle condition must be truth")
-            if affirmative.domain != negative.domain:
-                raise NativeIrError("settle candidates must share one native domain")
-            value = affirmative if bool(condition.value) else negative
+            value = selected
         else:
             if len(witness.atoms) != 2:
                 raise NativeIrError("native decision operation witness has invalid arity")
