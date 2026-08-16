@@ -8,6 +8,7 @@ import unittest
 from unittest.mock import patch
 
 import koschei.object_space_frontend_identity_v1 as frontend
+from koschei.lexer import LexerError
 from koschei.native_kernel_v1 import NativeKernelError
 from koschei.object_space_frontend_identity_v1 import (
     NATIVE_WITNESS_FRONTEND_V1,
@@ -18,6 +19,7 @@ from koschei.object_space_frontend_identity_v1 import (
 )
 from koschei.object_space_graph_v1 import ObjectSpaceGraphError, encode_object_space_graph_secret
 from koschei.object_space_v1 import create_object_space_project
+from koschei.parser import ParserError
 from koschei.temporal_access_v1 import TemporalAccessPolicy
 from tests.test_object_space_adversarial_v1 import TestOnlyProvider
 
@@ -144,7 +146,6 @@ class AuthenticatedFrontendIdentityAdversarialV1Tests(unittest.TestCase):
                 decode_authenticated_frontend_graph(truncated)
 
             payload = bytearray(project.graph_secret)
-            # object_count is the final uint32 in the 64-byte v1 header.
             payload[56:60] = (2).to_bytes(4, "big")
             forged = replace(project, graph_secret=bytes(payload))
             with self.assertRaises(ObjectSpaceFrontendIdentityError):
@@ -182,10 +183,7 @@ class AuthenticatedFrontendIdentityAdversarialV1Tests(unittest.TestCase):
                     NATIVE_WITNESS_FRONTEND_V1,
                 )
             )
-            records = tuple(
-                replace(record, artifact_digest=digest)
-                for record in project.records
-            )
+            records = tuple(replace(record, artifact_digest=digest) for record in project.records)
             forged = replace(
                 project,
                 graph_secret=bytes(body),
@@ -200,16 +198,13 @@ class AuthenticatedFrontendIdentityAdversarialV1Tests(unittest.TestCase):
                     check_object_space_graph_by_authenticated_frontend(forged)
 
     def test_legacy_schema_with_native_looking_source_does_not_auto_upgrade(self) -> None:
-        with self.assertRaises((ObjectSpaceGraphError, NativeKernelError, Exception)) as caught:
+        with self.assertRaises((LexerError, ParserError, ObjectSpaceGraphError)):
             encode_object_space_graph_secret(
                 project_id=self.project_id,
                 root_object_id=self.root_id,
                 objects=self.objects,
                 target_by_import_slot={},
             )
-        # The legacy encoder/parser owns the legacy schema path. It must not turn
-        # native-looking bytes into authenticated native metadata automatically.
-        self.assertNotIsInstance(caught.exception, AssertionError)
 
     def test_magic_tamper_does_not_trigger_source_sniffing_native_upgrade(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -217,9 +212,6 @@ class AuthenticatedFrontendIdentityAdversarialV1Tests(unittest.TestCase):
             payload = bytearray(project.graph_secret)
             payload[0] ^= 0x01
             forged = replace(project, graph_secret=bytes(payload))
-            # Dispatcher sees no valid native schema marker and delegates to the
-            # explicit legacy schema decoder. That decoder must fail schema before
-            # parsing the native-looking source.
             with patch(
                 "koschei.object_space_graph_v1.parse",
                 side_effect=AssertionError("source sniffing occurred"),
