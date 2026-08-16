@@ -24,25 +24,29 @@ from tests.test_object_space_adversarial_v1 import TestOnlyProvider
 
 class NativeValueDomainsV1Tests(unittest.TestCase):
     def test_whole_truth_and_glyphs_are_distinct_graph_domains(self) -> None:
-        source = (
+        whole = check_native_value_domains(
             "witness amount 40\n"
             "witness fee 2\n"
             "witness total sum amount fee\n"
+            "resolve total\n"
+        )
+        truth = check_native_value_domains(
             "witness enabled truth yes\n"
+            "resolve enabled\n"
+        )
+        glyphs = check_native_value_domains(
             "witness label glyphs 5 café\n"
             "witness doubled merge label label\n"
-            "witness equal same amount total\n"
             "resolve doubled\n"
         )
-        checked = check_native_value_domains(source)
-        self.assertEqual(checked.values["amount"].domain, WHOLE)
-        self.assertEqual(checked.values["enabled"].domain, TRUTH)
-        self.assertEqual(checked.values["label"].domain, GLYPHS)
-        self.assertEqual(checked.values["label"].value, "café")
-        self.assertEqual(checked.values["total"].value, 42)
-        self.assertEqual(checked.values["equal"].value, False)
-        self.assertEqual(checked.value.domain, GLYPHS)
-        self.assertEqual(checked.value.value, "cafécafé")
+        self.assertEqual(whole.value.domain, WHOLE)
+        self.assertEqual(whole.value.value, 42)
+        self.assertEqual(truth.value.domain, TRUTH)
+        self.assertIs(truth.value.value, True)
+        self.assertEqual(glyphs.values["label"].domain, GLYPHS)
+        self.assertEqual(glyphs.values["label"].value, "café")
+        self.assertEqual(glyphs.value.domain, GLYPHS)
+        self.assertEqual(glyphs.value.value, "cafécafé")
 
     def test_same_produces_truth_only_for_same_domain(self) -> None:
         checked = check_native_value_domains(
