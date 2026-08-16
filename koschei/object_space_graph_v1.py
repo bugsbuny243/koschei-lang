@@ -17,7 +17,6 @@ from pathlib import Path
 import struct
 from typing import Mapping, Sequence
 
-from .ast_nodes import SourceLocation
 from .lexer import LexerError
 from .modules import Module, ModuleError, ModuleGraph, check_graph
 from .object_space_v1 import (
@@ -25,12 +24,11 @@ from .object_space_v1 import (
     MAX_OBJECTS,
     ObjectSpaceError,
     ObjectSpaceProject,
-    ObjectSpaceRecord,
 )
 from .parser import ParserError, parse
 
 
-_GRAPH_MAGIC = b"KOSCHEI_OSGRAPH1\x00"
+_GRAPH_MAGIC = b"KOSCHEI_OSGRAPH1"
 _GRAPH_VERSION = 1
 _ID_BYTES = 16
 _DIGEST_BYTES = 32
