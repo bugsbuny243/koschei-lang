@@ -27,7 +27,6 @@ import re
 from .ast_nodes import (
     BinaryExpression,
     Block,
-    FunctionDeclaration,
     Identifier,
     LetStatement,
     Literal,
@@ -36,6 +35,7 @@ from .ast_nodes import (
     SourceLocation,
     TypeRef,
 )
+from .generic_nodes import GenericFunctionDeclaration
 from .semantic import INT_MAX, INT_MIN, SemanticChecker, SemanticReport
 
 
@@ -177,8 +177,6 @@ def _atom(token: str, *, line: int) -> NativeAtom:
                 line,
                 1,
             )
-        # Int64 has at most 19 decimal digits. Reject before host conversion so
-        # Python's own decimal-string safety limit never becomes language behavior.
         if len(token) > 19 or (len(token) == 19 and token > str(INT_MAX)):
             _fail("KN1201", "Int literal exceeds signed Int64 range", line, 1)
         return NativeAtom(literal=int(token))
@@ -442,13 +440,18 @@ def lower_native_kernel(kernel: NativeKernel) -> Program:
             kernel.resolve_location,
         )
     )
-    origin = FunctionDeclaration(
-        "main",
-        (),
-        TypeRef(("Int",), SourceLocation(1, 1)),
-        Block(tuple(statements)),
-        SourceLocation(1, 1),
+    # The backend's canonical function node carries the complete current AST ABI
+    # (including empty generic/transition axes). Native source still has no
+    # function declaration; this node exists only below the frontend boundary.
+    origin = GenericFunctionDeclaration(
+        name="main",
+        parameters=(),
+        return_type=TypeRef(("Int",), SourceLocation(1, 1)),
+        body=Block(tuple(statements)),
+        location=SourceLocation(1, 1),
         is_pure=True,
+        type_parameters=(),
+        is_transition=False,
     )
     return Program((origin,))
 
