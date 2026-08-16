@@ -171,6 +171,12 @@ from .native_cell_projection_alignment_v1 import (
 
 install_native_cell_projection_alignment_v1()
 
+from .native_cell_reuse_composition_alignment_v1 import (
+    install_native_cell_reuse_composition_alignment_v1,
+)
+
+install_native_cell_reuse_composition_alignment_v1()
+
 from .typestate_affine_alignment import install_typestate_affine_alignment
 
 install_typestate_affine_alignment()
