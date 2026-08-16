@@ -4,10 +4,14 @@ Object Space is not allowed to rely on creation-time chmod alone. Every admitted
 project directory and every authoritative/readable cell is revalidated against
 the current OS principal before use.
 
+Opened plaintext is also bounded immediately after the external crypto provider
+returns, before root parsing or later object processing.
+
 Threat boundary: this blocks cross-principal filesystem mutation/reconnaissance
 through permissive Unix modes and hard-link aliases. It does not claim isolation
 from another compromised process running as the same effective UID, a hostile
-kernel, or a hostile mount namespace.
+kernel, a hostile mount namespace, or arbitrary computation performed inside a
+provider that is itself compromised.
 """
 
 from __future__ import annotations
@@ -20,6 +24,13 @@ from . import object_space_v1 as _space
 _INSTALLED = False
 _ORIGINAL_OPEN_DIRECTORY_PATH = None
 _ORIGINAL_OPEN_DIRECTORY_AT = None
+_ORIGINAL_SAFE_OPEN = None
+
+_MAX_ROOT_PLAINTEXT_V1 = (
+    _space._HEADER.size
+    + (_space.MAX_OBJECTS * _space._RECORD.size)
+    + _space.MAX_GRAPH_SECRET_BYTES
+)
 
 
 def _effective_uid() -> int | None:
@@ -139,13 +150,30 @@ def _read_private_regular_at(
         os.close(fd)
 
 
+def _bounded_safe_open(provider, **kwargs) -> bytes:
+    assert _ORIGINAL_SAFE_OPEN is not None
+    plaintext = _ORIGINAL_SAFE_OPEN(provider, **kwargs)
+    purpose = kwargs.get("purpose")
+    if purpose == _space._ROOT_PURPOSE:
+        limit = _MAX_ROOT_PLAINTEXT_V1
+    elif purpose == _space._OBJECT_PURPOSE:
+        limit = _space.MAX_SOURCE_BYTES
+    else:
+        _space._fail("crypto provider open used an unknown Object Space purpose")
+    if len(plaintext) > limit:
+        _space._fail("crypto provider returned plaintext outside Object Space policy")
+    return plaintext
+
+
 def install_object_space_redteam_round3_v1() -> None:
-    global _INSTALLED, _ORIGINAL_OPEN_DIRECTORY_PATH, _ORIGINAL_OPEN_DIRECTORY_AT
+    global _INSTALLED, _ORIGINAL_OPEN_DIRECTORY_PATH, _ORIGINAL_OPEN_DIRECTORY_AT, _ORIGINAL_SAFE_OPEN
     if _INSTALLED:
         return
     _ORIGINAL_OPEN_DIRECTORY_PATH = _space._open_directory_path
     _ORIGINAL_OPEN_DIRECTORY_AT = _space._open_directory_at
+    _ORIGINAL_SAFE_OPEN = _space._safe_open
     _space._open_directory_path = _open_private_directory_path
     _space._open_directory_at = _open_private_directory_at
     _space._read_regular_at = _read_private_regular_at
+    _space._safe_open = _bounded_safe_open
     _INSTALLED = True
