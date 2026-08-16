@@ -1,6 +1,6 @@
 [build]
-buildCommand = "python -m unittest -v tests.test_native_relationship_v1 tests.test_native_relationship_execution_v1 tests.test_native_relationship_adversarial_v1 tests.test_native_relationship_scale_v1 tests.test_authenticated_frontend_identity_v1 tests.test_authenticated_frontend_identity_adversarial_v1 tests.test_authenticated_frontend_identity_redteam_v1 tests.test_native_kernel_v1 tests.test_native_kernel_adversarial_v1 tests.test_native_kernel_order_invariance_v1 tests.test_native_kernel_scale_adversarial_v1"
+buildCommand = "python -m unittest -v tests.test_native_relationship_v1 tests.test_native_relationship_execution_v1 tests.test_native_relationship_execution_adversarial_v1 tests.test_native_relationship_adversarial_v1 tests.test_native_relationship_scale_v1 tests.test_authenticated_frontend_identity_v1 tests.test_authenticated_frontend_identity_adversarial_v1 tests.test_authenticated_frontend_identity_redteam_v1 tests.test_native_kernel_v1 tests.test_native_kernel_adversarial_v1 tests.test_native_kernel_order_invariance_v1 tests.test_native_kernel_scale_adversarial_v1"
 
 [deploy]
-startCommand = "python -c \"import time; print('native-relationship execution+redteam passed'); time.sleep(3600)\""
+startCommand = "python -c \"import time; print('native-relationship execution-boundary redteam passed'); time.sleep(3600)\""
 restartPolicyType = "NEVER"
