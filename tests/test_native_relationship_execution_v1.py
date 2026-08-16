@@ -5,10 +5,13 @@ import tempfile
 import unittest
 
 from koschei import cli
+from koschei.interpreter import Interpreter
+from koschei.mir import require_mir
 from koschei.native_relationship_v1 import (
     NativeRelationshipSpecV1,
     encode_native_relationship_graph_secret,
 )
+import koschei.object_space_commands_v1 as commands
 from koschei.object_space_check_v1 import object_space_check_session
 from koschei.object_space_v1 import create_object_space_project, load_object_space_project
 from koschei.temporal_access_v1 import TemporalAccessPolicy
@@ -83,7 +86,28 @@ class NativeRelationshipExecutionV1Tests(unittest.TestCase):
                 )
 
             with object_space_check_session(opener):
-                self.assertEqual(cli.command_run(str(root)), 42)
+                # Use the exact graph that the installed Object Space command route
+                # admits.  Execute its sealed MIR root directly to prove the native
+                # relationship's observable program value, rather than confusing
+                # that value with the CLI's process-style success status.
+                _, graph = commands._checked(str(root))
+                mir_graph = require_mir(graph)
+                mir_graph.assert_sealed()
+                mir_root = mir_graph.root_module
+                value = Interpreter(
+                    mir_root.program,
+                    [],
+                    mir_graph.namespaces(),
+                    dict(mir_root.imports),
+                    mir_graph.enums(),
+                    mir_graph.module_imports(),
+                    mir_graph.structs(),
+                ).execute_main()
+                self.assertEqual(value, 42)
+
+                # Public `run` deliberately maps any non-error program result to a
+                # process success code.  Preserve and test that established CLI ABI.
+                self.assertEqual(cli.command_run(str(root)), 0)
 
 
 if __name__ == "__main__":
