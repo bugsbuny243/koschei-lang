@@ -170,6 +170,13 @@ def _name(token: str, *, line: int) -> str:
 
 def _atom(token: str, *, line: int) -> NativeAtom:
     if token.isdigit():
+        if len(token) > 1 and token.startswith("0"):
+            _fail(
+                "KN1200",
+                "Int literal is non-canonical; leading-zero decimal aliases are forbidden",
+                line,
+                1,
+            )
         # Int64 has at most 19 decimal digits. Reject before host conversion so
         # Python's own decimal-string safety limit never becomes language behavior.
         if len(token) > 19 or (len(token) == 19 and token > str(INT_MAX)):
