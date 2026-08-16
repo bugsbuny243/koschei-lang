@@ -11,8 +11,16 @@ from koschei.native_cell_projection_v1 import (
 )
 from koschei.object_space_v1 import create_object_space_project, load_object_space_project
 from koschei.temporal_access_v1 import TemporalAccessPolicy
-from tests.test_native_cell_realities_scale_v1 import NativeCellRealitiesScaleV1Tests
 from tests.test_object_space_adversarial_v1 import TestOnlyProvider
+
+
+def full_frontier_source() -> tuple[bytes, tuple[str, ...]]:
+    lines = ["witness w0 0"]
+    for index in range(1, 4096):
+        lines.append(f"witness w{index} sum w{index - 1} 0")
+    names = tuple(f"w{index}" for index in range(4096 - 64, 4096))
+    lines.extend(f"resolve {name}" for name in reversed(names))
+    return ("\n".join(lines) + "\n").encode("utf-8"), names
 
 
 class NativeCellProjectionScaleV1Tests(unittest.TestCase):
@@ -24,7 +32,7 @@ class NativeCellProjectionScaleV1Tests(unittest.TestCase):
         project_id = bytes.fromhex("91" * 16)
         root_id = bytes.fromhex("92" * 16)
         schema_id = bytes.fromhex("93" * 16)
-        source, names = NativeCellRealitiesScaleV1Tests.full_frontier_source()
+        source, names = full_frontier_source()
         secret = encode_native_cell_projection_graph_secret(
             project_id=project_id,
             root_object_id=root_id,
