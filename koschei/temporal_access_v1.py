@@ -1,12 +1,17 @@
 """Authenticator-style temporal access handles for Koschei Object Space v1.
 
 The handle rotates with wall-clock slots while canonical object identity and
-source bytes remain stable.  This avoids rewriting a large project every 30
+source bytes remain stable. This avoids rewriting a large project every 30
 seconds while still making an observed access handle short-lived.
 
-This is not TOTP and is not a human authentication code.  It is a machine access
-binding over project id + reality epoch + time slot.  Storage epoch rotation is a
+This is not TOTP and is not a human authentication code. It is a machine access
+binding over project id + reality epoch + time slot. Storage epoch rotation is a
 separate operation that changes physical object locators.
+
+A process-local high-water guard rejects rollback to a slot that this trusted
+process has already advanced beyond. Cross-restart rollback resistance still
+requires the external Trust Plane/session broker to persist the trusted slot floor;
+this module does not pretend process memory is durable authority.
 """
 
 from __future__ import annotations
@@ -15,6 +20,7 @@ from dataclasses import dataclass
 import hashlib
 import hmac
 import math
+import threading
 import time
 
 
@@ -22,6 +28,9 @@ _CONTEXT = b"koschei.object-space.temporal-access/v1\x00"
 _TEMPORAL_KEY_BYTES = 64
 _PROJECT_ID_BYTES = 16
 _HANDLE_BYTES = 64
+
+_SLOT_LOCK = threading.RLock()
+_SLOT_HIGHWATER: dict[tuple[bytes, int], int] = {}
 
 
 class TemporalAccessError(ValueError):
@@ -79,6 +88,57 @@ def temporal_slot(
     return int(moment) // policy.period_seconds
 
 
+def _slot_key(project_id: bytes, policy: TemporalAccessPolicy) -> tuple[bytes, int]:
+    return project_id, policy.period_seconds
+
+
+def _require_not_rolled_back(
+    project_id: bytes,
+    slot: int,
+    policy: TemporalAccessPolicy,
+) -> None:
+    with _SLOT_LOCK:
+        previous = _SLOT_HIGHWATER.get(_slot_key(project_id, policy))
+        if previous is not None and slot < previous:
+            raise TemporalAccessError(
+                "temporal access clock rolled back behind the trusted process high-water slot"
+            )
+
+
+def _commit_slot(
+    project_id: bytes,
+    slot: int,
+    policy: TemporalAccessPolicy,
+) -> None:
+    with _SLOT_LOCK:
+        key = _slot_key(project_id, policy)
+        previous = _SLOT_HIGHWATER.get(key)
+        if previous is not None and slot < previous:
+            raise TemporalAccessError(
+                "temporal access clock rolled back behind the trusted process high-water slot"
+            )
+        if previous is None or slot > previous:
+            _SLOT_HIGHWATER[key] = slot
+
+
+def _mac(
+    *,
+    temporal_key: bytes,
+    project_id: bytes,
+    epoch: int,
+    slot: int,
+    policy: TemporalAccessPolicy,
+) -> bytes:
+    payload = (
+        _CONTEXT
+        + project_id
+        + epoch.to_bytes(8, "big")
+        + slot.to_bytes(8, "big")
+        + policy.period_seconds.to_bytes(2, "big")
+    )
+    return hmac.new(temporal_key, payload, hashlib.sha3_512).digest()
+
+
 def issue_temporal_handle(
     *,
     temporal_key: bytes,
@@ -91,14 +151,16 @@ def issue_temporal_handle(
     project = _project_id(project_id)
     reality_epoch = _epoch(epoch)
     slot = temporal_slot(now=now, policy=policy)
-    payload = (
-        _CONTEXT
-        + project
-        + reality_epoch.to_bytes(8, "big")
-        + slot.to_bytes(8, "big")
-        + policy.period_seconds.to_bytes(2, "big")
+    _require_not_rolled_back(project, slot, policy)
+    handle = _mac(
+        temporal_key=key,
+        project_id=project,
+        epoch=reality_epoch,
+        slot=slot,
+        policy=policy,
     )
-    return hmac.new(key, payload, hashlib.sha3_512).digest()
+    _commit_slot(project, slot, policy)
+    return handle
 
 
 def verify_temporal_handle(
@@ -112,14 +174,34 @@ def verify_temporal_handle(
 ) -> None:
     if not isinstance(handle, bytes) or len(handle) != _HANDLE_BYTES:
         raise TemporalAccessError("temporal access handle must be exactly 64 bytes")
-    expected = issue_temporal_handle(
-        temporal_key=temporal_key,
-        project_id=project_id,
-        epoch=epoch,
-        now=now,
+    key = _temporal_key(temporal_key)
+    project = _project_id(project_id)
+    reality_epoch = _epoch(epoch)
+    slot = temporal_slot(now=now, policy=policy)
+    _require_not_rolled_back(project, slot, policy)
+    expected = _mac(
+        temporal_key=key,
+        project_id=project,
+        epoch=reality_epoch,
+        slot=slot,
         policy=policy,
     )
     if not hmac.compare_digest(handle, expected):
         raise TemporalAccessError(
             "temporal access handle is stale, cross-project, cross-epoch or forged"
         )
+    # Only a cryptographically valid handle may advance the high-water slot. A
+    # forged future-slot probe therefore cannot pin the process into the future.
+    _commit_slot(project, slot, policy)
+
+
+def _reset_process_highwater_for_tests(project_id: bytes | None = None) -> None:
+    """Test-only isolation helper; production code must never lower trusted time."""
+    with _SLOT_LOCK:
+        if project_id is None:
+            _SLOT_HIGHWATER.clear()
+            return
+        project = _project_id(project_id)
+        for key in tuple(_SLOT_HIGHWATER):
+            if key[0] == project:
+                del _SLOT_HIGHWATER[key]
