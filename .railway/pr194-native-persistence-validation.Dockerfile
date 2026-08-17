@@ -1,4 +1,5 @@
 # exact source base: d00ad6b3fa2fbffb5f108d6bd5f23c10461269df
+# final exact service trigger
 FROM python:3.13-bookworm
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl && rm -rf /var/lib/apt/lists/* \
