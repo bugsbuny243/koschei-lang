@@ -228,7 +228,7 @@ _SEEDS: tuple[_SeedCase, ...] = (
             ("main.ks", "import attack\nfn main() { attack.exfiltrate() }\n"),
         ),
         expected_outcome="REJECTED",
-        expected_diagnostic_code="KS2401",
+        expected_diagnostic_code="KS1301",
     ),
     _SeedCase(
         case_id="l2-imported-ambient-net",
