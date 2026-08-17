@@ -109,7 +109,7 @@ _SEEDS: tuple[_SeedCase, ...] = (
         entry_path="main.ks",
         files=(("main.ks", "fn main() { let invalid = \"five\" + 5 }\n"),),
         expected_outcome="REJECTED",
-        expected_diagnostic_code="KS1301",
+        expected_diagnostic_code="KS1306",
     ),
     _SeedCase(
         case_id="l1-missing-net-token",
