@@ -25,10 +25,10 @@ def _free_loopback_port() -> int:
 
 def _source(port: int, *, response: str = "accepted", deadline_ms: int = 2000, response_bytes: int = 4096) -> str:
     return (
-        "fn main(caps: SystemCaps) { "
-        f'let server = caps.serve.allow("localhost:{port}", 8, 4096, {response_bytes}, {deadline_ms}) '
-        f'let body = server.exchange("{response}") or return '
-        "println(body) "
+        "fn main(caps: SystemCaps) {\n"
+        f'let server = caps.serve.allow("localhost:{port}", 8, 4096, {response_bytes}, {deadline_ms})\n'
+        f'let body = server.exchange("{response}") or return\n'
+        "println(body)\n"
         "}"
     )
 
