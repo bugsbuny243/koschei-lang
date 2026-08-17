@@ -96,12 +96,14 @@ class CanonicalExecutionDispatchInventoryV1Tests(unittest.TestCase):
         low = importlib.import_module("koschei.object_space_native_ir_dispatch_v1")
         canonical = importlib.import_module("koschei.canonical_native_entrypoints_v1")
         admission = importlib.import_module("koschei.canonical_authority_admission_v1")
+        command = importlib.import_module("koschei.canonical_command_authority_v1")
         expected_native = {
             f"{low.__name__}:execute_authenticated_object_space_native_ir_v1",
             f"{canonical.__name__}:check_canonical_native_v1",
             f"{canonical.__name__}:run_canonical_native_v1",
             f"{admission.__name__}:check_with_canonical_authority_v1",
             f"{admission.__name__}:run_with_canonical_authority_v1",
+            f"{command.__name__}:execute_canonical_command_v1",
         }
         inventory_native = {
             entry["callable"]
