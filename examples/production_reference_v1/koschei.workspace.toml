@@ -14,6 +14,7 @@ members = [
   "realms/json_gateway",
   "realms/dispatch_runtime",
   "realms/order_worker",
+  "realms/state_store",
   "realms/http_ingress",
 ]
 
@@ -30,4 +31,5 @@ market_feed = []
 json_gateway = []
 dispatch_runtime = []
 order_worker = ["matching_engine", "settlement_engine", "report_engine", "json_gateway", "dispatch_runtime"]
-http_ingress = ["json_gateway", "order_worker"]
+state_store = []
+http_ingress = ["json_gateway", "order_worker", "state_store"]
