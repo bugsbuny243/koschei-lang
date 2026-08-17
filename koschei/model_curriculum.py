@@ -75,7 +75,9 @@ class ModelCurriculum:
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
-        payload["cases"] = [asdict(item) for item in self.cases]
+        payload["cases"] = json.loads(
+            canonical_json([asdict(item) for item in self.cases])
+        )
         return payload
 
 
@@ -341,7 +343,7 @@ def build_model_curriculum(
         "level_counts": level_counts,
         "diagnostic_distribution": dict(sorted(diagnostics.items())),
         "capability_distribution": dict(sorted(capabilities.items())),
-        "cases": [asdict(case) for case in cases],
+        "cases": json.loads(canonical_json([asdict(case) for case in cases])),
     }
     digest = hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()
     payload["curriculum_sha256"] = digest
