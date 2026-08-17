@@ -87,7 +87,7 @@ class ModelCurriculumTests(unittest.TestCase):
         self.assertEqual(
             first.diagnostic_distribution,
             {
-                "KS1301": 1,
+                "KS1306": 1,
                 "KS2401": 3,
                 "KS2402": 1,
                 "KS2403": 1,
