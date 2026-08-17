@@ -69,25 +69,43 @@
       "callable": "koschei.object_space_native_ir_dispatch_v1:execute_authenticated_object_space_native_ir_v1",
       "classification": "NATIVE_IR",
       "compatibility_carriers": [],
-      "notes": "Low-level authenticated Object Space -> Native IR execution authority. Unsupported schema fails closed with no source, filename, parser, or legacy fallback."
+      "notes": "Low-level authenticated Object Space -> Native IR execution authority."
     },
     {
       "id": "api.canonical-native.check.v1",
       "kind": "check",
-      "surface": "CANONICAL_NATIVE_API",
+      "surface": "AUTHENTICATED_OBJECT_SPACE_API",
       "callable": "koschei.canonical_native_entrypoints_v1:check_canonical_native_v1",
       "classification": "NATIVE_IR",
       "compatibility_carriers": [],
-      "notes": "Canonical check accepts only an already authenticated ObjectSpaceProject and lowers to Native IR without executing or constructing compatibility carriers."
+      "notes": "Checks an already authenticated ObjectSpaceProject by lowering directly to Native IR without execution."
     },
     {
       "id": "api.canonical-native.run.v1",
       "kind": "run",
-      "surface": "CANONICAL_NATIVE_API",
+      "surface": "AUTHENTICATED_OBJECT_SPACE_API",
       "callable": "koschei.canonical_native_entrypoints_v1:run_canonical_native_v1",
       "classification": "NATIVE_IR",
       "compatibility_carriers": [],
-      "notes": "Canonical run accepts only an already authenticated ObjectSpaceProject and executes through Native IR; filesystem/source/parser coincidence has no routing authority."
+      "notes": "Runs an already authenticated ObjectSpaceProject through Native IR only."
+    },
+    {
+      "id": "api.authority-admission.check.v1",
+      "kind": "check",
+      "surface": "TRUSTED_SESSION_API",
+      "callable": "koschei.canonical_authority_admission_v1:check_with_canonical_authority_v1",
+      "classification": "NATIVE_IR",
+      "compatibility_carriers": [],
+      "notes": "Explicit trusted authority session authenticates Object Space, then routes only to canonical native check."
+    },
+    {
+      "id": "api.authority-admission.run.v1",
+      "kind": "run",
+      "surface": "TRUSTED_SESSION_API",
+      "callable": "koschei.canonical_authority_admission_v1:run_with_canonical_authority_v1",
+      "classification": "NATIVE_IR",
+      "compatibility_carriers": [],
+      "notes": "Explicit trusted authority session authenticates Object Space, then routes only to canonical native run."
     }
   ]
 }
