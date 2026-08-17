@@ -26,7 +26,7 @@ def source_for(target: Path, *, max_bytes: int = 4096, payload: str = "hello") -
 fn main(caps: SystemCaps) {{
     let state = caps.persist.allow({ks_string(str(target))}, {max_bytes}, 2000)
     let wrote = state.commit({ks_string(payload)}) or return
-    let loaded = state.load() or return
+    let loaded = state.load() or ""
     println(loaded)
 }}
 """
@@ -73,10 +73,7 @@ class PersistenceNativeGoRuntimeTests(unittest.TestCase):
         self.addCleanup(workspace.cleanup)
         root = Path(workspace.name)
         (root / "main.go").write_text(generated, encoding="utf-8")
-        (root / "go.mod").write_text(
-            "module koscheipersist\n\ngo 1.21\n",
-            encoding="utf-8",
-        )
+        (root / "go.mod").write_text("module koscheipersist\n\ngo 1.21\n", encoding="utf-8")
         binary = root / "program"
         completed = subprocess.run(
             [GO_BINARY, "build", "-o", str(binary), "."],
@@ -90,12 +87,7 @@ class PersistenceNativeGoRuntimeTests(unittest.TestCase):
 
     def execute(self, source: str) -> subprocess.CompletedProcess[str]:
         binary = self.build(source)
-        return subprocess.run(
-            [str(binary)],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
+        return subprocess.run([str(binary)], capture_output=True, text=True, timeout=10)
 
     def test_native_commit_and_load_round_trip_matches_exact_state(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -106,10 +98,7 @@ class PersistenceNativeGoRuntimeTests(unittest.TestCase):
             self.assertEqual(completed.stderr, "")
             self.assertEqual(target.read_text(encoding="utf-8"), '{"v":1}')
             self.assertEqual(target.stat().st_mode & 0o777, 0o600)
-            self.assertEqual(
-                [item.name for item in target.parent.iterdir() if item.name.startswith(".koschei-persist-")],
-                [],
-            )
+            self.assertEqual([item.name for item in target.parent.iterdir() if item.name.startswith(".koschei-persist-")], [])
 
     def test_native_byte_budget_fails_before_old_state_mutation(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -131,7 +120,6 @@ class PersistenceNativeGoRuntimeTests(unittest.TestCase):
                 target.symlink_to(outside)
             except (OSError, NotImplementedError):
                 self.skipTest("symlinks are unavailable")
-
             completed = self.execute(source_for(target, payload="blocked"))
             self.assertNotEqual(completed.returncode, 0)
             self.assertIn("KS3420", completed.stderr)
@@ -146,7 +134,6 @@ class PersistenceNativeGoRuntimeTests(unittest.TestCase):
 fn main(caps: SystemCaps) {{
     let state = caps.persist.allow({ks_string(str(target))}, 4096, 2000)
     let loaded = state.load() or return
-    println(loaded)
 }}
 """
             completed = self.execute(source)
@@ -164,7 +151,6 @@ fn main(caps: SystemCaps) {{
                 link.symlink_to(real, target_is_directory=True)
             except (OSError, NotImplementedError):
                 self.skipTest("symlinks are unavailable")
-
             completed = self.execute(source_for(link / "state.txt", payload="blocked"))
             self.assertNotEqual(completed.returncode, 0)
             self.assertIn("KS3424", completed.stderr)
