@@ -269,6 +269,46 @@ from .serve_loopback_exchange_catalog_v1 import (
 
 install_serve_loopback_exchange_catalog_v1()
 
+from .persistence_authority_v1 import install_persistence_authority_v1
+
+install_persistence_authority_v1()
+
+from .persistence_policy_canonical_v1 import install_persistence_policy_canonical_v1
+
+install_persistence_policy_canonical_v1()
+
+from .bounded_persistence_v1 import install_bounded_persistence_v1
+
+install_bounded_persistence_v1()
+
+from .persistence_runtime_alignment_v1 import install_persistence_runtime_alignment_v1
+
+install_persistence_runtime_alignment_v1()
+
+from .persistence_parent_integrity_v1 import install_persistence_parent_integrity_v1
+
+install_persistence_parent_integrity_v1()
+
+from .persistence_target_integrity_v1 import install_persistence_target_integrity_v1
+
+install_persistence_target_integrity_v1()
+
+from .persistence_semantic_alignment_v1 import install_persistence_semantic_alignment_v1
+
+install_persistence_semantic_alignment_v1()
+
+from .persistence_diagnostics_v1 import install_persistence_diagnostics_v1
+
+install_persistence_diagnostics_v1()
+
+from .persistence_catalog_v1 import install_persistence_catalog_v1
+
+install_persistence_catalog_v1()
+
+from .persistence_member_v1 import install_persistence_member_v1
+
+install_persistence_member_v1()
+
 from .typestate_affine_alignment import install_typestate_affine_alignment
 
 install_typestate_affine_alignment()
