@@ -106,6 +106,24 @@
       "classification": "NATIVE_IR",
       "compatibility_carriers": [],
       "notes": "Explicit trusted authority session authenticates Object Space, then routes only to canonical native run."
+    },
+    {
+      "id": "api.canonical-command.check.v1",
+      "kind": "check",
+      "surface": "TRUSTED_COMMAND_ADAPTER",
+      "callable": "koschei.canonical_command_authority_v1:execute_canonical_command_v1",
+      "classification": "NATIVE_IR",
+      "compatibility_carriers": [],
+      "notes": "Authority-injected command adapter executes explicit check without argv/env/source authority discovery or compatibility fallback."
+    },
+    {
+      "id": "api.canonical-command.run.v1",
+      "kind": "run",
+      "surface": "TRUSTED_COMMAND_ADAPTER",
+      "callable": "koschei.canonical_command_authority_v1:execute_canonical_command_v1",
+      "classification": "NATIVE_IR",
+      "compatibility_carriers": [],
+      "notes": "Authority-injected command adapter executes explicit run without argv/env/source authority discovery or compatibility fallback."
     }
   ]
 }
