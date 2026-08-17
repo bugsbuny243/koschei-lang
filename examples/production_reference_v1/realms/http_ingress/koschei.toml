@@ -1,0 +1,10 @@
+[package]
+name = "http_ingress"
+version = "0.1.0"
+entry = "matter.ks"
+
+[capabilities]
+disk = []
+net = []
+env = []
+process = false
