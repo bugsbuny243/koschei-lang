@@ -23,7 +23,6 @@ fn main(caps: SystemCaps) {
     )
     let body = server.exchange("accepted") or return
     let result = handle_payload(body) or return
-    let stored = state_store.save(state, result) or return
-    let verified = state_store.load(state) or return
+    let verified = state_store.save(state, result) or return
     println(verified)
 }
