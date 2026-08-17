@@ -68,6 +68,12 @@ class MirNativeSupport:
 @dataclass(frozen=True, slots=True)
 class _FunctionRef:
     name: str
+    module_key: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _ModuleRef:
+    key: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,20 +99,34 @@ class _Unit:
 _UNIT = _Unit()
 
 
+def _definitions(function: MirFunction) -> dict[int, Any]:
+    result: dict[int, Any] = {}
+    for block in function.blocks:
+        for instruction in block.instructions:
+            target = getattr(instruction, "target", None)
+            if isinstance(target, int):
+                result[target] = instruction
+    return result
+
+
+def _is_direct_module_member(mir: MirGraph, module_key: str, function: MirFunction, instruction: MirMember) -> bool:
+    module = mir.module_of(module_key)
+    source = _definitions(function).get(instruction.object)
+    if not isinstance(source, MirLoad):
+        return False
+    target_key = module.imports.get(source.name)
+    if target_key is None or target_key not in mir.modules:
+        return False
+    target = mir.module_of(target_key)
+    return any(candidate.name == instruction.member for candidate in target.functions)
+
+
 def inspect_native_mir_support(mir: MirGraph) -> MirNativeSupport:
     """Return deterministic reasons why a graph is not native-MIR executable yet."""
 
     mir.assert_sealed()
     reasons: list[str] = []
-    if len(mir.modules) != 1:
-        reasons.append("native MIR v1 currently requires a single module")
     root = mir.root_module
-    if root.imports:
-        reasons.append("native MIR v1 does not execute module imports yet")
-    if root.program.structs:
-        reasons.append("native MIR v1 does not execute structs yet")
-    if root.program.enums:
-        reasons.append("native MIR v1 does not execute enums yet")
 
     main = next((item for item in root.functions if item.name == "main"), None)
     if main is None:
@@ -125,38 +145,50 @@ def inspect_native_mir_support(mir: MirGraph) -> MirNativeSupport:
         MirIterInit,
         MirIterHasNext,
         MirIterNext,
+        MirMember,
         MirCall,
     )
-    for function in root.functions:
-        for block in function.blocks:
-            for instruction in block.instructions:
-                if isinstance(instruction, MirAstFallback):
-                    reasons.append(
-                        f"{function.name}: AST fallback remains for {instruction.node_kind}"
-                    )
-                elif isinstance(instruction, MirMember):
-                    reasons.append(f"{function.name}: member access is not native-MIR yet")
-                elif (
-                    isinstance(instruction, MirBinary)
-                    and instruction.operator not in _SUPPORTED_BINARY
-                ):
-                    reasons.append(
-                        f"{function.name}: binary operator "
-                        f"{instruction.operator!r} is not native-MIR yet"
-                    )
-                elif (
-                    isinstance(instruction, MirUnary)
-                    and instruction.operator not in _SUPPORTED_UNARY
-                ):
-                    reasons.append(
-                        f"{function.name}: unary operator "
-                        f"{instruction.operator!r} is not native-MIR yet"
-                    )
-                elif not isinstance(instruction, supported_instructions):
-                    reasons.append(
-                        f"{function.name}: unsupported MIR instruction "
-                        f"{type(instruction).__name__}"
-                    )
+    for module in mir.in_dependency_order():
+        if module.program.structs:
+            reasons.append(f"{module.name}: native MIR v1 does not execute structs yet")
+        if module.program.enums:
+            reasons.append(f"{module.name}: native MIR v1 does not execute enums yet")
+        for function in module.functions:
+            for block in function.blocks:
+                for instruction in block.instructions:
+                    label = f"{module.name}.{function.name}"
+                    if isinstance(instruction, MirAstFallback):
+                        reasons.append(
+                            f"{label}: AST fallback remains for {instruction.node_kind}"
+                        )
+                    elif isinstance(instruction, MirMember):
+                        if not _is_direct_module_member(
+                            mir, module.key, function, instruction
+                        ):
+                            reasons.append(
+                                f"{label}: member access is not native-MIR yet"
+                            )
+                    elif (
+                        isinstance(instruction, MirBinary)
+                        and instruction.operator not in _SUPPORTED_BINARY
+                    ):
+                        reasons.append(
+                            f"{label}: binary operator "
+                            f"{instruction.operator!r} is not native-MIR yet"
+                        )
+                    elif (
+                        isinstance(instruction, MirUnary)
+                        and instruction.operator not in _SUPPORTED_UNARY
+                    ):
+                        reasons.append(
+                            f"{label}: unary operator "
+                            f"{instruction.operator!r} is not native-MIR yet"
+                        )
+                    elif not isinstance(instruction, supported_instructions):
+                        reasons.append(
+                            f"{label}: unsupported MIR instruction "
+                            f"{type(instruction).__name__}"
+                        )
     return MirNativeSupport(not reasons, tuple(dict.fromkeys(reasons)))
 
 
@@ -199,17 +231,24 @@ class _MirExecutor:
         max_call_depth: int,
     ) -> None:
         self.mir = mir
-        self.functions = {item.name: item for item in mir.root_module.functions}
+        self.functions_by_module = {
+            key: {item.name: item for item in module.functions}
+            for key, module in mir.modules.items()
+        }
+        # Compatibility view for installed direct-MIR adapters. During a call it
+        # is rebound to that function's own module namespace.
+        self.functions = self.functions_by_module[mir.root]
+        self.current_module_key = mir.root
         self.max_steps = max_steps
         self.max_call_depth = max_call_depth
         self.steps = 0
         self.depth = 0
 
     def execute_main(self) -> Any:
-        main = self.functions.get("main")
+        main = self.functions_by_module[self.mir.root].get("main")
         if main is None:
             raise MirNativeRuntimeError("main function is missing")
-        return self._call(main, [])
+        return self._call(main, [], self.mir.root)
 
     def _consume_step(self) -> None:
         self.steps += 1
@@ -218,7 +257,18 @@ class _MirExecutor:
                 f"native MIR execution exceeded {self.max_steps} steps"
             )
 
-    def _call(self, function: MirFunction, arguments: list[Any]) -> Any:
+    def _call(
+        self,
+        function: MirFunction,
+        arguments: list[Any],
+        module_key: str | None = None,
+    ) -> Any:
+        active_module_key = module_key or self.current_module_key
+        module_functions = self.functions_by_module.get(active_module_key)
+        if module_functions is None:
+            raise MirNativeRuntimeError(
+                f"call targets unknown MIR module {active_module_key!r}"
+            )
         if len(arguments) != len(function.parameters):
             raise MirNativeRuntimeError(
                 f"{function.name} expects {len(function.parameters)} arguments, "
@@ -237,6 +287,10 @@ class _MirExecutor:
         blocks = {block.id: block for block in function.blocks}
         values: dict[int, Any] = {}
         current = 0
+        previous_functions = self.functions
+        previous_module_key = self.current_module_key
+        self.functions = module_functions
+        self.current_module_key = active_module_key
         self.depth += 1
         try:
             while True:
@@ -247,7 +301,13 @@ class _MirExecutor:
                     )
                 for instruction in block.instructions:
                     self._consume_step()
-                    self._execute_instruction(instruction, values, environment, mutable)
+                    self._execute_instruction(
+                        instruction,
+                        values,
+                        environment,
+                        mutable,
+                        active_module_key,
+                    )
 
                 self._consume_step()
                 terminator = block.terminator
@@ -275,6 +335,8 @@ class _MirExecutor:
                 )
         finally:
             self.depth -= 1
+            self.functions = previous_functions
+            self.current_module_key = previous_module_key
 
     def _execute_instruction(
         self,
@@ -282,15 +344,24 @@ class _MirExecutor:
         values: dict[int, Any],
         environment: dict[str, Any],
         mutable: set[str],
+        module_key: str,
     ) -> None:
         if isinstance(instruction, MirConst):
             values[instruction.target] = instruction.value
             return
         if isinstance(instruction, MirLoad):
+            module = self.mir.module_of(module_key)
+            functions = self.functions_by_module[module_key]
             if instruction.name in environment:
                 values[instruction.target] = environment[instruction.name]
-            elif instruction.name in self.functions:
-                values[instruction.target] = _FunctionRef(instruction.name)
+            elif instruction.name in functions:
+                values[instruction.target] = _FunctionRef(
+                    instruction.name, module_key
+                )
+            elif instruction.name in module.imports:
+                values[instruction.target] = _ModuleRef(
+                    module.imports[instruction.name]
+                )
             elif instruction.name in _BUILTINS:
                 values[instruction.target] = _BuiltinRef(instruction.name)
             else:
@@ -345,6 +416,25 @@ class _MirExecutor:
             values[instruction.target] = iterator.items[iterator.index]
             iterator.index += 1
             return
+        if isinstance(instruction, MirMember):
+            receiver = self._value(values, instruction.object)
+            if not isinstance(receiver, _ModuleRef):
+                raise MirNativeRuntimeError(
+                    "native MIR member access currently requires a module import"
+                )
+            functions = self.functions_by_module.get(receiver.key)
+            if functions is None:
+                raise MirNativeRuntimeError(
+                    f"member access targets unknown MIR module {receiver.key!r}"
+                )
+            if instruction.member not in functions:
+                raise MirNativeRuntimeError(
+                    f"module has no MIR function {instruction.member!r}"
+                )
+            values[instruction.target] = _FunctionRef(
+                instruction.member, receiver.key
+            )
+            return
         if isinstance(instruction, MirCall):
             callee = self._value(values, instruction.callee)
             arguments = [self._value(values, item) for item in instruction.arguments]
@@ -356,10 +446,16 @@ class _MirExecutor:
 
     def _invoke(self, callee: Any, arguments: list[Any]) -> Any:
         if isinstance(callee, _FunctionRef):
-            function = self.functions.get(callee.name)
+            module_key = callee.module_key or self.current_module_key
+            functions = self.functions_by_module.get(module_key)
+            if functions is None:
+                raise MirNativeRuntimeError(
+                    f"unknown function module {module_key!r}"
+                )
+            function = functions.get(callee.name)
             if function is None:
                 raise MirNativeRuntimeError(f"unknown function {callee.name!r}")
-            return self._call(function, arguments)
+            return self._call(function, arguments, module_key)
         if isinstance(callee, _BuiltinRef):
             if callee.name in {"print", "println"}:
                 if len(arguments) != 1:
