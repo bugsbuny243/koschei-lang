@@ -33,7 +33,6 @@ fn use(state: PersistCaps) -> String or Error {{
 fn main(caps: SystemCaps) {{
     let state = caps.persist.allow({ks_string(str(target))}, 4096, 2000)
     let value = use(state) or return
-    println(value)
 }}
 """
             program = parse(source)
@@ -44,10 +43,7 @@ fn main(caps: SystemCaps) {{
             self.addCleanup(workspace.cleanup)
             root = Path(workspace.name)
             (root / "main.go").write_text(generated, encoding="utf-8")
-            (root / "go.mod").write_text(
-                "module koscheipersistalign\n\ngo 1.21\n",
-                encoding="utf-8",
-            )
+            (root / "go.mod").write_text("module koscheipersistalign\n\ngo 1.21\n", encoding="utf-8")
             binary = root / "program"
             built = subprocess.run(
                 [GO_BINARY, "build", "-o", str(binary), "."],
@@ -58,12 +54,7 @@ fn main(caps: SystemCaps) {{
             )
             self.assertEqual(built.returncode, 0, built.stderr)
 
-            completed = subprocess.run(
-                [str(binary)],
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
+            completed = subprocess.run([str(binary)], capture_output=True, text=True, timeout=10)
             self.assertNotEqual(completed.returncode, 0)
             self.assertEqual(completed.stdout, "")
             self.assertIn("KS3424", completed.stderr)
