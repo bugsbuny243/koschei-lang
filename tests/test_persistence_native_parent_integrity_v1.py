@@ -25,7 +25,7 @@ def source_for(target: Path) -> str:
 fn main(caps: SystemCaps) {{
     let state = caps.persist.allow({ks_string(str(target))}, 4096, 2000)
     let wrote = state.commit("native") or return
-    let loaded = state.load() or return
+    let loaded = state.load() or ""
     println(loaded)
 }}
 """
@@ -42,10 +42,7 @@ class PersistenceNativeParentIntegrityV1Tests(unittest.TestCase):
         self.addCleanup(workspace.cleanup)
         root = Path(workspace.name)
         (root / "main.go").write_text(generated, encoding="utf-8")
-        (root / "go.mod").write_text(
-            "module koscheipersistparent\n\ngo 1.21\n",
-            encoding="utf-8",
-        )
+        (root / "go.mod").write_text("module koscheipersistparent\n\ngo 1.21\n", encoding="utf-8")
         binary = root / "program"
         completed = subprocess.run(
             [GO_BINARY, "build", "-o", str(binary), "."],
@@ -66,12 +63,7 @@ class PersistenceNativeParentIntegrityV1Tests(unittest.TestCase):
             target.write_text("old", encoding="utf-8")
 
             binary = self.build(source_for(target))
-            completed = subprocess.run(
-                [str(binary)],
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
+            completed = subprocess.run([str(binary)], capture_output=True, text=True, timeout=10)
             self.assertNotEqual(completed.returncode, 0)
             self.assertEqual(completed.stdout, "")
             self.assertIn("KS3420", completed.stderr)
@@ -86,12 +78,7 @@ class PersistenceNativeParentIntegrityV1Tests(unittest.TestCase):
             target = parent / "state.txt"
 
             binary = self.build(source_for(target))
-            completed = subprocess.run(
-                [str(binary)],
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
+            completed = subprocess.run([str(binary)], capture_output=True, text=True, timeout=10)
             self.assertEqual(completed.returncode, 0, completed.stderr)
             self.assertEqual(completed.stdout, "native\n")
             self.assertEqual(completed.stderr, "")
