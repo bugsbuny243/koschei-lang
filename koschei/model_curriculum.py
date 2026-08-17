@@ -206,7 +206,7 @@ _SEEDS: tuple[_SeedCase, ...] = (
                 "return content } "
                 "fn main(caps: SystemCaps) { "
                 "let ro = caps.disk.allow_read_only(\"/etc/app/\") "
-                "let cfg = load(ro, \"/etc/app/config.json\") or return "
+                "let cfg = load(ro, \"/etc/app/config.json\") or \"\" "
                 "println(cfg) }\n",
             ),
         ),
@@ -262,7 +262,7 @@ _SEEDS: tuple[_SeedCase, ...] = (
                 "return response } "
                 "fn main(caps: SystemCaps) { "
                 "let api = caps.net.allow(\"https://api.example\") "
-                "let body = fetch(api, \"https://api.example/v1\") or return "
+                "let body = fetch(api, \"https://api.example/v1\") or \"\" "
                 "println(body) }\n",
             ),
         ),
