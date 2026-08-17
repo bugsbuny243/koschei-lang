@@ -13,6 +13,10 @@ from .data_language_v1 import install_data_language_v1
 
 install_data_language_v1()
 
+from .data_mir_v1 import install_data_mir_v1
+
+install_data_mir_v1()
+
 from .data_public_abi_v1 import install_data_public_abi_v1
 
 install_data_public_abi_v1()
@@ -95,11 +99,29 @@ from .deterministic_parallel_map_v1 import install_deterministic_parallel_map_v1
 
 install_deterministic_parallel_map_v1()
 
+from .deterministic_parallel_map_mir_shape_v1 import (
+    install_deterministic_parallel_map_mir_shape_v1,
+)
+
+install_deterministic_parallel_map_mir_shape_v1()
+
 from .mir_native_module_shadow_guard_v1 import (
     install_mir_native_module_shadow_guard_v1,
 )
 
 install_mir_native_module_shadow_guard_v1()
+
+from .fallible_mir_v1 import install_fallible_mir_v1
+
+install_fallible_mir_v1()
+
+from .interpolation_mir_v1 import install_interpolation_mir_v1
+
+install_interpolation_mir_v1()
+
+from .integer_division_mir_v1 import install_integer_division_mir_v1
+
+install_integer_division_mir_v1()
 
 from .object_space_error_boundary_v1 import install_object_space_error_boundary_v1
 
