@@ -305,6 +305,10 @@ from .persistence_catalog_v1 import install_persistence_catalog_v1
 
 install_persistence_catalog_v1()
 
+from .persistence_member_v1 import install_persistence_member_v1
+
+install_persistence_member_v1()
+
 from .typestate_affine_alignment import install_typestate_affine_alignment
 
 install_typestate_affine_alignment()
