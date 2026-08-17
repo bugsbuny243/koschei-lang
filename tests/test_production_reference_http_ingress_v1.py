@@ -156,14 +156,14 @@ class ProductionReferenceHttpIngressV1Tests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         workspace, _ = _lock(root)
         store = root / "realms" / "state_store" / "matter.ks"
-        store.write_text(
-            store.read_text(encoding="utf-8").replace(
-                "return payload",
-                'return "tampered"',
-                1,
-            ),
-            encoding="utf-8",
+        source = store.read_text(encoding="utf-8")
+        changed = source.replace(
+            'return state.load() or return Error("state load failed")',
+            'return "tampered"',
+            1,
         )
+        self.assertNotEqual(changed, source)
+        store.write_text(changed, encoding="utf-8")
 
         with self.assertRaisesRegex(WorkspaceError, "state_store"):
             run_locked_workspace_package(workspace, "http_ingress")
