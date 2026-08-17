@@ -20,13 +20,15 @@ def ks_string(value: str) -> str:
     return json.dumps(value, ensure_ascii=False)
 
 
-def load_source(target: Path) -> str:
+def load_source(target: Path, *, propagate_error: bool = False) -> str:
+    if propagate_error:
+        body = "    let loaded = state.load() or return\n"
+    else:
+        body = '    let loaded = state.load() or ""\n    println(loaded)\n'
     return f"""
 fn main(caps: SystemCaps) {{
     let state = caps.persist.allow({ks_string(str(target))}, 4096, 2000)
-    let loaded = state.load() or return
-    println(loaded)
-}}
+{body}}}
 """
 
 
@@ -56,10 +58,7 @@ class PersistenceNativeExactObjectRuntimeTests(unittest.TestCase):
         self.addCleanup(workspace.cleanup)
         root = Path(workspace.name)
         (root / "main.go").write_text(generated, encoding="utf-8")
-        (root / "go.mod").write_text(
-            "module koscheipersistexact\n\ngo 1.21\n",
-            encoding="utf-8",
-        )
+        (root / "go.mod").write_text("module koscheipersistexact\n\ngo 1.21\n", encoding="utf-8")
         binary = root / "program"
         completed = subprocess.run(
             [GO_BINARY, "build", "-o", str(binary), "."],
@@ -80,13 +79,8 @@ class PersistenceNativeExactObjectRuntimeTests(unittest.TestCase):
             target = root / "state.txt"
             os.link(secret, target)
 
-            binary = self.build(load_source(target))
-            completed = subprocess.run(
-                [str(binary)],
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
+            binary = self.build(load_source(target, propagate_error=True))
+            completed = subprocess.run([str(binary)], capture_output=True, text=True, timeout=10)
             self.assertNotEqual(completed.returncode, 0)
             self.assertEqual(completed.stdout, "")
             self.assertIn("KS3420", completed.stderr)
