@@ -71,6 +71,11 @@ The first contract covers all five levels defined by
 - L3: a legitimate declared network boundary;
 - L4: minimum-authority repair across a module boundary.
 
+For the compiler revision this v1 contract is aligned to, rejected seeds exercise
+`KS1301`, `KS1306`, `KS2401`, `KS2402`, `KS2403`, and `KS2404`. These labels are
+not hand-authored model truth: the generator re-runs the compiler oracle and
+fails closed if a future compiler revision changes any expected result.
+
 This is a contract fixture, not a claim of sufficient model-training scale.
 Future releases may expand from these seeds through deterministic mutation and
 compiler-verified generation, while preserving family-level train/validation/
