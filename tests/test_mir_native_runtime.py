@@ -25,6 +25,18 @@ class MirNativeRuntimeTests(unittest.TestCase):
         check_graph(graph)
         return require_mir(graph)
 
+    def checked_module_mir(self, files: dict[str, str], entry: str = "main.ks"):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        root = Path(directory.name)
+        for name, source in files.items():
+            path = root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(source, encoding="utf-8")
+        graph = load_graph(root / entry)
+        check_graph(graph)
+        return require_mir(graph)
+
     def test_hello_executes_from_normalized_mir_blocks(self) -> None:
         graph = load_graph(REPO_ROOT / "examples" / "hello.ks")
         check_graph(graph)
@@ -56,6 +68,47 @@ fn main() {
             code = run_mir_native(mir)
         self.assertEqual(code, 0)
         self.assertEqual(output.getvalue(), "42\n")
+
+    def test_transitive_module_calls_execute_without_ast_compatibility(self) -> None:
+        mir = self.checked_module_mir(
+            {
+                "main.ks": (
+                    "import alpha\n"
+                    "fn inner() -> Int { return 999 }\n"
+                    "fn main() { println(alpha.outer()) }\n"
+                ),
+                "alpha.ks": (
+                    "import beta\n"
+                    "fn inner() -> Int { return beta.value() }\n"
+                    "fn outer() -> Int { return inner() + 1 }\n"
+                ),
+                "beta.ks": "fn value() -> Int { return 7 }\n",
+            }
+        )
+        support = inspect_native_mir_support(mir)
+        self.assertTrue(support.supported, support.reasons)
+
+        output = io.StringIO()
+        with redirect_stdout(output):
+            code = run_mir_native(mir)
+
+        self.assertEqual(code, 0)
+        self.assertEqual(output.getvalue(), "8\n")
+
+    def test_non_module_member_access_remains_fail_closed(self) -> None:
+        mir = self.checked_mir(
+            """
+fn main() {
+    println([1, 2].length())
+}
+"""
+        )
+        support = inspect_native_mir_support(mir)
+        self.assertFalse(support.supported)
+        self.assertTrue(
+            any("member access is not native-MIR yet" in reason for reason in support.reasons),
+            support.reasons,
+        )
 
     def test_loop_break_and_continue_follow_mir_cfg(self) -> None:
         mir = self.checked_mir(

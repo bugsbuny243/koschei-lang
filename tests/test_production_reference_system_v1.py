@@ -9,6 +9,8 @@ from contextlib import redirect_stdout
 from pathlib import Path
 
 from koschei.capabilities import analyze_graph
+from koschei.mir import require_mir
+from koschei.mir_native_runtime import inspect_native_mir_support, run_mir_native
 from koschei.modules import check_graph
 from koschei.workspace import WorkspaceError, load_workspace, write_workspace_lock
 from koschei.workspace_execution import (
@@ -201,6 +203,22 @@ class ProductionReferenceSystemTests(unittest.TestCase):
             output = io.StringIO()
             with redirect_stdout(output):
                 self.assertEqual(run_locked_workspace_package(workspace, "scale31"), 0)
+            self.assertEqual(output.getvalue(), "32\n")
+
+    def test_workspace_scale_gate_32_realm_direct_mir(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _scale_workspace(root, 32)
+            workspace = load_workspace(root)
+            graph = load_workspace_member_graph(workspace, "scale31")
+            check_graph(graph)
+            mir = require_mir(graph)
+            support = inspect_native_mir_support(mir)
+            self.assertTrue(support.supported, support.reasons)
+
+            output = io.StringIO()
+            with redirect_stdout(output):
+                self.assertEqual(run_mir_native(mir), 0)
             self.assertEqual(output.getvalue(), "32\n")
 
     @unittest.skipUnless(shutil.which("go"), "Go is required for scale native build")
