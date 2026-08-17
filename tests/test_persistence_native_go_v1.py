@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 from pathlib import Path
 import shutil
@@ -18,7 +17,17 @@ GO_BINARY = shutil.which("go")
 
 
 def ks_string(value: str) -> str:
-    return json.dumps(value, ensure_ascii=False)
+    escapes = {
+        "\\": "\\\\",
+        '"': '\\"',
+        "{": "\\{",
+        "}": "\\}",
+        "\n": "\\n",
+        "\r": "\\r",
+        "\t": "\\t",
+    }
+    encoded = "".join(escapes.get(char, char) for char in value)
+    return f'"{encoded}"'
 
 
 def source_for(target: Path, *, max_bytes: int = 4096, payload: str = "hello") -> str:
