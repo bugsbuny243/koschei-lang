@@ -4,6 +4,8 @@ This directory contains reproducible, machine-readable security measurements for
 
 The v1 harness measures what the current compiler can prove directly: capability grants, requested authority domains, exact-vs-dynamic scope, and capability-holder surface for a fixed corpus. Results are deterministic JSON and include the benchmark schema/version plus a SHA-256 digest of every source case.
 
+The first admitted corpus contains pure, disk-read-only, network, environment, and dynamic-scope cases. Each case is digest-bound so benchmark drift is visible in review.
+
 Cross-language Rust/Go/Python/managed-language adapters are intentionally not fabricated here. They are added only when a reproducible adapter can measure the same semantic question. Until then the output identifies Koschei measurements as `native` and leaves cross-language comparison outside the claim surface.
 
 Run:
