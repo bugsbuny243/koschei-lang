@@ -105,7 +105,7 @@ def _scale_workspace(root: Path, count: int = 32) -> None:
 class ProductionReferenceSystemTests(unittest.TestCase):
     def test_committed_reference_is_real_multi_realm_program(self) -> None:
         workspace = load_workspace(REFERENCE)
-        self.assertEqual(len(workspace.members), 13)
+        self.assertEqual(len(workspace.members), 14)
 
         modules_by_path = {}
         domains_by_member: dict[str, list[str]] = {}
@@ -119,8 +119,8 @@ class ProductionReferenceSystemTests(unittest.TestCase):
         function_count = sum(
             len(module.program.declarations) for module in modules_by_path.values()
         )
-        self.assertEqual(len(modules_by_path), 13)
-        self.assertGreaterEqual(function_count, 42)
+        self.assertEqual(len(modules_by_path), 14)
+        self.assertGreaterEqual(function_count, 45)
         self.assertEqual(domains_by_member["order_worker"], [])
         self.assertEqual(domains_by_member["matching_engine"], [])
         self.assertEqual(domains_by_member["risk_engine"], [])
@@ -128,7 +128,8 @@ class ProductionReferenceSystemTests(unittest.TestCase):
         self.assertEqual(domains_by_member["json_gateway"], [])
         self.assertEqual(domains_by_member["dispatch_runtime"], [])
         self.assertEqual(domains_by_member["market_feed"], ["net"])
-        self.assertEqual(domains_by_member["http_ingress"], ["serve"])
+        self.assertEqual(domains_by_member["state_store"], ["persist"])
+        self.assertEqual(domains_by_member["http_ingress"], ["serve", "persist"])
 
     def test_reference_runs_through_verified_workspace_lock(self) -> None:
         temporary, root = _copy_reference()
