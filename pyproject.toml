@@ -44,6 +44,7 @@ ks-lsp = "koschei.lsp_v5:main"
 ks-stdlib = "koschei.stdlib_catalog:main"
 ks-differential-fuzz = "koschei.differential_fuzz_cli:main"
 ks-foundation-export = "koschei.foundation_export_cli:main"
+ks-model-curriculum = "koschei.model_curriculum_cli:main"
 
 [tool.setuptools]
 packages = ["koschei"]
