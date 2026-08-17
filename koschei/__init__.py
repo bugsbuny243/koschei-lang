@@ -231,6 +231,12 @@ from .serve_loopback_exchange_v1 import install_serve_loopback_exchange_v1
 
 install_serve_loopback_exchange_v1()
 
+from .serve_loopback_exchange_member_v1 import (
+    install_serve_loopback_exchange_member_v1,
+)
+
+install_serve_loopback_exchange_member_v1()
+
 from .serve_loopback_http_strict_v1 import install_serve_loopback_http_strict_v1
 
 install_serve_loopback_http_strict_v1()
