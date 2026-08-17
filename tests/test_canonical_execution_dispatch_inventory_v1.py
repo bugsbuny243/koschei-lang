@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import importlib
-import inspect
 import json
 from pathlib import Path
 import unittest
@@ -67,10 +66,7 @@ def _native_project(source: bytes, *, root: Path = Path("/sealed/koschei")) -> O
 class CanonicalExecutionDispatchInventoryV1Tests(unittest.TestCase):
     def test_inventory_is_machine_readable_and_exactly_classified(self) -> None:
         inventory = _inventory()
-        self.assertEqual(
-            inventory["schema"],
-            "koschei.canonical-execution-dispatch/v1",
-        )
+        self.assertEqual(inventory["schema"], "koschei.canonical-execution-dispatch/v1")
         entries = inventory["entrypoints"]
         ids = [entry["id"] for entry in entries]
         self.assertEqual(len(ids), len(set(ids)))
@@ -90,26 +86,22 @@ class CanonicalExecutionDispatchInventoryV1Tests(unittest.TestCase):
         )
         canonical_commands = {"run", "check", "build"}
         self.assertTrue(canonical_commands.issubset(set(subcommands.choices)))
-
         entries = _inventory()["entrypoints"]
         classified_cli = {
-            entry["kind"]
-            for entry in entries
-            if entry["surface"] == "CLI"
+            entry["kind"] for entry in entries if entry["surface"] == "CLI"
         }
         self.assertEqual(classified_cli, canonical_commands)
 
     def test_native_dispatch_apis_are_explicitly_inventory_bound(self) -> None:
-        low_level_module = importlib.import_module(
-            "koschei.object_space_native_ir_dispatch_v1"
-        )
-        canonical_module = importlib.import_module(
-            "koschei.canonical_native_entrypoints_v1"
-        )
+        low = importlib.import_module("koschei.object_space_native_ir_dispatch_v1")
+        canonical = importlib.import_module("koschei.canonical_native_entrypoints_v1")
+        admission = importlib.import_module("koschei.canonical_authority_admission_v1")
         expected_native = {
-            f"{low_level_module.__name__}:execute_authenticated_object_space_native_ir_v1",
-            f"{canonical_module.__name__}:check_canonical_native_v1",
-            f"{canonical_module.__name__}:run_canonical_native_v1",
+            f"{low.__name__}:execute_authenticated_object_space_native_ir_v1",
+            f"{canonical.__name__}:check_canonical_native_v1",
+            f"{canonical.__name__}:run_canonical_native_v1",
+            f"{admission.__name__}:check_with_canonical_authority_v1",
+            f"{admission.__name__}:run_with_canonical_authority_v1",
         }
         inventory_native = {
             entry["callable"]
@@ -120,25 +112,13 @@ class CanonicalExecutionDispatchInventoryV1Tests(unittest.TestCase):
 
     def test_authenticated_native_input_ignores_filename_sniff_and_legacy_parser(self) -> None:
         project = _native_project(
-            b"witness base 40\n"
-            b"witness fee 2\n"
-            b"witness total sum base fee\n"
-            b"resolve total\n",
+            b"witness base 40\nwitness fee 2\nwitness total sum base fee\nresolve total\n",
             root=Path("/looks-like-a-legacy-project/main.ks"),
         )
         with (
-            patch(
-                "koschei.object_space_frontend_identity_v1.load_authenticated_frontend_module_graph",
-                side_effect=AssertionError("legacy Object Space ModuleGraph fallback reached"),
-            ),
-            patch(
-                "koschei.modules.load_graph",
-                side_effect=AssertionError("filename/source compatibility graph sniff reached"),
-            ),
-            patch(
-                "koschei.parser.parse",
-                side_effect=AssertionError("legacy parser coincidence reached"),
-            ),
+            patch("koschei.object_space_frontend_identity_v1.load_authenticated_frontend_module_graph", side_effect=AssertionError("legacy Object Space ModuleGraph fallback reached")),
+            patch("koschei.modules.load_graph", side_effect=AssertionError("filename/source compatibility graph sniff reached")),
+            patch("koschei.parser.parse", side_effect=AssertionError("legacy parser coincidence reached")),
         ):
             authority = execute_authenticated_object_space_native_ir_v1(project)
         self.assertEqual(authority.value.value, 42)
@@ -156,18 +136,9 @@ class CanonicalExecutionDispatchInventoryV1Tests(unittest.TestCase):
             unreferenced_locators=(),
         )
         with (
-            patch(
-                "koschei.object_space_frontend_identity_v1.load_authenticated_frontend_module_graph",
-                side_effect=AssertionError("legacy Object Space fallback reached"),
-            ),
-            patch(
-                "koschei.modules.load_graph",
-                side_effect=AssertionError("legacy graph fallback reached"),
-            ),
-            patch(
-                "koschei.parser.parse",
-                side_effect=AssertionError("legacy parser fallback reached"),
-            ),
+            patch("koschei.object_space_frontend_identity_v1.load_authenticated_frontend_module_graph", side_effect=AssertionError("legacy Object Space fallback reached")),
+            patch("koschei.modules.load_graph", side_effect=AssertionError("legacy graph fallback reached")),
+            patch("koschei.parser.parse", side_effect=AssertionError("legacy parser fallback reached")),
         ):
             with self.assertRaises(ObjectSpaceNativeIrDispatchError):
                 execute_authenticated_object_space_native_ir_v1(project)
@@ -175,8 +146,7 @@ class CanonicalExecutionDispatchInventoryV1Tests(unittest.TestCase):
     def test_remaining_compatibility_entrypoint_count_is_reported(self) -> None:
         entries = _inventory()["entrypoints"]
         remaining = sum(
-            entry["classification"] == "COMPAT_MIGRATION_ONLY"
-            for entry in entries
+            entry["classification"] == "COMPAT_MIGRATION_ONLY" for entry in entries
         )
         self.assertEqual(remaining, 6)
         print(
