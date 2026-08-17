@@ -1,0 +1,75 @@
+{
+  "schema": "koschei.canonical-execution-dispatch/v1",
+  "parent_issue": 240,
+  "work_issue": 241,
+  "classification_contract": {
+    "NATIVE_IR": "Entrypoint authority is authenticated Koschei Object Space -> Native IR with no compatibility fallback.",
+    "COMPAT_MIGRATION_ONLY": "Entrypoint still relies on compatibility Program/ModuleGraph/MIR or may select a compatibility backend; it is measurable migration debt and may not define new Koschei semantics.",
+    "FAIL_CLOSED_UNMIGRATED": "Canonical native input is recognized but has no migrated handler; it must reject rather than fall back."
+  },
+  "entrypoints": [
+    {
+      "id": "cli.run",
+      "kind": "run",
+      "surface": "CLI",
+      "callable": "koschei.cli_entry:_run_with_public_budget",
+      "classification": "COMPAT_MIGRATION_ONLY",
+      "compatibility_carriers": ["ModuleGraph", "MIR compatibility graph"],
+      "notes": "Public ks run currently opens the compatibility module graph, checks it, requires MIR, then runs the MIR budget path."
+    },
+    {
+      "id": "cli.check",
+      "kind": "check",
+      "surface": "CLI",
+      "callable": "koschei.cli:command_check",
+      "classification": "COMPAT_MIGRATION_ONLY",
+      "compatibility_carriers": ["ModuleGraph", "MIR compatibility graph"],
+      "notes": "cli_entry delegates check to koschei.cli; current check loads and validates the compatibility graph."
+    },
+    {
+      "id": "cli.build",
+      "kind": "build",
+      "surface": "CLI",
+      "callable": "koschei.cli_entry:_build_with_public_lock",
+      "classification": "COMPAT_MIGRATION_ONLY",
+      "compatibility_carriers": ["ModuleGraph", "MIR compatibility graph", "AST Go compatibility backend"],
+      "notes": "Public ks build starts from the compatibility graph; unsupported MIR-Go currently selects the compatibility Go backend."
+    },
+    {
+      "id": "api.compat.run",
+      "kind": "run",
+      "surface": "PYTHON_API",
+      "callable": "koschei.cli:command_run",
+      "classification": "COMPAT_MIGRATION_ONLY",
+      "compatibility_carriers": ["ModuleGraph", "MIR compatibility graph"],
+      "notes": "Direct compiler API retained only for compatibility migration."
+    },
+    {
+      "id": "api.compat.check",
+      "kind": "check",
+      "surface": "PYTHON_API",
+      "callable": "koschei.cli:command_check",
+      "classification": "COMPAT_MIGRATION_ONLY",
+      "compatibility_carriers": ["ModuleGraph", "MIR compatibility graph"],
+      "notes": "Direct compiler API retained only for compatibility migration."
+    },
+    {
+      "id": "api.compat.build",
+      "kind": "build",
+      "surface": "PYTHON_API",
+      "callable": "koschei.cli:command_build",
+      "classification": "COMPAT_MIGRATION_ONLY",
+      "compatibility_carriers": ["ModuleGraph", "MIR compatibility graph", "Go compatibility backend"],
+      "notes": "Direct compiler build API retained only for compatibility migration."
+    },
+    {
+      "id": "api.object-space-native-ir.run.v1",
+      "kind": "run",
+      "surface": "AUTHENTICATED_OBJECT_SPACE_API",
+      "callable": "koschei.object_space_native_ir_dispatch_v1:execute_authenticated_object_space_native_ir_v1",
+      "classification": "NATIVE_IR",
+      "compatibility_carriers": [],
+      "notes": "Frontend identity comes only from authenticated Object Space graph metadata; unsupported schema fails closed with no source, filename, parser, or legacy fallback."
+    }
+  ]
+}
