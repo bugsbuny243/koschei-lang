@@ -99,22 +99,24 @@ class CanonicalExecutionDispatchInventoryV1Tests(unittest.TestCase):
         }
         self.assertEqual(classified_cli, canonical_commands)
 
-    def test_native_dispatch_api_is_explicitly_inventory_bound(self) -> None:
-        native_module = importlib.import_module(
+    def test_native_dispatch_apis_are_explicitly_inventory_bound(self) -> None:
+        low_level_module = importlib.import_module(
             "koschei.object_space_native_ir_dispatch_v1"
         )
-        public_native_execution = {
-            f"{native_module.__name__}:{name}"
-            for name, value in inspect.getmembers(native_module, inspect.isfunction)
-            if name.startswith("execute_authenticated_object_space_native_ir")
-            and value.__module__ == native_module.__name__
+        canonical_module = importlib.import_module(
+            "koschei.canonical_native_entrypoints_v1"
+        )
+        expected_native = {
+            f"{low_level_module.__name__}:execute_authenticated_object_space_native_ir_v1",
+            f"{canonical_module.__name__}:check_canonical_native_v1",
+            f"{canonical_module.__name__}:run_canonical_native_v1",
         }
         inventory_native = {
             entry["callable"]
             for entry in _inventory()["entrypoints"]
             if entry["classification"] == "NATIVE_IR"
         }
-        self.assertEqual(inventory_native, public_native_execution)
+        self.assertEqual(inventory_native, expected_native)
 
     def test_authenticated_native_input_ignores_filename_sniff_and_legacy_parser(self) -> None:
         project = _native_project(
