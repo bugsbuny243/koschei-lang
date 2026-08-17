@@ -69,9 +69,7 @@ from .structured_tasks_mir_v1 import install_structured_tasks_mir_v1
 
 install_structured_tasks_mir_v1()
 
-from .structured_tasks_runtime_alignment import (
-    install_structured_tasks_runtime_alignment,
-)
+from .structured_tasks_runtime_alignment import install_structured_tasks_runtime_alignment
 
 install_structured_tasks_runtime_alignment()
 
@@ -79,15 +77,11 @@ from .structured_task_safety_v1 import install_structured_task_safety_v1
 
 install_structured_task_safety_v1()
 
-from .structured_task_safety_go_alignment import (
-    install_structured_task_safety_go_alignment,
-)
+from .structured_task_safety_go_alignment import install_structured_task_safety_go_alignment
 
 install_structured_task_safety_go_alignment()
 
-from .structured_task_safety_runtime_names import (
-    install_structured_task_safety_runtime_names,
-)
+from .structured_task_safety_runtime_names import install_structured_task_safety_runtime_names
 
 install_structured_task_safety_runtime_names()
 
@@ -99,15 +93,11 @@ from .deterministic_parallel_map_v1 import install_deterministic_parallel_map_v1
 
 install_deterministic_parallel_map_v1()
 
-from .deterministic_parallel_map_mir_shape_v1 import (
-    install_deterministic_parallel_map_mir_shape_v1,
-)
+from .deterministic_parallel_map_mir_shape_v1 import install_deterministic_parallel_map_mir_shape_v1
 
 install_deterministic_parallel_map_mir_shape_v1()
 
-from .mir_native_module_shadow_guard_v1 import (
-    install_mir_native_module_shadow_guard_v1,
-)
+from .mir_native_module_shadow_guard_v1 import install_mir_native_module_shadow_guard_v1
 
 install_mir_native_module_shadow_guard_v1()
 
@@ -131,9 +121,7 @@ from .object_space_error_boundary_v1 import install_object_space_error_boundary_
 
 install_object_space_error_boundary_v1()
 
-from .object_space_adversarial_guard_v1 import (
-    install_object_space_adversarial_guard_v1,
-)
+from .object_space_adversarial_guard_v1 import install_object_space_adversarial_guard_v1
 
 install_object_space_adversarial_guard_v1()
 
@@ -145,9 +133,7 @@ from .object_space_redteam_round3_v1 import install_object_space_redteam_round3_
 
 install_object_space_redteam_round3_v1()
 
-from .object_space_diagnostic_privacy_v1 import (
-    install_object_space_diagnostic_privacy_v1,
-)
+from .object_space_diagnostic_privacy_v1 import install_object_space_diagnostic_privacy_v1
 
 install_object_space_diagnostic_privacy_v1()
 
@@ -155,15 +141,11 @@ from .object_space_check_v1 import install_object_space_check_v1
 
 install_object_space_check_v1()
 
-from .object_space_check_adversarial_guard_v1 import (
-    install_object_space_check_adversarial_guard_v1,
-)
+from .object_space_check_adversarial_guard_v1 import install_object_space_check_adversarial_guard_v1
 
 install_object_space_check_adversarial_guard_v1()
 
-from .object_space_codegen_alignment_v1 import (
-    install_object_space_codegen_alignment_v1,
-)
+from .object_space_codegen_alignment_v1 import install_object_space_codegen_alignment_v1
 
 install_object_space_codegen_alignment_v1()
 
@@ -171,9 +153,7 @@ from .object_space_commands_v1 import install_object_space_commands_v1
 
 install_object_space_commands_v1()
 
-from .object_space_frontend_alignment_v1 import (
-    install_object_space_frontend_alignment_v1,
-)
+from .object_space_frontend_alignment_v1 import install_object_space_frontend_alignment_v1
 
 install_object_space_frontend_alignment_v1()
 
@@ -197,15 +177,11 @@ from .native_cell_alignment_v1 import install_native_cell_alignment_v1
 
 install_native_cell_alignment_v1()
 
-from .native_cell_projection_alignment_v1 import (
-    install_native_cell_projection_alignment_v1,
-)
+from .native_cell_projection_alignment_v1 import install_native_cell_projection_alignment_v1
 
 install_native_cell_projection_alignment_v1()
 
-from .native_cell_reuse_composition_alignment_v1 import (
-    install_native_cell_reuse_composition_alignment_v1,
-)
+from .native_cell_reuse_composition_alignment_v1 import install_native_cell_reuse_composition_alignment_v1
 
 install_native_cell_reuse_composition_alignment_v1()
 
@@ -217,9 +193,7 @@ from .serve_authority_v1 import install_serve_authority_v1
 
 install_serve_authority_v1()
 
-from .serve_authority_loopback_canonical_v1 import (
-    install_serve_authority_loopback_canonical_v1,
-)
+from .serve_authority_loopback_canonical_v1 import install_serve_authority_loopback_canonical_v1
 
 install_serve_authority_loopback_canonical_v1()
 
@@ -231,9 +205,7 @@ from .serve_loopback_exchange_v1 import install_serve_loopback_exchange_v1
 
 install_serve_loopback_exchange_v1()
 
-from .serve_loopback_exchange_member_v1 import (
-    install_serve_loopback_exchange_member_v1,
-)
+from .serve_loopback_exchange_member_v1 import install_serve_loopback_exchange_member_v1
 
 install_serve_loopback_exchange_member_v1()
 
@@ -241,9 +213,7 @@ from .serve_loopback_http_strict_v1 import install_serve_loopback_http_strict_v1
 
 install_serve_loopback_http_strict_v1()
 
-from .serve_loopback_exchange_parity_v1 import (
-    install_serve_loopback_exchange_parity_v1,
-)
+from .serve_loopback_exchange_parity_v1 import install_serve_loopback_exchange_parity_v1
 
 install_serve_loopback_exchange_parity_v1()
 
@@ -251,21 +221,15 @@ from .serve_loopback_exchange_go_v1 import install_serve_loopback_exchange_go_v1
 
 install_serve_loopback_exchange_go_v1()
 
-from .serve_loopback_exchange_go_integrity_v1 import (
-    install_serve_loopback_exchange_go_integrity_v1,
-)
+from .serve_loopback_exchange_go_integrity_v1 import install_serve_loopback_exchange_go_integrity_v1
 
 install_serve_loopback_exchange_go_integrity_v1()
 
-from .serve_loopback_exchange_diagnostics_v1 import (
-    install_serve_loopback_exchange_diagnostics_v1,
-)
+from .serve_loopback_exchange_diagnostics_v1 import install_serve_loopback_exchange_diagnostics_v1
 
 install_serve_loopback_exchange_diagnostics_v1()
 
-from .serve_loopback_exchange_catalog_v1 import (
-    install_serve_loopback_exchange_catalog_v1,
-)
+from .serve_loopback_exchange_catalog_v1 import install_serve_loopback_exchange_catalog_v1
 
 install_serve_loopback_exchange_catalog_v1()
 
@@ -296,6 +260,26 @@ install_persistence_target_integrity_v1()
 from .persistence_semantic_alignment_v1 import install_persistence_semantic_alignment_v1
 
 install_persistence_semantic_alignment_v1()
+
+from .persistence_native_go_v1 import install_persistence_native_go_v1
+
+install_persistence_native_go_v1()
+
+from .persistence_native_go_safety_v1 import install_persistence_native_go_safety_v1
+
+install_persistence_native_go_safety_v1()
+
+from .persistence_native_go_authority_alignment_v1 import install_persistence_native_go_authority_alignment_v1
+
+install_persistence_native_go_authority_alignment_v1()
+
+from .persistence_native_go_parent_integrity_v1 import install_persistence_native_go_parent_integrity_v1
+
+install_persistence_native_go_parent_integrity_v1()
+
+from .persistence_native_go_exact_object_integrity_v1 import install_persistence_native_go_exact_object_integrity_v1
+
+install_persistence_native_go_exact_object_integrity_v1()
 
 from .persistence_diagnostics_v1 import install_persistence_diagnostics_v1
 

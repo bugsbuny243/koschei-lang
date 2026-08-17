@@ -2,7 +2,7 @@
 
 This is an acceptance workload for the language and toolchain, not a marketing demo and not a claim that Koschei is already production-ready.
 
-The committed workspace now exercises a realistic financial order-processing path across fourteen independently owned realms:
+The committed workspace exercises a realistic financial order-processing path across fourteen independently owned realms:
 
 - `order_core` — order validity and exact integer notional calculation.
 - `market_rules` — crossing and execution rules.
@@ -42,7 +42,8 @@ The test suite requires all of the following:
 13. The complete 11-module `order_worker` dependency graph executes through direct MIR and preserves deterministic worker output.
 14. A locked `http_ingress` workspace accepts a real loopback TCP POST, canonicalizes the JSON body, invokes the production order worker, atomically persists the resulting state through an exact-object token, reloads it, and returns a bounded HTTP response.
 15. The persisted state file must contain the exact expected canonical state and be created with mode `0600` on the tested POSIX path.
-16. Native `http_ingress` build must fail closed with `KS4001` until the persistence ABI has native parity; the reference does not preserve a stale native-success claim by skipping the new persistence boundary.
+16. On Linux with Go available, the locked native `http_ingress` artifact must perform the same TCP -> JSON -> order core -> exact-object commit -> reload path and match the interpreter's workspace digest, stdout, HTTP response, persisted bytes and file mode.
+17. Non-Linux native persistence remains fail-closed with `KS4001` until an equivalent backend contract is implemented and executed.
 
 ## Manual deterministic-worker commands
 
@@ -64,7 +65,7 @@ The lock command writes a control artifact into the workspace. Do not commit a l
 
 `order_worker` is intentionally capability-free. It imports matching, settlement, report, JSON and dispatch realms without receiving Serve, Persist or outbound network authority.
 
-`state_store` does not choose a path. Its public functions accept a `PersistCaps` parameter that is already sealed to one exact state object. The caller cannot use `state_store` to turn that token into general `DiskCaps` authority or choose a sibling path at operation time.
+`state_store` does not choose a path. Its public function accepts a `PersistCaps` parameter already sealed to one exact state object. In the current affine flow the token is moved into `state_store.save` once; commit and reload verification occur inside that ownership boundary rather than reusing a moved capability at the caller.
 
 `http_ingress` is the composition boundary. It narrows `SystemCaps.serve` to one loopback endpoint and `SystemCaps.persist` to one exact file, then passes only the narrow persistence token into `state_store`. This creates one-way authority flow: the ingress boundary can call pure/core processing and a narrowly authorized state writer, but the core does not inherit either capability merely because the boundary depends on it.
 
@@ -72,16 +73,26 @@ The lock command writes a control artifact into the workspace. Do not commit a l
 
 ## Persistence truth
 
-Persistence v1 is not a database and not a transaction manager. Interpreter `PersistCaps.commit` uses a same-directory temporary object, a full-write loop, file `fsync`, atomic replacement and parent-directory `fsync`. A pre-replace failure leaves the prior canonical object unchanged. A failure after replacement but before durability confirmation is reported separately as `KS3423` because pretending that state rolled back would make blind retry unsafe.
+Persistence v1 is not a database and not a transaction manager. The interpreter and Linux native-Go backend use the same high-level exact-object protocol: descriptor-anchored authority, bounded UTF-8 data, same-directory temporary object, full-write loop, file `fsync`, descriptor-relative atomic replacement and parent-directory `fsync`.
 
-The byte budget is hard-enforced in the interpreter implementation. The current deadline is only a cooperative monotonic sequence deadline checked around filesystem syscalls; it cannot safely preempt an indefinitely blocked kernel filesystem call. Native persistence parity is not implemented yet. Therefore the stdlib `persist` operations remain **reserved**, not supported.
+A pre-replace failure leaves the prior canonical object unchanged. A failure after replacement but before durability confirmation is reported separately as `KS3423` because pretending that state rolled back would make blind retry unsafe.
 
-Concurrent authorized writers also do not receive compare-and-swap, transaction isolation or lost-update prevention in v1. Atomic replacement prevents a torn canonical file; it does not decide which of two valid competing commits should win.
+Linux native target-shape probing uses `O_PATH | O_NOFOLLOW`, while the data-open path uses `O_NONBLOCK | O_NOFOLLOW` and rechecks the object with `fstat`. Parent symlink, final symlink, hard-link alias and unsafe shared-parent cases are fail-closed in the tested contract.
+
+The byte budget is hard-enforced in both tested implementations. The current deadline is still a cooperative monotonic sequence deadline checked around filesystem syscalls; neither backend claims safe preemption of an indefinitely blocked kernel filesystem call. Non-Linux native parity is also not claimed. Therefore the stdlib `persist` operations remain **reserved**, not supported.
+
+Concurrent authorized writers do not receive compare-and-swap, transaction isolation or lost-update prevention in v1. Atomic replacement prevents a torn canonical file; it does not decide which of two valid competing commits should win.
+
+## Executed evidence
+
+The current-main reconstruction was executed on Railway with Go 1.24.13 linux/amd64 and Python 3.13.15. Validation deployment `88244cd0-2538-403c-bcea-cf1411a59344` ran 49 persistence/native/production/direct-MIR tests with no skips and finished `OK` before the deployment reached `SUCCESS`.
+
+That run included the real locked native HTTP ingress + persistence path as well as interpreter persistence, native hard-link/symlink/parent-integrity gates, source-lock drift detection, 32-realm direct-MIR/native build gates and deterministic worker parity.
 
 ## What this proves — and what it does not
 
-Passing these gates would prove that the current compiler/runtime can carry a non-trivial multi-package program, preserve explicit authority boundaries, lock source identity, execute deterministic core work, and drive that core through a bounded loopback ingress into a narrowly scoped atomic persistence boundary at the tested scale.
+These executed gates show that the current compiler/runtime can carry this non-trivial multi-package workload, preserve explicit authority boundaries, lock source identity, execute deterministic core work, and drive that core through a bounded loopback ingress into narrowly scoped exact-object persistence on the tested interpreter and Linux native-Go paths.
 
-It does **not** prove that Koschei can already replace a mature general-purpose language for every large system. It does not make `ServeCaps.exchange` a production HTTP framework, and it does not make `PersistCaps` a transactional database. Public ingress, TLS, routing, long-running handlers, true syscall-preemptive I/O deadlines, native persistence parity, concurrent-write coordination/CAS, database adapters, observability, package distribution, profiling and larger graph/compile stress remain separate gates.
+It does **not** prove that Koschei can already replace a mature general-purpose language for every large system. It does not make `ServeCaps.exchange` a production HTTP framework, and it does not make `PersistCaps` a transactional database. Public ingress, TLS, routing, long-running handlers, true syscall-preemptive I/O deadlines, non-Linux persistence parity, concurrent-write coordination/CAS, database adapters, observability, package distribution, profiling and larger graph/compile stress remain separate gates.
 
 The point of this reference is to turn those long-term requirements into executable work: future revisions must grow this same system and fix compiler/runtime/stdlib gaps exposed by the workload instead of shrinking the workload to preserve a claim.
