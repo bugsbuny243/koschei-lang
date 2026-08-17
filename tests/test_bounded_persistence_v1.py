@@ -36,15 +36,12 @@ class BoundedPersistenceV1Tests(unittest.TestCase):
             trusted.mkdir()
             target = trusted / "state.txt"
             target.write_text("old", encoding="utf-8")
-
             token = self.token(target)
-
             moved = root / "trusted-moved"
             trusted.rename(moved)
             trusted.mkdir()
             attacker_target = trusted / "state.txt"
             attacker_target.write_text("attacker", encoding="utf-8")
-
             self.assertIs(token.commit("sealed"), KsUnit)
             self.assertEqual((moved / "state.txt").read_text(encoding="utf-8"), "sealed")
             self.assertEqual(attacker_target.read_text(encoding="utf-8"), "attacker")
@@ -60,7 +57,6 @@ class BoundedPersistenceV1Tests(unittest.TestCase):
                 link.symlink_to(real, target_is_directory=True)
             except (OSError, NotImplementedError):
                 self.skipTest("symlinks are unavailable")
-
             token = self.token(link / "state.txt")
             result = token.commit("blocked")
             self.assertIsInstance(result, KsError)
@@ -77,7 +73,6 @@ class BoundedPersistenceV1Tests(unittest.TestCase):
                 target.symlink_to(outside)
             except (OSError, NotImplementedError):
                 self.skipTest("symlinks are unavailable")
-
             token = self.token(target)
             result = token.commit("blocked")
             self.assertIsInstance(result, KsError)
@@ -90,15 +85,11 @@ class BoundedPersistenceV1Tests(unittest.TestCase):
             target = Path(temporary) / "state.txt"
             target.write_text("old", encoding="utf-8")
             token = self.token(target, max_bytes=4)
-
             result = token.commit("12345")
             self.assertIsInstance(result, KsError)
             self.assertIn("KS3421", result.message)
             self.assertEqual(target.read_text(encoding="utf-8"), "old")
-            self.assertEqual(
-                [item.name for item in target.parent.iterdir() if item.name.startswith(".koschei-persist-")],
-                [],
-            )
+            self.assertEqual([item.name for item in target.parent.iterdir() if item.name.startswith(".koschei-persist-")], [])
 
     def test_load_budget_and_utf8_are_fail_closed(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -108,7 +99,6 @@ class BoundedPersistenceV1Tests(unittest.TestCase):
             oversized = token.load()
             self.assertIsInstance(oversized, KsError)
             self.assertIn("KS3421", oversized.message)
-
             target.write_bytes(b"\xff")
             token2 = self.token(target, max_bytes=4)
             invalid = token2.load()
@@ -120,20 +110,12 @@ class BoundedPersistenceV1Tests(unittest.TestCase):
             target = Path(temporary) / "state.txt"
             target.write_text("old", encoding="utf-8")
             token = self.token(target)
-
-            with patch(
-                "koschei.bounded_persistence_v1.os.fsync",
-                side_effect=OSError("injected temp fsync failure"),
-            ):
+            with patch("koschei.bounded_persistence_v1.os.fsync", side_effect=OSError("injected temp fsync failure")):
                 result = token.commit("new")
-
             self.assertIsInstance(result, KsError)
             self.assertIn("KS3424", result.message)
             self.assertEqual(target.read_text(encoding="utf-8"), "old")
-            self.assertEqual(
-                [item.name for item in target.parent.iterdir() if item.name.startswith(".koschei-persist-")],
-                [],
-            )
+            self.assertEqual([item.name for item in target.parent.iterdir() if item.name.startswith(".koschei-persist-")], [])
 
     def test_post_replace_directory_fsync_failure_is_state_uncertain_not_rollback(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -141,19 +123,13 @@ class BoundedPersistenceV1Tests(unittest.TestCase):
             target.write_text("old", encoding="utf-8")
             token = self.token(target)
             calls = 0
-
             def fsync_side_effect(_fd: int) -> None:
                 nonlocal calls
                 calls += 1
                 if calls == 2:
                     raise OSError("injected directory fsync failure")
-
-            with patch(
-                "koschei.bounded_persistence_v1.os.fsync",
-                side_effect=fsync_side_effect,
-            ):
+            with patch("koschei.bounded_persistence_v1.os.fsync", side_effect=fsync_side_effect):
                 result = token.commit("new")
-
             self.assertIsInstance(result, KsError)
             self.assertIn("KS3423", result.message)
             self.assertEqual(target.read_text(encoding="utf-8"), "new")
@@ -161,11 +137,7 @@ class BoundedPersistenceV1Tests(unittest.TestCase):
     def test_static_exact_policy_and_manifest_are_required(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             target = str(Path(temporary) / "state.txt")
-            program = parse(
-                "fn main(caps: SystemCaps) { "
-                f'let state = caps.persist.allow("{target}", 4096, 2000) '
-                "}"
-            )
+            program = parse("fn main(caps: SystemCaps) { " f'let state = caps.persist.allow("{target}", 4096, 2000) ' "}")
             check(program)
             manifest = analyze(program)
             persist = [grant for grant in manifest.grants if grant.domain == "persist"]
@@ -175,60 +147,44 @@ class BoundedPersistenceV1Tests(unittest.TestCase):
             self.assertIn("deadline_ms=2000", persist[0].scope)
 
     def test_dynamic_or_relative_persistence_authority_is_rejected(self) -> None:
-        dynamic = parse(
-            "fn main(caps: SystemCaps) { "
-            'let path = "/tmp/state.txt" '
-            "let state = caps.persist.allow(path, 4096, 2000) "
-            "}"
-        )
+        dynamic = parse("fn main(caps: SystemCaps) { " 'let path = "/tmp/state.txt" ' "let state = caps.persist.allow(path, 4096, 2000) " "}")
         with self.assertRaisesRegex(SemanticError, "KS2420"):
             check(dynamic)
-
-        relative = parse(
-            "fn main(caps: SystemCaps) { "
-            'let state = caps.persist.allow("state.txt", 4096, 2000) '
-            "}"
-        )
+        relative = parse("fn main(caps: SystemCaps) { " 'let state = caps.persist.allow("state.txt", 4096, 2000) ' "}")
         with self.assertRaisesRegex(SemanticError, "KS2421"):
             check(relative)
 
     def test_persist_capability_cannot_be_laundered_through_list(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             target = str(Path(temporary) / "state.txt")
-            program = parse(
-                "fn main(caps: SystemCaps) { "
-                f'let state = caps.persist.allow("{target}", 4096, 2000) '
-                "let hidden = [state] "
-                "}"
-            )
+            program = parse("fn main(caps: SystemCaps) { " f'let state = caps.persist.allow("{target}", 4096, 2000) ' "let hidden = [state] " "}")
             with self.assertRaisesRegex(SemanticError, "KS2401"):
                 check(program)
 
     def test_load_and_commit_are_fallible_language_operations(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             target = str(Path(temporary) / "state.txt")
-            program = parse(
-                "fn main(caps: SystemCaps) { "
-                f'let state = caps.persist.allow("{target}", 4096, 2000) '
-                'let wrote = state.commit("hello") or return '
-                'let loaded = state.load() or "" '
-                "println(loaded) "
-                "}"
-            )
+            program = parse("fn main(caps: SystemCaps) { " f'let state = caps.persist.allow("{target}", 4096, 2000) ' 'let wrote = state.commit("hello") or return ' 'let loaded = state.load() or "" ' "println(loaded) " "}")
             check(program)
 
-    def test_native_codegen_remains_explicitly_fail_closed(self) -> None:
+    def test_linux_native_codegen_contains_persistence_runtime(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             target = str(Path(temporary) / "state.txt")
-            program = parse(
-                "fn main(caps: SystemCaps) { "
-                f'let state = caps.persist.allow("{target}", 4096, 2000) '
-                'let wrote = state.commit("hello") or return '
-                "}"
-            )
+            program = parse("fn main(caps: SystemCaps) { " f'let state = caps.persist.allow("{target}", 4096, 2000) ' 'let wrote = state.commit("hello") or return ' "}")
             check(program)
-            with self.assertRaises(CodegenError) as context:
-                generate_go(program)
+            with patch("koschei.persistence_native_go_v1.sys.platform", "linux"):
+                generated = generate_go(program)
+            self.assertIn("type ksPersistCaps struct", generated)
+            self.assertIn("syscall.Renameat", generated)
+
+    def test_non_linux_native_codegen_remains_explicitly_fail_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            target = str(Path(temporary) / "state.txt")
+            program = parse("fn main(caps: SystemCaps) { " f'let state = caps.persist.allow("{target}", 4096, 2000) ' 'let wrote = state.commit("hello") or return ' "}")
+            check(program)
+            with patch("koschei.persistence_native_go_v1.sys.platform", "darwin"):
+                with self.assertRaises(CodegenError) as context:
+                    generate_go(program)
             self.assertEqual(context.exception.code, "KS4001")
 
     def test_stdlib_catalog_keeps_persistence_reserved(self) -> None:
