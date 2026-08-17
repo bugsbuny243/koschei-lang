@@ -71,7 +71,7 @@ fn main() {
 
     def test_order_worker_full_dependency_graph_executes_from_direct_mir(self) -> None:
         workspace = load_workspace(REFERENCE)
-        self.assertEqual(len(workspace.members), 12)
+        self.assertEqual(len(workspace.members), 13)
 
         graph = load_workspace_member_graph(workspace, "order_worker")
         check_graph(graph)

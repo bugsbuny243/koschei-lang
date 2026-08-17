@@ -5,7 +5,7 @@ import unittest
 from contextlib import redirect_stderr, redirect_stdout
 
 from koschei.capabilities import analyze, render
-from koschei.codegen_go import CodegenError, GoCodegen
+from koschei.codegen_go import GoCodegen
 from koschei.diagnostics import CATALOG, ENGLISH_CATALOG
 from koschei.interpreter import run
 from koschei.parser import parse
@@ -114,14 +114,15 @@ class ServeAuthorityV1Tests(unittest.TestCase):
                 "}"
             )
 
-    def test_native_codegen_rejects_serve_until_listener_abi_is_sealed(self) -> None:
+    def test_native_codegen_accepts_inert_serve_token_after_exchange_abi_is_sealed(self) -> None:
         program = self.checked(
             "fn main(caps: SystemCaps) { "
             f"let server = {POLICY} "
             "}"
         )
-        with self.assertRaisesRegex(CodegenError, "KS4001"):
-            GoCodegen(program).generate()
+        generated = GoCodegen(program).generate()
+        self.assertIsInstance(generated, str)
+        self.assertGreater(len(generated), 0)
 
     def test_serve_diagnostics_are_explainable_in_both_catalogs(self) -> None:
         for code in ("KS2410", "KS2411"):

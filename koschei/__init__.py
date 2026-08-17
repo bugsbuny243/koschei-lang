@@ -227,6 +227,48 @@ from .serve_authority_diagnostics_v1 import install_serve_authority_diagnostics_
 
 install_serve_authority_diagnostics_v1()
 
+from .serve_loopback_exchange_v1 import install_serve_loopback_exchange_v1
+
+install_serve_loopback_exchange_v1()
+
+from .serve_loopback_exchange_member_v1 import (
+    install_serve_loopback_exchange_member_v1,
+)
+
+install_serve_loopback_exchange_member_v1()
+
+from .serve_loopback_http_strict_v1 import install_serve_loopback_http_strict_v1
+
+install_serve_loopback_http_strict_v1()
+
+from .serve_loopback_exchange_parity_v1 import (
+    install_serve_loopback_exchange_parity_v1,
+)
+
+install_serve_loopback_exchange_parity_v1()
+
+from .serve_loopback_exchange_go_v1 import install_serve_loopback_exchange_go_v1
+
+install_serve_loopback_exchange_go_v1()
+
+from .serve_loopback_exchange_go_integrity_v1 import (
+    install_serve_loopback_exchange_go_integrity_v1,
+)
+
+install_serve_loopback_exchange_go_integrity_v1()
+
+from .serve_loopback_exchange_diagnostics_v1 import (
+    install_serve_loopback_exchange_diagnostics_v1,
+)
+
+install_serve_loopback_exchange_diagnostics_v1()
+
+from .serve_loopback_exchange_catalog_v1 import (
+    install_serve_loopback_exchange_catalog_v1,
+)
+
+install_serve_loopback_exchange_catalog_v1()
+
 from .typestate_affine_alignment import install_typestate_affine_alignment
 
 install_typestate_affine_alignment()
