@@ -127,6 +127,20 @@ from .direct_mir_type_integrity_v1 import install_direct_mir_type_integrity_v1
 
 install_direct_mir_type_integrity_v1()
 
+from .serve_authority_v1 import install_serve_authority_v1
+
+install_serve_authority_v1()
+
+from .serve_authority_loopback_canonical_v1 import (
+    install_serve_authority_loopback_canonical_v1,
+)
+
+install_serve_authority_loopback_canonical_v1()
+
+from .serve_authority_diagnostics_v1 import install_serve_authority_diagnostics_v1
+
+install_serve_authority_diagnostics_v1()
+
 from .object_space_error_boundary_v1 import install_object_space_error_boundary_v1
 
 install_object_space_error_boundary_v1()
