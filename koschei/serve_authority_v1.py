@@ -36,6 +36,7 @@ _ORIGINAL_CHECK_METHOD_CALL = None
 _ORIGINAL_CAPS_INSPECT = None
 _ORIGINAL_RUNTIME_TYPE_NODE = None
 _ORIGINAL_CODEGEN_VALIDATE = None
+_ORIGINAL_MEMBER = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -130,12 +131,7 @@ def _policy_from_ast(arguments, location: SourceLocation) -> ServePolicy:
     assert deadline_ms is not None
 
     checks = (
-        (
-            "max_connections",
-            max_connections,
-            _MIN_CONNECTIONS,
-            _MAX_CONNECTIONS,
-        ),
+        ("max_connections", max_connections, _MIN_CONNECTIONS, _MAX_CONNECTIONS),
         ("max_request_bytes", max_request_bytes, _MIN_BYTES, _MAX_BYTES),
         ("max_response_bytes", max_response_bytes, _MIN_BYTES, _MAX_BYTES),
         ("deadline_ms", deadline_ms, _MIN_DEADLINE_MS, _MAX_DEADLINE_MS),
@@ -172,12 +168,7 @@ def _runtime_policy(
             "KS2411: Serve v1 yalnızca açık loopback host:port kabul eder"
         )
 
-    values = (
-        max_connections,
-        max_request_bytes,
-        max_response_bytes,
-        deadline_ms,
-    )
+    values = (max_connections, max_request_bytes, max_response_bytes, deadline_ms)
     if any(type(value) is not int for value in values):
         return _runtime.KsError("KS2410: Serve bütçeleri Int olmalıdır")
 
@@ -243,6 +234,17 @@ class SystemCaps:
         self.serve = ServeRoot()
 
 
+def _member(self, receiver, name, location):
+    # The core interpreter intentionally uses a closed member allowlist for
+    # capability objects. Admit only the two authority edges sealed by v1:
+    # SystemCaps.serve and ServeRoot.allow. ServeCaps remains operation-free.
+    if isinstance(receiver, SystemCaps) and name == "serve":
+        return receiver.serve
+    if isinstance(receiver, ServeRoot) and name == "allow":
+        return _runtime._BoundMember(receiver, name, location)
+    return _ORIGINAL_MEMBER(self, receiver, name, location)
+
+
 def _check_method_call(
     self,
     receiver_type,
@@ -268,10 +270,7 @@ def _check_method_call(
         self._require_assignable(("String",), values[0], "Serve bind", location)
         for index, value in enumerate(values[1:], start=1):
             self._require_assignable(
-                ("Int",),
-                value,
-                f"Serve bütçesi {index}",
-                location,
+                ("Int",), value, f"Serve bütçesi {index}", location
             )
         _policy_from_ast(arguments or [], location)
         self.capability_count += 1
@@ -370,7 +369,7 @@ def _validate_capability_backend(self) -> None:
 def install_serve_authority_v1() -> None:
     global _INSTALLED
     global _ORIGINAL_CHECK_METHOD_CALL, _ORIGINAL_CAPS_INSPECT
-    global _ORIGINAL_RUNTIME_TYPE_NODE, _ORIGINAL_CODEGEN_VALIDATE
+    global _ORIGINAL_RUNTIME_TYPE_NODE, _ORIGINAL_CODEGEN_VALIDATE, _ORIGINAL_MEMBER
     if _INSTALLED:
         return
 
@@ -390,6 +389,9 @@ def install_serve_authority_v1() -> None:
     _runtime.ServeRoot = ServeRoot
     _runtime.ServeCaps = ServeCaps
     _runtime.SystemCaps = SystemCaps
+
+    _ORIGINAL_MEMBER = _runtime.Interpreter._member
+    _runtime.Interpreter._member = _member
 
     _ORIGINAL_CHECK_METHOD_CALL = _semantic.SemanticChecker._check_method_call
     _semantic.SemanticChecker._check_method_call = _check_method_call
