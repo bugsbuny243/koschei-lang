@@ -29,7 +29,7 @@ class DataMirV1Tests(unittest.TestCase):
         mir = self.checked_mir(
             """
 fn main() {
-    let data = parse_json("{\\"b\\":2,\\"a\\":1}") or return Error("parse failed")
+    let data = parse_json("\\{\\\"b\\\":2,\\\"a\\\":1\\}") or return Error("parse failed")
     let encoded = encode_json(data) or return Error("encode failed")
     println(encoded)
 }
@@ -47,7 +47,7 @@ fn main() {
         mir = self.checked_mir(
             """
 fn main() {
-    let data = parse_json("{") or return Error("invalid payload")
+    let data = parse_json("\\{") or return Error("invalid payload")
     let encoded = encode_json(data) or return Error("encode failed")
     println(encoded)
 }
