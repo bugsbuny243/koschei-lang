@@ -46,10 +46,10 @@ class ServeLoopbackExchangeV1Tests(unittest.TestCase):
     def test_real_post_body_crosses_bounded_loopback_exchange(self) -> None:
         port = _free_loopback_port()
         source = (
-            "fn main(caps: SystemCaps) { "
-            f'let server = caps.serve.allow("127.0.0.1:{port}", 8, 4096, 4096, 2000) '
-            'let body = server.exchange("accepted") or return '
-            "println(body) "
+            "fn main(caps: SystemCaps) {\n"
+            f'let server = caps.serve.allow("127.0.0.1:{port}", 8, 4096, 4096, 2000)\n'
+            'let body = server.exchange("accepted") or return\n'
+            "println(body)\n"
             "}"
         )
         result: dict[str, object] = {}
@@ -90,10 +90,10 @@ class ServeLoopbackExchangeV1Tests(unittest.TestCase):
     def test_manifest_attributes_exchange_operation_to_serve_domain(self) -> None:
         port = _free_loopback_port()
         program = parse(
-            "fn main(caps: SystemCaps) { "
-            f'let server = caps.serve.allow("127.0.0.1:{port}", 8, 4096, 4096, 2000) '
-            'let body = server.exchange("ok") or return '
-            "println(body) "
+            "fn main(caps: SystemCaps) {\n"
+            f'let server = caps.serve.allow("127.0.0.1:{port}", 8, 4096, 4096, 2000)\n'
+            'let body = server.exchange("ok") or return\n'
+            "println(body)\n"
             "}"
         )
         check(program)
@@ -104,10 +104,10 @@ class ServeLoopbackExchangeV1Tests(unittest.TestCase):
     def test_response_wire_is_bounded_before_listener_is_opened(self) -> None:
         port = _free_loopback_port()
         code, output, error = _run_capture(
-            "fn main(caps: SystemCaps) { "
-            f'let server = caps.serve.allow("127.0.0.1:{port}", 1, 4096, 32, 500) '
-            'let body = server.exchange("ok") or return '
-            "println(body) "
+            "fn main(caps: SystemCaps) {\n"
+            f'let server = caps.serve.allow("127.0.0.1:{port}", 1, 4096, 32, 500)\n'
+            'let body = server.exchange("ok") or return\n'
+            "println(body)\n"
             "}"
         )
         self.assertNotEqual(code, 0)
@@ -119,10 +119,10 @@ class ServeLoopbackExchangeV1Tests(unittest.TestCase):
         port = _free_loopback_port()
         started = time.monotonic()
         code, output, error = _run_capture(
-            "fn main(caps: SystemCaps) { "
-            f'let server = caps.serve.allow("127.0.0.1:{port}", 1, 4096, 4096, 150) '
-            'let body = server.exchange("ok") or return '
-            "println(body) "
+            "fn main(caps: SystemCaps) {\n"
+            f'let server = caps.serve.allow("127.0.0.1:{port}", 1, 4096, 4096, 150)\n'
+            'let body = server.exchange("ok") or return\n'
+            "println(body)\n"
             "}"
         )
         elapsed = time.monotonic() - started
