@@ -46,6 +46,7 @@ ks-differential-fuzz = "koschei.differential_fuzz_cli:main"
 ks-foundation-export = "koschei.foundation_export_cli:main"
 ks-model-curriculum = "koschei.model_curriculum_cli:main"
 ks-universe = "koschei.universe_cli:main"
+ks-universe-remote = "koschei.universe_remote_app_v1:main"
 
 [tool.setuptools]
 packages = ["koschei"]
