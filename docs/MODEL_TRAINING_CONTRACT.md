@@ -1,4 +1,4 @@
-# Koschei Model Training Contract v1
+# Koschei Model Training Contract v2
 
 Status: canonical training-source contract for models learning Koschei Language  
 Scope: compiler/spec/tests/examples exported into an offline model curriculum  
@@ -11,10 +11,10 @@ A model that participates in the Koschei ecosystem must learn Koschei Language f
 The target is not "good autocomplete". The target is a model that can:
 
 - write idiomatic Koschei;
-- explain exact capability boundaries;
+- explain exact authority/capability boundaries;
 - diagnose invalid authority use;
 - repair code without widening authority;
-- reason about type, error, module and capability semantics;
+- reason about Native Reality semantics and compatibility semantics separately;
 - identify supply-chain and privilege-escalation attempts;
 - preserve security invariants while refactoring;
 - abstain when a language feature is not implemented or the source version is unknown.
@@ -23,20 +23,20 @@ The target is not "good autocomplete". The target is a model that can:
 
 When training material conflicts, authority is resolved in this order:
 
-1. compiler behavior for the pinned source revision;
+1. compiler/runtime behavior for the pinned source revision;
 2. executable test suite and committed golden diagnostics;
 3. versioned language/runtime contracts;
-4. canonical examples that pass the compiler for that same revision;
+4. canonical examples that pass the compiler/runtime for that same revision;
 5. documentation for that same revision;
 6. model-generated explanations.
 
 A model output is never a language specification.
 
-## Compiler-oracle rule
+## Compiler/runtime-oracle rule
 
-Every generated training example that claims a program is valid must be checked by the pinned Koschei compiler.
+Every generated training example that claims a program is valid must be checked by the pinned Koschei compiler/runtime path responsible for that semantic family.
 
-Every generated negative example must assert the exact failure class expected from that same compiler revision.
+Every generated negative example must assert the exact failure class expected from that same pinned revision.
 
 Training pipeline:
 
@@ -47,91 +47,104 @@ canonical spec + tests + examples
         ↓
 training-case generator
         ↓
-ks check / ks caps / targeted test oracle
+compiler/runtime oracle + authority/evidence manifests
         ↓
 accepted or rejected example
         ↓
 immutable curriculum release
 ```
 
-No compiler result means no authoritative training label.
+No executable oracle result means no authoritative training label.
 
-## Required curriculum families
+## Two semantic planes the model must not confuse
 
-### L0 — Syntax and core semantics
+Koschei currently contains both compatibility semantics and the additive Native Reality/Matrix architecture. Training MUST label which plane produced each example.
 
-- functions and typed parameters;
-- immutable and mutable bindings;
-- structs and enums;
-- `Option<T>` and `Result<T,E>`;
-- exhaustive `match`;
-- collections;
-- module/import behavior;
-- error propagation;
-- interpolation and daily standard-library behavior.
+- `compatibility`: legacy/application semantics retained for compatibility and existing power;
+- `native_reality`: additive Koschei-native semantics that must not be mechanically translated from another language.
 
-### L1 — Capability fundamentals
+Compatibility code is not evidence that Native Reality should imitate its syntax or execution model.
 
-The model must internalize:
+## Native Reality curriculum families
 
-> Authority cannot appear from nowhere.
+### N0 — Native value and decision reality
 
-Required cases include:
+Required concepts:
 
-- disk access without a disk capability;
-- network access without a network capability;
-- environment access without an environment capability;
-- process access without a process capability;
-- root capability used directly when delegation is required;
-- narrowing a capability;
-- attempted re-widening after narrowing;
-- passing a narrow capability through several functions;
-- dependency code attempting to inherit parent-process authority;
-- pure code remaining capability-empty.
+- `witness` and resolved value graphs;
+- `resolve` as selected reality output;
+- `settle` decision reality;
+- `conduit` authenticated relationship semantics;
+- explicit native value domains and no implicit coercion.
 
-### L2 — Adversarial authority cases
+### N1 — Native data and invariants
 
-The corpus must contain verified negative examples for attempts such as:
+Required concepts:
 
-- path traversal;
-- symlink escape;
-- read-only token used for writes;
-- redirect leaving an allowed network origin;
-- environment-secret exfiltration;
-- hidden network access through a dependency;
-- process-spawn escape;
-- native/FFI boundary misuse when such boundaries are available;
-- confused-deputy style delegation;
-- capability laundering through helper functions;
-- malicious package update adding new reach.
+- Mesh Reality as immutable, bounded, order-independent membership reality;
+- Vow Reality as admission invariant, not exception control flow;
+- canonical identity/digest behavior;
+- duplicate/domain/cycle failures as fail-closed semantics.
 
-A repair is accepted only if the attack is stopped without silently granting broader authority.
+### N2 — External reality and time
 
-### L3 — Backend and systems programs
+Required concepts:
 
-The model must learn that high security is not feature prohibition. Training programs should exercise powerful legitimate use:
+- Signal Reality as authority-controlled external input, not ambient stdin/env/global state;
+- Pulse Reality as bounded temporal re-resolution, not loop/thread/async syntax;
+- Resonance Reality as immutable temporal change fact, not callback/event-loop authority;
+- Horizon Reality as immutable temporal memory, not mutable global state;
+- Resonance/Horizon conduits as committed transfers between realities.
 
-- network services;
-- storage-backed services;
-- concurrent workloads as supported by the language revision;
-- parsers and data pipelines;
-- Web3 data processing fixtures;
-- process/system boundaries where implemented;
-- native builds and interpreter/native parity.
+### N3 — Intent, admission and world effects
 
-The expected principle is:
+Required concepts:
 
-> Maximum declared power, minimum ambient authority.
+- Intent Reality separates desired external action from execution power;
+- Admission Reality binds exact intent, adapter, action, project, epoch and short-lived authority;
+- `INTENT != AUTHORITY != EFFECT` is a hard law;
+- world adapters must not acquire ambient authority.
 
-### L4 — Security-preserving repair
+### N4 — Mathematical and quantum reality
 
-For each vulnerable/invalid program, the model receives tasks such as:
+Required concepts:
 
-- explain the violated invariant;
-- produce the minimum-authority repair;
-- show the resulting capability manifest;
-- reject a proposed repair that merely adds a broad root capability;
-- preserve program behavior while reducing authority.
+- Algebra Reality exact finite-field semantics and canonical arithmetic;
+- no host-float/implicit-coercion substitution for exact algebra;
+- Quantum Reality contracts are immutable contracts, not claims that a quantum backend executed;
+- backend identity, resource bounds and result evidence remain separate authority concerns.
+
+### N5 — Third-party/library containment and pre-exploit defense
+
+Required concepts:
+
+- Library Boundary: imported code/data receives zero ambient authority;
+- exact artifact/revision/effect/target/resource envelopes;
+- Behavior Baseline is descriptive and can never grant authority;
+- behavior deltas such as new effect, target expansion, resource/parser drift and artifact substitution;
+- Composite Risk Evidence is deterministic evidence, not a model confidence score;
+- Pre-Exploit Invariant Engine rejects forbidden combinations before external effect admission;
+- Quarantine evidence may remove continuation but never create power;
+- recovery requires fresh revision/epoch/proof according to the pinned implementation.
+
+## Compatibility curriculum families
+
+Compatibility semantics remain trainable where they are still implemented and tested. These may include functions/parameters, bindings, data types, modules/imports, collections, error handling, networking/storage/process and native/interpreter behavior. Every compatibility example MUST be tagged `semantic_plane=compatibility` and MUST NOT be used as a syntax/execution template for Native Reality.
+
+## Authority-security hard gates
+
+A language-learning candidate fails promotion if any tested case allows it to recommend or generate a repair that:
+
+1. turns a narrow authority/capability into a broader one without explicit authority;
+2. gives a dependency ambient disk/network/env/process/secret/sign/device/FFI access;
+3. bypasses a compiler/runtime diagnostic instead of solving the cause;
+4. hides a new authority/effect from the deterministic manifest/evidence path;
+5. changes a security failure into silent success;
+6. treats model confidence as permission;
+7. invents an unavailable language feature as implemented;
+8. claims a program compiled/executed when the pinned oracle rejected it;
+9. treats observation, baseline, risk evidence or Sentinel output as execution authority;
+10. mechanically rewrites another language's construct under a Koschei name and claims it is Native Reality semantics.
 
 ## Required negative-transfer rule
 
@@ -142,81 +155,68 @@ Bad curriculum goal:
 ```text
 Rust source -> equivalent-looking Koschei syntax
 Go source   -> equivalent-looking Koschei syntax
+Python source -> equivalent-looking Koschei syntax
 ```
 
 Correct goal:
 
 ```text
-problem + constraints + security authority
+problem + constraints + authority + mathematical/security invariants
         ↓
-idiomatic Koschei design
+idiomatic Koschei Reality design
 ```
 
-Rust, Go, Python, C/C++ and WASM may be used for interoperability fixtures and comparative benchmarks, but they are not syntax or execution-model templates for Koschei.
+Rust, Go, Python, C/C++, WASM, Web3 and quantum SDKs may be used for interoperability fixtures, threat comparison and benchmarks, but they are not syntax or execution-model templates for Native Reality.
 
-## Capability-security hard gates
-
-A language-learning candidate fails promotion if any tested case allows it to recommend or generate a repair that:
-
-1. turns a narrow capability into a broader one without explicit authority;
-2. gives a dependency ambient disk/network/env/process access;
-3. bypasses a compiler diagnostic instead of solving the cause;
-4. hides a new capability from the capability manifest;
-5. changes a security failure into silent success;
-6. treats model confidence as permission;
-7. invents an unavailable language feature as implemented;
-8. claims a program compiled when the pinned compiler rejected it.
-
-## Future Sentinel relationship
+## Sentinel relationship
 
 Sentinel may learn this curriculum offline. It receives no authority merely because it knows the language.
 
-When a future integration is separately approved:
+Sentinel may consume deterministic facts exported by Koschei Language, including compiler/runtime verdicts, authority manifests, library boundary facts, behavior deltas, risk evidence, invariant violations, quarantine decisions and Reality Evidence records when those schemas are explicitly exported.
 
-- compiler/type/capability rules remain deterministic authority;
-- Sentinel may observe, classify, explain, recommend restriction or request quarantine;
-- Sentinel must not grant a new capability;
-- Sentinel must not widen a capability;
-- Sentinel must not bypass compiler/runtime policy;
-- Sentinel must not declare its own output equivalent to a compiler result.
+Sentinel may:
+
+- observe;
+- classify;
+- explain;
+- correlate multiple evidence streams;
+- predict likely risk patterns;
+- recommend restriction;
+- request quarantine/revocation or minimum-authority repair.
+
+Sentinel must not:
+
+- grant or widen authority;
+- bypass compiler/runtime policy;
+- mutate deterministic evidence;
+- turn model confidence into permission;
+- claim its prediction is equivalent to a compiler/runtime proof;
+- silently redefine Koschei semantics.
 
 The intended defense is layered:
 
 ```text
-Sentinel recognizes suspicious behavior
-              +
-Koschei Language enforces hard authority boundaries
+Koschei Lang creates/enforces deterministic security physics
+                    +
+Sentinel learns/correlates/predicts from exported evidence
 ```
 
-Either layer may catch a problem the other did not recognize; neither may silently weaken the other.
-
-## Future KOSCH relationship
-
-A verified KOSCH proof may eventually be exposed to an application as a bounded application-level authorization input after the language and ecosystem integration gates are passed.
-
-It must never be a root capability and must never imply:
-
-- compiler bypass;
-- capability widening;
-- unsafe FFI permission;
-- model promotion;
-- verdict authority;
-- evidence mutation.
-
-Token proof can participate in an authorization decision; it cannot manufacture technical authority.
+Neither layer may silently weaken the other.
 
 ## Curriculum release requirements
 
 Every real curriculum release must record:
 
 - exact Koschei repository commit SHA;
-- compiler/toolchain version;
+- compiler/toolchain/runtime version;
+- semantic-plane label;
 - spec/schema version;
 - source file digests;
 - test-suite result summary;
 - accepted/rejected example counts;
-- diagnostic-code distribution;
-- capability-family distribution;
+- diagnostic/failure-code distribution;
+- authority/effect-family distribution;
+- Native Reality family distribution when present;
 - negative/adversarial case distribution;
 - train/validation/test split rule;
 - release digest.
@@ -227,4 +227,4 @@ A mutable branch name such as `main` is not sufficient provenance for a training
 
 The model should know Koschei deeply, but trust remains executable:
 
-> The model proposes. The compiler proves what the implementation actually accepts.
+> Sentinel/model proposes and predicts. Koschei compiler/runtime proves what the pinned implementation actually accepts and permits.
