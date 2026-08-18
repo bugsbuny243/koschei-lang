@@ -39,8 +39,8 @@ class UniverseProjectionV1:
     projection_digest: bytes
     authority: bool = False
 
-_ALLOWED_KINDS = frozenset({"project", "package", "service", "storage", "test", "guardian", "utility"})
-_ALLOWED_RELATIONS = frozenset({"depends", "conduit", "observes", "persists", "tests", "guards"})
+_ALLOWED_KINDS = frozenset({"project", "module", "package", "service", "storage", "test", "guardian", "utility"})
+_ALLOWED_RELATIONS = frozenset({"depends", "imports", "conduit", "observes", "persists", "tests", "guards"})
 
 def project_universe_v1(*, project_digest: bytes, epoch: int,
     nodes: tuple[UniverseNodeV1, ...], edges: tuple[UniverseEdgeV1, ...]) -> UniverseProjectionV1:
