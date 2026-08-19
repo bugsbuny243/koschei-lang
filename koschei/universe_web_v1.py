@@ -1,8 +1,8 @@
 """Koschei Universe web shell v1.
 
 Read-only loopback web surface for canonical UniverseProjectionV1 +
-UniverseLiveStateV1. The renderer receives digests/status/layout only and cannot
-mint or mutate authority.
+UniverseLiveStateV1. The renderer receives digests/status/layout/portal metadata
+only and cannot mint or mutate authority.
 """
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from typing import Callable
 from .universe_projection_v1 import UniverseProjectionV1
 from .universe_live_state_v1 import UniverseLiveStateV1
 from .universe_spatial_layout_v1 import spatial_layout_v1
+from .universe_portal_physics_v1 import portal_physics_v1
 
 
 class UniverseWebError(ValueError):
@@ -36,7 +37,17 @@ def universe_payload_v1(*, projection: UniverseProjectionV1,
         raise UniverseWebError("Universe renderer input must be authority-free")
 
     layout = spatial_layout_v1(projection)
+    portals = portal_physics_v1(projection)
+    if layout.authority or portals.authority:
+        raise UniverseWebError("Universe display metadata must be authority-free")
+    if layout.projection_digest != projection.projection_digest or portals.projection_digest != projection.projection_digest:
+        raise UniverseWebError("Universe display metadata must bind this projection")
+
     layout_by_node = {n.node_id: n for n in layout.nodes}
+    portal_by_edge = {
+        (p.source_id, p.destination_id, p.relation, p.evidence_digest): p
+        for p in portals.portals
+    }
     events_by_node: dict[str, list[dict[str, object]]] = {n.node_id: [] for n in projection.nodes}
     for event in live.events:
         events_by_node[event.node_id].append({
@@ -61,18 +72,30 @@ def universe_payload_v1(*, projection: UniverseProjectionV1,
                 "sizeUnits": pos.size_units,
             },
         })
-    edges = [{
-        "source": e.source_id,
-        "destination": e.destination_id,
-        "relation": e.relation,
-        "evidence": _hex(e.evidence_digest),
-    } for e in projection.edges]
+
+    edges = []
+    for e in projection.edges:
+        p = portal_by_edge[(e.source_id, e.destination_id, e.relation, e.evidence_digest)]
+        edges.append({
+            "source": e.source_id,
+            "destination": e.destination_id,
+            "relation": e.relation,
+            "evidence": _hex(e.evidence_digest),
+            "portal": {
+                "style": p.style,
+                "phaseMilli": p.phase_milli,
+                "pulseMilli": p.pulse_milli,
+                "widthMilli": p.width_milli,
+            },
+        })
+
     return {
         "schema": "koschei.universe-web/v1",
         "project": _hex(projection.project_digest),
         "epoch": projection.epoch,
         "projection": _hex(projection.projection_digest),
         "layout": _hex(layout.layout_digest),
+        "portals": _hex(portals.portal_digest),
         "state": _hex(live.state_digest),
         "authority": False,
         "nodes": nodes,
@@ -89,7 +112,7 @@ const c=document.getElementById('c'),x=c.getContext('2d'),meta=document.getEleme
 function fit(){c.width=innerWidth*devicePixelRatio;c.height=innerHeight*devicePixelRatio;x.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);layout()}addEventListener('resize',fit);fit();
 function status(n){let kinds=new Set(n.events.map(e=>e.kind));if(n.quarantined||kinds.has('fork')||kinds.has('rollback')||kinds.has('quarantine'))return 'bad';if(kinds.has('admission-denied')||kinds.has('budget-block')||kinds.has('authority-death'))return 'warn';return 'ok'}
 function layout(){if(!S)return;let cx=innerWidth/2,cy=innerHeight/2,unit=Math.min(innerWidth,innerHeight)/1500;pts=S.nodes.map(n=>{let sp=n.spatial||{},a=(sp.angleMicrorad||0)/1e6,r=(sp.radiusUnits||0)*unit;return{n,x:cx+Math.cos(a)*r,y:cy+Math.sin(a)*r,r:Math.max(12,(sp.sizeUnits||34)*unit)}})}
-function draw(){requestAnimationFrame(draw);x.clearRect(0,0,innerWidth,innerHeight);for(let i=0;i<120;i++){let px=(i*97)%innerWidth,py=(i*53)%innerHeight;x.fillStyle='#ffffff20';x.fillRect(px,py,1,1)}if(!S)return;let by=Object.fromEntries(pts.map(p=>[p.n.id,p]));for(let e of S.edges){let a=by[e.source],b=by[e.destination];if(!a||!b)continue;x.strokeStyle=e.relation==='conduit'?'#5ad9ff80':'#6a7ea955';x.lineWidth=e.relation==='conduit'?2:1;x.beginPath();x.moveTo(a.x,a.y);x.lineTo(b.x,b.y);x.stroke()}for(let p of pts){let st=status(p.n),col=st==='bad'?'#ff5d78':st==='warn'?'#ffd05d':'#5de6ff';x.shadowColor=col;x.shadowBlur=18;x.fillStyle=col+'55';x.beginPath();x.arc(p.x,p.y,p.r,0,Math.PI*2);x.fill();x.shadowBlur=0;x.strokeStyle=col;x.stroke();x.fillStyle='#e8f2ff';x.textAlign='center';x.font='12px ui-monospace';x.fillText(p.n.id,p.x,p.y+p.r+18)}}
+function draw(){requestAnimationFrame(draw);x.clearRect(0,0,innerWidth,innerHeight);for(let i=0;i<120;i++){let px=(i*97)%innerWidth,py=(i*53)%innerHeight;x.fillStyle='#ffffff20';x.fillRect(px,py,1,1)}if(!S)return;let by=Object.fromEntries(pts.map(p=>[p.n.id,p]));for(let e of S.edges){let a=by[e.source],b=by[e.destination];if(!a||!b)continue;let p=e.portal||{};x.strokeStyle=e.relation==='conduit'?'#5ad9ff80':'#6a7ea955';x.lineWidth=Math.max(.8,(p.widthMilli||1000)/1000);x.setLineDash(p.style==='dashed-gate'?[4,5]:p.style==='simulation-rift'?[2,4]:[]);x.beginPath();x.moveTo(a.x,a.y);x.lineTo(b.x,b.y);x.stroke();x.setLineDash([])}for(let p of pts){let st=status(p.n),col=st==='bad'?'#ff5d78':st==='warn'?'#ffd05d':'#5de6ff';x.shadowColor=col;x.shadowBlur=18;x.fillStyle=col+'55';x.beginPath();x.arc(p.x,p.y,p.r,0,Math.PI*2);x.fill();x.shadowBlur=0;x.strokeStyle=col;x.stroke();x.fillStyle='#e8f2ff';x.textAlign='center';x.font='12px ui-monospace';x.fillText(p.n.id,p.x,p.y+p.r+18)}}
 c.addEventListener('click',ev=>{let p=pts.find(p=>Math.hypot(ev.clientX-p.x,ev.clientY-p.y)<=p.r+8);if(!p)return;detail.textContent=`${p.n.id} · ${p.n.kind} · ${status(p.n)} · events: ${p.n.events.map(e=>e.kind).join(', ')||'none'}`});
 async function refresh(){try{let r=await fetch('/api/universe',{cache:'no-store'});S=await r.json();meta.innerHTML=`epoch <span class="ok">${S.epoch}</span> · nodes ${S.nodes.length} · authority ${S.authority}`;layout()}catch(e){meta.innerHTML='<span class="bad">state unavailable</span>'}}refresh();setInterval(refresh,1500);draw();</script>'''
 
