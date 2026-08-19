@@ -1,9 +1,4 @@
-"""Koschei Universe production remote observer app v1.
-
-Railway/container entrypoint for the read-only mobile Universe. It binds a real
-checked Koschei project projection to short-lived signed observer envelopes.
-Secrets stay server-side and the browser remains authority-free.
-"""
+"""Koschei Universe production remote observer app v2."""
 from __future__ import annotations
 
 import os
@@ -11,7 +6,7 @@ from pathlib import Path
 import time
 
 from .universe_project_provider_v1 import build_project_universe_v1
-from .universe_remote_gateway_v3 import serve_remote_observer_v3
+from .universe_remote_gateway_v4 import serve_remote_observer_v4
 from .universe_remote_observer_v1 import issue_remote_observer_v1
 from .universe_web_v1 import universe_payload_v1
 
@@ -27,43 +22,34 @@ def _env_required(name: str) -> str:
     return value
 
 
-def _key_hex(name: str) -> bytes:
+def _key_hex(name: str, *, exact: int | None = None) -> bytes:
     raw = _env_required(name)
     try:
         value = bytes.fromhex(raw)
     except ValueError as exc:
         raise UniverseRemoteAppError(f"{name} must be hexadecimal") from exc
-    if len(value) < 32:
+    if exact is not None and len(value) != exact:
+        raise UniverseRemoteAppError(f"{name} must contain exactly {exact * 8} bits")
+    if exact is None and len(value) < 32:
         raise UniverseRemoteAppError(f"{name} must contain at least 256 bits")
     return value
 
 
-def _port() -> int:
-    raw = os.environ.get("PORT", "8876")
+def _int_env(name: str, default: str, low: int, high: int) -> int:
+    raw = os.environ.get(name, default)
     try:
-        port = int(raw)
+        value = int(raw)
     except ValueError as exc:
-        raise UniverseRemoteAppError("PORT must be an integer") from exc
-    if not 1 <= port <= 65535:
-        raise UniverseRemoteAppError("PORT out of range")
-    return port
-
-
-def _ttl() -> int:
-    raw = os.environ.get("KOSCHEI_UNIVERSE_TTL_SECONDS", "60")
-    try:
-        ttl = int(raw)
-    except ValueError as exc:
-        raise UniverseRemoteAppError("KOSCHEI_UNIVERSE_TTL_SECONDS must be an integer") from exc
-    if not 5 <= ttl <= 300:
-        raise UniverseRemoteAppError("KOSCHEI_UNIVERSE_TTL_SECONDS must be 5..300")
-    return ttl
+        raise UniverseRemoteAppError(f"{name} must be an integer") from exc
+    if not low <= value <= high:
+        raise UniverseRemoteAppError(f"{name} must be {low}..{high}")
+    return value
 
 
 def build_envelope_provider_v1():
     project_path = Path(_env_required("KOSCHEI_UNIVERSE_PROJECT")).resolve()
     signing_key = _key_hex("KOSCHEI_UNIVERSE_OBSERVER_SIGNING_KEY_HEX")
-    ttl = _ttl()
+    ttl = _int_env("KOSCHEI_UNIVERSE_TTL_SECONDS", "60", 5, 300)
     if not project_path.is_file() or project_path.suffix != ".ks":
         raise UniverseRemoteAppError("KOSCHEI_UNIVERSE_PROJECT must point to an existing .ks file")
 
@@ -76,20 +62,19 @@ def build_envelope_provider_v1():
             issued_at_unix=int(time.time()),
             ttl_seconds=ttl,
         )
-
     return provider, signing_key
 
 
 def main() -> int:
     provider, signing_key = build_envelope_provider_v1()
-    bearer = _key_hex("KOSCHEI_UNIVERSE_BEARER_TOKEN_HEX")
-    host = os.environ.get("KOSCHEI_UNIVERSE_HOST", "0.0.0.0")
-    serve_remote_observer_v3(
+    serve_remote_observer_v4(
         provider,
-        bearer_token=bearer.hex().encode("ascii"),
+        login_hash=_key_hex("KOSCHEI_UNIVERSE_LOGIN_SHA256_HEX", exact=32),
+        session_key=_key_hex("KOSCHEI_UNIVERSE_SESSION_KEY_HEX"),
         signing_key=signing_key,
-        host=host,
-        port=_port(),
+        host=os.environ.get("KOSCHEI_UNIVERSE_HOST", "0.0.0.0"),
+        port=_int_env("PORT", "8876", 1, 65535),
+        session_ttl_seconds=_int_env("KOSCHEI_UNIVERSE_SESSION_TTL_SECONDS", "1800", 60, 86400),
     )
     return 0
 
