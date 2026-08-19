@@ -18,7 +18,7 @@ import time
 from typing import Callable
 from urllib.parse import parse_qs
 
-from .universe_mobile_view_v1 import MOBILE_HTML_V1
+from .universe_mobile_view_v2 import MOBILE_HTML_V2
 from .universe_remote_observer_v1 import RemoteObserverEnvelopeV1, verify_remote_observer_v1
 
 _COOKIE = "koschei_observer_session"
@@ -111,7 +111,7 @@ def serve_remote_observer_v4(provider: Callable[[], RemoteObserverEnvelopeV1], *
             if self.path == "/" or self.path.startswith("/?"):
                 if not self._session_ok():
                     self._write(303, location="/login"); return
-                self._write(200, MOBILE_HTML_V1.encode("utf-8"), "text/html; charset=utf-8"); return
+                self._write(200, MOBILE_HTML_V2.encode("utf-8"), "text/html; charset=utf-8"); return
             if self.path == "/api/observer":
                 if not self._session_ok():
                     self._write(401); return
