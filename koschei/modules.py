@@ -20,7 +20,12 @@ from .legacy_generics import prepare_legacy_analysis
 from .lexer import LexerError
 from .mir import lower_graph as lower_mir_graph
 from .parser import ParserError, parse
-from .semantic import ImportedModule, SemanticError, SemanticReport, check as semantic_check
+from .semantic_contract_consumer_v1 import (
+    ImportedModule,
+    SemanticError,
+    SemanticReport,
+    check as semantic_check,
+)
 from .typed_hir import check_typed_hir
 from .typestate_resources_v1 import check_typestate_resources
 
