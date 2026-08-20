@@ -1,9 +1,9 @@
 from dataclasses import replace
-import json
 from pathlib import Path
 import tempfile
 import unittest
 
+from koschei.capability_effect_contract_v1 import ENV_READ, NET_IO
 from koschei.mir import MirIntegrityError, require_mir, to_dict
 from koschei.modules import check_graph, load_graph
 
@@ -47,7 +47,7 @@ fn main() { println("ok") }
         try:
             functions = {item.name: item for item in mir.root_module.functions}
             self.assertEqual(functions['save'].effects, ('disk.write',))
-            self.assertEqual(functions['fetch'].effects, ('net',))
+            self.assertEqual(functions['fetch'].effects, (NET_IO,))
         finally:
             directory.cleanup()
 
@@ -60,7 +60,7 @@ fn main() { println("safe") }
         try:
             payload = to_dict(mir)
             inspect = next(item for item in payload['modules'][0]['functions'] if item['name'] == 'inspect')
-            self.assertEqual(inspect['effects'], ['env.read'])
+            self.assertEqual(inspect['effects'], [ENV_READ])
             self.assertEqual(payload['version'], 3)
         finally:
             directory.cleanup()
@@ -69,7 +69,7 @@ fn main() { println("safe") }
         directory, mir = self.mir_for('fn main() { println("safe") }\n')
         try:
             root = mir.root_module
-            forged_function = replace(root.functions[0], effects=('net',))
+            forged_function = replace(root.functions[0], effects=(NET_IO,))
             forged_root = replace(root, functions=(forged_function,))
             forged_modules = dict(mir.modules)
             forged_modules[mir.root] = forged_root
