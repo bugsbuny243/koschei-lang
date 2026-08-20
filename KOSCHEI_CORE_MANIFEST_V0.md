@@ -4,6 +4,8 @@ Status: **architecture inventory, non-destructive**.
 
 This file exists to keep the programming language visible while the repository grows around it. It does not move or delete modules. It identifies the current language-authoritative spine first; import/dependency analysis must be completed before any directory reorganization.
 
+See also: `KOSCHEI_CORE_DEPENDENCY_MAP_V0.md`.
+
 ## Rule
 
 A module is part of the **language core** only when changing it can change one or more of these facts:
@@ -17,7 +19,7 @@ A module is part of the **language core** only when changing it can change one o
 
 Security infrastructure, recovery systems, deployment tooling, release evidence, private-library orchestration, deception/visibility systems, CI helpers and backend adapters are important, but they are **not the language definition** merely because they live in `koschei/`.
 
-## Current language-authoritative spine — 20 modules
+## Current language-authoritative spine — 22 modules
 
 ### Source surface and syntax
 
@@ -32,23 +34,25 @@ Security infrastructure, recovery systems, deployment tooling, release evidence,
 6. `koschei/semantic.py` — scopes, immutability, errors, capability semantics and legacy semantic authority.
 7. `koschei/type_system.py` — structural type representation.
 8. `koschei/type_contracts.py` — structural type contracts and generic inference.
-9. `koschei/_typed_ops.py` — typed-operation registration used by Typed HIR.
-10. `koschei/typed_hir.py` — backend-independent typed analysis.
-11. `koschei/integrity.py` — backend-independent source/control-flow integrity checks.
-12. `koschei/legacy_generics.py` — compatibility bridge required while legacy semantic analysis and Typed HIR coexist.
-13. `koschei/effects.py` — fail-closed capability/effect inference sealed into MIR.
-14. `koschei/effect_contracts_v1.py` — enforceable source-level effect contracts such as `pure fn`.
-15. `koschei/affine_resources_v1.py` — compiler-enforced affine ownership for authority-bearing values.
-16. `koschei/typestate_resources_v1.py` — compiler-enforced state transition/resource invariants.
+9. `koschei/_typed_ops.py` — typed collection/operator and union-safety rules used by Typed HIR.
+10. `koschei/_typed_expr.py` — expression type inference used lazily by Typed HIR; determines types for calls, members, literals, collections and expression forms.
+11. `koschei/typed_hir.py` — backend-independent typed analysis.
+12. `koschei/integrity.py` — backend-independent source/control-flow integrity checks.
+13. `koschei/legacy_types.py` — structural-generic erasure into the still-active v0.9 semantic compatibility view.
+14. `koschei/legacy_generics.py` — monomorphized compatibility bridge required while legacy semantic analysis and Typed HIR coexist.
+15. `koschei/effects.py` — fail-closed capability/effect inference sealed into MIR.
+16. `koschei/effect_contracts_v1.py` — enforceable source-level effect contracts such as `pure fn`.
+17. `koschei/affine_resources_v1.py` — compiler-enforced affine ownership for authority-bearing values.
+18. `koschei/typestate_resources_v1.py` — compiler-enforced state transition/resource invariants.
 
 ### Program graph and executable contract
 
-17. `koschei/modules.py` — module loading, dependency graph and orchestration of language checks/lowering.
-18. `koschei/mir_ir.py` — normalized backend-independent MIR/control-flow representation.
-19. `koschei/mir.py` — sealed checked MIR graph and lowering contract.
-20. `koschei/interpreter.py` — reference execution semantics for checked Koschei programs.
+19. `koschei/modules.py` — module loading, dependency graph and orchestration of language checks/lowering.
+20. `koschei/mir_ir.py` — normalized backend-independent MIR/control-flow representation.
+21. `koschei/mir.py` — sealed checked MIR graph and lowering contract.
+22. `koschei/interpreter.py` — reference execution semantics for checked Koschei programs.
 
-These 20 modules are the **current core spine**, not a claim that every dependency beneath them has already been proven non-authoritative. The next inventory step is to recursively map imports from these modules and either (a) promote an omitted semantic dependency into this manifest or (b) classify it as support infrastructure.
+The recursive scan corrected the earlier 20-module inventory: `_typed_expr.py` and `legacy_types.py` are active semantic dependencies and therefore cannot be treated as ordinary helpers. The dependency map records why.
 
 ## Close support, but not language authority by default
 
@@ -56,7 +60,7 @@ Examples include:
 
 - `koschei/runtime_budget.py` — execution resource policy;
 - `koschei/capabilities.py` — capability-manifest reporting/analysis surface;
-- `koschei/diagnostics.py` — diagnostic catalog/rendering;
+- `koschei/diagnostics.py` — diagnostic catalog/rendering; currently imported by MIR for `KS5002` registration but not used to decide language semantics;
 - `koschei/formatter.py` — canonical source formatting;
 - `koschei/project.py` — project creation/path resolution;
 - `koschei/cli.py`, `koschei/cli_entry.py` — command surfaces;
@@ -82,6 +86,16 @@ The intended architecture boundary is:
 
 The private platform may expose capabilities to the language; it must not silently rewrite the language grammar or semantics.
 
+## Migration debt now made explicit
+
+The following files are language-authoritative today but are not intended to remain permanent architecture:
+
+- `_parser_v09.py` — remove only after the current parser no longer inherits the v0.9 implementation and parser parity is proven.
+- `legacy_types.py` — remove only after the v0.9 semantic checker no longer needs structural-generic erasure.
+- `legacy_generics.py` — remove only after Typed HIR/current semantic analysis fully owns generic program checking without a monomorphized compatibility view.
+
+Until those conditions are met, deleting or sidelining these files can change accepted Koschei programs.
+
 ## Anti-bloat rule
 
 From this manifest forward:
@@ -104,4 +118,4 @@ After dependency verification, reorganize without changing semantics into a visi
 - `koschei/tooling/` — CLI, LSP, formatter, project and diagnostics surfaces
 - `koschei/experimental/` / `koschei/legacy/` — explicitly non-canonical work
 
-That reorganization must be evidence-driven and test-preserving; this manifest is the map before the move.
+That reorganization must be evidence-driven and test-preserving; this manifest and dependency map are the maps before the move.
