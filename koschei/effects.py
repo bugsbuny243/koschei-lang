@@ -5,14 +5,8 @@ from dataclasses import fields, is_dataclass
 from typing import Any
 
 from .ast_nodes import CallExpression, FunctionDeclaration, Identifier, MemberExpression, Program
+from .capability_effect_contract_v1 import effect_for
 
-_METHOD_EFFECTS = {
-    "NetCaps": {"get": "net", "post": "net", "put": "net", "delete": "net", "request": "net"},
-    "DiskReadCaps": {"read": "disk.read", "read_file": "disk.read", "list": "disk.read"},
-    "DiskCaps": {"read": "disk.read", "read_file": "disk.read", "list": "disk.read", "write": "disk.write", "write_file": "disk.write", "delete": "disk.write"},
-    "EnvCaps": {"get": "env.read"},
-    "ProcessCaps": {"run": "process", "spawn": "process"},
-}
 
 def _walk(value: Any):
     if is_dataclass(value):
@@ -25,6 +19,7 @@ def _walk(value: Any):
     elif isinstance(value, dict):
         for item in value.values():
             yield from _walk(item)
+
 
 def _direct(function: FunctionDeclaration, local_names: set[str]) -> tuple[set[str], set[str]]:
     parameter_types = {parameter.name: str(parameter.type_ref) for parameter in function.parameters}
@@ -40,10 +35,11 @@ def _direct(function: FunctionDeclaration, local_names: set[str]) -> tuple[set[s
         receiver = node.callee.object
         if not isinstance(receiver, Identifier):
             continue
-        effect = _METHOD_EFFECTS.get(parameter_types.get(receiver.name, ""), {}).get(node.callee.member)
+        effect = effect_for(parameter_types.get(receiver.name, ""), node.callee.member)
         if effect is not None:
             effects.add(effect)
     return effects, calls
+
 
 def infer_effects(program: Program) -> dict[str, tuple[tuple[str, ...], tuple[str, ...]]]:
     names = {function.name for function in program.declarations}
@@ -56,7 +52,11 @@ def infer_effects(program: Program) -> dict[str, tuple[tuple[str, ...], tuple[st
     while changed:
         changed = False
         for name, callees in calls.items():
-            expanded = resolved[name] | set().union(*(resolved[callee] for callee in callees)) if callees else resolved[name]
+            expanded = (
+                resolved[name] | set().union(*(resolved[callee] for callee in callees))
+                if callees
+                else resolved[name]
+            )
             if expanded != resolved[name]:
                 resolved[name] = expanded
                 changed = True
