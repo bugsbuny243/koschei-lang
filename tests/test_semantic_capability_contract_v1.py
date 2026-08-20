@@ -11,6 +11,9 @@ from koschei.capability_effect_contract_v1 import (
     ROOT_CAPABILITY_TYPES,
     ROOT_NARROWING,
     SYSTEM_CAPABILITY_MEMBERS,
+    legacy_semantic_members,
+    legacy_semantic_narrowed_methods,
+    legacy_semantic_root_methods,
 )
 from koschei import semantic
 
@@ -24,21 +27,43 @@ class SemanticCapabilityContractTests(unittest.TestCase):
     """
 
     def test_system_capability_members_match_canonical_contract(self) -> None:
+        self.assertEqual(semantic.CAPABILITY_MEMBERS, legacy_semantic_members())
         self.assertEqual(semantic.CAPABILITY_MEMBERS, dict(SYSTEM_CAPABILITY_MEMBERS))
 
     def test_root_narrowing_matches_canonical_contract(self) -> None:
-        expected = {
-            capability: dict(methods)
-            for capability, methods in ROOT_NARROWING.items()
-        }
+        expected = legacy_semantic_root_methods()
         self.assertEqual(semantic.ROOT_METHODS, expected)
+        self.assertEqual(
+            expected,
+            {
+                capability: dict(methods)
+                for capability, methods in ROOT_NARROWING.items()
+            },
+        )
 
     def test_narrowed_operations_match_canonical_contract(self) -> None:
-        expected = {
-            capability: set(methods)
-            for capability, methods in NARROWED_OPERATIONS.items()
-        }
+        expected = legacy_semantic_narrowed_methods()
         self.assertEqual(semantic.NARROWED_METHODS, expected)
+        self.assertEqual(
+            expected,
+            {
+                capability: set(methods)
+                for capability, methods in NARROWED_OPERATIONS.items()
+            },
+        )
+
+    def test_legacy_adapters_cannot_mutate_canonical_contract(self) -> None:
+        members = legacy_semantic_members()
+        roots = legacy_semantic_root_methods()
+        narrowed = legacy_semantic_narrowed_methods()
+
+        members["net"] = "CompromisedRoot"
+        roots["NetRoot"]["allow"] = "CompromisedCaps"
+        narrowed["NetCaps"].add("exfiltrate")
+
+        self.assertEqual(SYSTEM_CAPABILITY_MEMBERS["net"], "NetRoot")
+        self.assertEqual(ROOT_NARROWING["NetRoot"]["allow"], "NetCaps")
+        self.assertNotIn("exfiltrate", NARROWED_OPERATIONS["NetCaps"])
 
     def test_derived_capability_sets_match_canonical_contract(self) -> None:
         self.assertEqual(set(semantic.NARROWING_METHODS), set(NARROWING_METHODS))
