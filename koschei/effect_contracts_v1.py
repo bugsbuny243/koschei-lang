@@ -15,45 +15,11 @@ from dataclasses import dataclass, fields, is_dataclass
 from typing import Any
 
 from .ast_nodes import CallExpression, FunctionDeclaration, Identifier, MemberExpression, Program
+from .capability_effect_contract_v1 import effect_for
 from .semantic import ImportedModule, SemanticError
 from .type_contracts import TypeContractValidator, function_type
 from .type_system import NamedType, TypeNode, render_type
 from .typed_hir import TypedHIRReport
-
-
-# Effects are stable machine-readable names. A later effect-polymorphism surface
-# can build on these without changing what v1 means.
-_CAPABILITY_METHOD_EFFECTS: dict[str, dict[str, str]] = {
-    "NetRoot": {"allow": "authority.derive"},
-    "DiskRoot": {
-        "allow": "authority.derive",
-        "allow_read_only": "authority.derive",
-    },
-    "EnvRoot": {"allow": "authority.derive"},
-    "ProcessRoot": {"allow": "authority.derive"},
-    "NetCaps": {
-        "get": "net.io",
-        "post": "net.io",
-        "put": "net.io",
-        "delete": "net.io",
-        "request": "net.io",
-    },
-    "DiskReadCaps": {
-        "read": "disk.read",
-        "read_file": "disk.read",
-        "list": "disk.read",
-    },
-    "DiskCaps": {
-        "read": "disk.read",
-        "read_file": "disk.read",
-        "list": "disk.read",
-        "write": "disk.write",
-        "write_file": "disk.write",
-        "delete": "disk.write",
-    },
-    "EnvCaps": {"get": "env.read"},
-    "ProcessCaps": {"run": "process.exec", "spawn": "process.exec"},
-}
 
 _CONSOLE_BUILTINS = {"print", "println"}
 _QUEUE_BUILTINS = {
@@ -222,9 +188,7 @@ def infer_effect_contracts(
 
                 receiver_type = expression_types.get(id(receiver))
                 type_name = None if receiver_type is None else _base_name(receiver_type)
-                effect = _CAPABILITY_METHOD_EFFECTS.get(type_name or "", {}).get(
-                    callee.member
-                )
+                effect = effect_for(type_name or "", callee.member)
                 if effect is not None:
                     effects.add(effect)
                     continue
