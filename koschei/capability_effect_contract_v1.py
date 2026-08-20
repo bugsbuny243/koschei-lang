@@ -116,6 +116,34 @@ CANONICAL_CAPABILITY_EFFECTS = frozenset(
 )
 
 
+def legacy_semantic_members() -> dict[str, str]:
+    """Return semantic.py's historical mutable member-table shape.
+
+    This adapter exists only for migration. Consumers receive a fresh container,
+    while all authority facts remain sourced from this canonical module.
+    """
+
+    return dict(SYSTEM_CAPABILITY_MEMBERS)
+
+
+def legacy_semantic_root_methods() -> dict[str, dict[str, str]]:
+    """Return semantic.py's historical mutable root-method table shape."""
+
+    return {
+        capability: dict(methods)
+        for capability, methods in ROOT_NARROWING.items()
+    }
+
+
+def legacy_semantic_narrowed_methods() -> dict[str, set[str]]:
+    """Return semantic.py's historical mutable narrowed-operation shape."""
+
+    return {
+        capability: set(methods)
+        for capability, methods in NARROWED_OPERATIONS.items()
+    }
+
+
 def narrowed_type_for(root_type: str, method: str) -> str | None:
     """Return the authority type produced by one legal narrowing operation."""
 
