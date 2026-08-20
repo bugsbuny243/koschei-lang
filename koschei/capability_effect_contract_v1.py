@@ -1,12 +1,13 @@
 """Canonical capability contract for Koschei.
 
-This module is the single source of truth for capability shape and capability
-method effect names. Typed HIR helpers, source-level effect checking and MIR
-sealing consume this contract rather than maintaining parallel taxonomies.
+This module is the single source of truth for capability shape, capability
+method effect names, and capability-boundary policy constants. Typed HIR
+helpers, source-level effect checking and MIR sealing consume this contract
+rather than maintaining parallel taxonomies.
 
-The legacy semantic checker still exposes compatibility aliases during the
-migration. Tests require those aliases to remain byte-for-byte equivalent to
-this contract until semantic.py is reduced to a consumer.
+The legacy semantic checker and tree-walking runtime still expose compatibility
+constants during the migration. Alignment tests require those views to remain
+equivalent to this contract until they are reduced to direct consumers.
 """
 from __future__ import annotations
 
@@ -19,6 +20,10 @@ DISK_READ = "disk.read"
 DISK_WRITE = "disk.write"
 ENV_READ = "env.read"
 PROCESS_EXEC = "process.exec"
+
+# Network authority may only be narrowed to explicit HTTP(S) origins. This is a
+# language-level authority rule, not a parser/runtime implementation detail.
+NET_ORIGIN_SCHEMES = frozenset({"http", "https"})
 
 _SYSTEM_CAPABILITY_MEMBERS = {
     "net": "NetRoot",
