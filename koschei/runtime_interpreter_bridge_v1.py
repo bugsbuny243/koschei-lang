@@ -22,10 +22,28 @@ class RuntimeAuthorityError(RuntimeError):
     """Raised when the runtime cannot be bound to canonical authority."""
 
 
+def _bridge_is_intact(interpreter_type: type[Any]) -> bool:
+    expected_member = getattr(interpreter_type, "_canonical_member_v1", None)
+    expected_matches = getattr(interpreter_type, "_canonical_matches_v1", None)
+    expected_type_name = getattr(interpreter_type, "_canonical_type_name_v1", None)
+    if expected_member is None or expected_matches is None or expected_type_name is None:
+        return False
+    current_type_name = interpreter_type.__dict__.get("_runtime_type_name")
+    return (
+        interpreter_type._member is expected_member
+        and interpreter_type._runtime_matches_type is expected_matches
+        and isinstance(current_type_name, staticmethod)
+        and current_type_name.__func__ is expected_type_name
+    )
+
+
 def install_canonical_authority_bridge(runtime: ModuleType) -> None:
     """Make interpreter capability decisions consume canonical authority data.
 
-    Installation is idempotent. Non-capability built-ins keep their existing
+    Installation is idempotent only while the installed bridge is still intact.
+    A long-lived process cannot keep the trusted marker, replace one of the
+    canonical wrappers, and then rely on a later boot to silently accept the
+    tampered execution surface. Non-capability built-ins keep their existing
     implementation behavior. Capability type checks never fall back to the
     interpreter's bootstrap-era hard-coded ladder.
     """
@@ -34,6 +52,10 @@ def install_canonical_authority_bridge(runtime: ModuleType) -> None:
     if interpreter_type is None:
         raise RuntimeAuthorityError("Interpreter runtime type is missing")
     if getattr(interpreter_type, "_canonical_authority_bridge_v1", False):
+        if not _bridge_is_intact(interpreter_type):
+            raise RuntimeAuthorityError(
+                "canonical runtime authority bridge was modified after installation"
+            )
         return
 
     original_member = interpreter_type._member
@@ -95,4 +117,7 @@ def install_canonical_authority_bridge(runtime: ModuleType) -> None:
     interpreter_type._member = canonical_member
     interpreter_type._runtime_matches_type = canonical_matches
     interpreter_type._runtime_type_name = staticmethod(canonical_type_name)
+    interpreter_type._canonical_member_v1 = canonical_member
+    interpreter_type._canonical_matches_v1 = canonical_matches
+    interpreter_type._canonical_type_name_v1 = canonical_type_name
     interpreter_type._canonical_authority_bridge_v1 = True
