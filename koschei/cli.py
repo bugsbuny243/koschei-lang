@@ -26,12 +26,13 @@ from .diagnostics import (
     render_error,
 )
 from .formatter import format_source
-from .interpreter import KoscheiRuntimeError, run_mir as interpret_mir
+from .interpreter import KoscheiRuntimeError
 from .lexer import LexerError, tokenize
 from .mir import MirIntegrityError, require_mir, to_dict as mir_to_dict
 from .modules import ModuleError, check_graph, load_graph
 from .parser import ParserError, parse
 from .project import ProjectError, create_project, resolve_source
+from .runtime_boot_v1 import RuntimeBootError, run_checked_mir
 from .semantic import SemanticError
 
 
@@ -107,7 +108,7 @@ def command_check(path: str, as_json: bool, locale: str) -> int:
 def command_run(path: str) -> int:
     graph = open_graph(path)
     check_graph(graph)
-    return interpret_mir(require_mir(graph), [])
+    return run_checked_mir(require_mir(graph), [])
 
 
 def command_mir(path: str) -> int:
@@ -466,6 +467,7 @@ def main(argv: list[str] | None = None) -> int:
         CodegenError,
         ModuleError,
         MirIntegrityError,
+        RuntimeBootError,
     ) as error:
         if args.command == "check" and getattr(args, "json", False):
             print(
