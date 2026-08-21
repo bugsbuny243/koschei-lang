@@ -14,6 +14,10 @@ from .runtime_capability_registry_v1 import (
     RuntimeCapabilityRegistry,
     validate_runtime_module,
 )
+from .runtime_interpreter_bridge_v1 import (
+    RuntimeAuthorityError,
+    install_canonical_authority_bridge,
+)
 
 
 class RuntimeBootError(RuntimeError):
@@ -21,7 +25,7 @@ class RuntimeBootError(RuntimeError):
 
 
 def require_runtime_ready(runtime: ModuleType) -> RuntimeCapabilityRegistry:
-    """Validate implementation shape and boundary policy before execution.
+    """Validate and bind canonical authority before execution.
 
     This intentionally re-validates at each execution boundary. A long-lived
     process may have imported or monkey-patched modules after startup; successful
@@ -30,7 +34,8 @@ def require_runtime_ready(runtime: ModuleType) -> RuntimeCapabilityRegistry:
 
     try:
         registry = validate_runtime_module(runtime)
-    except RuntimeError as error:
+        install_canonical_authority_bridge(runtime)
+    except (RuntimeError, RuntimeAuthorityError) as error:
         raise RuntimeBootError(f"KOSCHEI RUNTIME BOOT DENIED: {error}") from error
 
     runtime_schemes = getattr(runtime, "ALLOWED_NET_SCHEMES", None)
@@ -46,7 +51,7 @@ def require_runtime_ready(runtime: ModuleType) -> RuntimeCapabilityRegistry:
 
 
 def run_checked_mir(mir_graph: Any, argv: list[str] | None = None) -> int:
-    """Execute sealed MIR only after the runtime implementation passes boot validation."""
+    """Execute sealed MIR only after runtime validation and authority binding."""
 
     # Local import avoids interpreter <-> boot-gate import cycles.
     from . import interpreter
