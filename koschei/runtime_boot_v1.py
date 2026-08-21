@@ -10,6 +10,10 @@ from types import ModuleType
 from typing import Any
 
 from .capability_effect_contract_v1 import NET_ORIGIN_SCHEMES
+from .runtime_bridge_seal_v1 import (
+    RuntimeBridgeSealError,
+    require_runtime_bridge_sealed,
+)
 from .runtime_capability_registry_v1 import (
     RuntimeCapabilityRegistry,
     validate_runtime_module,
@@ -25,7 +29,7 @@ class RuntimeBootError(RuntimeError):
 
 
 def require_runtime_ready(runtime: ModuleType) -> RuntimeCapabilityRegistry:
-    """Validate and bind canonical authority before execution.
+    """Validate, bind and seal canonical authority before execution.
 
     This intentionally re-validates at each execution boundary. A long-lived
     process may have imported or monkey-patched modules after startup; successful
@@ -35,7 +39,8 @@ def require_runtime_ready(runtime: ModuleType) -> RuntimeCapabilityRegistry:
     try:
         registry = validate_runtime_module(runtime)
         install_canonical_authority_bridge(runtime)
-    except (RuntimeError, RuntimeAuthorityError) as error:
+        require_runtime_bridge_sealed(runtime)
+    except (RuntimeError, RuntimeAuthorityError, RuntimeBridgeSealError) as error:
         raise RuntimeBootError(f"KOSCHEI RUNTIME BOOT DENIED: {error}") from error
 
     runtime_schemes = getattr(runtime, "ALLOWED_NET_SCHEMES", None)
