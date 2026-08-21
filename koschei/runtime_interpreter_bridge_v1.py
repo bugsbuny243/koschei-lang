@@ -26,7 +26,8 @@ def install_canonical_authority_bridge(runtime: ModuleType) -> None:
     """Make interpreter capability decisions consume canonical authority data.
 
     Installation is idempotent. Non-capability built-ins keep their existing
-    implementation behavior.
+    implementation behavior. Capability type checks never fall back to the
+    interpreter's bootstrap-era hard-coded ladder.
     """
 
     interpreter_type = getattr(runtime, "Interpreter", None)
@@ -68,12 +69,22 @@ def install_canonical_authority_bridge(runtime: ModuleType) -> None:
         return original_member(self, receiver, name, location)
 
     def canonical_matches(self, value: Any, expected_names: Any) -> bool:
-        for name in expected_names:
-            if name in CAPABILITY_TYPES:
-                if runtime_value_matches_capability(runtime, value, name):
-                    return True
-                continue
-        return original_matches(self, value, expected_names)
+        expected = tuple(expected_names)
+        capability_names = tuple(name for name in expected if name in CAPABILITY_TYPES)
+        ordinary_names = tuple(name for name in expected if name not in CAPABILITY_TYPES)
+
+        if any(
+            runtime_value_matches_capability(runtime, value, name)
+            for name in capability_names
+        ):
+            return True
+
+        # Critical migration rule: canonical capability expectations are never
+        # delegated back to the interpreter's legacy hard-coded capability ladder.
+        # Only non-capability union members may use the old general type matcher.
+        if ordinary_names:
+            return original_matches(self, value, ordinary_names)
+        return False
 
     def canonical_type_name(value: Any) -> str:
         capability_type = runtime_capability_type_name(runtime, value)
