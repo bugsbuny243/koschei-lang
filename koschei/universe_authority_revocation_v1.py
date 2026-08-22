@@ -17,6 +17,7 @@ from threading import RLock
 
 from .universe_epoch_token_v1 import SigilEpochToken
 from .universe_nuclear_containment_v1 import NuclearContainmentReceipt
+from .universe_state_machine_v1 import UniverseState
 
 _CTX = b"koschei.universe-authority-revocation/v1\x00"
 
@@ -142,25 +143,25 @@ class DurableAuthorityRevocationRegistry:
             cause=cause_digest,
         )
 
-    def apply_nuclear_revocation(self, receipt: NuclearContainmentReceipt) -> RevocationRecord:
-        """Kill all authority minted in the catastrophically contained epoch."""
-        receipt.assert_sealed()
-        return self.revoke_epoch(
-            plan_digest=receipt.previous_state_digest + ":plan-unresolved",
-            epoch=receipt.epoch,
-            cause_digest=receipt.digest,
-        )
-
-    def apply_nuclear_revocation_for_plan(
+    def apply_nuclear_revocation(
         self,
+        previous: UniverseState,
+        contained: UniverseState,
         receipt: NuclearContainmentReceipt,
-        *,
-        activation_plan_digest: str,
     ) -> RevocationRecord:
-        """Preferred nuclear binding when the Universe plan identity is available."""
+        """Kill every authority token minted in the contained Universe epoch."""
         receipt.assert_sealed()
+        if receipt.previous_state_digest != previous.digest:
+            raise AuthorityRevocationError("nuclear receipt previous-state mismatch")
+        if receipt.contained_state_digest != contained.digest:
+            raise AuthorityRevocationError("nuclear receipt contained-state mismatch")
+        if previous.activation_plan_digest != contained.activation_plan_digest:
+            raise AuthorityRevocationError("nuclear containment changed Universe plan identity")
+        epochs = {row.epoch for row in previous.sigils}
+        if epochs != {receipt.epoch}:
+            raise AuthorityRevocationError("nuclear receipt epoch mismatch")
         return self.revoke_epoch(
-            plan_digest=activation_plan_digest,
+            plan_digest=previous.activation_plan_digest,
             epoch=receipt.epoch,
             cause_digest=receipt.digest,
         )
