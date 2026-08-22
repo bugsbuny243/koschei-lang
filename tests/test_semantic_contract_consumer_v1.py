@@ -9,18 +9,18 @@ from koschei.capability_effect_contract_v1 import (
     NET_ORIGIN_SCHEMES,
     NARROWING_METHODS,
     ROOT_CAPABILITY_TYPES,
-    legacy_narrowed_operations,
-    legacy_root_narrowing,
-    legacy_system_capability_members,
+    legacy_semantic_members,
+    legacy_semantic_narrowed_methods,
+    legacy_semantic_root_methods,
 )
 from koschei.semantic_contract_consumer_v1 import check
 
 
 class SemanticContractConsumerTests(unittest.TestCase):
     def test_import_installs_canonical_compatibility_views(self) -> None:
-        self.assertEqual(semantic.CAPABILITY_MEMBERS, legacy_system_capability_members())
-        self.assertEqual(semantic.ROOT_METHODS, legacy_root_narrowing())
-        self.assertEqual(semantic.NARROWED_METHODS, legacy_narrowed_operations())
+        self.assertEqual(semantic.CAPABILITY_MEMBERS, legacy_semantic_members())
+        self.assertEqual(semantic.ROOT_METHODS, legacy_semantic_root_methods())
+        self.assertEqual(semantic.NARROWED_METHODS, legacy_semantic_narrowed_methods())
         self.assertEqual(set(semantic.NARROWING_METHODS), set(NARROWING_METHODS))
         self.assertEqual(set(semantic.GUARDED_METHODS), set(GUARDED_METHODS))
         self.assertEqual(set(semantic.CAPABILITY_TYPES), set(CAPABILITY_TYPES))
@@ -50,9 +50,9 @@ class SemanticContractConsumerTests(unittest.TestCase):
         finally:
             semantic.check = original
 
-        self.assertEqual(observed["members"], legacy_system_capability_members())
-        self.assertEqual(observed["roots"], legacy_root_narrowing())
-        self.assertEqual(observed["narrowed"], legacy_narrowed_operations())
+        self.assertEqual(observed["members"], legacy_semantic_members())
+        self.assertEqual(observed["roots"], legacy_semantic_root_methods())
+        self.assertEqual(observed["narrowed"], legacy_semantic_narrowed_methods())
 
 
 if __name__ == "__main__":
