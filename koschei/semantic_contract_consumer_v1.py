@@ -2,13 +2,13 @@
 
 The legacy semantic checker remains the compatibility implementation for a
 subset of language rules, but capability shape is no longer allowed to be
-owned by semantic.py.  This module installs mutable compatibility views derived
+owned by semantic.py. This module installs mutable compatibility views derived
 from the canonical capability contract before delegating to semantic.check().
 
 The mutation is intentional and process-local: semantic.py historically reads
-module globals such as ROOT_METHODS while walking expressions.  Replacing
-those globals here removes the duplicate authority from the compiler path
-without rewriting the entire legacy checker in one risky change.
+module globals such as ROOT_METHODS while walking expressions. Replacing those
+globals here removes the duplicate authority from the compiler path without
+rewriting the entire legacy checker in one risky change.
 """
 from __future__ import annotations
 
@@ -19,9 +19,9 @@ from .capability_effect_contract_v1 import (
     NET_ORIGIN_SCHEMES,
     NARROWING_METHODS,
     ROOT_CAPABILITY_TYPES,
-    legacy_narrowed_operations,
-    legacy_root_narrowing,
-    legacy_system_capability_members,
+    legacy_semantic_members,
+    legacy_semantic_narrowed_methods,
+    legacy_semantic_root_methods,
 )
 
 
@@ -32,9 +32,9 @@ def _install_canonical_capability_view() -> None:
     ensuring the data itself originates from the canonical contract.
     """
 
-    _legacy.CAPABILITY_MEMBERS = legacy_system_capability_members()
-    _legacy.ROOT_METHODS = legacy_root_narrowing()
-    _legacy.NARROWED_METHODS = legacy_narrowed_operations()
+    _legacy.CAPABILITY_MEMBERS = legacy_semantic_members()
+    _legacy.ROOT_METHODS = legacy_semantic_root_methods()
+    _legacy.NARROWED_METHODS = legacy_semantic_narrowed_methods()
     _legacy.NARROWING_METHODS = set(NARROWING_METHODS)
     _legacy.GUARDED_METHODS = set(GUARDED_METHODS)
     _legacy.CAPABILITY_TYPES = set(CAPABILITY_TYPES)
