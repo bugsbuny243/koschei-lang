@@ -1,4 +1,4 @@
-"""V5 parser facade adding generic and high-assurance declarations."""
+"""V5 parser facade adding generic, high-assurance and native sigil declarations."""
 
 from __future__ import annotations
 
@@ -21,6 +21,16 @@ from .generic_nodes import (
     GenericStructDeclaration,
 )
 from .lexer import TokenType, tokenize
+from .native_sigils_v1 import NativeProgram, SigilDeclaration
+
+
+_SIGIL_TOKENS = {
+    TokenType.KA: "ka",
+    TokenType.VOR: "vor",
+    TokenType.SHI: "shi",
+    TokenType.THAL: "thal",
+    TokenType.NUR: "nur",
+}
 
 
 class Parser(_ParserV09):
@@ -40,14 +50,30 @@ class Parser(_ParserV09):
         self._error(self._peek(), message)
         raise AssertionError("unreachable")
 
+    def _check_sigil(self) -> bool:
+        return self._peek().type in _SIGIL_TOKENS
+
+    def _sigil_declaration(self) -> SigilDeclaration:
+        token = self._advance()
+        sigil = _SIGIL_TOKENS[token.type]
+        subject = self._peek()
+        if subject.type not in {TokenType.IDENTIFIER, TokenType.TYPE}:
+            self._error(subject, f"'{sigil}' sonrasında Koschei özne adı bekleniyordu.")
+        self._advance()
+        self._match(TokenType.SEMICOLON)
+        return SigilDeclaration(sigil, str(subject.value), self._location(token))
+
     def parse(self) -> Program:
         declarations = []
         structs = []
         enums = []
         imports = []
+        sigils = []
 
         while not self._is_at_end():
-            if self._check(TokenType.IMPORT):
+            if self._check_sigil():
+                sigils.append(self._sigil_declaration())
+            elif self._check(TokenType.IMPORT):
                 imports.append(self._import_declaration())
             elif self._check(TokenType.STATEFUL) or self._check(TokenType.STRUCT):
                 structs.append(self._struct_declaration())
@@ -56,8 +82,12 @@ class Parser(_ParserV09):
             else:
                 declarations.append(self._function_declaration())
 
-        return Program(
-            tuple(declarations), tuple(structs), tuple(imports), tuple(enums)
+        return NativeProgram(
+            tuple(declarations),
+            tuple(structs),
+            tuple(imports),
+            tuple(enums),
+            tuple(sigils),
         )
 
     def _or_handler(self) -> Expression:
