@@ -8,6 +8,13 @@ from typing import Any
 
 
 class TokenType(Enum):
+    # Native Koschei semantic roots
+    KA = auto()
+    VOR = auto()
+    SHI = auto()
+    THAL = auto()
+    NUR = auto()
+
     # Keywords
     PURE = auto()
     STATEFUL = auto()
@@ -92,6 +99,14 @@ class LexerError(SyntaxError):
 
 class Lexer:
     KEYWORDS = {
+        # The five roots are language-level semantic vocabulary, not contextual
+        # aliases for host-language keywords. Reserving them here is the first
+        # compiler boundary that prevents them from degrading into identifiers.
+        "ka": TokenType.KA,
+        "vor": TokenType.VOR,
+        "shi": TokenType.SHI,
+        "thal": TokenType.THAL,
+        "nur": TokenType.NUR,
         "pure": TokenType.PURE,
         "stateful": TokenType.STATEFUL,
         "fn": TokenType.FN,
@@ -217,7 +232,7 @@ class Lexer:
                 self._add_token(TokenType.MINUS, "-")
             return
         if char == "=":
-            if self._match(">"):
+            if self._match(">"): 
                 self._add_token(TokenType.FAT_ARROW, "=>")
             elif self._match("="):
                 self._add_token(TokenType.EQUAL_EQUAL, "==")
