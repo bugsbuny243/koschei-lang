@@ -1,22 +1,38 @@
-# Koschei Policy Language Product Decision v1
+# Koschei First Adoption Surface v1
 
-Status: product and architecture decision
+Status: product-entry decision; subordinate to the Koschei Library + Universe architectural contract
 
-## Decision
+## Non-negotiable scope
 
-Koschei is not positioned as the primary language in which customers rewrite their applications. Koschei is positioned first as the language in which customers express and enforce privileged authority.
+Koschei is not reduced to a policy language.
 
-The customer keeps the application implementation in Rust, Go, Java, TypeScript, Python or another host stack. Koschei owns the privileged-operation policy boundary.
+Koschei remains a larger native computing universe composed of:
 
-Primary model:
+- **Koschei Lang** — the native language and semantic surface;
+- **Koschei Library** — the deep verified machinery behind the visible language;
+- **Koschei Universe** — the composition, lifecycle, authority, evidence, containment, recovery, visibility and epoch physics governing the whole system.
 
-`existing application -> Koschei policy -> Koschei Library -> Koschei Universe -> proof-bound enforcement -> privileged effect`
+Policy/enforcement is the **first low-friction adoption surface**, not the final identity or ceiling of Koschei Lang.
 
-The language is therefore delivered first as an enforceable policy language with a verified runtime, not as a wholesale application rewrite requirement.
+The long-term architecture remains capable of native Koschei modules, services, workflows and full applications. Customers are simply not required to rewrite existing systems on day one.
 
-## What the customer writes
+## First entry path
 
-The first deliverable must support a small policy similar in scale to the following:
+A customer may keep an existing application in Rust, Go, Java, TypeScript, Python or another host stack and initially place Koschei at a dangerous boundary:
+
+`existing application -> Koschei boundary -> Koschei Lang semantics -> Koschei Library -> Koschei Universe -> proof-bound enforcement -> privileged effect`
+
+This lets Koschei enter a production architecture before the customer adopts native Koschei application code.
+
+The entry path is deliberately progressive:
+
+`existing system -> policy/boundary use -> privileged workflows -> native Koschei modules -> native Koschei services -> broader Koschei applications`
+
+No stage after the first is mandatory, and the first stage must not redefine the whole language as authorization-only.
+
+## What the first customer writes
+
+The first end-to-end deliverable should support a small boundary program similar in scale to:
 
 ```koschei
 ka treasury
@@ -44,143 +60,130 @@ nur withdrawal
     nobody sees signing_secret
 ```
 
-The exact grammar may evolve, but the product requirement does not: a customer must be able to express a privileged-operation policy in a short native Koschei document without rewriting the application that requests the operation.
+The exact grammar may evolve. The requirement is that a customer can use native Koschei semantics to govern a high-risk operation without rewriting the surrounding application.
 
-## What the customer does not write
+This example is an entry program, not a definition of every program Koschei will eventually express.
 
-The customer does not rewrite:
+## What the first customer does not need to rewrite
 
-- the exchange matching engine;
-- the wallet service;
-- the AI agent framework;
-- the payment processor;
-- the database layer;
-- the deployment system;
-- the existing application business logic.
+Initial adoption does not require rewriting:
 
-Koschei receives a canonical intent envelope at the dangerous boundary, evaluates policy and evidence, and returns an enforceable decision plus proof.
+- an exchange matching engine;
+- a wallet service;
+- an AI agent framework;
+- a payment processor;
+- a database layer;
+- a deployment system;
+- existing application business logic.
 
-## Product boundary
+Koschei can receive a canonical intent envelope at a dangerous boundary, evaluate the native semantic program, expand Library obligations, apply Universe laws, and return an enforceable decision plus proof.
 
-The initial product consists of:
+## Initial product boundary
 
-1. **Koschei Policy Compiler** — parses and checks the small `.ks` policy surface.
-2. **Koschei Enforcement Runtime / Gate** — evaluates requests at the privileged boundary.
-3. **Koschei Adapter SDK** — maps an existing application's request into a canonical intent envelope without translating application source code.
-4. **Koschei Library** — expands the small policy into authority, evidence, recovery, epoch and visibility obligations.
-5. **Koschei Universe** — composes those obligations under fail-closed interaction and lifecycle rules.
-6. **Koschei Proof Envelope** — machine-verifiable explanation of why a privileged effect was allowed, denied or contained.
+The first shippable boundary product consists of:
 
-## Competitive position
+1. **Koschei Compiler** — parses and checks the native Koschei surface used by the boundary program.
+2. **Koschei Runtime / Gate** — evaluates requests at the protected execution boundary.
+3. **Koschei Adapter SDK** — maps existing application requests into canonical intent envelopes without translating application source code.
+4. **Koschei Library** — expands the small source program into authority, evidence, recovery, epoch, visibility and other obligations.
+5. **Koschei Universe** — composes those obligations under fail-closed interaction and lifecycle laws.
+6. **Koschei Proof Envelope** — machine-verifiable evidence explaining why an effect was allowed, denied or contained.
 
-Koschei's intended slot is:
+These are the first delivery surfaces of the larger Universe, not permanent limits on it.
 
-**off-chain privileged-operation policy with evidence-bound authority, recovery and epoch semantics.**
+## Competitive entry position
 
-This is intentionally distinct from:
+The first commercial wedge can be described as:
 
-- general application languages;
-- on-chain asset languages such as Move;
-- general authorization policy engines such as Cedar/Rego;
-- raw capability runtimes such as WASI;
-- wallet simulation or transaction-warning products;
-- custody policy engines that do not make evidence/recovery/epoch first-class language semantics.
+**off-chain privileged-operation enforcement with evidence-bound authority, recovery and epoch semantics.**
 
-This positioning must be proven through implementation and external comparison; it is not assumed merely by naming the category.
+That entry wedge is intentionally distinct from general authorization engines, raw capability runtimes, wallet warning products and custody policy engines.
+
+Koschei itself is broader: the same native semantics, Library and Universe are intended to support progressively more native execution rather than remain a policy sidecar forever.
+
+Competitive claims must be proven through implementation and external comparison.
 
 ## Bybit-class claim discipline
 
-Koschei must not claim that writing treasury policy alone prevents a compromised build/CDN/signing UI attack.
+A Koschei boundary program alone must not be claimed to prevent a compromised build/CDN/signing UI attack.
 
-Koschei can truthfully claim authority-side guarantees only when the relevant authority was never granted or the independent evidence required for the effect is missing.
+Koschei can truthfully claim authority-side guarantees only when the relevant authority was never granted or required independent evidence is absent.
 
-A signing product that aims to address compromised presentation/build channels additionally requires independent payload acquisition/reconstruction and an enforcement point that the compromised UI cannot bypass.
+A signing system that aims to address compromised presentation/build channels additionally requires independent payload acquisition/reconstruction and an enforcement point the compromised UI cannot bypass.
 
-Therefore:
-
-`policy correctness != independent signing-channel integrity`
+`authority correctness != independent signing-channel integrity`
 
 Both are required for a full signing-security claim.
 
-## First ICP and first demo
+## First demo and first adoption target
 
-The first demo must belong to the first sellable wedge, not to a broad marketplace example.
+The first demo should prove a real high-risk boundary rather than a broad marketplace rewrite.
 
-Primary wedge for speed of adoption:
+A practical early wedge is AI agents / privileged automation because adoption can occur without replacing an existing application stack. Institutional treasury/custody remains a high-value target after independent security evidence exists.
 
-**AI agents and privileged automation with real tool authority.**
-
-Institutional treasury/custody remains a high-value second target after independent security evidence exists.
-
-The first reference demo should prove the same core semantics in a privileged-operation flow:
+The reference demo must show:
 
 - an actor requests a dangerous effect;
-- authority is explicitly narrowed;
+- authority is explicitly bounded;
 - required evidence is bound to the request;
 - stale epoch is rejected;
 - replay/duplicate is rejected;
 - conflict produces containment;
 - a proof envelope explains the decision;
-- the existing application remains in its host language.
+- the surrounding application remains in its existing host language.
 
-A treasury/signer demo should follow using the same policy engine once the boundary and proof model are independently testable.
+Later demos should prove native Koschei modules and services using the same Library and Universe rather than creating a separate product architecture.
 
 ## Pricing direction
 
-The language specification and local policy tooling should not be the primary monetization surface.
+Koschei Lang should not be monetized primarily as syntax.
 
-Commercial value is enforcement.
+Early commercial value is enforcement and verified operation. Candidate pricing units include protected authority domain/environment, verified privileged-effect volume, and enterprise private/HA/audit/support tiers.
 
-Candidate pricing units:
+As native Koschei adoption grows, packaging may expand. Exact pricing requires design-partner evidence.
 
-- protected vault / protected authority domain per year;
-- protected environment per year;
-- verified privileged-effect volume;
-- enterprise HA/private deployment/audit/support tier.
+## Vocabulary discipline, not permanent freeze
 
-Exact pricing must follow design-partner interviews and measured customer value, not invented list prices.
-
-## Vocabulary freeze
-
-The current semantic roots are sufficient for the first product milestone:
+The current roots are:
 
 `ka / vor / shi / thal / nur`
 
-Do not expand into marketplace, messaging, storage, finance or other root vocabularies until the first policy compiles and enforces end to end.
+Engineering should not invent new roots merely to decorate domains or imitate foreign-language keywords. During the first end-to-end milestone, these five roots receive priority.
 
-New vocabulary is blocked unless required by the first policy milestone and justified by a semantic need that cannot be expressed through the existing five roots.
+This is not a declaration that the Universe will forever contain only five words. New native roots may be introduced when a real semantic need appears and the root has a deep lexicon entry, Library obligations, Universe composition rules, lifecycle/failure behavior and executable tests.
 
-## Single technical milestone
+## Immediate technical milestone
 
-The product is not considered born until a short real policy travels through the actual language stack:
+The immediate product proof is a short real boundary program traveling through the actual stack:
 
-`source -> parser -> typed semantics -> MIR -> Library expansion -> Universe/lifecycle checks -> enforcement runtime -> proof envelope -> ALLOW/DENY/CONTAIN`
+`source -> parser -> typed semantics -> MIR -> Library expansion -> Universe/lifecycle checks -> runtime -> proof envelope -> effect decision`
 
-No mock planner may substitute for this end-to-end path.
+No mock planner substitutes for this path.
 
-The acceptance test is a policy of roughly 10-20 lines that can be executed against a real privileged-operation request and demonstrates:
+Acceptance requires at least:
 
-- allowed request succeeds;
+- an allowed request succeeds;
 - authority not granted is denied;
 - stale epoch is denied;
 - duplicate/replay is denied;
 - evidence conflict contains;
 - proof output is deterministic and machine-readable.
 
+Completing this milestone proves the first doorway into Koschei Universe. It does not mark the end of language development.
+
 ## Engineering order
 
-Until the milestone above passes, engineering priority is locked to:
+Near-term critical path:
 
 1. finish canonical capability consolidation;
 2. reduce/remove legacy semantic authority with parity evidence;
-3. finish the MIR path needed for the first policy;
-4. implement the five-sigil policy grammar only to the depth required by the first policy;
+3. finish the MIR path required by the first native boundary program;
+4. implement the five-root grammar to the depth required by that program;
 5. bind Library expansion and Universe lifecycle to the real compiler/runtime path;
 6. produce the proof envelope;
-7. run adversarial tests outside the author's own assumptions.
-
-Do not spend the critical path on new semantic roots, marketplace demos, decorative Universe expansion or additional platform modules that do not move the first policy toward end-to-end execution.
+7. run adversarial tests outside the author's own assumptions;
+8. after the doorway is real, extend native Koschei execution outward into modules, workflows, services and application domains as justified by semantic needs.
 
 ## Product sentence
 
-**Koschei is the language in which high-risk software writes its authority, and the runtime that refuses privileged effects unless that authority is evidence-bound, current and provable.**
+**Koschei is a native security-first computing universe in which a small language surface expands through the Koschei Library and is governed by Universe-level authority, evidence, recovery, visibility and epoch laws. Its first adoption surface protects privileged effects without forcing customers to rewrite their existing systems.**
