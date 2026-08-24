@@ -1,0 +1,81 @@
+"""Koschei Galaxy constitutional critical-execution gate v1.
+
+This is the strongest current composition boundary for privileged Koschei events.
+A critical effect is eligible only when:
+
+1. its Aevra is still living outside the Black Hole;
+2. its Sathra is six-axis complete and exact-event bound;
+3. all six axes carry a sealed failure-root independence proof;
+4. the compiler/Library proof is bound to the exact canonical request;
+5. the request is atomically claimed and finalized exactly once.
+
+This module creates no authority and performs no counterattack. It composes the
+existing constitutional laws into one fail-closed execution path so callers do
+not need to assemble a weaker subset by accident.
+"""
+from __future__ import annotations
+
+from typing import Callable, TypeVar
+
+from .galaxy_identity_v1 import AevraIdentity, VeyraIdentity
+from .khar_failure_independence_v1 import (
+    FailureIndependentSathra,
+    require_failure_independent_sathra,
+)
+from .khar_sathra_v1 import Sathra
+from .morth_black_hole_v1 import DurableBlackHole
+from .native_sigil_atomic_execution_coordinator_v1 import (
+    AtomicClaim,
+    AtomicExecutionCoordinator,
+)
+from .native_sigil_enforcement_gate_v1 import EnforcementDecision
+from .native_sigil_mir_v1 import NativeSigilMir
+from .native_sigil_proof_pipeline_v1 import NativeSigilProofBundle
+from .native_sigil_request_binding_v1 import CanonicalEffectRequest, RequestBoundProof
+from .sathra_request_binding_v1 import (
+    SathraRequestBinding,
+    enforce_atomic_sathra_bound_effect,
+)
+
+_T = TypeVar("_T")
+
+
+class GalaxyExecutionError(ValueError):
+    pass
+
+
+def enforce_galaxy_critical_effect(
+    *,
+    black_hole: DurableBlackHole,
+    coordinator: AtomicExecutionCoordinator,
+    mir: NativeSigilMir,
+    veyra: VeyraIdentity,
+    aevra: AevraIdentity,
+    request: CanonicalEffectRequest,
+    proof: NativeSigilProofBundle,
+    request_bound_proof: RequestBoundProof,
+    sathra: Sathra,
+    sathra_binding: SathraRequestBinding,
+    failure_independence: FailureIndependentSathra,
+    effect: Callable[[CanonicalEffectRequest], _T],
+) -> tuple[EnforcementDecision, _T | None, AtomicClaim]:
+    """Execute only through the complete current Galaxy constitutional path."""
+
+    try:
+        black_hole.require_living(aevra, veyra, mir)
+        require_failure_independent_sathra(sathra, failure_independence)
+    except ValueError as error:
+        raise GalaxyExecutionError(str(error)) from error
+
+    return enforce_atomic_sathra_bound_effect(
+        mir,
+        veyra,
+        aevra,
+        request,
+        proof,
+        request_bound_proof,
+        sathra,
+        sathra_binding,
+        coordinator,
+        effect,
+    )
