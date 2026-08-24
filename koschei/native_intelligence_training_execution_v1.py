@@ -9,7 +9,11 @@ with two authority-free evidence objects:
 2. an execution receipt that binds the run-start receipt to the final adapter
    artifact receipt.
 
-Only the execution receipt may be bridged into NativeIntelligenceIdentityV1.
+Generic execution evidence is deliberately insufficient to mint a model
+identity. Model-family-specific bridges must re-verify their stronger immutable
+constraints before NativeIntelligenceIdentityV1 can exist. For the canonical
+first run that bridge is native_intelligence_qwen397b_execution_v1.
+
 External job evidence is recorded here but not magically attested: hardware or
 provider attestation remains a stronger future layer.
 """
@@ -26,10 +30,7 @@ from .native_intelligence_training_lineage_v1 import (
     NativeTrainingPlanV1,
     NativeTrainingReceiptV1,
 )
-from .native_intelligence_v1 import (
-    NativeIntelligenceIdentityV1,
-    build_native_intelligence_identity,
-)
+from .native_intelligence_v1 import NativeIntelligenceIdentityV1
 
 _CTX = b"koschei.native-intelligence-training-execution/v1\x00"
 _HEX = frozenset(string.hexdigits.lower())
@@ -298,7 +299,13 @@ def build_native_intelligence_from_execution_receipt_v1(
     artifact_receipt: NativeTrainingReceiptV1,
     execution_receipt: NativeTrainingExecutionReceiptV1,
 ) -> NativeIntelligenceIdentityV1:
-    """Create the model identity only from fully bound execution evidence."""
+    """Deprecated generic bridge; intentionally fail closed.
+
+    Execution evidence is meaningful only after a model-family boundary has
+    re-verified its exact base/model/training physics. The canonical Qwen397B
+    first run must use
+    build_qwen397b_native_intelligence_from_execution_receipt_v1().
+    """
 
     execution_receipt.assert_for(
         plan,
@@ -307,12 +314,7 @@ def build_native_intelligence_from_execution_receipt_v1(
         run_start,
         artifact_receipt,
     )
-    return build_native_intelligence_identity(
-        base_model_revision=plan.base_model_revision,
-        base_weights_digest=plan.base_weights_digest,
-        curriculum_digest=plan.curriculum_digest,
-        adapter_digest=execution_receipt.adapter_digest,
-        training_run_digest=execution_receipt.digest,
-        source_commit=plan.source_commit,
-        training_method=plan.training_method,
+    raise NativeTrainingExecutionError(
+        "generic execution receipt cannot mint native intelligence identity; "
+        "use a model-family-specific execution bridge"
     )
