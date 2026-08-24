@@ -1,9 +1,8 @@
 from dataclasses import replace
 import unittest
 
-from koschei.native_intelligence_holdout_v1 import (
-    build_native_intelligence_holdout_v1,
-)
+from koschei.native_intelligence_holdout_v1 import build_native_intelligence_holdout_v1
+from koschei.native_intelligence_training_corpus_v1 import build_native_training_corpus_v1
 from koschei.native_intelligence_training_lineage_v1 import (
     NativeIntelligenceTrainingLineageError,
     build_native_intelligence_from_training_receipt_v1,
@@ -22,21 +21,19 @@ class NativeIntelligenceTrainingLineageV1Tests(unittest.TestCase):
             parent_curriculum_digest="b" * 64,
         )
         cls.holdout = build_native_intelligence_holdout_v1(curriculum)
+        cls.corpus = build_native_training_corpus_v1(cls.holdout, variants_per_family=1)
 
     def plan(self):
         return seal_native_training_plan_v1(
             self.holdout,
+            self.corpus,
             base_model_revision="1" * 40,
             base_weights_digest="2" * 64,
-            training_corpus_digest="3" * 64,
-            train_split_digest="4" * 64,
-            validation_split_digest="5" * 64,
-            test_split_digest="6" * 64,
             training_config_digest="7" * 64,
             training_method="lora-sft-v1",
         )
 
-    def test_plan_binds_base_source_holdout_splits_and_config_before_training(self):
+    def test_plan_binds_base_source_holdout_verified_corpus_splits_and_config(self):
         plan = self.plan()
         plan.assert_sealed()
 
@@ -44,41 +41,48 @@ class NativeIntelligenceTrainingLineageV1Tests(unittest.TestCase):
         self.assertEqual(plan.source_commit, "a" * 40)
         self.assertEqual(plan.curriculum_digest, self.holdout.curriculum_digest)
         self.assertEqual(plan.constitutional_holdout_digest, self.holdout.digest)
+        self.assertEqual(plan.training_corpus_digest, self.corpus.digest)
+        self.assertEqual(plan.train_split_digest, self.corpus.split_digest("train"))
+        self.assertEqual(plan.validation_split_digest, self.corpus.split_digest("validation"))
+        self.assertEqual(plan.test_split_digest, self.corpus.split_digest("test"))
         self.assertFalse(plan.authority)
         self.assertEqual(len(plan.digest), 64)
 
     def test_training_plan_is_deterministic(self):
         self.assertEqual(self.plan(), self.plan())
 
-    def test_split_identity_cannot_collapse_or_reuse_holdout(self):
+    def test_foreign_holdout_corpus_is_rejected_before_plan_seal(self):
+        foreign_curriculum = build_native_model_curriculum_v2(
+            source_commit="c" * 40,
+            parent_curriculum_digest="d" * 64,
+        )
+        foreign_holdout = build_native_intelligence_holdout_v1(foreign_curriculum)
+        foreign_corpus = build_native_training_corpus_v1(foreign_holdout, variants_per_family=1)
+
         with self.assertRaisesRegex(
             NativeIntelligenceTrainingLineageError,
-            "split digests must be distinct",
+            "different source commit|different constitutional holdout",
         ):
             seal_native_training_plan_v1(
                 self.holdout,
+                foreign_corpus,
                 base_model_revision="1" * 40,
                 base_weights_digest="2" * 64,
-                training_corpus_digest="3" * 64,
-                train_split_digest="4" * 64,
-                validation_split_digest="4" * 64,
-                test_split_digest="6" * 64,
                 training_config_digest="7" * 64,
                 training_method="lora-sft-v1",
             )
 
+    def test_tampered_corpus_is_rejected_before_plan_seal(self):
+        forged_corpus = replace(self.corpus, digest="f" * 64)
         with self.assertRaisesRegex(
             NativeIntelligenceTrainingLineageError,
-            "holdout cannot be reused",
+            "corpus release seal mismatch",
         ):
             seal_native_training_plan_v1(
                 self.holdout,
+                forged_corpus,
                 base_model_revision="1" * 40,
                 base_weights_digest="2" * 64,
-                training_corpus_digest=self.holdout.digest,
-                train_split_digest="4" * 64,
-                validation_split_digest="5" * 64,
-                test_split_digest="6" * 64,
                 training_config_digest="7" * 64,
                 training_method="lora-sft-v1",
             )
