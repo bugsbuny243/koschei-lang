@@ -1,12 +1,12 @@
 """Oracle-backed Koschei native-intelligence curriculum v2.
 
 The older model curriculum teaches the legacy/general language and capability
-surface.  This v2 curriculum is the first deterministic dataset slice for the
-merged Koschei Lang native-intelligence plane.  Labels come from real parser,
+surface. This v2 curriculum is the first deterministic dataset slice for the
+merged Koschei Lang native-intelligence plane. Labels come from real parser,
 typed-semantics, sealed-MIR and Khar/Sathra code paths rather than handwritten
 claims about what Koschei is supposed to do.
 
-V2 intentionally starts small.  A tiny verified curriculum is preferable to a
+V2 intentionally starts small. A tiny verified curriculum is preferable to a
 large synthetic corpus whose labels drift away from executable language physics.
 """
 from __future__ import annotations
@@ -14,8 +14,11 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 import hashlib
 import json
+import os
+from pathlib import Path
 import string
-from typing import Callable
+import tempfile
+from typing import Any
 
 from .khar_sathra_v1 import AxisWitness, KHAR_AXES, seal_sathra
 from .native_sigil_mir_v1 import lower_native_sigils
@@ -84,6 +87,12 @@ def _require_hex(value: str, length: int, label: str) -> str:
     if any(ch not in _HEX for ch in lowered) or lowered == "0" * length:
         raise NativeModelCurriculumError(f"{label} must be a non-zero hexadecimal value")
     return lowered
+
+
+def _require_text(value: object, label: str) -> str:
+    if not isinstance(value, str) or not value or "\x00" in value:
+        raise NativeModelCurriculumError(f"{label} must be non-empty text")
+    return value
 
 
 def _accepted_native_source(
@@ -304,6 +313,121 @@ def _materialize_cases() -> tuple[NativeCurriculumCaseV2, ...]:
     )
 
 
+def _payload_without_digest(curriculum: NativeModelCurriculumV2) -> dict[str, object]:
+    return {
+        "schema_version": curriculum.schema_version,
+        "generator_version": curriculum.generator_version,
+        "source_repository": curriculum.source_repository,
+        "source_commit": curriculum.source_commit,
+        "parent_curriculum_digest": curriculum.parent_curriculum_digest,
+        "case_count": curriculum.case_count,
+        "stage_counts": curriculum.stage_counts,
+        "accepted_count": curriculum.accepted_count,
+        "rejected_count": curriculum.rejected_count,
+        "cases": [asdict(case) for case in curriculum.cases],
+    }
+
+
+def verify_native_model_curriculum_v2(
+    value: NativeModelCurriculumV2 | dict[str, Any],
+) -> NativeModelCurriculumV2:
+    """Verify a released v2 curriculum without trusting its summary fields."""
+
+    if isinstance(value, NativeModelCurriculumV2):
+        curriculum = value
+    else:
+        if not isinstance(value, dict):
+            raise NativeModelCurriculumError("native curriculum must be an object")
+        raw_cases = value.get("cases")
+        if not isinstance(raw_cases, list):
+            raise NativeModelCurriculumError("native curriculum cases must be a list")
+        cases: list[NativeCurriculumCaseV2] = []
+        for raw in raw_cases:
+            if not isinstance(raw, dict):
+                raise NativeModelCurriculumError("native curriculum case must be an object")
+            law_ids = raw.get("law_ids")
+            if not isinstance(law_ids, list) or not all(isinstance(item, str) and item for item in law_ids):
+                raise NativeModelCurriculumError("native curriculum law_ids must be non-empty strings")
+            cases.append(
+                NativeCurriculumCaseV2(
+                    case_id=_require_text(raw.get("case_id"), "case_id"),
+                    stage=_require_text(raw.get("stage"), "stage"),
+                    family=_require_text(raw.get("family"), "family"),
+                    task=_require_text(raw.get("task"), "task"),
+                    input_text=_require_text(raw.get("input_text"), "input_text"),
+                    outcome=_require_text(raw.get("outcome"), "outcome"),
+                    oracle=_require_text(raw.get("oracle"), "oracle"),
+                    oracle_digest=_require_hex(str(raw.get("oracle_digest", "")), 64, "oracle_digest"),
+                    target_text=_require_text(raw.get("target_text"), "target_text"),
+                    law_ids=tuple(law_ids),
+                )
+            )
+        stage_counts = value.get("stage_counts")
+        if not isinstance(stage_counts, dict):
+            raise NativeModelCurriculumError("native curriculum stage_counts must be an object")
+        curriculum = NativeModelCurriculumV2(
+            schema_version=_require_text(value.get("schema_version"), "schema_version"),
+            generator_version=_require_text(value.get("generator_version"), "generator_version"),
+            source_repository=_require_text(value.get("source_repository"), "source_repository"),
+            source_commit=_require_text(value.get("source_commit"), "source_commit"),
+            parent_curriculum_digest=_require_text(
+                value.get("parent_curriculum_digest"), "parent_curriculum_digest"
+            ),
+            case_count=int(value.get("case_count", -1)),
+            stage_counts={str(k): int(v) for k, v in stage_counts.items()},
+            accepted_count=int(value.get("accepted_count", -1)),
+            rejected_count=int(value.get("rejected_count", -1)),
+            curriculum_sha256=_require_text(value.get("curriculum_sha256"), "curriculum_sha256"),
+            cases=tuple(cases),
+        )
+
+    if curriculum.schema_version != SCHEMA_VERSION:
+        raise NativeModelCurriculumError("unsupported native curriculum schema")
+    if curriculum.generator_version != GENERATOR_VERSION:
+        raise NativeModelCurriculumError("unsupported native curriculum generator")
+    if curriculum.source_repository != SOURCE_REPOSITORY:
+        raise NativeModelCurriculumError("native curriculum source repository mismatch")
+    _require_hex(curriculum.source_commit, 40, "source_commit")
+    _require_hex(curriculum.parent_curriculum_digest, 64, "parent_curriculum_digest")
+    _require_hex(curriculum.curriculum_sha256, 64, "curriculum_sha256")
+    if not curriculum.cases:
+        raise NativeModelCurriculumError("native curriculum must contain cases")
+
+    ids: set[str] = set()
+    stage_counts = {stage: 0 for stage in STAGES}
+    accepted = 0
+    rejected = 0
+    for case in curriculum.cases:
+        if not case.case_id or case.case_id in ids:
+            raise NativeModelCurriculumError("native curriculum case IDs must be unique and non-empty")
+        ids.add(case.case_id)
+        if case.stage not in STAGES:
+            raise NativeModelCurriculumError(f"unsupported native curriculum stage: {case.stage}")
+        if case.outcome not in OUTCOMES:
+            raise NativeModelCurriculumError(f"unsupported native curriculum outcome: {case.outcome}")
+        _require_hex(case.oracle_digest, 64, f"oracle_digest:{case.case_id}")
+        if not case.law_ids:
+            raise NativeModelCurriculumError(f"native curriculum case has no law IDs: {case.case_id}")
+        stage_counts[case.stage] += 1
+        if case.outcome == "ACCEPTED":
+            accepted += 1
+        else:
+            rejected += 1
+
+    if curriculum.case_count != len(curriculum.cases):
+        raise NativeModelCurriculumError("native curriculum case_count mismatch")
+    if curriculum.stage_counts != stage_counts:
+        raise NativeModelCurriculumError("native curriculum stage_counts mismatch")
+    if curriculum.accepted_count != accepted or curriculum.rejected_count != rejected:
+        raise NativeModelCurriculumError("native curriculum outcome counts mismatch")
+    expected_digest = hashlib.sha256(
+        _canonical_json(_payload_without_digest(curriculum)).encode("utf-8")
+    ).hexdigest()
+    if curriculum.curriculum_sha256 != expected_digest:
+        raise NativeModelCurriculumError("native curriculum digest mismatch")
+    return curriculum
+
+
 def build_native_model_curriculum_v2(
     *,
     source_commit: str,
@@ -318,28 +442,13 @@ def build_native_model_curriculum_v2(
     accepted = 0
     rejected = 0
     for case in cases:
-        if case.stage not in STAGES:
-            raise NativeModelCurriculumError(f"unsupported native curriculum stage: {case.stage}")
-        if case.outcome not in OUTCOMES:
-            raise NativeModelCurriculumError(f"unsupported native curriculum outcome: {case.outcome}")
         stage_counts[case.stage] += 1
-        accepted += case.outcome == "ACCEPTED"
-        rejected += case.outcome == "REJECTED"
+        if case.outcome == "ACCEPTED":
+            accepted += 1
+        else:
+            rejected += 1
 
-    payload = {
-        "schema_version": SCHEMA_VERSION,
-        "generator_version": GENERATOR_VERSION,
-        "source_repository": SOURCE_REPOSITORY,
-        "source_commit": source,
-        "parent_curriculum_digest": parent,
-        "case_count": len(cases),
-        "stage_counts": stage_counts,
-        "accepted_count": accepted,
-        "rejected_count": rejected,
-        "cases": [asdict(case) for case in cases],
-    }
-    curriculum_digest = hashlib.sha256(_canonical_json(payload).encode("utf-8")).hexdigest()
-    return NativeModelCurriculumV2(
+    provisional = NativeModelCurriculumV2(
         schema_version=SCHEMA_VERSION,
         generator_version=GENERATOR_VERSION,
         source_repository=SOURCE_REPOSITORY,
@@ -349,6 +458,60 @@ def build_native_model_curriculum_v2(
         stage_counts=stage_counts,
         accepted_count=accepted,
         rejected_count=rejected,
-        curriculum_sha256=curriculum_digest,
+        curriculum_sha256="0" * 64,
         cases=cases,
     )
+    digest = hashlib.sha256(
+        _canonical_json(_payload_without_digest(provisional)).encode("utf-8")
+    ).hexdigest()
+    result = NativeModelCurriculumV2(
+        schema_version=provisional.schema_version,
+        generator_version=provisional.generator_version,
+        source_repository=provisional.source_repository,
+        source_commit=provisional.source_commit,
+        parent_curriculum_digest=provisional.parent_curriculum_digest,
+        case_count=provisional.case_count,
+        stage_counts=provisional.stage_counts,
+        accepted_count=provisional.accepted_count,
+        rejected_count=provisional.rejected_count,
+        curriculum_sha256=digest,
+        cases=provisional.cases,
+    )
+    return verify_native_model_curriculum_v2(result)
+
+
+def write_native_model_curriculum_v2(
+    curriculum: NativeModelCurriculumV2,
+    output: str | Path,
+) -> None:
+    """Atomically write one verified curriculum release without overwriting."""
+
+    verified = verify_native_model_curriculum_v2(curriculum)
+    path = Path(output)
+    if path.exists():
+        raise FileExistsError(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(verified.to_dict(), handle, ensure_ascii=False, sort_keys=True, indent=2)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    except BaseException:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+        raise
+
+
+def load_native_model_curriculum_v2(path: str | Path) -> NativeModelCurriculumV2:
+    """Load and verify a curriculum release before it can enter training."""
+
+    try:
+        raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise NativeModelCurriculumError(f"cannot load native curriculum: {error}") from error
+    return verify_native_model_curriculum_v2(raw)
