@@ -9,6 +9,7 @@ import sys
 import tomllib
 
 _TOKEN = "sentinel"
+_PYTHON_ROOTS = ("koschei", "tests")
 
 
 class LangProjectBoundaryError(ValueError):
@@ -27,58 +28,66 @@ def _contains_sentinel(value: object) -> bool:
     return isinstance(value, str) and _TOKEN in value.lower()
 
 
-def _python_violations(repo_root: Path) -> list[BoundaryViolationV1]:
-    package = repo_root / "koschei"
-    if not package.is_dir():
-        raise LangProjectBoundaryError("Koschei package directory is missing")
-
+def _inspect_python_file(repo_root: Path, path: Path) -> list[BoundaryViolationV1]:
+    relative = path.relative_to(repo_root).as_posix()
     violations: list[BoundaryViolationV1] = []
-    for path in sorted(package.rglob("*.py")):
-        relative = path.relative_to(repo_root).as_posix()
-        if _contains_sentinel(path.name):
-            violations.append(BoundaryViolationV1(relative, 1, "module-name", path.name))
+    if _contains_sentinel(path.name):
+        violations.append(BoundaryViolationV1(relative, 1, "module-name", path.name))
 
-        try:
-            source = path.read_text(encoding="utf-8")
-            tree = ast.parse(source, filename=relative)
-        except (OSError, UnicodeDecodeError, SyntaxError) as error:
-            raise LangProjectBoundaryError(f"cannot inspect {relative}: {error}") from error
+    try:
+        source = path.read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=relative)
+    except (OSError, UnicodeDecodeError, SyntaxError) as error:
+        raise LangProjectBoundaryError(f"cannot inspect {relative}: {error}") from error
 
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Import):
-                for alias in node.names:
-                    if _contains_sentinel(alias.name):
-                        violations.append(
-                            BoundaryViolationV1(relative, node.lineno, "import", alias.name)
-                        )
-            elif isinstance(node, ast.ImportFrom):
-                if _contains_sentinel(node.module):
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if _contains_sentinel(alias.name):
                     violations.append(
-                        BoundaryViolationV1(relative, node.lineno, "import-from", str(node.module))
+                        BoundaryViolationV1(relative, node.lineno, "import", alias.name)
                     )
-                for alias in node.names:
-                    if _contains_sentinel(alias.name):
-                        violations.append(
-                            BoundaryViolationV1(relative, node.lineno, "import-symbol", alias.name)
-                        )
-            elif isinstance(node, ast.Call):
-                function = node.func
-                dynamic_import = (
-                    isinstance(function, ast.Name) and function.id == "__import__"
-                ) or (
-                    isinstance(function, ast.Attribute) and function.attr == "import_module"
+        elif isinstance(node, ast.ImportFrom):
+            if _contains_sentinel(node.module):
+                violations.append(
+                    BoundaryViolationV1(relative, node.lineno, "import-from", str(node.module))
                 )
-                if dynamic_import and node.args:
-                    first = node.args[0]
-                    if isinstance(first, ast.Constant) and _contains_sentinel(first.value):
-                        violations.append(
-                            BoundaryViolationV1(
-                                relative,
-                                node.lineno,
-                                "dynamic-import",
-                                str(first.value),
-                            )
+            for alias in node.names:
+                if _contains_sentinel(alias.name):
+                    violations.append(
+                        BoundaryViolationV1(relative, node.lineno, "import-symbol", alias.name)
+                    )
+        elif isinstance(node, ast.Call):
+            function = node.func
+            dynamic_import = (
+                isinstance(function, ast.Name) and function.id == "__import__"
+            ) or (
+                isinstance(function, ast.Attribute) and function.attr == "import_module"
+            )
+            if dynamic_import and node.args:
+                first = node.args[0]
+                if isinstance(first, ast.Constant) and _contains_sentinel(first.value):
+                    violations.append(
+                        BoundaryViolationV1(
+                            relative,
+                            node.lineno,
+                            "dynamic-import",
+                            str(first.value),
                         )
+                    )
+    return violations
+
+
+def _python_violations(repo_root: Path) -> list[BoundaryViolationV1]:
+    violations: list[BoundaryViolationV1] = []
+    for root_name in _PYTHON_ROOTS:
+        source_root = repo_root / root_name
+        if not source_root.is_dir():
+            if root_name == "koschei":
+                raise LangProjectBoundaryError("Koschei package directory is missing")
+            continue
+        for path in sorted(source_root.rglob("*.py")):
+            violations.extend(_inspect_python_file(repo_root, path))
     return violations
 
 
