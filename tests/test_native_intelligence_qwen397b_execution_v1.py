@@ -3,6 +3,10 @@ from pathlib import Path
 import tempfile
 import unittest
 
+from koschei.local_validation_v1 import (
+    seal_local_validation_receipt_v1,
+    seal_local_validation_step_v1,
+)
 from koschei.native_intelligence_holdout_v1 import build_native_intelligence_holdout_v1
 from koschei.native_intelligence_qwen397b_base_spec_v1 import CANONICAL_QWEN397B_REVISION_V1
 from koschei.native_intelligence_qwen397b_execution_v1 import (
@@ -40,6 +44,25 @@ from koschei.native_intelligence_v1 import CANONICAL_BASE_MODEL_V1
 from koschei.native_model_curriculum_v2 import build_native_model_curriculum_v2
 
 
+def source_validation(source_commit: str = "a" * 40):
+    step = seal_local_validation_step_v1(
+        step_id="full-validation",
+        command=("ks-local-validate", "--profile", "full"),
+        returncode=0,
+        stdout_sha256="d" * 64,
+        stderr_sha256="e" * 64,
+    )
+    return seal_local_validation_receipt_v1(
+        source_commit=source_commit,
+        checkout_clean=True,
+        profile="full",
+        python_version="Python 3.12.0",
+        go_version="go version go1.21 linux/amd64",
+        platform="Linux-test",
+        steps=(step,),
+    )
+
+
 class Qwen397BExecutionV1Tests(unittest.TestCase):
     def setUp(self):
         curriculum = build_native_model_curriculum_v2(
@@ -60,6 +83,7 @@ class Qwen397BExecutionV1Tests(unittest.TestCase):
             self.release,
         )
         self.profile = canonical_qwen397b_koschei_profile_v1()
+        self.validation = source_validation()
         self.preflight = seal_qwen397b_preflight_v1(
             repo_id=CANONICAL_BASE_MODEL_V1,
             requested_revision=CANONICAL_QWEN397B_REVISION_V1,
@@ -102,6 +126,7 @@ class Qwen397BExecutionV1Tests(unittest.TestCase):
             self.manifest,
             self.preflight,
             self.token_profile,
+            self.validation,
             self.release,
             trainer_environment_digest="1" * 64,
             launcher_digest="2" * 64,
@@ -113,6 +138,7 @@ class Qwen397BExecutionV1Tests(unittest.TestCase):
             self.manifest,
             self.preflight,
             self.token_profile,
+            self.validation,
             provider="hf-jobs",
             job_reference_digest="3" * 64,
             start_evidence_digest="4" * 64,
@@ -132,6 +158,7 @@ class Qwen397BExecutionV1Tests(unittest.TestCase):
             self.manifest,
             self.preflight,
             self.token_profile,
+            self.validation,
             self.run_start,
             self.artifact_receipt,
             profile=self.profile,
@@ -144,6 +171,7 @@ class Qwen397BExecutionV1Tests(unittest.TestCase):
             self.manifest,
             self.preflight,
             self.token_profile,
+            self.validation,
             self.run_start,
             self.artifact_receipt,
             self.execution_receipt,
@@ -155,6 +183,22 @@ class Qwen397BExecutionV1Tests(unittest.TestCase):
         self.assertEqual(identity.adapter_digest, self.execution_receipt.adapter_digest)
         self.assertEqual(identity.training_run_digest, self.execution_receipt.digest)
         self.assertFalse(identity.authority)
+
+    def test_stale_source_validation_blocks_execution_and_identity(self):
+        stale = source_validation("c" * 40)
+        with self.assertRaises(Qwen397BExecutionError):
+            build_qwen397b_native_intelligence_from_execution_receipt_v1(
+                self.plan,
+                self.launch,
+                self.manifest,
+                self.preflight,
+                self.token_profile,
+                stale,
+                self.run_start,
+                self.artifact_receipt,
+                self.execution_receipt,
+                profile=self.profile,
+            )
 
     def test_same_qwen_receipt_cannot_use_generic_identity_bridge(self):
         with self.assertRaisesRegex(
@@ -179,6 +223,7 @@ class Qwen397BExecutionV1Tests(unittest.TestCase):
                 self.manifest,
                 self.preflight,
                 forged,
+                self.validation,
                 self.run_start,
                 self.artifact_receipt,
                 self.execution_receipt,
