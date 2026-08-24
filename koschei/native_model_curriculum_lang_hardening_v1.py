@@ -4,8 +4,8 @@ These cases extend the compatibility v2 curriculum without reviving retired
 project semantics. They are derived from living Lang oracles:
 
 * Matrix/Hara cannot move across Aevra or Veyra identity boundaries.
-* Nyr exposes a bounded projection, not canonical subjects or Veyra identity.
-* A Nyr learned in one Veyra is not a reusable projection in another Veyra.
+* Nyr v2 exposes neither canonical semantic-root names nor canonical subjects.
+* A Nyr v2 learned in one Veyra is not a reusable projection in another Veyra.
 
 The cases grant no authority. They teach defensive invariants from executable
 runtime behavior rather than handwritten security claims.
@@ -33,7 +33,7 @@ from .native_model_curriculum_v2 import (
 )
 from .native_sigil_mir_v1 import lower_native_sigils
 from .native_sigil_semantics_v1 import check_native_sigils
-from .nur_nyr_projection_v1 import project_native_mir_nyr
+from .nur_nyr_projection_v2 import project_native_mir_nyr_v2
 from .parser import Parser
 
 _CTX = b"koschei.lang-native-curriculum-hardening/v1\x00"
@@ -272,33 +272,40 @@ def _n3_cross_veyra_case() -> NativeCurriculumCaseV2:
 def _n4_non_disclosure_case() -> NativeCurriculumCaseV2:
     mir, veyra, _, _, _ = _fixture()
     envelope = _visibility_envelope()
-    surface = project_native_mir_nyr(mir, veyra, envelope, veil_key=b"n" * 32)
+    surface = project_native_mir_nyr_v2(mir, veyra, envelope, veil_key=b"n" * 32)
     rendered = surface.render()
+    canonical_roots = tuple(item.sigil for item in mir.bindings)
     canonical_subjects = tuple(item.subject for item in mir.bindings)
+    leaked_roots = tuple(root for root in canonical_roots if root in rendered)
     leaked_subjects = tuple(subject for subject in canonical_subjects if subject in rendered)
     veyra_leaked = veyra.digest in rendered
-    if leaked_subjects or veyra_leaked:
-        raise LangCurriculumHardeningError("Nyr oracle drift: canonical operational identity leaked into visible surface")
+    if leaked_roots or leaked_subjects or veyra_leaked:
+        raise LangCurriculumHardeningError(
+            "Nyr v2 oracle drift: canonical operational identity leaked into visible surface"
+        )
     return _case(
         case_id="n4-nyr-does-not-expose-canonical-world",
         stage="N4",
         family="nur:projection-non-disclosure",
-        task="Verify that the observer-facing Nyr render contains aliases rather than canonical subjects or Veyra identity.",
+        task="Verify that Nyr v2 exposes neither canonical semantic roots, subjects nor Veyra identity.",
         input_value={
             "observer_scope": "observer-a",
             "visibility_epoch": surface.visibility_epoch,
             "canonical_binding_count": len(canonical_subjects),
+            "nyr_version": surface.version,
         },
         outcome="ACCEPTED",
-        oracle="nur_nyr_projection_v1.NyrSurface.render",
+        oracle="nur_nyr_projection_v2.NyrSurfaceV2.render",
         target={
             "decision": "ACCEPTED",
+            "canonical_roots_exposed": False,
             "canonical_subjects_exposed": False,
             "veyra_identity_exposed": False,
             "visible_binding_count": len(surface.bindings),
             "render_sha256": hashlib.sha256(rendered.encode("utf-8")).hexdigest(),
             "stable_topology_labels": envelope.stable_topology_labels,
             "authority": envelope.authority,
+            "nyr_version": surface.version,
         },
         law_ids=(
             "visible-world-is-not-canonical-world",
@@ -312,25 +319,34 @@ def _n4_non_disclosure_case() -> NativeCurriculumCaseV2:
 def _n4_cross_veyra_projection_case() -> NativeCurriculumCaseV2:
     mir, veyra_a, veyra_b, _, _ = _fixture()
     envelope = _visibility_envelope()
-    surface_a = project_native_mir_nyr(mir, veyra_a, envelope, veil_key=b"n" * 32)
-    surface_b = project_native_mir_nyr(mir, veyra_b, envelope, veil_key=b"n" * 32)
-    aliases_a = tuple(item.alias for item in surface_a.bindings)
-    aliases_b = tuple(item.alias for item in surface_b.bindings)
+    surface_a = project_native_mir_nyr_v2(mir, veyra_a, envelope, veil_key=b"n" * 32)
+    surface_b = project_native_mir_nyr_v2(mir, veyra_b, envelope, veil_key=b"n" * 32)
+    aliases_a = tuple(
+        (item.root_alias, item.subject_alias)
+        for item in surface_a.bindings
+    )
+    aliases_b = tuple(
+        (item.root_alias, item.subject_alias)
+        for item in surface_b.bindings
+    )
     if aliases_a == aliases_b or surface_a.surface_digest == surface_b.surface_digest:
-        raise LangCurriculumHardeningError("Nyr oracle drift: projection transferred unchanged across Veyras")
+        raise LangCurriculumHardeningError(
+            "Nyr v2 oracle drift: projection transferred unchanged across Veyras"
+        )
     return _case(
         case_id="n4-nyr-is-not-cross-veyra-transferable",
         stage="N4",
         family="nur:projection-non-transfer",
-        task="Reject treating a learned Nyr projection from one Veyra as a reusable map of another Veyra.",
+        task="Reject treating a learned Nyr v2 projection from one Veyra as a reusable map of another Veyra.",
         input_value={
             "same_native_mir": True,
             "same_observer_session": True,
             "same_visibility_epoch": True,
             "different_veyra": True,
+            "nyr_version": 2,
         },
         outcome="REJECTED",
-        oracle="nur_nyr_projection_v1.project_native_mir_nyr",
+        oracle="nur_nyr_projection_v2.project_native_mir_nyr_v2",
         target={
             "decision": "REJECTED",
             "result": "ZERO",
@@ -338,6 +354,7 @@ def _n4_cross_veyra_projection_case() -> NativeCurriculumCaseV2:
             "surface_digest_transfers_unchanged": False,
             "cross_veyra_operational_map_reuse": False,
             "authority": False,
+            "nyr_version": 2,
         },
         law_ids=(
             "cross-veyra-epistemic-independence",
@@ -407,7 +424,9 @@ def verify_lang_hardening_cases_v1(curriculum: NativeModelCurriculumV2) -> Nativ
     expected = {case.case_id: case for case in lang_hardening_cases_v1()}
     missing = tuple(case_id for case_id in REQUIRED_HARDENING_CASE_IDS if case_id not in actual)
     if missing:
-        raise LangCurriculumHardeningError(f"active Lang curriculum missing hardening cases: {missing!r}")
+        raise LangCurriculumHardeningError(
+            f"active Lang curriculum missing hardening cases: {missing!r}"
+        )
     for case_id, expected_case in expected.items():
         if actual[case_id] != expected_case:
             raise LangCurriculumHardeningError(
