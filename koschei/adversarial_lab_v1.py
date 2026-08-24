@@ -3,6 +3,9 @@
 A release candidate is commercial-ready only if every required hostile-path
 suite passes. Missing suites, empty suites, runner errors, partial success,
 test-count shrinkage and attack-budget shrinkage all fail closed.
+
+The per-suite floors are ratcheted to the current living suite counts. Growing a
+suite may raise a later floor; shrinking below these counts is a release failure.
 """
 from __future__ import annotations
 
@@ -22,23 +25,93 @@ class AdversarialGate:
 
 
 REQUIRED_GATES: tuple[AdversarialGate, ...] = (
-    AdversarialGate("decoy-view", "tests/test_decoy_view_broker_v1.py", "unauthorized reads never reach canonical source", 7),
-    AdversarialGate("decoy-attack", "tests/test_decoy_attack_simulation_v1.py", "replay/probing/cross-object decoy attacks fail closed", 5),
-    AdversarialGate("read-auth", "tests/test_read_authorization_wave2.py", "epoch/object-bound read grants resist replay and tampering", 6),
-    AdversarialGate("alias-rotation", "tests/test_epoch_alias_rotation_v1.py", "physical aliases rotate without changing canonical identity", 9),
-    AdversarialGate("protected-graph", "tests/test_protected_graph_v1.py", "path fallback and decoy promotion remain forbidden", 5),
-    AdversarialGate("entitlement", "tests/test_commercial_entitlement_v1.py", "commercial entitlement tampering fails closed", 5),
-    AdversarialGate("activation", "tests/test_commercial_activation_v1.py", "seat/device/lease misuse fails closed", 8),
-    AdversarialGate("private-distribution", "tests/test_private_distribution_v1.py", "artifact tamper, revocation and rollback attacks fail closed", 10),
-    AdversarialGate("high-volume", "tests/test_high_volume_attack_profile_v1.py", "100k hostile reads, concurrency and stale correlation never reach canonical source", 3),
-    AdversarialGate("million-probe", "tests/test_million_probe_fingerprint_profile_v1.py", "1M hostile reads, process isolation and fingerprint sampling never reach canonical source", 3),
-    AdversarialGate("transport-shaping", "tests/test_read_transport_shaping_v1.py", "fixed-size transport and timing-floor shaping reduce simple side-channel fingerprints", 6),
-    AdversarialGate("classifier-resistance", "tests/test_transport_classifier_resistance_v1.py", "observable transport metadata does not provide a trivial canonical-versus-decoy classifier", 3),
-    AdversarialGate("compiler-integrity", "tests/test_compiler_integrity.py", "compiler integrity invariants remain enforced", 13),
-    AdversarialGate("security-regressions", "tests/test_security_regressions.py", "known security regressions remain blocked", 13),
+    AdversarialGate(
+        "decoy-view",
+        "tests/test_decoy_view_broker_v1.py",
+        "unauthorized reads never reach canonical source",
+        15,
+    ),
+    AdversarialGate(
+        "decoy-attack",
+        "tests/test_decoy_attack_simulation_v1.py",
+        "replay/probing/cross-object decoy attacks fail closed",
+        5,
+    ),
+    AdversarialGate(
+        "read-auth",
+        "tests/test_read_authorization_wave2.py",
+        "epoch/object-bound read grants resist replay and tampering",
+        10,
+    ),
+    AdversarialGate(
+        "alias-rotation",
+        "tests/test_epoch_alias_rotation_v1.py",
+        "physical aliases rotate without changing canonical identity",
+        9,
+    ),
+    AdversarialGate(
+        "protected-graph",
+        "tests/test_protected_graph_v1.py",
+        "path fallback and decoy promotion remain forbidden",
+        7,
+    ),
+    AdversarialGate(
+        "entitlement",
+        "tests/test_commercial_entitlement_v1.py",
+        "commercial entitlement tampering fails closed",
+        5,
+    ),
+    AdversarialGate(
+        "activation",
+        "tests/test_commercial_activation_v1.py",
+        "seat/device/lease misuse fails closed",
+        13,
+    ),
+    AdversarialGate(
+        "private-distribution",
+        "tests/test_private_distribution_v1.py",
+        "artifact tamper, revocation and rollback attacks fail closed",
+        13,
+    ),
+    AdversarialGate(
+        "high-volume",
+        "tests/test_high_volume_attack_profile_v1.py",
+        "100k hostile reads, concurrency and stale correlation never reach canonical source",
+        3,
+    ),
+    AdversarialGate(
+        "million-probe",
+        "tests/test_million_probe_fingerprint_profile_v1.py",
+        "1M hostile reads, process isolation and fingerprint sampling never reach canonical source",
+        3,
+    ),
+    AdversarialGate(
+        "transport-shaping",
+        "tests/test_read_transport_shaping_v1.py",
+        "fixed-size transport and timing-floor shaping reduce simple side-channel fingerprints",
+        6,
+    ),
+    AdversarialGate(
+        "classifier-resistance",
+        "tests/test_transport_classifier_resistance_v1.py",
+        "observable transport metadata does not provide a trivial canonical-versus-decoy classifier",
+        3,
+    ),
+    AdversarialGate(
+        "compiler-integrity",
+        "tests/test_compiler_integrity.py",
+        "compiler integrity invariants remain enforced",
+        13,
+    ),
+    AdversarialGate(
+        "security-regressions",
+        "tests/test_security_regressions.py",
+        "known security regressions remain blocked",
+        13,
+    ),
 )
 
-MIN_TOTAL_ATTACK_TESTS = 96
+MIN_TOTAL_ATTACK_TESTS = 118
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,7 +137,11 @@ class AdversarialReport:
 Runner = Callable[[str], tuple[bool, int, str]]
 
 
-def _canonical_report_payload(candidate_id: str, results: tuple[GateResult, ...], total_tests_run: int) -> bytes:
+def _canonical_report_payload(
+    candidate_id: str,
+    results: tuple[GateResult, ...],
+    total_tests_run: int,
+) -> bytes:
     obj = {
         "schema": "koschei/adversarial-lab-report/v1",
         "candidate_id": candidate_id,
@@ -72,20 +149,30 @@ def _canonical_report_payload(candidate_id: str, results: tuple[GateResult, ...]
         "total_tests_run": total_tests_run,
         "results": [
             {
-                "gate_id": r.gate_id,
-                "test_file": r.test_file,
-                "passed": r.passed,
-                "tests_run": r.tests_run,
-                "min_tests": r.min_tests,
-                "detail": r.detail,
+                "gate_id": result.gate_id,
+                "test_file": result.test_file,
+                "passed": result.passed,
+                "tests_run": result.tests_run,
+                "min_tests": result.min_tests,
+                "detail": result.detail,
             }
-            for r in results
+            for result in results
         ],
     }
-    return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+    return json.dumps(
+        obj,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+    ).encode("utf-8")
 
 
-def evaluate_release(*, candidate_id: str, runner: Runner, repo_root: str | Path = ".") -> AdversarialReport:
+def evaluate_release(
+    *,
+    candidate_id: str,
+    runner: Runner,
+    repo_root: str | Path = ".",
+) -> AdversarialReport:
     candidate_id = candidate_id.strip() if isinstance(candidate_id, str) else ""
     if not candidate_id:
         raise ValueError("candidate_id must be non-empty")
@@ -94,7 +181,16 @@ def evaluate_release(*, candidate_id: str, runner: Runner, repo_root: str | Path
     for gate in REQUIRED_GATES:
         path = root / gate.test_file
         if not path.is_file():
-            results.append(GateResult(gate.gate_id, gate.test_file, False, 0, gate.min_tests, "required suite missing"))
+            results.append(
+                GateResult(
+                    gate.gate_id,
+                    gate.test_file,
+                    False,
+                    0,
+                    gate.min_tests,
+                    "required suite missing",
+                )
+            )
             continue
         try:
             passed, tests_run, detail = runner(gate.test_file)
@@ -104,16 +200,46 @@ def evaluate_release(*, candidate_id: str, runner: Runner, repo_root: str | Path
             if tests_run == 0:
                 detail = "suite executed zero tests"
             elif not count_ok:
-                detail = f"test-count shrink detected: ran {tests_run}, minimum {gate.min_tests}"
-            results.append(GateResult(gate.gate_id, gate.test_file, ok, tests_run, gate.min_tests, str(detail)))
+                detail = (
+                    f"test-count shrink detected: ran {tests_run}, "
+                    f"minimum {gate.min_tests}"
+                )
+            results.append(
+                GateResult(
+                    gate.gate_id,
+                    gate.test_file,
+                    ok,
+                    tests_run,
+                    gate.min_tests,
+                    str(detail),
+                )
+            )
         except Exception as exc:
-            results.append(GateResult(gate.gate_id, gate.test_file, False, 0, gate.min_tests, f"runner error: {type(exc).__name__}"))
+            results.append(
+                GateResult(
+                    gate.gate_id,
+                    gate.test_file,
+                    False,
+                    0,
+                    gate.min_tests,
+                    f"runner error: {type(exc).__name__}",
+                )
+            )
     frozen = tuple(results)
-    total_tests_run = sum(r.tests_run for r in frozen)
+    total_tests_run = sum(result.tests_run for result in frozen)
     commercial_ready = (
         len(frozen) == len(REQUIRED_GATES)
-        and all(r.passed for r in frozen)
+        and all(result.passed for result in frozen)
         and total_tests_run >= MIN_TOTAL_ATTACK_TESTS
     )
-    digest = hashlib.sha256(_canonical_report_payload(candidate_id, frozen, total_tests_run)).hexdigest()
-    return AdversarialReport(candidate_id, commercial_ready, frozen, total_tests_run, MIN_TOTAL_ATTACK_TESTS, digest)
+    digest = hashlib.sha256(
+        _canonical_report_payload(candidate_id, frozen, total_tests_run)
+    ).hexdigest()
+    return AdversarialReport(
+        candidate_id,
+        commercial_ready,
+        frozen,
+        total_tests_run,
+        MIN_TOTAL_ATTACK_TESTS,
+        digest,
+    )
