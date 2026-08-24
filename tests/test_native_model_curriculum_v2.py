@@ -1,4 +1,3 @@
-from dataclasses import asdict
 import json
 
 import pytest
@@ -19,16 +18,21 @@ def curriculum():
     )
 
 
-def test_first_slice_is_oracle_backed_and_deterministic():
+def test_native_curriculum_through_n5_is_oracle_backed_and_deterministic():
     first = curriculum()
     second = curriculum()
 
     assert first == second
-    assert first.case_count == 7
+    assert first.case_count == 17
     assert first.stage_counts["N0"] == 3
+    assert first.stage_counts["N1"] == 0
     assert first.stage_counts["N2"] == 4
-    assert first.accepted_count == 2
-    assert first.rejected_count == 5
+    assert first.stage_counts["N3"] == 4
+    assert first.stage_counts["N4"] == 2
+    assert first.stage_counts["N5"] == 4
+    assert first.stage_counts["N6"] == 0
+    assert first.accepted_count == 7
+    assert first.rejected_count == 10
     assert len(first.curriculum_sha256) == 64
 
 
@@ -63,6 +67,91 @@ def test_native_sigils_are_compiler_oracle_output():
     assert target["sigils"] == ["ka", "vor", "shi", "thal", "nur"]
     assert len(target["native_mir_fingerprint"]) == 64
     assert len(target["typed_semantic_digest"]) == 64
+
+
+def test_vormir_curriculum_kills_old_epoch_before_successor_head():
+    item = next(
+        case for case in curriculum().cases if case.case_id == "n3-vormir-durable-epoch-sacrifice"
+    )
+    target = json.loads(item.target_text)
+
+    assert item.outcome == "ACCEPTED"
+    assert target["sacrificed_epoch"] == 7
+    assert target["successor_epoch"] == 8
+    assert target["old_epoch_tombstoned"] is True
+    assert target["successor_is_durable_head"] is True
+    assert target["successor_born_inactive"] is True
+    assert target["witness_domain_count"] == 2
+
+
+def test_morth_curriculum_forbids_dead_aevra_future():
+    item = next(
+        case for case in curriculum().cases if case.case_id == "n3-morth-has-no-living-future"
+    )
+    target = json.loads(item.target_text)
+
+    assert item.outcome == "REJECTED"
+    assert target["result"] == "MORTH"
+    assert target["resurrection_allowed"] is False
+    assert "no living future" in target["reason"]
+
+
+def test_nur_curriculum_rotates_nyr_without_creating_authority():
+    item = next(
+        case for case in curriculum().cases if case.case_id == "n4-nur-rotates-nyr-without-authority"
+    )
+    target = json.loads(item.target_text)
+
+    assert item.outcome == "ACCEPTED"
+    assert target["aliases_rotate"] is True
+    assert target["canonical_sigils_stable"] is True
+    assert target["stable_topology_labels"] is False
+    assert target["authority"] is False
+    assert target["surface_digest_a"] != target["surface_digest_b"]
+
+
+def test_learning_pressure_can_contain_visibility_to_zero():
+    item = next(
+        case
+        for case in curriculum().cases
+        if case.case_id == "n4-contained-learning-pressure-exposes-no-nyr"
+    )
+    target = json.loads(item.target_text)
+
+    assert item.outcome == "REJECTED"
+    assert target["learning_posture"] == "contained"
+    assert target["visibility_allowed"] is False
+    assert target["root_budget"] == 0
+    assert target["relation_budget"] == 0
+    assert target["authority"] is False
+
+
+def test_survival_curriculum_rejects_khar_violating_branch():
+    item = next(
+        case
+        for case in curriculum().cases
+        if case.case_id == "n5-survival-selects-least-loss-khar-future"
+    )
+    target = json.loads(item.target_text)
+
+    assert item.outcome == "ACCEPTED"
+    assert target["unsafe_branch_rejected"] is True
+    assert target["chosen_branch_digest"] == "a" * 64
+    assert target["authority"] is False
+
+
+def test_bounded_autonomy_curriculum_is_proposal_only():
+    item = next(
+        case
+        for case in curriculum().cases
+        if case.case_id == "n5-autonomy-proposes-but-cannot-authorize"
+    )
+    target = json.loads(item.target_text)
+
+    assert item.outcome == "ACCEPTED"
+    assert target["authority"] is False
+    assert target["proposal_round"] == 3
+    assert target["chosen_branch_digest"] == "a" * 64
 
 
 def test_summary_or_case_tampering_breaks_release_digest():
