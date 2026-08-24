@@ -2,15 +2,20 @@
 
 The official checkpoint is a Qwen3.5 MoE model with a 60-layer hybrid text
 backbone. The first Koschei specialization deliberately uses its causal-LM text
-path only and keeps the initial adapter surface conservative:
+path only and keeps the initial adapter surface conservative. The profile also
+seals the optimizer/training recipe so the same Koschei plan cannot silently run
+with different learning dynamics.
 
-- Qwen3_5MoeForCausalLM text path;
-- vision not trained;
+Reference posture for v1:
+- causal-LM text path only; vision frozen;
 - MoE router and expert weights frozen;
-- LoRA on full-attention and Gated-DeltaNet projection paths only;
-- router logits enabled so the auxiliary load-balancing loss remains visible to
-  the trainable attention adapters;
-- cache disabled while gradient checkpointing is active.
+- LoRA on full-attention and Gated-DeltaNet projections only;
+- router logits enabled for auxiliary load-balancing evidence;
+- cache disabled with gradient checkpointing;
+- one epoch over the 1,344-example canonical train split on eight devices;
+- batch 1/device, no gradient accumulation (global batch 8);
+- AdamW fused, 2e-5 cosine LR, 0.01 weight decay, 3% warmup;
+- DeepSpeed ZeRO-3; assistant-target-only loss; no packing.
 
 This is a training configuration commitment, not execution authority.
 """
@@ -94,6 +99,26 @@ class Qwen397BKoscheiTrainingProfileV1:
     max_sequence_length: int
     gradient_checkpointing: bool
     target_modules: tuple[str, ...]
+    num_train_epochs: int
+    per_device_train_batch_size: int
+    per_device_eval_batch_size: int
+    gradient_accumulation_steps: int
+    learning_rate_millionths: int
+    weight_decay_per_mille: int
+    warmup_per_mille: int
+    lr_scheduler: str
+    optimizer: str
+    max_grad_norm_milli: int
+    deepspeed_stage: int
+    eval_steps: int
+    save_steps: int
+    save_total_limit: int
+    logging_steps: int
+    seed: int
+    assistant_target_only_loss: bool
+    packing: bool
+    bf16: bool
+    tf32: bool
     authority: bool
     digest: str
     version: int = 1
@@ -130,9 +155,7 @@ class Qwen397BKoscheiTrainingProfileV1:
                 "first Koschei run must preserve router auxiliary-loss evidence"
             )
         if self.use_cache is not False:
-            raise Qwen397BProfileError(
-                "first Koschei training run must disable inference cache"
-            )
+            raise Qwen397BProfileError("first Koschei training run must disable inference cache")
         if self.lora_rank != 16 or self.lora_alpha != 32:
             raise Qwen397BProfileError("first Koschei LoRA rank/alpha drift")
         if self.lora_dropout_per_mille != 50:
@@ -143,6 +166,32 @@ class Qwen397BKoscheiTrainingProfileV1:
             raise Qwen397BProfileError("first Koschei run requires gradient checkpointing")
         if self.target_modules != CANONICAL_LORA_TARGETS_V1:
             raise Qwen397BProfileError("first Koschei LoRA target surface drift")
+
+        recipe = {
+            "num_train_epochs": 1,
+            "per_device_train_batch_size": 1,
+            "per_device_eval_batch_size": 1,
+            "gradient_accumulation_steps": 1,
+            "learning_rate_millionths": 20,
+            "weight_decay_per_mille": 10,
+            "warmup_per_mille": 30,
+            "lr_scheduler": "cosine",
+            "optimizer": "adamw_torch_fused",
+            "max_grad_norm_milli": 1000,
+            "deepspeed_stage": 3,
+            "eval_steps": 21,
+            "save_steps": 21,
+            "save_total_limit": 3,
+            "logging_steps": 5,
+            "seed": 42,
+            "assistant_target_only_loss": True,
+            "packing": False,
+            "bf16": True,
+            "tf32": True,
+        }
+        for field, expected in recipe.items():
+            if getattr(self, field) != expected:
+                raise Qwen397BProfileError(f"first Koschei training recipe drift: {field}")
         if self.authority is not False:
             raise Qwen397BProfileError("training profile cannot carry authority")
         expected = _hash(self._payload())
@@ -175,6 +224,26 @@ class Qwen397BKoscheiTrainingProfileV1:
             "max_sequence_length": self.max_sequence_length,
             "gradient_checkpointing": self.gradient_checkpointing,
             "target_modules": list(self.target_modules),
+            "num_train_epochs": self.num_train_epochs,
+            "per_device_train_batch_size": self.per_device_train_batch_size,
+            "per_device_eval_batch_size": self.per_device_eval_batch_size,
+            "gradient_accumulation_steps": self.gradient_accumulation_steps,
+            "learning_rate_millionths": self.learning_rate_millionths,
+            "weight_decay_per_mille": self.weight_decay_per_mille,
+            "warmup_per_mille": self.warmup_per_mille,
+            "lr_scheduler": self.lr_scheduler,
+            "optimizer": self.optimizer,
+            "max_grad_norm_milli": self.max_grad_norm_milli,
+            "deepspeed_stage": self.deepspeed_stage,
+            "eval_steps": self.eval_steps,
+            "save_steps": self.save_steps,
+            "save_total_limit": self.save_total_limit,
+            "logging_steps": self.logging_steps,
+            "seed": self.seed,
+            "assistant_target_only_loss": self.assistant_target_only_loss,
+            "packing": self.packing,
+            "bf16": self.bf16,
+            "tf32": self.tf32,
             "authority": False,
         }
 
@@ -205,6 +274,26 @@ def canonical_qwen397b_koschei_profile_v1() -> Qwen397BKoscheiTrainingProfileV1:
         max_sequence_length=4096,
         gradient_checkpointing=True,
         target_modules=CANONICAL_LORA_TARGETS_V1,
+        num_train_epochs=1,
+        per_device_train_batch_size=1,
+        per_device_eval_batch_size=1,
+        gradient_accumulation_steps=1,
+        learning_rate_millionths=20,
+        weight_decay_per_mille=10,
+        warmup_per_mille=30,
+        lr_scheduler="cosine",
+        optimizer="adamw_torch_fused",
+        max_grad_norm_milli=1000,
+        deepspeed_stage=3,
+        eval_steps=21,
+        save_steps=21,
+        save_total_limit=3,
+        logging_steps=5,
+        seed=42,
+        assistant_target_only_loss=True,
+        packing=False,
+        bf16=True,
+        tf32=True,
         authority=False,
         digest="",
     )
