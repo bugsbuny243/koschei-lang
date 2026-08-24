@@ -7,10 +7,13 @@ from pathlib import Path
 from .model_curriculum import ModelCurriculumError
 from .model_curriculum_cli import verify_trusted_checkout
 from .native_intelligence_holdout_v1 import build_native_intelligence_holdout_v1
+from .native_intelligence_training_balance_v1 import (
+    BALANCED_FAMILY_COUNT,
+    build_balanced_native_training_corpus_v1,
+)
 from .native_intelligence_training_corpus_v1 import (
     DEFAULT_VARIANTS_PER_FAMILY,
     NativeTrainingCorpusError,
-    build_native_training_corpus_v1,
 )
 from .native_intelligence_training_export_v1 import (
     NativeTrainingExportError,
@@ -27,7 +30,7 @@ from .native_model_curriculum_v2 import (
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="ks-native-training-corpus",
-        description="Build or verify a sealed N0..N6 Koschei native-intelligence training corpus",
+        description="Build or verify a balanced sealed N0..N6 Koschei native-intelligence training corpus",
     )
     actions = parser.add_subparsers(dest="action", required=True)
 
@@ -53,10 +56,12 @@ def main(argv: list[str] | None = None) -> int:
             curriculum = load_native_model_curriculum_v2(args.curriculum)
             verify_trusted_checkout(Path(args.repo_root), curriculum.source_commit)
             holdout = build_native_intelligence_holdout_v1(curriculum)
-            corpus = build_native_training_corpus_v1(
+            corpus = build_balanced_native_training_corpus_v1(
                 holdout,
                 variants_per_family=args.variants_per_family,
             )
+            if len(corpus.family_splits) != BALANCED_FAMILY_COUNT:
+                raise NativeTrainingCorpusError("trusted CLI requires balanced oracle family set")
             manifest = write_native_training_export_v1(
                 holdout,
                 corpus,
