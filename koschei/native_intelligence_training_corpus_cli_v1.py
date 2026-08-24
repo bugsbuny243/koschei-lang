@@ -1,4 +1,4 @@
-"""Trusted CLI for building and verifying native-intelligence training exports."""
+"""Trusted CLI for building and verifying Lang-only native-intelligence training exports."""
 from __future__ import annotations
 
 import argparse
@@ -21,16 +21,17 @@ from .native_intelligence_training_export_v1 import (
     verify_native_training_export_v1,
     write_native_training_export_v1,
 )
-from .native_model_curriculum_v2 import (
-    NativeModelCurriculumError,
-    load_native_model_curriculum_v2,
+from .native_model_curriculum_lang_v1 import (
+    LangNativeCurriculumError,
+    load_lang_native_model_curriculum_v1,
 )
+from .native_model_curriculum_v2 import NativeModelCurriculumError
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="ks-native-training-corpus",
-        description="Build or verify a balanced sealed N0..N6 Koschei native-intelligence training corpus",
+        description="Build or verify a balanced sealed N0..N6 Koschei Lang-native training corpus",
     )
     actions = parser.add_subparsers(dest="action", required=True)
 
@@ -53,7 +54,7 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         if args.action == "build":
-            curriculum = load_native_model_curriculum_v2(args.curriculum)
+            curriculum = load_lang_native_model_curriculum_v1(args.curriculum)
             verify_trusted_checkout(Path(args.repo_root), curriculum.source_commit)
             holdout = build_native_intelligence_holdout_v1(curriculum)
             corpus = build_balanced_native_training_corpus_v1(
@@ -67,7 +68,7 @@ def main(argv: list[str] | None = None) -> int:
                 corpus,
                 args.output_dir,
             )
-            print(f"KOSCHEI NATIVE TRAINING CORPUS: {args.output_dir}")
+            print(f"KOSCHEI LANG NATIVE TRAINING CORPUS: {args.output_dir}")
             print(f"SOURCE COMMIT: {corpus.source_commit}")
             print(f"CONSTITUTIONAL HOLDOUT: {holdout.digest}")
             print(f"ORACLE FAMILIES: {len(corpus.family_splits)}")
@@ -80,7 +81,7 @@ def main(argv: list[str] | None = None) -> int:
             directory = Path(args.directory)
             manifest = load_native_training_export_manifest_v1(directory / "manifest.json")
             verify_native_training_export_v1(manifest, directory)
-            print(f"KOSCHEI NATIVE TRAINING CORPUS VERIFIED: {directory}")
+            print(f"KOSCHEI LANG NATIVE TRAINING CORPUS VERIFIED: {directory}")
             print(f"SOURCE COMMIT: {manifest.source_commit}")
             print(f"EXAMPLES: {manifest.corpus_example_count}")
             print(f"CORPUS SHA256: {manifest.corpus_digest}")
@@ -88,6 +89,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     except (
         ModelCurriculumError,
+        LangNativeCurriculumError,
         NativeModelCurriculumError,
         NativeTrainingCorpusError,
         NativeTrainingExportError,
