@@ -1,17 +1,18 @@
 """Balance the native training release with oracle-backed rejection learning.
 
-The base corpus deliberately keeps one family per stage/split.  That clean split
+The base corpus deliberately keeps one family per stage/split. That clean split
 geometry exposed an important training problem: its train families are positive
-examples.  A model trained only on ACCEPTED targets cannot learn Koschei's
+examples. A model trained only on ACCEPTED targets cannot learn Koschei's
 fail-closed boundary.
 
 This module adds one independent train-only rejection family for every N0..N6
-stage.  Families remain split-isolated.  The default balanced release therefore
+stage. Families remain split-isolated. The default balanced release therefore
 contains 28 families x 96 variants = 2,688 examples.
 """
 from __future__ import annotations
 
 from dataclasses import replace
+import hashlib
 import json
 from pathlib import Path
 import tempfile
@@ -29,7 +30,6 @@ from .native_intelligence_training_corpus_v1 import (
     STAGES,
     _axis_witnesses,
     _branches,
-    _canonical_json,
     _example,
     _hash,
     _native_fixture,
@@ -41,9 +41,9 @@ from .native_intelligence_training_corpus_v1 import (
     _visibility,
     build_native_training_corpus_v1,
 )
+from .native_sigil_semantics_v1 import check_native_sigils
 from .nur_nyr_projection_v1 import project_native_mir_nyr
 from .parser import Parser
-from .native_sigil_semantics_v1 import check_native_sigils
 from .survival_branch_v1 import select_survival_branch
 from .universe_state_machine_v1 import SigilState, initial_universe_state, transition_sigil
 
@@ -61,12 +61,18 @@ def _n0_train_reject(index: int):
         f"nur visibilityx{token};\n"
         f"nur shadowx{token};\n"
     )
+
     def action():
         return check_native_sigils(Parser.from_source(source).parse())
+
     return _rejecting_example(
-        stage="N0", family=family, split="train", index=index,
+        stage="N0",
+        family=family,
+        split="train",
+        index=index,
         task="Learn that a repeated native root is non-canonical even when its subject differs.",
-        input_value=source, raw_input=True,
+        input_value=source,
+        raw_input=True,
         oracle="parser->native-semantics",
         action=action,
     )
@@ -80,13 +86,20 @@ def _n1_train_reject(index: int):
     veyra = _veyra(token, instance="a", epoch=epoch)
     unknown = f"unknownx{token}"
     return _rejecting_example(
-        stage="N1", family=family, split="train", index=index,
+        stage="N1",
+        family=family,
+        split="train",
+        index=index,
         task="Learn that Aevra birth cannot invent a subject absent from sealed native MIR.",
         input_value={"source": source, "veyra": veyra.digest, "subject": unknown},
         oracle="galaxy_identity_v1.birth_aevra",
         action=lambda: birth_aevra(
-            veyra, mir, sigil="ka", subject=unknown,
-            birth_evidence_digest=_sha(f"birth|{token}"), birth_epoch=epoch,
+            veyra,
+            mir,
+            sigil="ka",
+            subject=unknown,
+            birth_evidence_digest=_sha(f"birth|{token}"),
+            birth_epoch=epoch,
         ),
     )
 
@@ -98,9 +111,15 @@ def _n2_train_reject(index: int):
     rows[1] = replace(rows[1], witness_digest=rows[0].witness_digest)
     witnesses = tuple(rows)
     return _rejecting_example(
-        stage="N2", family=family, split="train", index=index,
+        stage="N2",
+        family=family,
+        split="train",
+        index=index,
         task="Learn that one witness cannot satisfy two Khar axes inside a six-axis event.",
-        input_value={"axes": [row.axis for row in witnesses], "reused_by": [rows[0].axis, rows[1].axis]},
+        input_value={
+            "axes": [row.axis for row in witnesses],
+            "reused_by": [rows[0].axis, rows[1].axis],
+        },
         oracle="khar_sathra_v1.seal_sathra",
         action=lambda: seal_sathra(witnesses),
     )
@@ -110,16 +129,35 @@ def _n3_train_reject(index: int):
     family = "universe-train-ka-bypass-rejected"
     token = _token("N3", family, index)
     state = initial_universe_state(("ka", "vor", "shi", "thal", "nur"), epoch=90 + index)
-    state = transition_sigil(state, "vor", SigilState.PREPARED, evidence_digest=_sha(f"{token}|vor|prepare"))
-    state = transition_sigil(state, "vor", SigilState.SEALED, evidence_digest=_sha(f"{token}|vor|seal"))
+    state = transition_sigil(
+        state,
+        "vor",
+        SigilState.PREPARED,
+        evidence_digest=_sha(f"{token}|vor|prepare"),
+    )
+    state = transition_sigil(
+        state,
+        "vor",
+        SigilState.SEALED,
+        evidence_digest=_sha(f"{token}|vor|seal"),
+    )
     sealed = state
     return _rejecting_example(
-        stage="N3", family=family, split="train", index=index,
+        stage="N3",
+        family=family,
+        split="train",
+        index=index,
         task="Learn that no non-ka sigil can activate before the genesis boundary is active.",
-        input_value={"state": sealed.digest, "attempt": "vor sealed->active while ka inactive"},
+        input_value={
+            "state": sealed.digest,
+            "attempt": "vor sealed->active while ka inactive",
+        },
         oracle="universe_state_machine_v1.transition_sigil",
         action=lambda: transition_sigil(
-            sealed, "vor", SigilState.ACTIVE, evidence_digest=_sha(f"{token}|vor|activate")
+            sealed,
+            "vor",
+            SigilState.ACTIVE,
+            evidence_digest=_sha(f"{token}|vor|activate"),
         ),
     )
 
@@ -144,18 +182,27 @@ def _n4_train_reject(index: int):
         decision=decision,
         policy=policy,
         current_tick=100,
-        rotation_secret_commitment=__import__("hashlib").sha3_256(f"rotation|{token}".encode()).digest(),
+        rotation_secret_commitment=hashlib.sha3_256(
+            f"rotation|{token}".encode()
+        ).digest(),
     )
     return _rejecting_example(
-        stage="N4", family=family, split="train", index=index,
+        stage="N4",
+        family=family,
+        split="train",
+        index=index,
         task="Learn that Nur refuses a Nyr surface when the live root budget cannot cover sealed MIR.",
-        input_value={"source": source, "root_budget": envelope.root_budget, "required_roots": len(mir.bindings)},
+        input_value={
+            "source": source,
+            "root_budget": envelope.root_budget,
+            "required_roots": len(mir.bindings),
+        },
         oracle="nur_nyr_projection_v1.project_native_mir_nyr",
         action=lambda: project_native_mir_nyr(
             mir,
             veyra,
             envelope,
-            veil_key=__import__("hashlib").sha3_256(f"veil|{token}".encode()).digest(),
+            veil_key=hashlib.sha3_256(f"veil|{token}".encode()).digest(),
         ),
     )
 
@@ -166,7 +213,10 @@ def _n5_train_reject(index: int):
     branches = _branches(token)
     duplicated = (branches[0], branches[1], branches[0])
     return _rejecting_example(
-        stage="N5", family=family, split="train", index=index,
+        stage="N5",
+        family=family,
+        split="train",
+        index=index,
         task="Learn that survival reasoning rejects duplicate branch identity before ranking futures.",
         input_value={"branches": [row.branch_digest for row in duplicated]},
         oracle="survival_branch_v1.select_survival_branch",
@@ -194,9 +244,15 @@ def _n6_train_reject(index: int, root: Path):
     if report.commercial_ready or failed.passed:
         raise NativeTrainingCorpusError("N6 runner-failure oracle drift")
     return _example(
-        stage="N6", family=family, split="train", index=index,
+        stage="N6",
+        family=family,
+        split="train",
+        index=index,
         task="Learn that an adversarial-suite runner failure blocks security specialization admission.",
-        input_value={"candidate": f"train-reject-{token}", "runner_failure_gate": target_gate.gate_id},
+        input_value={
+            "candidate": f"train-reject-{token}",
+            "runner_failure_gate": target_gate.gate_id,
+        },
         target={
             "decision": "REJECTED",
             "commercial_ready": False,
@@ -213,9 +269,13 @@ def _decision(example) -> str:
     try:
         value = json.loads(example.target_text)["decision"]
     except (json.JSONDecodeError, KeyError, TypeError) as error:
-        raise NativeTrainingCorpusError("training target has no canonical decision") from error
+        raise NativeTrainingCorpusError(
+            "training target has no canonical decision"
+        ) from error
     if value not in {"ACCEPTED", "REJECTED"}:
-        raise NativeTrainingCorpusError("training target has unsupported canonical decision")
+        raise NativeTrainingCorpusError(
+            "training target has unsupported canonical decision"
+        )
     return value
 
 
@@ -265,15 +325,24 @@ def build_balanced_native_training_corpus_v1(
             extras.append(_n6_train_reject(index, root))
 
     frozen = base.examples + tuple(extras)
-    stage_counts = tuple((stage, sum(row.stage == stage for row in frozen)) for stage in STAGES)
-    split_counts = tuple((split, sum(row.split == split for row in frozen)) for split in SPLITS)
+    stage_counts = tuple(
+        (stage, sum(row.stage == stage for row in frozen)) for stage in STAGES
+    )
+    split_counts = tuple(
+        (split, sum(row.split == split for row in frozen)) for split in SPLITS
+    )
     family_splits = tuple(sorted({row.family: row.split for row in frozen}.items()))
     split_digests = tuple(
         (
             split,
             _hash(
                 b"split",
-                {"split": split, "examples": sorted(row.digest for row in frozen if row.split == split)},
+                {
+                    "split": split,
+                    "examples": sorted(
+                        row.digest for row in frozen if row.split == split
+                    ),
+                },
             ),
         )
         for split in SPLITS
