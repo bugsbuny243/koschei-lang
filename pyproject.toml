@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "koschei-lang"
 version = "0.10.0"
-description = "Koschei — a native security programming language with constitutional execution physics and a Khar-bounded intelligence plane"
+description = "Koschei — a native security programming language with constitutional execution physics and optional Khar-bounded Lang intelligence"
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "Proprietary" }
@@ -29,8 +29,9 @@ classifiers = [
 ]
 
 # The compiler core remains Python-standard-library only. Qwen training and
-# inference live outside the compiler dependency graph and enter Koschei only
-# through sealed native-intelligence identities/evidence.
+# inference are optional Lang research outside the compiler dependency graph and
+# enter Koschei only through sealed native-intelligence identities/evidence.
+# Koschei Sentinel is frozen and is not a Lang dependency.
 dependencies = []
 
 [project.urls]
@@ -48,6 +49,7 @@ ks-foundation-export = "koschei.foundation_export_cli:main"
 ks-model-curriculum = "koschei.model_curriculum_cli:main"
 ks-native-model-curriculum = "koschei.native_model_curriculum_cli_v2:main"
 ks-native-training-corpus = "koschei.native_intelligence_training_corpus_cli_v1:main"
+ks-lang-boundary = "koschei.lang_project_boundary_v1:main"
 ks-local-validate = "koschei.local_validation_cli:main"
 ks-universe = "koschei.universe_cli:main"
 ks-universe-remote = "koschei.universe_remote_app_v1:main"
