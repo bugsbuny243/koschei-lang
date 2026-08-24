@@ -1,9 +1,10 @@
 """Qwen3.5-397B-A17B-specific Koschei training plan boundary v1.
 
 Generic native-intelligence plans remain useful for future model families, but
-the first Koschei 397B run must not accept an arbitrary revision, configuration
-or training method. This module binds the generic sealed plan to one canonical
-Qwen repository revision and the canonical Koschei LoRA profile v1.
+the first Koschei 397B run must not accept an arbitrary revision, base identity,
+configuration or training method. This boundary requires a sealed Qwen base
+preflight and the canonical Koschei LoRA profile v1 before the generic plan may
+exist.
 """
 from __future__ import annotations
 
@@ -48,25 +49,44 @@ def require_canonical_qwen397b_training_plan_v1(
         raise Qwen397BTrainingPlanError("Qwen397B training method drift")
 
 
+def _require_preflight(preflight) -> str:
+    """Validate a Qwen397B preflight without creating an import cycle."""
+
+    if preflight is None or not hasattr(preflight, "assert_sealed"):
+        raise Qwen397BTrainingPlanError("sealed Qwen397B preflight evidence required")
+    try:
+        preflight.assert_sealed()
+    except ValueError as error:
+        raise Qwen397BTrainingPlanError(str(error)) from error
+    revision = getattr(preflight, "resolved_revision", None)
+    if revision != CANONICAL_QWEN397B_REVISION_V1:
+        raise Qwen397BTrainingPlanError("Qwen397B preflight revision mismatch")
+    weights_identity = getattr(preflight, "weights_identity_digest", None)
+    if not isinstance(weights_identity, str) or len(weights_identity) != 64:
+        raise Qwen397BTrainingPlanError("Qwen397B preflight weights identity missing")
+    return weights_identity
+
+
 def seal_canonical_qwen397b_training_plan_v1(
     holdout: NativeIntelligenceHoldoutV1,
     corpus: NativeTrainingCorpusReleaseV1,
     export_manifest: NativeTrainingExportManifestV1,
     *,
-    base_weights_digest: str,
+    preflight,
     profile: Qwen397BKoscheiTrainingProfileV1 | None = None,
 ) -> NativeTrainingPlanV1:
     """Seal the only canonical first-run 397B Koschei plan."""
 
     profile = profile or canonical_qwen397b_koschei_profile_v1()
     profile.assert_sealed()
+    weights_identity = _require_preflight(preflight)
     try:
         plan = seal_native_training_plan_v1(
             holdout,
             corpus,
             export_manifest,
             base_model_revision=CANONICAL_QWEN397B_REVISION_V1,
-            base_weights_digest=base_weights_digest,
+            base_weights_digest=weights_identity,
             training_config_digest=profile.digest,
             training_method=CANONICAL_QWEN397B_TRAINING_METHOD_V1,
         )
