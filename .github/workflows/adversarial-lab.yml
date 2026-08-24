@@ -17,13 +17,19 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+
+      - name: Install package and adversarial test runner
+        run: python -m pip install -e . pytest
+
       - name: Run adversarial release gates
         run: |
           python tools/run_adversarial_lab.py --candidate "${GITHUB_SHA}" --json-out adversarial-lab-report.json
+
       - name: Upload adversarial report
         if: always()
         uses: actions/upload-artifact@v4
