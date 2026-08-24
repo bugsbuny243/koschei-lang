@@ -1,10 +1,10 @@
 name: Koschei Adversarial Lab
 
+# GitHub-hosted Actions are intentionally not an automatic Koschei authority.
+# The Free-plan allowance is unavailable for this repository. The canonical
+# path is `ks-local-validate --profile full`; this workflow is retained only as
+# a manual fallback recipe for a future runner.
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
