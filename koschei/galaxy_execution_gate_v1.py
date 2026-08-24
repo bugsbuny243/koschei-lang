@@ -4,7 +4,7 @@ This is the strongest current composition boundary for privileged Koschei events
 A critical effect is eligible only when:
 
 1. its Aevra is still living outside the Black Hole;
-2. it is admitted to one exact Matrix/Hara execution reality for this epoch;
+2. it is admitted to the durable current Matrix/Hara execution reality;
 3. its Sathra is six-axis complete and exact-event bound;
 4. all six axes carry a sealed failure-root independence proof;
 5. the compiler/Library proof is bound to the exact canonical request;
@@ -24,6 +24,7 @@ from .khar_failure_independence_v1 import (
     require_failure_independent_sathra,
 )
 from .khar_sathra_v1 import Sathra
+from .matrix_horizon_fence_v1 import DurableMatrixHorizonFence
 from .matrix_reality_v1 import HaraIdentity, MatrixAdmission, MatrixIdentity
 from .morth_black_hole_v1 import DurableBlackHole
 from .native_sigil_atomic_execution_coordinator_v1 import (
@@ -49,6 +50,7 @@ class GalaxyExecutionError(ValueError):
 def enforce_galaxy_critical_effect(
     *,
     black_hole: DurableBlackHole,
+    matrix_horizon: DurableMatrixHorizonFence,
     coordinator: AtomicExecutionCoordinator,
     mir: NativeSigilMir,
     veyra: VeyraIdentity,
@@ -69,6 +71,7 @@ def enforce_galaxy_critical_effect(
     try:
         black_hole.require_living(aevra, veyra, mir)
         matrix_admission.assert_sealed(matrix, hara, veyra, aevra, mir)
+        matrix_horizon.require_current(matrix_admission)
         if matrix_admission.epoch != request.epoch:
             raise GalaxyExecutionError(
                 "Matrix/Hara admission belongs to a different request epoch"
