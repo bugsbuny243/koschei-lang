@@ -52,11 +52,17 @@ class SathraRequestBinding:
         request: CanonicalEffectRequest,
         sathra: Sathra,
     ) -> None:
-        mir.assert_sealed()
-        veyra.assert_sealed()
-        aevra.assert_sealed(veyra, mir)
-        request.assert_sealed(mir)
-        sathra.assert_sealed()
+        # Normalize failures from the lower identity/MIR/request/Sathra layers so
+        # callers cannot accidentally treat a malformed constituent as a valid
+        # Galaxy-level binding merely because it raised a different exception.
+        try:
+            mir.assert_sealed()
+            veyra.assert_sealed()
+            aevra.assert_sealed(veyra, mir)
+            request.assert_sealed(mir)
+            sathra.assert_sealed()
+        except ValueError as error:
+            raise SathraRequestBindingError(str(error)) from error
 
         if sathra.aevra_digest != aevra.digest:
             raise SathraRequestBindingError("Sathra belongs to a different Aevra")
