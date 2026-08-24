@@ -2,7 +2,8 @@
 
 The underlying executable oracle implementation remains the compatible v2
 curriculum format. This profile removes the cancelled Sentinel-merge semantics
-from active releases and rejects legacy merged curricula at the training boundary.
+from active releases, rejects legacy merged curricula at the training boundary,
+and requires additional executable N3/N4 Matrix/Nur hardening cases.
 """
 from __future__ import annotations
 
@@ -11,6 +12,11 @@ import hashlib
 import json
 from pathlib import Path
 
+from .native_model_curriculum_lang_hardening_v1 import (
+    LangCurriculumHardeningError,
+    augment_lang_curriculum_v1,
+    verify_lang_hardening_cases_v1,
+)
 from .native_model_curriculum_v2 import (
     NativeCurriculumCaseV2,
     NativeModelCurriculumError,
@@ -103,7 +109,7 @@ def _reseal(curriculum: NativeModelCurriculumV2) -> NativeModelCurriculumV2:
 def verify_lang_native_model_curriculum_v1(
     curriculum: NativeModelCurriculumV2 | dict[str, object],
 ) -> NativeModelCurriculumV2:
-    """Verify v2 structural seals plus the active Lang/Sentinel separation law."""
+    """Verify structural seals plus active Lang separation and N3/N4 hardening."""
 
     verified = verify_native_model_curriculum_v2(curriculum)
     serialized = _canonical_json(verified.to_dict()).lower()
@@ -120,6 +126,10 @@ def verify_lang_native_model_curriculum_v1(
         raise LangNativeCurriculumError("active N6 curriculum must be Lang defensive reasoning")
     if any("historical" in law.lower() for case in n6 for law in case.law_ids):
         raise LangNativeCurriculumError("active N6 law cannot inherit historical project trust")
+    try:
+        verify_lang_hardening_cases_v1(verified)
+    except LangCurriculumHardeningError as error:
+        raise LangNativeCurriculumError(str(error)) from error
     return verified
 
 
@@ -134,7 +144,9 @@ def build_lang_native_model_curriculum_v1(
         source_commit=source_commit,
         parent_curriculum_digest=parent_curriculum_digest,
     )
-    return verify_lang_native_model_curriculum_v1(_reseal(legacy_shape))
+    active_profile = _reseal(legacy_shape)
+    hardened = augment_lang_curriculum_v1(active_profile)
+    return verify_lang_native_model_curriculum_v1(hardened)
 
 
 def load_lang_native_model_curriculum_v1(path: str | Path) -> NativeModelCurriculumV2:
