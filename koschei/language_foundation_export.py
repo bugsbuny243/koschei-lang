@@ -1,8 +1,9 @@
-"""Export a provenance-pinned Koschei language foundation corpus for Sentinel.
+"""Export a provenance-pinned Koschei Lang foundation corpus.
 
-Selected training documents are read from one exact Git commit by blob SHA, never
-from the mutable working tree. The producer also self-verifies the complete
-Sentinel-facing contract before any corpus bytes are published.
+Selected language documents are read from one exact Git commit by blob SHA,
+never from the mutable working tree. The producer self-verifies the Lang-owned
+corpus contract before any bytes are published for optional downstream model
+training or evaluation.
 """
 
 from __future__ import annotations
