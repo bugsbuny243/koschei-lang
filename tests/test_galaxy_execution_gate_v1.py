@@ -6,7 +6,8 @@ import tempfile
 import pytest
 
 from koschei.galaxy_execution_gate_v1 import GalaxyExecutionError, enforce_galaxy_critical_effect
-from koschei.galaxy_identity_v1 import birth_aevra, birth_veyra
+from koschei.galaxy_identity_v1 import birth_aevra
+from koschei.khar_constitution_v1 import birth_canonical_veyra
 from koschei.khar_failure_independence_v1 import (
     AxisFailureRootAttestation,
     seal_failure_independent_sathra,
@@ -52,10 +53,9 @@ def build():
             for step in plan.steps
         ],
     )
-    veyra = birth_veyra(
+    veyra = birth_canonical_veyra(
         profile_digest=d("bank-profile"),
         genesis_digest=d("genesis"),
-        constitution_digest=d("khar-v1"),
         instance_digest=d("bank-a"),
         birth_epoch=7,
     )
@@ -244,8 +244,6 @@ def test_foreign_matrix_admission_is_rejected_before_execution():
     original_admission = values[6]
     values[6] = replace(original_admission, hara_digest=d("foreign-hara"))
     with tempfile.TemporaryDirectory() as directory:
-        # Initialize the durable horizon with the real admission, then attempt to
-        # execute with the forged one.
         black_hole = DurableBlackHole(Path(directory) / "black-hole.sqlite3")
         horizon = DurableMatrixHorizonFence(Path(directory) / "matrix-horizon.sqlite3")
         coordinator = AtomicExecutionCoordinator(Path(directory) / "execution.sqlite3")
@@ -268,9 +266,6 @@ def test_non_current_hara_is_rejected_before_effect():
     with tempfile.TemporaryDirectory() as directory:
         black_hole, horizon, coordinator = open_world(directory, values)
         try:
-            # Directly tombstone the old Hara by staging a next Matrix/Hara for
-            # the same Aevra. The old request remains epoch 7 and must fail before
-            # reaching the effect callback.
             mir, _, veyra, aevra = values[:4]
             next_matrix = birth_matrix(
                 veyra,
