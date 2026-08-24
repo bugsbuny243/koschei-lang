@@ -19,6 +19,9 @@ from .integrity import check_program_integrity
 from .legacy_generics import prepare_legacy_analysis
 from .lexer import LexerError
 from .mir import lower_graph as lower_mir_graph
+from .native_sigil_mir_v1 import NativeSigilMir, lower_native_sigils
+from .native_sigil_semantics_v1 import check_native_sigils
+from .native_sigils_v1 import NativeProgram
 from .parser import ParserError, parse
 from .semantic_contract_consumer_v1 import (
     ImportedModule,
@@ -57,6 +60,7 @@ class ModuleGraph:
     root: str
     modules: dict[str, Module]
     mir: object | None = None
+    native_sigil_mir: dict[str, NativeSigilMir] = field(default_factory=dict)
 
     def module_of(self, key: str) -> Module:
         return self.modules[key]
@@ -216,9 +220,11 @@ def check_graph(graph: ModuleGraph) -> SemanticReport:
     # Fail closed: a new check invalidates any previously attached MIR before
     # analysis starts, so a failed re-check can never leave a stale backend input.
     graph.mir = None
+    graph.native_sigil_mir = {}
     report: SemanticReport | None = None
     typed_reports = {}
     effect_reports: dict[str, EffectReport] = {}
+    native_mir_reports: dict[str, NativeSigilMir] = {}
 
     # Module.path is a diagnostic/source locator, not semantic identity. Ordinary
     # path-based projects currently use path strings as graph keys, but stronger
@@ -234,6 +240,11 @@ def check_graph(graph: ModuleGraph) -> SemanticReport:
         try:
             imports = imported_modules(graph, module)
             check_program_integrity(module.program)
+
+            native_report = None
+            if isinstance(module.program, NativeProgram) and module.program.sigils:
+                native_report = check_native_sigils(module.program)
+
             typed_report = check_typed_hir(module.program, imports)
             check_typestate_resources(module.program, imports, typed_report)
             check_affine_resources(module.program, imports, typed_report)
@@ -258,13 +269,24 @@ def check_graph(graph: ModuleGraph) -> SemanticReport:
                 typed_report,
             )
             result = semantic_check(legacy_program, legacy_imports)
+
+            if native_report is not None:
+                native_mir_reports[module_key] = lower_native_sigils(
+                    module.program,
+                    native_report,
+                )
         except SemanticError as error:
             error.source_path = module.path
             raise
         if module_key == graph.root:
             report = result
     assert report is not None
-    graph.mir = lower_mir_graph(graph, typed_reports)
+
+    # Attach compiler products only after every module and both lowering paths
+    # have succeeded. A failure anywhere above leaves the graph with no stale MIR.
+    graph_mir = lower_mir_graph(graph, typed_reports)
+    graph.mir = graph_mir
+    graph.native_sigil_mir = native_mir_reports
     return report
 
 
