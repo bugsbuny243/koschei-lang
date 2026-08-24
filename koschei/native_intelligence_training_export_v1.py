@@ -1,0 +1,214 @@
+"""Materialize a sealed native-intelligence corpus into split JSONL files.
+
+The export is a transport artifact, not a new source of truth. It verifies the
+sealed oracle-backed corpus against its constitutional holdout, writes one file
+per split, hashes exact bytes, and seals those file identities into a manifest.
+The test split remains physically separate from train and validation.
+"""
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass
+import hashlib
+import json
+from pathlib import Path
+import tempfile
+
+from .native_intelligence_holdout_v1 import NativeIntelligenceHoldoutV1
+from .native_intelligence_training_corpus_v1 import (
+    NativeTrainingCorpusReleaseV1,
+    SPLITS,
+)
+
+_CTX = b"koschei.native-intelligence-training-export/v1\x00"
+SCHEMA = "koschei.native-intelligence-training-export/v1"
+
+
+class NativeTrainingExportError(ValueError):
+    pass
+
+
+def _canonical_json(value: object) -> str:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _hash(kind: bytes, payload: object) -> str:
+    return hashlib.sha256(_CTX + kind + b"\x00" + _canonical_json(payload).encode("utf-8")).hexdigest()
+
+
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+@dataclass(frozen=True, slots=True)
+class NativeTrainingSplitFileV1:
+    split: str
+    filename: str
+    example_count: int
+    byte_count: int
+    sha256: str
+    corpus_split_digest: str
+
+
+@dataclass(frozen=True, slots=True)
+class NativeTrainingExportManifestV1:
+    schema: str
+    source_commit: str
+    constitutional_holdout_digest: str
+    corpus_digest: str
+    corpus_example_count: int
+    files: tuple[NativeTrainingSplitFileV1, ...]
+    authority: bool
+    digest: str
+    version: int = 1
+
+    def to_dict(self) -> dict[str, object]:
+        return json.loads(_canonical_json(asdict(self)))
+
+    def assert_sealed(self) -> None:
+        if self.version != 1 or self.schema != SCHEMA:
+            raise NativeTrainingExportError("unsupported native training export manifest")
+        if self.authority is not False:
+            raise NativeTrainingExportError("native training export cannot carry authority")
+        if tuple(row.split for row in self.files) != SPLITS:
+            raise NativeTrainingExportError("training export must contain train/validation/test in canonical order")
+        if len({row.filename for row in self.files}) != len(SPLITS):
+            raise NativeTrainingExportError("training export filenames must be distinct")
+        if len({row.sha256 for row in self.files}) != len(SPLITS):
+            raise NativeTrainingExportError("training export split file digests must be distinct")
+        if sum(row.example_count for row in self.files) != self.corpus_example_count:
+            raise NativeTrainingExportError("training export example count mismatch")
+        for row in self.files:
+            if row.example_count < 1 or row.byte_count < 1:
+                raise NativeTrainingExportError("training export split cannot be empty")
+            if len(row.sha256) != 64 or len(row.corpus_split_digest) != 64:
+                raise NativeTrainingExportError("training export requires 64-character split digests")
+        expected = _hash(
+            b"manifest",
+            {
+                "schema": self.schema,
+                "source_commit": self.source_commit,
+                "constitutional_holdout_digest": self.constitutional_holdout_digest,
+                "corpus_digest": self.corpus_digest,
+                "corpus_example_count": self.corpus_example_count,
+                "files": [asdict(row) for row in self.files],
+                "authority": False,
+            },
+        )
+        if self.digest != expected:
+            raise NativeTrainingExportError("native training export manifest seal mismatch")
+
+
+def _training_row(example) -> dict[str, object]:
+    return {
+        "schema": "koschei.native-intelligence-supervised-example/v1",
+        "id": example.example_id,
+        "stage": example.stage,
+        "family": example.family,
+        "split": example.split,
+        "task": example.task,
+        "input": example.input_text,
+        "target": example.target_text,
+        "oracle": example.oracle,
+        "oracle_digest": example.oracle_digest,
+        "example_digest": example.digest,
+        "authority": False,
+    }
+
+
+def _write_split(path: Path, corpus: NativeTrainingCorpusReleaseV1, split: str) -> NativeTrainingSplitFileV1:
+    examples = tuple(row for row in corpus.examples if row.split == split)
+    if not examples:
+        raise NativeTrainingExportError(f"cannot export empty split: {split}")
+    with path.open("x", encoding="utf-8", newline="\n") as handle:
+        for example in examples:
+            handle.write(_canonical_json(_training_row(example)))
+            handle.write("\n")
+    return NativeTrainingSplitFileV1(
+        split=split,
+        filename=path.name,
+        example_count=len(examples),
+        byte_count=path.stat().st_size,
+        sha256=_file_sha256(path),
+        corpus_split_digest=corpus.split_digest(split),
+    )
+
+
+def write_native_training_export_v1(
+    holdout: NativeIntelligenceHoldoutV1,
+    corpus: NativeTrainingCorpusReleaseV1,
+    output_directory: str | Path,
+) -> NativeTrainingExportManifestV1:
+    """Atomically materialize a verified corpus without overwriting existing data."""
+
+    holdout.assert_sealed()
+    corpus.assert_sealed(holdout)
+    destination = Path(output_directory)
+    if destination.exists():
+        raise FileExistsError(destination)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+
+    with tempfile.TemporaryDirectory(dir=destination.parent) as temporary:
+        root = Path(temporary)
+        files = tuple(
+            _write_split(root / f"{split}.jsonl", corpus, split)
+            for split in SPLITS
+        )
+        manifest = NativeTrainingExportManifestV1(
+            schema=SCHEMA,
+            source_commit=corpus.source_commit,
+            constitutional_holdout_digest=corpus.constitutional_holdout_digest,
+            corpus_digest=corpus.digest,
+            corpus_example_count=corpus.example_count,
+            files=files,
+            authority=False,
+            digest="",
+        )
+        object.__setattr__(
+            manifest,
+            "digest",
+            _hash(
+                b"manifest",
+                {
+                    "schema": manifest.schema,
+                    "source_commit": manifest.source_commit,
+                    "constitutional_holdout_digest": manifest.constitutional_holdout_digest,
+                    "corpus_digest": manifest.corpus_digest,
+                    "corpus_example_count": manifest.corpus_example_count,
+                    "files": [asdict(row) for row in manifest.files],
+                    "authority": False,
+                },
+            ),
+        )
+        manifest.assert_sealed()
+        (root / "manifest.json").write_text(
+            json.dumps(manifest.to_dict(), ensure_ascii=False, sort_keys=True, indent=2) + "\n",
+            encoding="utf-8",
+            newline="\n",
+        )
+        root.rename(destination)
+    return manifest
+
+
+def verify_native_training_export_v1(
+    manifest: NativeTrainingExportManifestV1,
+    directory: str | Path,
+) -> None:
+    """Verify exact split bytes against one sealed export manifest."""
+
+    manifest.assert_sealed()
+    root = Path(directory)
+    for row in manifest.files:
+        path = root / row.filename
+        if not path.is_file():
+            raise NativeTrainingExportError(f"training export split missing: {row.filename}")
+        if path.stat().st_size != row.byte_count:
+            raise NativeTrainingExportError(f"training export byte count mismatch: {row.filename}")
+        if _file_sha256(path) != row.sha256:
+            raise NativeTrainingExportError(f"training export file digest mismatch: {row.filename}")
+        lines = sum(1 for line in path.open("r", encoding="utf-8") if line.strip())
+        if lines != row.example_count:
+            raise NativeTrainingExportError(f"training export example count mismatch: {row.filename}")
