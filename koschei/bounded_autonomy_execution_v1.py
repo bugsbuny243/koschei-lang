@@ -5,18 +5,22 @@ against the exact candidate set, objective and bounds, its chosen branch must be
 the one bound to the exact survival event, and execution then proceeds through a
 survival-mode Galaxy constitutional gate.
 
-The witnessed entry point additionally requires the externally witnessed Khar
-implementation root.  This prevents model-driven orchestration from silently
-using a weaker compiler/runtime identity path when deployment witnesses exist.
+The witnessed entry point forwards the original implementation measurement,
+witnesses and external witness key material.  Automation cannot replace those
+with a cached or hand-constructed verification report.
 """
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Callable, TypeVar
 
 from .bounded_autonomy_v1 import AutonomyBounds, BoundedAutonomyProposal
 from .galaxy_identity_v1 import AevraIdentity, VeyraIdentity
 from .khar_failure_independence_v1 import FailureIndependentSathra
-from .khar_implementation_root_v1 import VerifiedKharImplementationRootV1
+from .khar_implementation_root_v1 import (
+    KharImplementationMeasurementV1,
+    KharImplementationWitnessV1,
+)
 from .khar_sathra_v1 import Sathra
 from .matrix_horizon_fence_v1 import DurableMatrixHorizonFence
 from .matrix_reality_v1 import HaraIdentity, MatrixAdmission, MatrixIdentity
@@ -120,7 +124,9 @@ def enforce_bounded_autonomy_effect(
 
 def enforce_witnessed_bounded_autonomy_effect(
     *,
-    implementation_root: VerifiedKharImplementationRootV1,
+    implementation_measurement: KharImplementationMeasurementV1,
+    implementation_witnesses: tuple[KharImplementationWitnessV1, ...],
+    implementation_witness_keys: Mapping[str, bytes],
     proposal: BoundedAutonomyProposal,
     branches: tuple[SurvivalBranch, ...],
     objective: SurvivalObjective,
@@ -144,7 +150,7 @@ def enforce_witnessed_bounded_autonomy_effect(
     failure_independence: FailureIndependentSathra,
     effect: Callable[[CanonicalEffectRequest], _T],
 ) -> tuple[EnforcementDecision, _T | None, AtomicClaim]:
-    """Run autonomy only through exact proposal, survival and witnessed Khar gates."""
+    """Run autonomy only through exact proposal, survival and fresh witness checks."""
 
     _require_exact_autonomy_proposal(
         proposal=proposal,
@@ -154,7 +160,9 @@ def enforce_witnessed_bounded_autonomy_effect(
         branch=branch,
     )
     return enforce_witnessed_survival_branch_effect(
-        implementation_root=implementation_root,
+        implementation_measurement=implementation_measurement,
+        implementation_witnesses=implementation_witnesses,
+        implementation_witness_keys=implementation_witness_keys,
         decision=proposal.decision,
         branch=branch,
         survival_binding=survival_binding,
