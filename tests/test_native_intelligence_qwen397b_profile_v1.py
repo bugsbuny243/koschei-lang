@@ -14,7 +14,7 @@ from koschei.native_intelligence_v1 import CANONICAL_BASE_MODEL_V1
 
 
 class Qwen397BKoscheiProfileV1Tests(unittest.TestCase):
-    def test_profile_records_canonical_architecture_and_conservative_adapter_surface(self):
+    def test_profile_records_canonical_architecture_adapter_and_training_recipe(self):
         profile = canonical_qwen397b_koschei_profile_v1()
         profile.assert_sealed()
 
@@ -27,6 +27,15 @@ class Qwen397BKoscheiProfileV1Tests(unittest.TestCase):
         self.assertTrue(profile.freeze_router)
         self.assertTrue(profile.freeze_experts)
         self.assertEqual(profile.target_modules, CANONICAL_LORA_TARGETS_V1)
+        self.assertEqual(profile.num_train_epochs, 1)
+        self.assertEqual(profile.per_device_train_batch_size, 1)
+        self.assertEqual(profile.gradient_accumulation_steps, 1)
+        self.assertEqual(profile.learning_rate_millionths, 20)
+        self.assertEqual(profile.weight_decay_per_mille, 10)
+        self.assertEqual(profile.lr_scheduler, "cosine")
+        self.assertEqual(profile.deepspeed_stage, 3)
+        self.assertTrue(profile.assistant_target_only_loss)
+        self.assertFalse(profile.packing)
         self.assertFalse(profile.authority)
 
     def test_profile_is_deterministic(self):
@@ -45,12 +54,18 @@ class Qwen397BKoscheiProfileV1Tests(unittest.TestCase):
             ):
                 forged.assert_sealed()
 
-    def test_target_surface_or_sequence_drift_fails_closed(self):
+    def test_target_surface_sequence_or_optimizer_recipe_drift_fails_closed(self):
         profile = canonical_qwen397b_koschei_profile_v1()
         with self.assertRaises(Qwen397BProfileError):
             replace(profile, target_modules=("self_attn.q_proj",)).assert_sealed()
         with self.assertRaises(Qwen397BProfileError):
             replace(profile, max_sequence_length=8192).assert_sealed()
+        with self.assertRaisesRegex(Qwen397BProfileError, "training recipe drift"):
+            replace(profile, learning_rate_millionths=200).assert_sealed()
+        with self.assertRaisesRegex(Qwen397BProfileError, "training recipe drift"):
+            replace(profile, num_train_epochs=10).assert_sealed()
+        with self.assertRaisesRegex(Qwen397BProfileError, "training recipe drift"):
+            replace(profile, deepspeed_stage=2).assert_sealed()
 
 
 if __name__ == "__main__":
