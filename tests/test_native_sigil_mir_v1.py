@@ -2,6 +2,7 @@ from dataclasses import replace
 import unittest
 
 from koschei.native_sigil_mir_v1 import NativeSigilMirError, lower_native_sigils
+from koschei.native_sigil_semantics_v1 import check_native_sigils
 from koschei.parser import parse
 
 
@@ -36,12 +37,37 @@ class NativeSigilMirTests(unittest.TestCase):
         right = lower_native_sigils(parse("ka treasury;\nvor signing;\n"))
         self.assertNotEqual(left.fingerprint, right.fingerprint)
 
+    def test_source_location_is_part_of_seal(self) -> None:
+        left = lower_native_sigils(parse("ka treasury;\nvor withdrawal;\n"))
+        right = lower_native_sigils(parse("\nka treasury;\nvor withdrawal;\n"))
+        self.assertNotEqual(left.fingerprint, right.fingerprint)
+
     def test_tamper_fails_closed(self) -> None:
         mir = lower_native_sigils(parse("ka treasury;\nvor withdrawal;\n"))
         tampered_binding = replace(mir.bindings[1], subject="root")
         tampered = replace(mir, bindings=(mir.bindings[0], tampered_binding))
         with self.assertRaises(NativeSigilMirError):
             tampered.assert_sealed()
+
+    def test_foreign_semantic_report_is_rejected(self) -> None:
+        program = parse("ka treasury;\nvor withdrawal;\n")
+        foreign = check_native_sigils(parse("ka treasury;\nvor signing;\n"))
+        with self.assertRaisesRegex(NativeSigilMirError, "does not match"):
+            lower_native_sigils(program, foreign)
+
+    def test_tampered_semantic_report_is_rejected(self) -> None:
+        program = parse("ka treasury;\nvor withdrawal;\n")
+        semantic = check_native_sigils(program)
+        tampered_declaration = replace(
+            semantic.declarations[1],
+            may_grant_authority=False,
+        )
+        tampered = replace(
+            semantic,
+            declarations=(semantic.declarations[0], tampered_declaration),
+        )
+        with self.assertRaisesRegex(NativeSigilMirError, "does not match"):
+            lower_native_sigils(program, tampered)
 
 
 if __name__ == "__main__":
