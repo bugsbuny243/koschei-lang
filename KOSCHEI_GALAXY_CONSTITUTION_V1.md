@@ -88,9 +88,9 @@ Current enforcement: `koschei/khar_sathra_v1.py` implements and seals this rule.
 
 Sathra is the moment in which six valid axes concur on one critical event. It is not a reusable master authority and must not become an Infinity-Gauntlet-style object that grants unrelated future outcomes.
 
-Current first enforcement slice: `koschei/sathra_request_binding_v1.py` binds one Sathra to the exact canonical privileged request, Aevra, Veyra, epoch and native-MIR executable reality before delegating to the existing proof/request enforcement gate. A Sathra from another request, Veyra, Aevra, epoch or MIR is rejected.
+Current enforcement: `koschei/sathra_request_binding_v1.py` binds one Sathra to the exact canonical privileged request, Aevra, Veyra, epoch and native-MIR executable reality. Its durable path then claims that exact event through `native_sigil_atomic_execution_coordinator_v1.py` before any critical effect can run. The event is finalized as `COMMITTED`, `REJECTED`, `CONTAINED`, or `UNCERTAIN`; the same exact request/Sathra cannot be claimed a second time.
 
-Future work must add one-shot consumption/finality so a valid exact-event Sathra cannot remain reusable after its event has completed.
+Canonical requests now carry both semantic `universe_plan_digest` and executable `activation_plan_digest`, closing the previous identity gap between compiler proof binding and durable epoch/replay enforcement.
 
 ## 7. Axis independence
 
@@ -114,9 +114,9 @@ This is not yet a claim that every runtime artifact, timing channel, memory obse
 
 Vormir represents irreversible cost for deeper or higher-power transitions. The intended physics is accumulation-resistant: a transition must not allow old and new critical reach to coexist for free.
 
-Future canonical work must define exactly what is sacrificed, how the sacrifice becomes irreversible, which evidence proves it, and how the old future becomes Morth before the new path can live.
+Current first enforcement slice: `koschei/vormir_sacrifice_v1.py` retains the older commitment API for compatibility but adds a durable epoch-sacrifice path. A fully contained old epoch must be tombstoned through `DurableEpochFence` before the staged successor can be accepted. The successor exists before the irreversible step only as a fully `INACTIVE` state, so old active reach and new active reach are not allowed to coexist. The sacrifice also requires evidence from at least two distinct witness-domain digests and survives process restart.
 
-No implementation may label an ordinary timeout, deletion, or permission prompt as Vormir without these properties.
+This first slice proves durable epoch sacrifice. It does not yet prove that the witness domains have physically independent failure roots, nor does it yet express every possible Aevra-level sacrifice.
 
 ## 10. Morth, Event Horizon, and Black Hole direction
 
@@ -126,7 +126,7 @@ Event Horizon denotes the irreversible boundary after which an old authority/rea
 
 Black Hole denotes the terminal sink for dead authority, stale epoch state, consumed events, and compromised lineage. Historical evidence may remain inspectable; dead power must not escape into a new epoch.
 
-Existing epoch tombstone, containment, replay fencing, and rebirth mechanisms are foundations for this unified law, not proof that the complete model is finished.
+Existing durable epoch tombstones, atomic event finality, containment, replay fencing, Vormir sacrifice and rebirth mechanisms are foundations for this unified law, not proof that the complete model is finished.
 
 ## 11. Matrix direction
 
@@ -144,11 +144,11 @@ The implementation sequence is:
 
 1. **FIRST SLICE APPLIED** — keep the native `lexer -> parser -> AST -> typed semantics -> MIR -> Library -> Universe -> proof -> enforcement` chain working and fail-closed;
 2. **FIRST SLICE APPLIED** — bind native sigil MIR into the canonical module/compiler spine rather than leaving a parallel path;
-3. **FIRST SLICE APPLIED** — bind exact critical requests to six-axis Sathra concurrence;
+3. **FIRST SLICE APPLIED** — bind exact critical requests to six-axis Sathra concurrence and durable one-shot event finality;
 4. **FIRST SLICE APPLIED** — define Veyra identity and customer-Galaxy identity separation without creating a new golden topology-map object;
 5. **FIRST SLICE APPLIED** — define observer projection / time-bounded visible-surface rules under `nur`;
-6. **NEXT** — implement Vormir irreversible sacrifice physics;
-7. unify Morth / Event Horizon / Black Hole lifecycle conservation;
+6. **FIRST SLICE APPLIED** — implement durable Vormir epoch-sacrifice physics;
+7. **NEXT** — unify Morth / Event Horizon / Black Hole lifecycle conservation;
 8. prove real failure independence for the six axes;
 9. expand adversarial tests for attacker-specific model learning and cross-customer generalization;
 10. only then grow higher Galaxy mechanisms such as survival branching and advanced autonomous orchestration.
