@@ -15,8 +15,8 @@ import hashlib
 import json
 import string
 
+from .native_intelligence_qwen397b_base_spec_v1 import CANONICAL_QWEN397B_REVISION_V1
 from .native_intelligence_qwen397b_profile_v1 import Qwen397BKoscheiTrainingProfileV1
-from .native_intelligence_qwen397b_training_plan_v1 import CANONICAL_QWEN397B_REVISION_V1
 from .native_intelligence_training_export_v1 import NativeTrainingExportManifestV1
 
 _CTX = b"koschei.native-intelligence-qwen397b-token-profile/v1\x00"
