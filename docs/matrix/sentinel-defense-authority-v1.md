@@ -1,19 +1,15 @@
-# Sentinel Defense Authority v1
+# Sentinel Defense Authority v1 — RETIRED
 
-Architecture: #257. Evidence plane: #259.
+Status: historical only.
 
-Sentinel is the Neo-facing intelligence/defense actor of the Koschei reality fabric. It should be powerful enough to react at machine speed, but its power is delegated rather than ambient.
+Koschei Sentinel is frozen and the proposed Sentinel/Lang merge is cancelled.
 
-## Defensive powers
-A trusted host may delegate project/epoch/time-bound authority for quarantine, authority revocation, policy tightening, canary activation, and rollback requests.
+The former Sentinel-specific authority and evidence modules have been removed from the active Koschei Lang runtime. Git history preserves the experiment for auditability; this document grants no current architectural status or runtime contract.
 
-## Core law
-Sentinel cannot mint new authority, widen its own delegation, rewrite compiler/runtime truth, decrypt source merely because it can observe evidence, or turn an Evidence Ledger record into execution authority.
+Koschei Lang defensive execution remains expressed through Lang-native Khar, Sathra, Matrix/Hara, survival, containment, revocation and evidence mechanisms.
 
-## Emergency mode
-Emergency authority may contain several defensive powers at once, but remains project-bound, epoch-bound, short-lived, action-budgeted, evidence-producing, and externally enforceable/revocable.
+For the active intelligence/project boundary, see:
 
-## Separation
-Observation facts flow from Reality Evidence Ledger to Sentinel. Defensive authority flows independently from the Trust Plane. A compromised observer therefore does not automatically inherit enforcement power.
+`KOSCHEI_NATIVE_INTELLIGENCE_CONTRACT_V2.md`
 
-This layer is additive. Existing Koschei compiler/runtime/authority mechanisms remain intact.
+If Sentinel is ever resumed, integration must be a separately versioned optional external interface. It must not become a Lang runtime dependency or authority root by reviving this document.
