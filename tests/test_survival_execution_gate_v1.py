@@ -5,7 +5,8 @@ import tempfile
 
 import pytest
 
-from koschei.galaxy_identity_v1 import birth_aevra, birth_veyra
+from koschei.galaxy_identity_v1 import birth_aevra
+from koschei.khar_constitution_v1 import birth_canonical_veyra
 from koschei.khar_failure_independence_v1 import AxisFailureRootAttestation, seal_failure_independent_sathra
 from koschei.khar_sathra_v1 import AxisWitness, seal_sathra
 from koschei.library_proof_envelope_v1 import make_receipt
@@ -43,9 +44,9 @@ def build():
             success=True,
         ) for step in plan.steps],
     )
-    veyra = birth_veyra(
+    veyra = birth_canonical_veyra(
         profile_digest=d("bank-profile"), genesis_digest=d("genesis"),
-        constitution_digest=d("khar-v1"), instance_digest=d("bank-a"), birth_epoch=7,
+        instance_digest=d("bank-a"), birth_epoch=7,
     )
     aevra = birth_aevra(
         veyra, mir, sigil="vor", subject="withdrawal",
