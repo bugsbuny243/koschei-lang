@@ -150,7 +150,7 @@ class NativeIntelligenceTrainingLineageV1Tests(unittest.TestCase):
                 training_method="lora-sft-v1",
             )
 
-    def test_completed_training_is_receipt_not_deployment_authority(self):
+    def test_completed_training_is_artifact_receipt_not_deployment_authority(self):
         plan = self.plan()
         receipt = seal_native_training_receipt_v1(
             plan,
@@ -167,7 +167,7 @@ class NativeIntelligenceTrainingLineageV1Tests(unittest.TestCase):
         self.assertEqual(receipt.completed_steps, 123)
         self.assertEqual(len(receipt.digest), 64)
 
-    def test_receipt_builds_exact_existing_native_intelligence_identity(self):
+    def test_artifact_receipt_cannot_directly_create_model_identity(self):
         plan = self.plan()
         receipt = seal_native_training_receipt_v1(
             plan,
@@ -177,16 +177,11 @@ class NativeIntelligenceTrainingLineageV1Tests(unittest.TestCase):
             completed_steps=123,
             completion_evidence_digest="b" * 64,
         )
-        identity = build_native_intelligence_from_training_receipt_v1(plan, receipt)
-
-        identity.assert_sealed()
-        self.assertEqual(identity.base_model_revision, plan.base_model_revision)
-        self.assertEqual(identity.base_weights_digest, plan.base_weights_digest)
-        self.assertEqual(identity.curriculum_digest, self.holdout.curriculum_digest)
-        self.assertEqual(identity.adapter_digest, receipt.adapter_digest)
-        self.assertEqual(identity.training_run_digest, receipt.digest)
-        self.assertEqual(identity.training_method, plan.training_method)
-        self.assertFalse(identity.authority)
+        with self.assertRaisesRegex(
+            NativeIntelligenceTrainingLineageError,
+            "artifact receipt cannot create native intelligence",
+        ):
+            build_native_intelligence_from_training_receipt_v1(plan, receipt)
 
     def test_tampered_plan_or_receipt_fails_closed(self):
         plan = self.plan()
