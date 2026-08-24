@@ -14,6 +14,11 @@ from koschei.native_intelligence_qwen397b_profile_v1 import (
     OFFICIAL_TEXT_LAYERS,
     canonical_qwen397b_koschei_profile_v1,
 )
+from koschei.native_intelligence_qwen397b_run_config_v1 import seal_qwen397b_run_config_v1
+from koschei.native_intelligence_qwen397b_token_profile_v1 import (
+    FORMATTING_VERSION_V1,
+    seal_qwen397b_token_profile_v1,
+)
 from koschei.native_intelligence_qwen397b_training_plan_v1 import (
     CANONICAL_QWEN397B_REVISION_V1,
     CANONICAL_QWEN397B_TRAINING_METHOD_V1,
@@ -66,31 +71,67 @@ class Qwen397BTrainingPlanV1Tests(unittest.TestCase):
         )
         cls.profile = canonical_qwen397b_koschei_profile_v1()
         cls.preflight = base_preflight()
+        counts = {row.split: row.example_count for row in cls.manifest.files}
+        cls.token_profile = seal_qwen397b_token_profile_v1(
+            cls.manifest,
+            cls.profile,
+            tokenizer_revision=CANONICAL_QWEN397B_REVISION_V1,
+            formatting_version=FORMATTING_VERSION_V1,
+            train_examples=counts["train"],
+            validation_examples=counts["validation"],
+            train_tokens=counts["train"] * 200,
+            validation_tokens=counts["validation"] * 200,
+            max_train_tokens=600,
+            max_validation_tokens=600,
+            train_truncated_examples=0,
+            validation_truncated_examples=0,
+        )
 
-    def test_canonical_plan_pins_preflight_revision_profile_and_method(self):
-        plan = seal_canonical_qwen397b_training_plan_v1(
+    def canonical_plan(self):
+        return seal_canonical_qwen397b_training_plan_v1(
             self.holdout,
             self.corpus,
             self.manifest,
             preflight=self.preflight,
+            token_profile=self.token_profile,
             profile=self.profile,
         )
-        require_canonical_qwen397b_training_plan_v1(plan, self.profile)
+
+    def test_canonical_plan_pins_complete_preflight_token_and_profile_config(self):
+        plan = self.canonical_plan()
+        require_canonical_qwen397b_training_plan_v1(
+            plan,
+            self.manifest,
+            self.preflight,
+            self.token_profile,
+            self.profile,
+        )
+        config = seal_qwen397b_run_config_v1(
+            self.profile,
+            self.preflight,
+            self.token_profile,
+            self.manifest,
+        )
         self.assertEqual(plan.base_model_revision, CANONICAL_QWEN397B_REVISION_V1)
         self.assertEqual(plan.base_weights_digest, self.preflight.weights_identity_digest)
-        self.assertEqual(plan.training_config_digest, self.profile.digest)
+        self.assertEqual(plan.training_export_digest, self.manifest.digest)
+        self.assertEqual(plan.training_config_digest, config.digest)
+        self.assertNotEqual(plan.training_config_digest, self.profile.digest)
         self.assertEqual(plan.training_method, CANONICAL_QWEN397B_TRAINING_METHOD_V1)
 
-    def test_missing_or_tampered_preflight_cannot_create_canonical_plan(self):
-        with self.assertRaisesRegex(Qwen397BTrainingPlanError, "preflight evidence required"):
+    def test_truncated_token_profile_cannot_create_canonical_plan(self):
+        forged = replace(self.token_profile, train_truncated_examples=1)
+        with self.assertRaises(Qwen397BTrainingPlanError):
             seal_canonical_qwen397b_training_plan_v1(
                 self.holdout,
                 self.corpus,
                 self.manifest,
-                preflight=None,
+                preflight=self.preflight,
+                token_profile=forged,
                 profile=self.profile,
             )
 
+    def test_tampered_preflight_cannot_create_canonical_plan(self):
         forged = replace(self.preflight, shard_count=93)
         with self.assertRaises(Qwen397BTrainingPlanError):
             seal_canonical_qwen397b_training_plan_v1(
@@ -98,34 +139,53 @@ class Qwen397BTrainingPlanV1Tests(unittest.TestCase):
                 self.corpus,
                 self.manifest,
                 preflight=forged,
+                token_profile=self.token_profile,
                 profile=self.profile,
             )
 
     def test_generic_plan_with_other_revision_is_not_canonical_397b_run(self):
+        config = seal_qwen397b_run_config_v1(
+            self.profile,
+            self.preflight,
+            self.token_profile,
+            self.manifest,
+        )
         plan = seal_native_training_plan_v1(
             self.holdout,
             self.corpus,
             self.manifest,
             base_model_revision="2" * 40,
             base_weights_digest=self.preflight.weights_identity_digest,
-            training_config_digest=self.profile.digest,
+            training_config_digest=config.digest,
             training_method=CANONICAL_QWEN397B_TRAINING_METHOD_V1,
         )
         with self.assertRaisesRegex(Qwen397BTrainingPlanError, "base revision drift"):
-            require_canonical_qwen397b_training_plan_v1(plan, self.profile)
+            require_canonical_qwen397b_training_plan_v1(
+                plan,
+                self.manifest,
+                self.preflight,
+                self.token_profile,
+                self.profile,
+            )
 
-    def test_generic_plan_with_other_training_profile_is_not_canonical_397b_run(self):
+    def test_generic_plan_with_static_profile_digest_is_not_canonical_397b_run(self):
         plan = seal_native_training_plan_v1(
             self.holdout,
             self.corpus,
             self.manifest,
             base_model_revision=CANONICAL_QWEN397B_REVISION_V1,
             base_weights_digest=self.preflight.weights_identity_digest,
-            training_config_digest="3" * 64,
+            training_config_digest=self.profile.digest,
             training_method=CANONICAL_QWEN397B_TRAINING_METHOD_V1,
         )
-        with self.assertRaisesRegex(Qwen397BTrainingPlanError, "profile digest mismatch"):
-            require_canonical_qwen397b_training_plan_v1(plan, self.profile)
+        with self.assertRaisesRegex(Qwen397BTrainingPlanError, "complete run-config digest mismatch"):
+            require_canonical_qwen397b_training_plan_v1(
+                plan,
+                self.manifest,
+                self.preflight,
+                self.token_profile,
+                self.profile,
+            )
 
     def test_tampered_canonical_profile_is_rejected_before_plan(self):
         forged = replace(self.profile, freeze_router=False)
@@ -135,6 +195,7 @@ class Qwen397BTrainingPlanV1Tests(unittest.TestCase):
                 self.corpus,
                 self.manifest,
                 preflight=self.preflight,
+                token_profile=self.token_profile,
                 profile=forged,
             )
 
