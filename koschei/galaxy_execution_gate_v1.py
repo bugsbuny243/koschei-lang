@@ -1,6 +1,6 @@
 """Koschei Galaxy constitutional critical-execution gate v1.
 
-This is the strongest current composition boundary for privileged Koschei events.
+This is the base composed constitutional boundary for privileged Koschei events.
 A critical effect is eligible only when:
 
 1. its Veyra is bound to the exact canonical Khar v1 constitution;
@@ -10,6 +10,11 @@ A critical effect is eligible only when:
 5. all six axes carry a sealed failure-root independence proof;
 6. the compiler/Library proof is bound to the exact canonical request;
 7. the request is atomically claimed and finalized exactly once.
+
+This gate proves constitutional relations inside the Koschei software boundary.
+Deployments that possess independent compiler/runtime measurement witnesses use
+``khar_witnessed_galaxy_execution_v1`` above this gate; the base gate alone does
+not claim physical implementation identity.
 
 This module creates no authority and performs no counterattack. It composes the
 existing constitutional laws into one fail-closed execution path so callers do
@@ -68,7 +73,7 @@ def enforce_galaxy_critical_effect(
     failure_independence: FailureIndependentSathra,
     effect: Callable[[CanonicalEffectRequest], _T],
 ) -> tuple[EnforcementDecision, _T | None, AtomicClaim]:
-    """Execute only through the complete current Galaxy constitutional path."""
+    """Execute only through the complete base Galaxy constitutional path."""
 
     try:
         require_canonical_khar_v1(veyra)
