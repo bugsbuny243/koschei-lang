@@ -1,13 +1,13 @@
 """Durable epoch tombstones for native Koschei privileged execution v1.
 
 Request binding prevents a proof from moving between requests, and replay ledgers
-prevent one exact request from being consumed twice.  Neither rule is sufficient
+prevent one exact request from being consumed twice. Neither rule is sufficient
 after Universe containment/rebirth: a completely new nonce in an obsolete epoch
 must still be rejected.
 
-This module makes epoch closure durable.  A rebirth receipt advances one
-activation-plan identity from N to N+1 and tombstones N.  Privileged requests are
-accepted only for the exact current epoch of their Universe plan.
+This module makes epoch closure durable. A rebirth receipt advances one activation-
+plan identity from N to N+1 and tombstones N. Privileged requests are accepted
+only for the exact current activation epoch of their Universe plan.
 """
 from __future__ import annotations
 
@@ -49,8 +49,15 @@ def _digest(plan: str, current: int, previous: int | None, cause: str) -> str:
     return hashlib.sha256(_CTX + payload).hexdigest()
 
 
+def _request_activation_plan(request: CanonicalEffectRequest) -> str:
+    plan = getattr(request, "activation_plan_digest", "")
+    if not plan:
+        raise EpochTombstoneError("request is not bound to an activation-plan identity")
+    return plan
+
+
 class DurableEpochFence:
-    """Durable single-database epoch authority for one or more Universe plans."""
+    """Durable single-database epoch authority for one or more activation plans."""
 
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path)
@@ -190,10 +197,11 @@ class DurableEpochFence:
             return row is not None
 
     def require_current_request(self, request: CanonicalEffectRequest) -> None:
-        head = self.current(request.universe_plan_digest)
+        plan = _request_activation_plan(request)
+        head = self.current(plan)
         if head is None:
-            raise EpochTombstoneError("no durable epoch authority for request Universe")
-        if self.is_tombstoned(request.universe_plan_digest, request.epoch):
+            raise EpochTombstoneError("no durable epoch authority for request activation plan")
+        if self.is_tombstoned(plan, request.epoch):
             raise EpochTombstoneError("request belongs to a tombstoned Universe epoch")
         if request.epoch != head.current_epoch:
             raise EpochTombstoneError(
