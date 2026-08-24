@@ -90,15 +90,19 @@ Sathra is the moment in which six valid axes concur on one critical event. It is
 
 Current enforcement: `koschei/sathra_request_binding_v1.py` binds one Sathra to the exact canonical privileged request, Aevra, Veyra, epoch and native-MIR executable reality. Its durable path then claims that exact event through `native_sigil_atomic_execution_coordinator_v1.py` before any critical effect can run. The event is finalized as `COMMITTED`, `REJECTED`, `CONTAINED`, or `UNCERTAIN`; the same exact request/Sathra cannot be claimed a second time.
 
-Canonical requests now carry both semantic `universe_plan_digest` and executable `activation_plan_digest`, closing the previous identity gap between compiler proof binding and durable epoch/replay enforcement.
+Canonical requests carry both semantic `universe_plan_digest` and executable `activation_plan_digest`, binding compiler proof identity to durable epoch/replay identity.
 
-## 7. Axis independence
+## 7. Axis failure independence
 
 Compromise or observation of one Khar axis must not automatically reveal, synthesize, or satisfy another axis.
 
 A valid `vaal` witness is not an `esh` witness. A valid `teyr` witness is not a `rha` witness. The Galaxy must not hide a single common trust object behind six different names.
 
-Logical independence is currently enforced by requiring six distinct axis witnesses. Failure-independence tests must still prove that six logical axes are also separated by their real failure roots.
+Current first enforcement slice: `koschei/khar_failure_independence_v1.py` binds each Sathra axis witness to an explicit failure-root digest, an independent attestation-domain digest and independence evidence. All six roots must differ, all six attestation domains must differ, one root cannot self-attest, and one axis root cannot act as another axis's attestation domain.
+
+`koschei/galaxy_execution_gate_v1.py` makes that proof part of the strongest current critical-execution path. A logically complete 6/6 Sathra without its failure-independence proof cannot pass that gate.
+
+This is an enforceable identity-separation law. It does not claim that physical independence is proven merely because six digests are different. Hardware, operator, infrastructure and organizational independence still require externally produced evidence that Koschei can verify and bind to these roots.
 
 ## 8. No permanent attack map
 
@@ -108,15 +112,17 @@ The architecture target is therefore stronger than syntax novelty. The attacker 
 
 Current first enforcement slice combines the existing `library_adversary_learning_resistance_v0.py` and `library_adaptive_visibility_v0.py` with `nur_nyr_projection_v1.py`: observer/session pressure controls a rotating visibility envelope, and the Nyr surface changes across visibility epochs, observer sessions and customer Veyras while canonical MIR remains unchanged.
 
-This is not yet a claim that every runtime artifact, timing channel, memory observation or external side channel is non-learnable. The projection layer is one part of No Golden Tray, not its sole defense. If a projection leaks, Khar concurrence and independence laws remain mandatory.
+`tests/test_galaxy_adversarial_learning_v1.py` adds a long-running observer corpus across multiple epochs, sessions and customer Galaxies. It asserts that canonical subject names, Veyra identity and MIR locators are absent from Nyr output; aliases rotate over time/session and do not transfer between customer Veyras.
 
-## 9. Vormir direction
+These tests prove stated projection invariants, not a universal theorem that every possible AI model can never infer anything. Timing channels, memory artifacts, deployment metadata and future runtime surfaces remain separate adversarial targets. If a projection leaks, Khar concurrence and failure-independence laws remain mandatory.
+
+## 9. Vormir
 
 Vormir represents irreversible cost for deeper or higher-power transitions. The intended physics is accumulation-resistant: a transition must not allow old and new critical reach to coexist for free.
 
 Current first enforcement slice: `koschei/vormir_sacrifice_v1.py` retains the older commitment API for compatibility but adds a durable epoch-sacrifice path. A fully contained old epoch must be tombstoned through `DurableEpochFence` before the staged successor can be accepted. The successor exists before the irreversible step only as a fully `INACTIVE` state, so old active reach and new active reach are not allowed to coexist. The sacrifice also requires evidence from at least two distinct witness-domain digests and survives process restart.
 
-This first slice proves durable epoch sacrifice. It does not yet prove that the witness domains have physically independent failure roots, nor does it yet express every possible Aevra-level sacrifice.
+This first slice proves durable epoch sacrifice. It does not yet express every possible Aevra-level sacrifice or independently certify the physical roots behind its witness domains.
 
 ## 10. Morth, Event Horizon, and Black Hole
 
@@ -126,40 +132,54 @@ Event Horizon denotes the irreversible boundary after which an old Aevra/authori
 
 Black Hole denotes the terminal sink for dead identity, dead authority, stale epoch state, consumed events, and compromised lineage. Historical evidence may remain inspectable; dead power must not escape into a new living path.
 
-Current first enforcement slice: `koschei/morth_black_hole_v1.py` provides an append-only durable Black Hole for canonical Aevra identities. Crossing its Event Horizon writes a sealed Morth record with Veyra, Aevra, death epoch, cause and evidence. There is deliberately no delete, restore or unbury API. A Morth Aevra is rejected before atomic Sathra execution even when the request and six-axis concurrence are otherwise valid.
+Current first enforcement slice: `koschei/morth_black_hole_v1.py` provides an append-only durable Black Hole for canonical Aevra identities. Crossing its Event Horizon writes a sealed Morth record with Veyra, Aevra, death epoch, cause and evidence. There is deliberately no delete, restore or unbury API. A Morth Aevra is rejected before critical Galaxy execution even when the request and six-axis concurrence are otherwise valid.
 
 Rebirth is explicitly distinct from resurrection: the same visible Koschei subject may be born again only as a different Aevra identity after the Morth epoch. The old Aevra digest remains terminal and inspectable.
 
-This first slice covers Aevra finality and composes with existing durable epoch tombstones and one-shot event finality. Full Matrix/lineage-wide Black Hole composition remains future work.
+This first slice covers Aevra finality and composes with durable epoch tombstones and one-shot event finality. Full lineage-wide Black Hole composition remains future work.
 
-## 11. Matrix direction
+## 11. Matrix and Hara
 
-Matrix denotes a controlled execution reality within the Galaxy. Sharing one Matrix must not imply sharing the same Hara, authority, knowledge surface, or critical reach.
+Matrix denotes a controlled local execution reality within one Veyra. Sharing one Matrix does not imply sharing the same Hara, authority, knowledge surface, or critical reach.
 
-Future canonical work must define Matrix identity, reality binding, entry/exit law, cross-Matrix transition, and how a Matrix becomes contained or Morth without exposing a global Galaxy map.
+Hara denotes one Aevra's scoped horizon inside a Matrix.
+
+Current first enforcement slice: `koschei/matrix_reality_v1.py` seals Matrix identity to one Veyra and epoch, seals Hara identity to one Matrix and one Aevra, and creates explicit Matrix/Hara admission bound to native MIR reality and evidence. A Hara cannot move to another Aevra or Matrix; a Matrix cannot move to another customer Veyra.
+
+`koschei/galaxy_execution_gate_v1.py` requires a valid Matrix/Hara admission in the same request epoch before the strongest current critical execution can proceed.
+
+Cross-Matrix transition physics, Matrix-level containment/Morth and a canonical relationship to the `rha` axis are still future work.
 
 ## 12. Autonomous systems
 
 Automated or model-driven systems may operate inside Koschei, but they do not gain sovereignty over Khar. They must not be able to weaken concurrence, rewrite evidence finality, manufacture another axis, or declare their own policy changes constitutional.
 
-## 13. Implementation order
+## 13. Strongest current critical path
 
-The implementation sequence is:
+The strongest current composed critical path is:
 
-1. **FIRST SLICE APPLIED** — keep the native `lexer -> parser -> AST -> typed semantics -> MIR -> Library -> Universe -> proof -> enforcement` chain working and fail-closed;
-2. **FIRST SLICE APPLIED** — bind native sigil MIR into the canonical module/compiler spine rather than leaving a parallel path;
-3. **FIRST SLICE APPLIED** — bind exact critical requests to six-axis Sathra concurrence and durable one-shot event finality;
-4. **FIRST SLICE APPLIED** — define Veyra identity and customer-Galaxy identity separation without creating a new golden topology-map object;
-5. **FIRST SLICE APPLIED** — define observer projection / time-bounded visible-surface rules under `nur`;
-6. **FIRST SLICE APPLIED** — implement durable Vormir epoch-sacrifice physics;
-7. **FIRST SLICE APPLIED** — unify the first Aevra-level Morth / Event Horizon / Black Hole enforcement path;
-8. **NEXT** — prove real failure independence for the six axes;
-9. expand adversarial tests for attacker-specific model learning and cross-customer generalization;
-10. only then grow higher Galaxy mechanisms such as survival branching and advanced autonomous orchestration.
+`native MIR -> Aevra/Veyra -> Matrix/Hara admission -> living/Morth check -> exact request proof -> 6/6 Sathra -> six failure-root proof -> atomic one-shot claim -> decision/effect finality`
 
-The phrase `FIRST SLICE APPLIED` means a concrete enforced path and tests now exist. It does not mean the complete constitutional area is finished.
+This path is implemented by `koschei/galaxy_execution_gate_v1.py` together with the modules it verifies. Lower-level modules remain useful reference/composition boundaries, but new privileged Galaxy work should not intentionally bypass the strongest available constitutional gate.
 
-## 14. Anti-drift rule
+## 14. Implementation order
+
+1. **FIRST SLICE APPLIED** — native compiler/Library/Universe/proof/enforcement chain fail-closed;
+2. **FIRST SLICE APPLIED** — native MIR in canonical module/compiler spine;
+3. **FIRST SLICE APPLIED** — exact requests + 6/6 Sathra + durable one-shot finality;
+4. **FIRST SLICE APPLIED** — Veyra/Aevra customer-Galaxy identity separation;
+5. **FIRST SLICE APPLIED** — observer/time-bound Nyr surface under `nur`;
+6. **FIRST SLICE APPLIED** — durable Vormir epoch sacrifice;
+7. **FIRST SLICE APPLIED** — Aevra-level Morth / Event Horizon / Black Hole;
+8. **FIRST SLICE APPLIED** — explicit six-axis failure-root independence and composed Galaxy gate;
+9. **FIRST SLICE APPLIED** — adversarial rotating-surface/cross-customer regression corpus;
+10. **FIRST SLICE APPLIED** — Matrix/Hara execution-reality identity and admission;
+11. **NEXT** — explicit cross-Matrix transition and Matrix containment/finality;
+12. then survival-branch selection and bounded autonomous orchestration.
+
+`FIRST SLICE APPLIED` means a concrete enforced path and tests exist. It does not mean the entire constitutional area is complete.
+
+## 15. Anti-drift rule
 
 A new module is not progress merely because it has a security-themed name. New implementation work must close a stated constitutional gap, attach to the language/Library/Universe execution chain, or provide adversarial proof for an existing law.
 
