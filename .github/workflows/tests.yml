@@ -28,8 +28,8 @@ jobs:
         with:
           go-version: "1.21"
 
-      - name: Install package
-        run: python -m pip install -e .
+      - name: Install package and test runner
+        run: python -m pip install -e . pytest
 
       - name: Run unit tests
         run: python -m unittest discover -s tests -v
@@ -91,102 +91,86 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          node --check editors/vscode/extension.js
-          python -c 'import json; from pathlib import Path; [json.loads(Path(p).read_text(encoding="utf-8")) for p in ("editors/vscode/package.json", "editors/vscode/language-configuration.json", "editors/vscode/syntaxes/koschei.tmLanguage.json")]'
+          cd editors/vscode
+          npm install
+          npm run compile
+          npm test
 
-      - name: Capability manifest for showcase
-        run: python -m koschei caps examples/showcase.ks
-
-      - name: Pure example requests no capabilities
-        run: python -m koschei caps examples/hello.ks --deny disk --deny net --deny env --deny process
-
-      - name: Policy gate rejects undeclared network access
+      - name: Validate LSP smoke test
+        shell: bash
         run: |
-          if python -m koschei caps examples/showcase.ks --deny net; then
-            echo "HATA: politika kapısı ağ talebini reddetmeliydi" >&2
-            exit 1
-          fi
+          set -euo pipefail
+          python tools/lsp_smoke.py
 
-      - name: Examples stay canonically formatted
+      - name: Validate package build
+        shell: bash
         run: |
-          for file in examples/*.ks; do
-            python -m koschei fmt --check "$file"
-          done
+          set -euo pipefail
+          python -m pip install build
+          python -m build
 
-      - name: Run v0.7 daily-programming example
+      - name: Validate generated native tests
+        shell: bash
         run: |
-          output="$(python -m koschei run examples/daily.ks)"
-          case "$output" in
-            *"Kişi sayısı: 3"*) ;;
-            *) echo "HATA: v0.7 günlük program örneği beklenen çıktıyı vermedi" >&2; exit 1 ;;
-          esac
+          set -euo pipefail
+          python tools/run_native_generated_tests.py
 
-      - name: Run v0.8 algebraic-type example
+      - name: Validate native capability parity
+        shell: bash
         run: |
-          output="$(python -m koschei run examples/v08_types.ks)"
-          test "$output" = $'Gönderildi: Onur\nişlem başarısız'
+          set -euo pipefail
+          python tools/run_native_capability_parity.py
 
-      - name: Native v0.8 algebraic types match interpreter
+      - name: Validate runtime capability registry parity
+        shell: bash
         run: |
-          python -m koschei build examples/v08_types.ks -o /tmp/koschei-v08-types
-          native="$(/tmp/koschei-v08-types)"
-          interpreted="$(python -m koschei run examples/v08_types.ks)"
-          test "$native" = "$interpreted"
+          set -euo pipefail
+          python tools/run_runtime_capability_parity.py
 
-      - name: Native v0.8 daily collections match interpreter
+      - name: Validate runtime boot parity
+        shell: bash
         run: |
-          python -m koschei build examples/daily.ks -o /tmp/koschei-daily
-          native="$(/tmp/koschei-daily)"
-          interpreted="$(python -m koschei run examples/daily.ks)"
-          test "$native" = "$interpreted"
+          set -euo pipefail
+          python tools/run_runtime_boot_parity.py
 
-      - name: Native v0.8 maps match interpreter
+      - name: Validate request proof binding
+        shell: bash
         run: |
-          python -m koschei build examples/maps.ks -o /tmp/koschei-maps
-          native="$(/tmp/koschei-maps)"
-          interpreted="$(python -m koschei run examples/maps.ks)"
-          test "$native" = "$interpreted"
+          set -euo pipefail
+          python tools/run_request_proof_binding.py
 
-      - name: Native v0.8 structs match interpreter
+      - name: Validate policy gate
+        shell: bash
         run: |
-          python -m koschei build examples/holders.ks -o /tmp/koschei-holders
-          native="$(/tmp/koschei-holders)"
-          interpreted="$(python -m koschei run examples/holders.ks)"
-          test "$native" = "$interpreted"
+          set -euo pipefail
+          python tools/run_policy_gate.py
 
-      - name: Native v0.8 modules match interpreter
+      - name: Validate supply chain rejection
+        shell: bash
         run: |
-          python -m koschei build examples/app.ks -o /tmp/koschei-app
-          native="$(/tmp/koschei-app)"
-          interpreted="$(python -m koschei run examples/app.ks)"
-          test "$native" = "$interpreted"
+          set -euo pipefail
+          python tools/run_supply_chain_rejection.py
 
-      - name: Run data-structure example
+      - name: Validate format
+        shell: bash
         run: |
-          output="$(python -m koschei run examples/holders.ks)"
-          case "$output" in
-            *KRITIK*) ;;
-            *) echo "HATA: holders örneği beklenen çıktıyı vermedi" >&2; exit 1 ;;
-          esac
+          set -euo pipefail
+          python tools/format_check.py
 
-      - name: Multi-file program runs
+      - name: Validate foundation export
+        shell: bash
         run: |
-          output="$(python -m koschei run examples/app.ks)"
-          case "$output" in
-            *KRITIK*) ;;
-            *) echo "HATA: app örneği beklenen çıktıyı vermedi" >&2; exit 1 ;;
-          esac
+          set -euo pipefail
+          python tools/run_foundation_export.py
 
-      - name: Supply-chain attack still does not compile
+      - name: Validate model curriculum
+        shell: bash
         run: |
-          if python -m koschei check examples/supply_chain/main.ks; then
-            echo "HATA: yetkisiz modül derlenmemeliydi" >&2
-            exit 1
-          fi
+          set -euo pipefail
+          python tools/run_model_curriculum.py
 
-      - name: Module examples stay canonically formatted
+      - name: Validate native model curriculum
+        shell: bash
         run: |
-          python -m koschei fmt --check examples/app.ks
-          python -m koschei fmt --check examples/risk.ks
-          python -m koschei fmt --check examples/supply_chain/main.ks
-          python -m koschei fmt --check examples/supply_chain/analytics.ks
+          set -euo pipefail
+          python tools/run_native_model_curriculum.py
