@@ -4,6 +4,7 @@ import tempfile
 import unittest
 
 from koschei.native_intelligence_holdout_v1 import build_native_intelligence_holdout_v1
+from koschei.native_intelligence_training_balance_v1 import build_balanced_native_training_corpus_v1
 from koschei.native_intelligence_training_corpus_v1 import build_native_training_corpus_v1
 from koschei.native_intelligence_training_export_v1 import write_native_training_export_v1
 from koschei.native_intelligence_training_lineage_v1 import (
@@ -24,7 +25,10 @@ class NativeIntelligenceTrainingLineageV1Tests(unittest.TestCase):
             parent_curriculum_digest="b" * 64,
         )
         cls.holdout = build_native_intelligence_holdout_v1(curriculum)
-        cls.corpus = build_native_training_corpus_v1(cls.holdout, variants_per_family=1)
+        cls.corpus = build_balanced_native_training_corpus_v1(
+            cls.holdout,
+            variants_per_family=1,
+        )
         cls.export_temp = tempfile.TemporaryDirectory()
         cls.addClassCleanup(cls.export_temp.cleanup)
         cls.export_manifest = write_native_training_export_v1(
@@ -44,7 +48,7 @@ class NativeIntelligenceTrainingLineageV1Tests(unittest.TestCase):
             training_method="lora-sft-v1",
         )
 
-    def test_plan_binds_base_source_holdout_corpus_exact_export_and_config(self):
+    def test_plan_binds_balanced_corpus_and_exact_export_before_compute(self):
         plan = self.plan()
         plan.assert_sealed()
 
@@ -63,13 +67,38 @@ class NativeIntelligenceTrainingLineageV1Tests(unittest.TestCase):
     def test_training_plan_is_deterministic(self):
         self.assertEqual(self.plan(), self.plan())
 
+    def test_unbalanced_base_corpus_cannot_become_training_plan(self):
+        base = build_native_training_corpus_v1(self.holdout, variants_per_family=1)
+        with tempfile.TemporaryDirectory() as directory:
+            manifest = write_native_training_export_v1(
+                self.holdout,
+                base,
+                Path(directory) / "release",
+            )
+            with self.assertRaisesRegex(
+                NativeIntelligenceTrainingLineageError,
+                "must contain ACCEPTED and REJECTED train supervision",
+            ):
+                seal_native_training_plan_v1(
+                    self.holdout,
+                    base,
+                    manifest,
+                    base_model_revision="1" * 40,
+                    base_weights_digest="2" * 64,
+                    training_config_digest="7" * 64,
+                    training_method="lora-sft-v1",
+                )
+
     def test_foreign_holdout_corpus_is_rejected_before_plan_seal(self):
         foreign_curriculum = build_native_model_curriculum_v2(
             source_commit="c" * 40,
             parent_curriculum_digest="d" * 64,
         )
         foreign_holdout = build_native_intelligence_holdout_v1(foreign_curriculum)
-        foreign_corpus = build_native_training_corpus_v1(foreign_holdout, variants_per_family=1)
+        foreign_corpus = build_balanced_native_training_corpus_v1(
+            foreign_holdout,
+            variants_per_family=1,
+        )
         with tempfile.TemporaryDirectory() as directory:
             foreign_manifest = write_native_training_export_v1(
                 foreign_holdout,
