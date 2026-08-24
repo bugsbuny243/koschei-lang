@@ -7,6 +7,8 @@ then binds an already-verified NativeSigilProofBundle to that exact request.
 The protected subject must be declared by a `vor` binding in the native MIR.
 The request carries explicit identity, epoch and nonce/replay material so a
 proof for one actor/request/epoch cannot be replayed as authority for another.
+It is sealed to both the semantic Universe identity and the executable activation
+plan identity so durable execution/epoch machinery observes the same reality.
 """
 from __future__ import annotations
 
@@ -24,6 +26,7 @@ from .native_sigil_proof_pipeline_v1 import (
     NativeSigilProofBundle,
     require_native_sigil_proof,
 )
+from .universe_activation_engine_v1 import compile_activation_plan
 
 _CTX = b"koschei.native-sigil-request-binding/v1\x00"
 _T = TypeVar("_T")
@@ -45,6 +48,7 @@ class CanonicalEffectRequest:
     native_mir_fingerprint: str
     universe_plan_digest: str
     digest: str
+    activation_plan_digest: str = ""
     version: int = 1
 
     def assert_sealed(self, mir: NativeSigilMir) -> None:
@@ -53,6 +57,11 @@ class CanonicalEffectRequest:
             raise NativeSigilRequestBindingError("request MIR fingerprint mismatch")
         if self.universe_plan_digest != mir.universe_plan_digest:
             raise NativeSigilRequestBindingError("request Universe identity mismatch")
+        expected_activation = compile_activation_plan(
+            tuple(item.sigil for item in mir.bindings)
+        ).digest
+        if self.activation_plan_digest != expected_activation:
+            raise NativeSigilRequestBindingError("request activation-plan identity mismatch")
         if self.epoch < 0:
             raise NativeSigilRequestBindingError("request epoch cannot be negative")
         vor_subjects = {item.subject for item in mir.bindings if item.sigil == "vor"}
@@ -70,6 +79,7 @@ class CanonicalEffectRequest:
             self.nonce_digest,
             self.native_mir_fingerprint,
             self.universe_plan_digest,
+            self.activation_plan_digest,
         )
         if self.digest != expected:
             raise NativeSigilRequestBindingError("canonical effect request seal mismatch")
@@ -124,6 +134,7 @@ def _request_digest(
     nonce_digest: str,
     mir_fingerprint: str,
     universe_digest: str,
+    activation_digest: str,
 ) -> str:
     values = (
         effect_id,
@@ -135,6 +146,7 @@ def _request_digest(
         nonce_digest,
         mir_fingerprint,
         universe_digest,
+        activation_digest,
     )
     if any(not value for value in values):
         raise NativeSigilRequestBindingError("canonical effect request fields cannot be empty")
@@ -173,6 +185,9 @@ def seal_effect_request(
     nonce_digest: str,
 ) -> CanonicalEffectRequest:
     mir.assert_sealed()
+    activation_digest = compile_activation_plan(
+        tuple(item.sigil for item in mir.bindings)
+    ).digest
     result = CanonicalEffectRequest(
         effect_id=effect_id,
         subject=subject,
@@ -184,6 +199,7 @@ def seal_effect_request(
         native_mir_fingerprint=mir.fingerprint,
         universe_plan_digest=mir.universe_plan_digest,
         digest="",
+        activation_plan_digest=activation_digest,
     )
     object.__setattr__(
         result,
@@ -198,6 +214,7 @@ def seal_effect_request(
             result.nonce_digest,
             result.native_mir_fingerprint,
             result.universe_plan_digest,
+            result.activation_plan_digest,
         ),
     )
     result.assert_sealed(mir)
