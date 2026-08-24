@@ -3,12 +3,13 @@
 This is the strongest current composition boundary for privileged Koschei events.
 A critical effect is eligible only when:
 
-1. its Aevra is still living outside the Black Hole;
-2. it is admitted to the durable current Matrix/Hara execution reality;
-3. its Sathra is six-axis complete and exact-event bound;
-4. all six axes carry a sealed failure-root independence proof;
-5. the compiler/Library proof is bound to the exact canonical request;
-6. the request is atomically claimed and finalized exactly once.
+1. its Veyra is bound to the exact canonical Khar v1 constitution;
+2. its Aevra is still living outside the Black Hole;
+3. it is admitted to the durable current Matrix/Hara execution reality;
+4. its Sathra is six-axis complete and exact-event bound;
+5. all six axes carry a sealed failure-root independence proof;
+6. the compiler/Library proof is bound to the exact canonical request;
+7. the request is atomically claimed and finalized exactly once.
 
 This module creates no authority and performs no counterattack. It composes the
 existing constitutional laws into one fail-closed execution path so callers do
@@ -19,6 +20,7 @@ from __future__ import annotations
 from typing import Callable, TypeVar
 
 from .galaxy_identity_v1 import AevraIdentity, VeyraIdentity
+from .khar_constitution_v1 import require_canonical_khar_v1
 from .khar_failure_independence_v1 import (
     FailureIndependentSathra,
     require_failure_independent_sathra,
@@ -69,6 +71,7 @@ def enforce_galaxy_critical_effect(
     """Execute only through the complete current Galaxy constitutional path."""
 
     try:
+        require_canonical_khar_v1(veyra)
         black_hole.require_living(aevra, veyra, mir)
         matrix_admission.assert_sealed(matrix, hara, veyra, aevra, mir)
         matrix_horizon.require_current(matrix_admission)
