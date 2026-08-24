@@ -1,9 +1,9 @@
 """Sealed training-plan and training-receipt lineage for native intelligence v1.
 
 Before compute starts, Koschei seals the exact base revision/weights, source
-commit, constitutional holdout, verified oracle corpus, exact exported JSONL byte
-manifest, training configuration and method. Caller-supplied corpus/split hashes
-are not accepted by the public plan API.
+commit, constitutional holdout, balanced verified oracle corpus, exact exported
+JSONL byte manifest, training configuration and method. Caller-supplied
+corpus/split hashes are not accepted by the public plan API.
 
 After training, adapter/checkpoint/log evidence is sealed into a receipt bound to
 that exact plan. The receipt digest is the ``training_run_digest`` consumed by
@@ -19,6 +19,7 @@ import string
 
 from .khar_constitution_v1 import CANONICAL_KHAR_DIGEST_V1
 from .native_intelligence_holdout_v1 import NativeIntelligenceHoldoutV1
+from .native_intelligence_training_balance_v1 import require_native_training_balance_v1
 from .native_intelligence_training_corpus_v1 import NativeTrainingCorpusReleaseV1
 from .native_intelligence_training_export_v1 import NativeTrainingExportManifestV1
 from .native_intelligence_v1 import (
@@ -186,11 +187,12 @@ def seal_native_training_plan_v1(
     training_config_digest: str,
     training_method: str,
 ) -> NativeTrainingPlanV1:
-    """Seal exact logical and byte-materialized training identity before compute."""
+    """Seal exact logical and byte-materialized balanced training identity before compute."""
 
     holdout.assert_sealed()
     try:
         corpus.assert_sealed(holdout)
+        require_native_training_balance_v1(corpus)
         export_manifest.assert_for(holdout, corpus)
     except ValueError as error:
         raise NativeIntelligenceTrainingLineageError(str(error)) from error
