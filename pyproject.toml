@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "koschei-lang"
 version = "0.10.0"
-description = "Koschei — a capability-secure programming language where an imported package cannot touch the disk or network without a token"
+description = "Koschei — a native security programming language with constitutional execution physics and a Khar-bounded intelligence plane"
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "Proprietary" }
@@ -13,10 +13,11 @@ authors = [{ name = "Onur Sel" }]
 keywords = [
     "programming-language",
     "compiler",
+    "native-security-language",
+    "constitutional-security",
     "capability-security",
-    "object-capability",
     "supply-chain-security",
-    "sandbox",
+    "ai-security",
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -27,9 +28,9 @@ classifiers = [
     "Topic :: Security",
 ]
 
-# Bağımlılık YOKTUR ve olmayacaktır: derleyicinin kendisi yalnızca Python
-# standart kütüphanesine dayanır. Bir güvenlik dilinin kurulumu, güvenmek
-# zorunda olduğunuz paket sayısını artırmamalıdır.
+# The compiler core remains Python-standard-library only. Qwen training and
+# inference live outside the compiler dependency graph and enter Koschei only
+# through sealed native-intelligence identities/evidence.
 dependencies = []
 
 [project.urls]
@@ -45,6 +46,7 @@ ks-stdlib = "koschei.stdlib_catalog:main"
 ks-differential-fuzz = "koschei.differential_fuzz_cli:main"
 ks-foundation-export = "koschei.foundation_export_cli:main"
 ks-model-curriculum = "koschei.model_curriculum_cli:main"
+ks-native-model-curriculum = "koschei.native_model_curriculum_cli_v2:main"
 ks-universe = "koschei.universe_cli:main"
 ks-universe-remote = "koschei.universe_remote_app_v1:main"
 
