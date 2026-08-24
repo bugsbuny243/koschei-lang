@@ -1,0 +1,2 @@
+Koschei Qwen397B native-intelligence validation trigger.
+This branch-only marker must not be merged into main.
