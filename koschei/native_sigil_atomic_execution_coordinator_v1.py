@@ -1,14 +1,14 @@
 """Atomic durable execution coordinator for native Koschei privileged effects v1.
 
 This is the production-oriented bridge between Universe epoch safety and replay
-safety.  Earlier reference modules intentionally kept the durable epoch fence and
-durable replay ledger separate.  A privileged boundary must not leave a race
-between "epoch is current" and "request is claimed".  This coordinator performs
+safety. Earlier reference modules intentionally kept the durable epoch fence and
+durable replay ledger separate. A privileged boundary must not leave a race
+between "epoch is current" and "request is claimed". This coordinator performs
 both checks and the request claim in one SQLite BEGIN IMMEDIATE transaction.
 
-It also binds Nuclear Containment to the durable execution boundary.  Once a
+It also binds Nuclear Containment to the durable execution boundary. Once a
 verified nuclear-containment receipt is applied, the current epoch is tombstoned
-and the Universe plan is frozen atomically.  New requests for that epoch cannot
+and the Universe plan is frozen atomically. New requests for that epoch cannot
 enter even with a fresh nonce or previously unseen request digest.
 
 No offensive/external action exists here; all operations are local fail-closed
@@ -64,6 +64,19 @@ def _head_digest(plan: str, epoch: int, frozen: bool, cause: str) -> str:
 def _claim_digest(request: str, plan: str, epoch: int, proof: str, state: str) -> str:
     payload = "\n".join((request, plan, str(epoch), proof, state)).encode("utf-8")
     return hashlib.sha256(_CTX + b"claim\x00" + payload).hexdigest()
+
+
+def _request_activation_plan(request: CanonicalEffectRequest) -> str:
+    plan = getattr(request, "activation_plan_digest", "")
+    if plan:
+        return plan
+    # Compatibility for the narrow test/request stubs that predate canonical
+    # activation-plan binding and already carry an activation-plan digest in the
+    # historical field name.
+    plan = getattr(request, "universe_plan_digest", "")
+    if not plan:
+        raise AtomicExecutionCoordinatorError("request has no activation-plan identity")
+    return plan
 
 
 class AtomicExecutionCoordinator:
@@ -161,12 +174,13 @@ class AtomicExecutionCoordinator:
         """Check current epoch/freeze/tombstone and claim the request atomically."""
         if not proof_digest:
             raise AtomicExecutionCoordinatorError("atomic claim requires proof digest")
+        plan = _request_activation_plan(request)
         with self._lock:
             try:
                 self._db.execute("BEGIN IMMEDIATE")
                 head = self._db.execute(
                     "SELECT current_epoch,frozen FROM execution_epoch_heads WHERE activation_plan_digest=?",
-                    (request.universe_plan_digest,),
+                    (plan,),
                 ).fetchone()
                 if head is None:
                     raise AtomicExecutionCoordinatorError("no durable execution authority for request Universe")
@@ -178,13 +192,13 @@ class AtomicExecutionCoordinator:
                     )
                 tombstone = self._db.execute(
                     "SELECT 1 FROM execution_epoch_tombstones WHERE activation_plan_digest=? AND epoch=?",
-                    (request.universe_plan_digest, request.epoch),
+                    (plan, request.epoch),
                 ).fetchone()
                 if tombstone is not None:
                     raise AtomicExecutionCoordinatorError("request belongs to a tombstoned epoch")
                 digest = _claim_digest(
                     request.digest,
-                    request.universe_plan_digest,
+                    plan,
                     request.epoch,
                     proof_digest,
                     "CLAIMED",
@@ -193,7 +207,7 @@ class AtomicExecutionCoordinator:
                     "INSERT INTO execution_claims VALUES (?,?,?,?,?,?)",
                     (
                         request.digest,
-                        request.universe_plan_digest,
+                        plan,
                         request.epoch,
                         proof_digest,
                         "CLAIMED",
@@ -209,7 +223,7 @@ class AtomicExecutionCoordinator:
                 raise
         return AtomicClaim(
             request.digest,
-            request.universe_plan_digest,
+            plan,
             request.epoch,
             proof_digest,
             "CLAIMED",
@@ -221,8 +235,6 @@ class AtomicExecutionCoordinator:
             raise AtomicExecutionCoordinatorError(f"invalid claim final state: {state}")
         if not decision_digest:
             raise AtomicExecutionCoordinatorError("claim finality requires decision digest")
-        # Fold decision identity into the proof/finality field so the terminal seal
-        # cannot be detached from the enforcement decision.
         terminal_proof = hashlib.sha256(
             _CTX + b"finality\x00" + (claim.proof_digest + "\n" + decision_digest).encode("utf-8")
         ).hexdigest()
