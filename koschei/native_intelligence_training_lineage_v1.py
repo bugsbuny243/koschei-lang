@@ -2,11 +2,12 @@
 
 A model adapter is not accepted merely because a file exists after a training
 job. Before training starts, Koschei seals the exact base revision/weights,
-source commit, curriculum holdout, training-corpus splits, configuration and
-method into a plan. After training, the adapter/checkpoint/log evidence is sealed
-into a receipt bound to that exact plan.
+source commit, constitutional holdout, a verified training-corpus release,
+configuration and method into a plan. The public plan API deliberately accepts a
+sealed corpus object rather than caller-supplied corpus/split digests.
 
-The receipt digest is the ``training_run_digest`` consumed by
+After training, adapter/checkpoint/log evidence is sealed into a receipt bound to
+that exact plan. The receipt digest is the ``training_run_digest`` consumed by
 ``NativeIntelligenceIdentityV1``. Neither plan nor receipt carries execution
 authority or deployment approval.
 """
@@ -19,6 +20,7 @@ import string
 
 from .khar_constitution_v1 import CANONICAL_KHAR_DIGEST_V1
 from .native_intelligence_holdout_v1 import NativeIntelligenceHoldoutV1
+from .native_intelligence_training_corpus_v1 import NativeTrainingCorpusReleaseV1
 from .native_intelligence_v1 import (
     CANONICAL_BASE_MODEL_V1,
     NativeIntelligenceIdentityV1,
@@ -109,24 +111,14 @@ class NativeTrainingPlanV1:
                 "native training plan cannot carry authority"
             )
 
-        revision = _digest(
-            self.base_model_revision,
-            "base_model_revision",
-            length=40,
-        )
+        revision = _digest(self.base_model_revision, "base_model_revision", length=40)
         weights = _digest(self.base_weights_digest, "base_weights_digest")
         source = _digest(self.source_commit, "source_commit", length=40)
         curriculum = _digest(self.curriculum_digest, "curriculum_digest")
-        holdout = _digest(
-            self.constitutional_holdout_digest,
-            "constitutional_holdout_digest",
-        )
+        holdout = _digest(self.constitutional_holdout_digest, "constitutional_holdout_digest")
         corpus = _digest(self.training_corpus_digest, "training_corpus_digest")
         train = _digest(self.train_split_digest, "train_split_digest")
-        validation = _digest(
-            self.validation_split_digest,
-            "validation_split_digest",
-        )
+        validation = _digest(self.validation_split_digest, "validation_split_digest")
         test = _digest(self.test_split_digest, "test_split_digest")
         config = _digest(self.training_config_digest, "training_config_digest")
         method = _text(self.training_method, "training_method", max_length=64)
@@ -160,9 +152,7 @@ class NativeTrainingPlanV1:
             },
         )
         if self.digest != expected:
-            raise NativeIntelligenceTrainingLineageError(
-                "native training plan seal mismatch"
-            )
+            raise NativeIntelligenceTrainingLineageError("native training plan seal mismatch")
 
 
 @dataclass(frozen=True, slots=True)
@@ -197,15 +187,9 @@ class NativeTrainingReceiptV1:
                 "training completion is not deployment approval"
             )
         adapter = _digest(self.adapter_digest, "adapter_digest")
-        checkpoint = _digest(
-            self.final_checkpoint_digest,
-            "final_checkpoint_digest",
-        )
+        checkpoint = _digest(self.final_checkpoint_digest, "final_checkpoint_digest")
         log = _digest(self.trainer_log_digest, "trainer_log_digest")
-        evidence = _digest(
-            self.completion_evidence_digest,
-            "completion_evidence_digest",
-        )
+        evidence = _digest(self.completion_evidence_digest, "completion_evidence_digest")
         if (
             isinstance(self.completed_steps, bool)
             or not isinstance(self.completed_steps, int)
@@ -228,60 +212,45 @@ class NativeTrainingReceiptV1:
             },
         )
         if self.digest != expected:
-            raise NativeIntelligenceTrainingLineageError(
-                "native training receipt seal mismatch"
-            )
+            raise NativeIntelligenceTrainingLineageError("native training receipt seal mismatch")
 
 
 def seal_native_training_plan_v1(
     holdout: NativeIntelligenceHoldoutV1,
+    corpus: NativeTrainingCorpusReleaseV1,
     *,
     base_model_revision: str,
     base_weights_digest: str,
-    training_corpus_digest: str,
-    train_split_digest: str,
-    validation_split_digest: str,
-    test_split_digest: str,
     training_config_digest: str,
     training_method: str,
 ) -> NativeTrainingPlanV1:
-    """Seal the immutable identity of a training run before compute begins."""
+    """Seal the immutable identity of a training run before compute begins.
+
+    Corpus and split digests are accepted only through a verified corpus release.
+    This prevents a caller from manufacturing arbitrary digest strings that were
+    never produced by the oracle-backed corpus generator.
+    """
 
     holdout.assert_sealed()
+    try:
+        corpus.assert_sealed(holdout)
+    except ValueError as error:
+        raise NativeIntelligenceTrainingLineageError(str(error)) from error
+
     result = NativeTrainingPlanV1(
         khar_digest=CANONICAL_KHAR_DIGEST_V1,
         base_model_id=CANONICAL_BASE_MODEL_V1,
-        base_model_revision=_digest(
-            base_model_revision,
-            "base_model_revision",
-            length=40,
-        ),
-        base_weights_digest=_digest(
-            base_weights_digest,
-            "base_weights_digest",
-        ),
+        base_model_revision=_digest(base_model_revision, "base_model_revision", length=40),
+        base_weights_digest=_digest(base_weights_digest, "base_weights_digest"),
         source_commit=holdout.source_commit,
         curriculum_digest=holdout.curriculum_digest,
         constitutional_holdout_digest=holdout.digest,
-        training_corpus_digest=_digest(
-            training_corpus_digest,
-            "training_corpus_digest",
-        ),
-        train_split_digest=_digest(train_split_digest, "train_split_digest"),
-        validation_split_digest=_digest(
-            validation_split_digest,
-            "validation_split_digest",
-        ),
-        test_split_digest=_digest(test_split_digest, "test_split_digest"),
-        training_config_digest=_digest(
-            training_config_digest,
-            "training_config_digest",
-        ),
-        training_method=_text(
-            training_method,
-            "training_method",
-            max_length=64,
-        ),
+        training_corpus_digest=corpus.digest,
+        train_split_digest=corpus.split_digest("train"),
+        validation_split_digest=corpus.split_digest("validation"),
+        test_split_digest=corpus.split_digest("test"),
+        training_config_digest=_digest(training_config_digest, "training_config_digest"),
+        training_method=_text(training_method, "training_method", max_length=64),
         authority=False,
         digest="",
     )
@@ -327,16 +296,10 @@ def seal_native_training_receipt_v1(
     result = NativeTrainingReceiptV1(
         plan_digest=plan.digest,
         adapter_digest=_digest(adapter_digest, "adapter_digest"),
-        final_checkpoint_digest=_digest(
-            final_checkpoint_digest,
-            "final_checkpoint_digest",
-        ),
+        final_checkpoint_digest=_digest(final_checkpoint_digest, "final_checkpoint_digest"),
         trainer_log_digest=_digest(trainer_log_digest, "trainer_log_digest"),
         completed_steps=completed_steps,
-        completion_evidence_digest=_digest(
-            completion_evidence_digest,
-            "completion_evidence_digest",
-        ),
+        completion_evidence_digest=_digest(completion_evidence_digest, "completion_evidence_digest"),
         authority=False,
         deployment_approved=False,
         digest="",
