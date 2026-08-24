@@ -12,7 +12,7 @@ from dataclasses import dataclass
 import hashlib
 from typing import Iterable
 
-from .native_sigil_semantics_v1 import NativeSigilSemanticReport, check_native_sigils
+from .native_sigil_semantics_v1 import TypedSigilProgram, check_native_sigils
 from .native_sigils_v1 import NativeProgram
 
 _CTX = b"koschei.native-sigil-mir/v1\x00"
@@ -65,31 +65,67 @@ def _fingerprint(bindings: Iterable[MirSigilBinding], universe_digest: str) -> s
     return hashlib.sha256(_CTX + "\n".join(rows).encode("utf-8")).hexdigest()
 
 
+def _require_report_matches_program(
+    program: NativeProgram,
+    report: TypedSigilProgram,
+) -> TypedSigilProgram:
+    """Reject semantic state that is stale, foreign, or tampered.
+
+    Native MIR is a security boundary. A caller may cache typed semantics, but
+    lowering must never accept a report produced for another source program or
+    a report whose canonical sigil meaning has been modified after checking.
+    Re-deriving the small native semantic surface keeps this boundary
+    fail-closed until TypedSigilProgram owns an independent seal API.
+    """
+
+    canonical = check_native_sigils(program)
+    if report != canonical:
+        raise NativeSigilMirError(
+            "native sigil semantic report does not match the supplied program"
+        )
+    return report
+
+
 def lower_native_sigils(
     program: NativeProgram,
-    report: NativeSigilSemanticReport | None = None,
+    report: TypedSigilProgram | None = None,
 ) -> NativeSigilMir:
     """Lower typed native sigil semantics into deterministic sealed MIR."""
 
-    semantic = check_native_sigils(program) if report is None else report
-    if not semantic.bindings:
-        raise NativeSigilMirError("native program contains no sigil semantics")
+    if not isinstance(program, NativeProgram):
+        raise NativeSigilMirError("native sigil MIR lowering requires NativeProgram")
 
-    bindings = tuple(
-        MirSigilBinding(
-            sigil=item.declaration.sigil,
-            subject=item.declaration.subject,
-            semantic_domain=item.semantic_domain,
-            may_grant_authority=item.may_grant_authority,
-            obligations=item.obligations,
-            source_line=item.declaration.location.line,
-            source_column=item.declaration.location.column,
-        )
-        for item in semantic.bindings
+    semantic = (
+        check_native_sigils(program)
+        if report is None
+        else _require_report_matches_program(program, report)
     )
+    if not semantic.declarations:
+        raise NativeSigilMirError("native program contains no sigil semantics")
+    if len(semantic.declarations) != len(program.sigils):
+        raise NativeSigilMirError("native sigil semantic declaration count mismatch")
+
+    bindings: list[MirSigilBinding] = []
+    for declaration, typed in zip(program.sigils, semantic.declarations, strict=True):
+        if (declaration.sigil, declaration.subject) != (typed.sigil, typed.subject):
+            raise NativeSigilMirError(
+                "native sigil semantic declaration identity mismatch"
+            )
+        bindings.append(
+            MirSigilBinding(
+                sigil=typed.sigil,
+                subject=typed.subject,
+                semantic_domain=typed.semantic_domain,
+                may_grant_authority=typed.may_grant_authority,
+                obligations=typed.obligations,
+                source_line=declaration.location.line,
+                source_column=declaration.location.column,
+            )
+        )
+
     result = NativeSigilMir(
-        bindings=bindings,
-        universe_plan_digest=semantic.universe_plan.digest,
+        bindings=tuple(bindings),
+        universe_plan_digest=semantic.universe_plan_digest,
         fingerprint="",
     )
     object.__setattr__(
