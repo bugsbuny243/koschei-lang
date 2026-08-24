@@ -1,8 +1,11 @@
 from dataclasses import replace
+from pathlib import Path
+import tempfile
 import unittest
 
 from koschei.native_intelligence_holdout_v1 import build_native_intelligence_holdout_v1
 from koschei.native_intelligence_training_corpus_v1 import build_native_training_corpus_v1
+from koschei.native_intelligence_training_export_v1 import write_native_training_export_v1
 from koschei.native_intelligence_training_lineage_v1 import (
     NativeIntelligenceTrainingLineageError,
     build_native_intelligence_from_training_receipt_v1,
@@ -22,18 +25,26 @@ class NativeIntelligenceTrainingLineageV1Tests(unittest.TestCase):
         )
         cls.holdout = build_native_intelligence_holdout_v1(curriculum)
         cls.corpus = build_native_training_corpus_v1(cls.holdout, variants_per_family=1)
+        cls.export_temp = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls.export_temp.cleanup)
+        cls.export_manifest = write_native_training_export_v1(
+            cls.holdout,
+            cls.corpus,
+            Path(cls.export_temp.name) / "release",
+        )
 
     def plan(self):
         return seal_native_training_plan_v1(
             self.holdout,
             self.corpus,
+            self.export_manifest,
             base_model_revision="1" * 40,
             base_weights_digest="2" * 64,
             training_config_digest="7" * 64,
             training_method="lora-sft-v1",
         )
 
-    def test_plan_binds_base_source_holdout_verified_corpus_splits_and_config(self):
+    def test_plan_binds_base_source_holdout_corpus_exact_export_and_config(self):
         plan = self.plan()
         plan.assert_sealed()
 
@@ -42,6 +53,7 @@ class NativeIntelligenceTrainingLineageV1Tests(unittest.TestCase):
         self.assertEqual(plan.curriculum_digest, self.holdout.curriculum_digest)
         self.assertEqual(plan.constitutional_holdout_digest, self.holdout.digest)
         self.assertEqual(plan.training_corpus_digest, self.corpus.digest)
+        self.assertEqual(plan.training_export_digest, self.export_manifest.digest)
         self.assertEqual(plan.train_split_digest, self.corpus.split_digest("train"))
         self.assertEqual(plan.validation_split_digest, self.corpus.split_digest("validation"))
         self.assertEqual(plan.test_split_digest, self.corpus.split_digest("test"))
@@ -58,21 +70,27 @@ class NativeIntelligenceTrainingLineageV1Tests(unittest.TestCase):
         )
         foreign_holdout = build_native_intelligence_holdout_v1(foreign_curriculum)
         foreign_corpus = build_native_training_corpus_v1(foreign_holdout, variants_per_family=1)
-
-        with self.assertRaisesRegex(
-            NativeIntelligenceTrainingLineageError,
-            "different source commit|different constitutional holdout",
-        ):
-            seal_native_training_plan_v1(
-                self.holdout,
+        with tempfile.TemporaryDirectory() as directory:
+            foreign_manifest = write_native_training_export_v1(
+                foreign_holdout,
                 foreign_corpus,
-                base_model_revision="1" * 40,
-                base_weights_digest="2" * 64,
-                training_config_digest="7" * 64,
-                training_method="lora-sft-v1",
+                Path(directory) / "release",
             )
+            with self.assertRaisesRegex(
+                NativeIntelligenceTrainingLineageError,
+                "different source commit|different constitutional holdout",
+            ):
+                seal_native_training_plan_v1(
+                    self.holdout,
+                    foreign_corpus,
+                    foreign_manifest,
+                    base_model_revision="1" * 40,
+                    base_weights_digest="2" * 64,
+                    training_config_digest="7" * 64,
+                    training_method="lora-sft-v1",
+                )
 
-    def test_tampered_corpus_is_rejected_before_plan_seal(self):
+    def test_tampered_corpus_or_export_is_rejected_before_plan_seal(self):
         forged_corpus = replace(self.corpus, digest="f" * 64)
         with self.assertRaisesRegex(
             NativeIntelligenceTrainingLineageError,
@@ -81,6 +99,22 @@ class NativeIntelligenceTrainingLineageV1Tests(unittest.TestCase):
             seal_native_training_plan_v1(
                 self.holdout,
                 forged_corpus,
+                self.export_manifest,
+                base_model_revision="1" * 40,
+                base_weights_digest="2" * 64,
+                training_config_digest="7" * 64,
+                training_method="lora-sft-v1",
+            )
+
+        forged_manifest = replace(self.export_manifest, digest="e" * 64)
+        with self.assertRaisesRegex(
+            NativeIntelligenceTrainingLineageError,
+            "export manifest seal mismatch",
+        ):
+            seal_native_training_plan_v1(
+                self.holdout,
+                self.corpus,
+                forged_manifest,
                 base_model_revision="1" * 40,
                 base_weights_digest="2" * 64,
                 training_config_digest="7" * 64,
