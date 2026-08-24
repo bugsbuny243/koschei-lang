@@ -7,6 +7,7 @@ import unittest
 from koschei.native_model_curriculum_lang_hardening_v1 import REQUIRED_HARDENING_CASE_IDS
 from koschei.native_model_curriculum_lang_v1 import (
     N6_FAMILY,
+    RETIRED_ACTIVE_CASE_IDS,
     LangNativeCurriculumError,
     build_lang_native_model_curriculum_v1,
     load_lang_native_model_curriculum_v1,
@@ -50,7 +51,7 @@ class LangNativeCurriculumBoundaryTests(unittest.TestCase):
         ):
             verify_lang_native_model_curriculum_v1(legacy)
 
-    def test_active_profile_adds_exact_n3_n4_hardening_cases_and_reseals(self):
+    def test_active_profile_retires_faithful_nyr_v1_and_adds_hardening_cases(self):
         legacy = build_native_model_curriculum_v2(
             source_commit=SOURCE,
             parent_curriculum_digest=PARENT,
@@ -59,12 +60,13 @@ class LangNativeCurriculumBoundaryTests(unittest.TestCase):
         active_ids = {case.case_id for case in active.cases}
 
         self.assertNotEqual(active.curriculum_sha256, legacy.curriculum_sha256)
-        self.assertEqual(active.case_count, legacy.case_count + 4)
+        self.assertEqual(active.case_count, legacy.case_count + 3)
         self.assertEqual(active.stage_counts["N3"], legacy.stage_counts["N3"] + 2)
-        self.assertEqual(active.stage_counts["N4"], legacy.stage_counts["N4"] + 2)
-        self.assertEqual(active.accepted_count, legacy.accepted_count + 1)
+        self.assertEqual(active.stage_counts["N4"], legacy.stage_counts["N4"] + 1)
+        self.assertEqual(active.accepted_count, legacy.accepted_count)
         self.assertEqual(active.rejected_count, legacy.rejected_count + 3)
         self.assertTrue(set(REQUIRED_HARDENING_CASE_IDS).issubset(active_ids))
+        self.assertTrue(set(RETIRED_ACTIVE_CASE_IDS).isdisjoint(active_ids))
 
     def test_hara_cannot_transfer_across_aevra(self):
         item = next(
@@ -92,7 +94,7 @@ class LangNativeCurriculumBoundaryTests(unittest.TestCase):
         self.assertFalse(target["authority"])
         self.assertIn("different Veyra", target["reason"])
 
-    def test_nyr_render_does_not_expose_canonical_operational_world(self):
+    def test_nyr_v2_render_does_not_expose_canonical_operational_world(self):
         item = next(
             case for case in self.active().cases
             if case.case_id == "n4-nyr-does-not-expose-canonical-world"
@@ -100,6 +102,8 @@ class LangNativeCurriculumBoundaryTests(unittest.TestCase):
         target = json.loads(item.target_text)
 
         self.assertEqual(item.outcome, "ACCEPTED")
+        self.assertEqual(target["nyr_version"], 2)
+        self.assertFalse(target["canonical_roots_exposed"])
         self.assertFalse(target["canonical_subjects_exposed"])
         self.assertFalse(target["veyra_identity_exposed"])
         self.assertFalse(target["stable_topology_labels"])
@@ -107,7 +111,7 @@ class LangNativeCurriculumBoundaryTests(unittest.TestCase):
         self.assertEqual(target["visible_binding_count"], 5)
         self.assertEqual(len(target["render_sha256"]), 64)
 
-    def test_nyr_projection_is_not_cross_veyra_operational_map(self):
+    def test_nyr_v2_projection_is_not_cross_veyra_operational_map(self):
         item = next(
             case for case in self.active().cases
             if case.case_id == "n4-nyr-is-not-cross-veyra-transferable"
@@ -115,6 +119,7 @@ class LangNativeCurriculumBoundaryTests(unittest.TestCase):
         target = json.loads(item.target_text)
 
         self.assertEqual(item.outcome, "REJECTED")
+        self.assertEqual(target["nyr_version"], 2)
         self.assertEqual(target["result"], "ZERO")
         self.assertFalse(target["aliases_transfer_unchanged"])
         self.assertFalse(target["surface_digest_transfers_unchanged"])
@@ -144,6 +149,35 @@ class LangNativeCurriculumBoundaryTests(unittest.TestCase):
         with self.assertRaisesRegex(
             LangNativeCurriculumError,
             "missing hardening cases",
+        ):
+            verify_lang_native_model_curriculum_v1(active)
+
+    def test_retired_faithful_nyr_case_is_rejected_even_after_attacker_reseals(self):
+        active = self.active().to_dict()
+        legacy = build_native_model_curriculum_v2(
+            source_commit=SOURCE,
+            parent_curriculum_digest=PARENT,
+        ).to_dict()
+        retired_id = RETIRED_ACTIVE_CASE_IDS[0]
+        retired_case = next(case for case in legacy["cases"] if case["case_id"] == retired_id)
+        active["cases"].append(retired_case)
+        active["case_count"] += 1
+        active["stage_counts"]["N4"] += 1
+        active["accepted_count"] += 1
+        payload = dict(active)
+        payload.pop("curriculum_sha256")
+        active["curriculum_sha256"] = hashlib.sha256(
+            json.dumps(
+                payload,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+
+        with self.assertRaisesRegex(
+            LangNativeCurriculumError,
+            "retired faithful Nyr cases",
         ):
             verify_lang_native_model_curriculum_v1(active)
 
