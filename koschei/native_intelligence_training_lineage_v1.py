@@ -1,14 +1,15 @@
-"""Sealed training-plan and training-receipt lineage for native intelligence v1.
+"""Sealed plan and artifact lineage for Koschei native-intelligence training v1.
 
 Before compute starts, Koschei seals the exact base revision/weights, source
-commit, constitutional holdout, balanced verified oracle corpus, exact exported
-JSONL byte manifest, training configuration and method. Caller-supplied
-corpus/split hashes are not accepted by the public plan API.
+commit, constitutional holdout, balanced oracle corpus, exact exported JSONL byte
+manifest, training configuration and method.
 
-After training, adapter/checkpoint/log evidence is sealed into a receipt bound to
-that exact plan. The receipt digest is the ``training_run_digest`` consumed by
-``NativeIntelligenceIdentityV1``. Neither plan nor receipt carries execution
-authority or deployment approval.
+After compute, this module may seal adapter/checkpoint/log artifacts against that
+plan. That artifact receipt is deliberately NOT sufficient to create a native
+intelligence identity. The exact launch and run-start evidence must be joined by
+``native_intelligence_training_execution_v1`` before model identity can exist.
+
+No object in this module grants execution or deployment authority.
 """
 from __future__ import annotations
 
@@ -22,11 +23,7 @@ from .native_intelligence_holdout_v1 import NativeIntelligenceHoldoutV1
 from .native_intelligence_training_balance_v1 import require_native_training_balance_v1
 from .native_intelligence_training_corpus_v1 import NativeTrainingCorpusReleaseV1
 from .native_intelligence_training_export_v1 import NativeTrainingExportManifestV1
-from .native_intelligence_v1 import (
-    CANONICAL_BASE_MODEL_V1,
-    NativeIntelligenceIdentityV1,
-    build_native_intelligence_identity,
-)
+from .native_intelligence_v1 import CANONICAL_BASE_MODEL_V1
 
 _CTX = b"koschei.native-intelligence-training-lineage/v1\x00"
 _HEX = frozenset(string.hexdigits.lower())
@@ -37,7 +34,12 @@ class NativeIntelligenceTrainingLineageError(ValueError):
 
 
 def _canonical_json(value: object) -> bytes:
-    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
 
 
 def _hash(kind: bytes, payload: object) -> str:
@@ -46,16 +48,27 @@ def _hash(kind: bytes, payload: object) -> str:
 
 def _digest(value: str, label: str, *, length: int = 64) -> str:
     if not isinstance(value, str) or len(value) != length:
-        raise NativeIntelligenceTrainingLineageError(f"{label} must be {length} hexadecimal characters")
+        raise NativeIntelligenceTrainingLineageError(
+            f"{label} must be {length} hexadecimal characters"
+        )
     lowered = value.lower()
     if any(char not in _HEX for char in lowered) or lowered == "0" * length:
-        raise NativeIntelligenceTrainingLineageError(f"{label} must be a non-zero hexadecimal value")
+        raise NativeIntelligenceTrainingLineageError(
+            f"{label} must be a non-zero hexadecimal value"
+        )
     return lowered
 
 
 def _text(value: str, label: str, *, max_length: int = 96) -> str:
-    if not isinstance(value, str) or not value or len(value) > max_length or "\x00" in value:
-        raise NativeIntelligenceTrainingLineageError(f"{label} must be non-empty bounded text")
+    if (
+        not isinstance(value, str)
+        or not value
+        or len(value) > max_length
+        or "\x00" in value
+    ):
+        raise NativeIntelligenceTrainingLineageError(
+            f"{label} must be non-empty bounded text"
+        )
     return value
 
 
@@ -81,31 +94,49 @@ class NativeTrainingPlanV1:
 
     def assert_sealed(self) -> None:
         if self.version != 1:
-            raise NativeIntelligenceTrainingLineageError("unsupported native training plan version")
+            raise NativeIntelligenceTrainingLineageError(
+                "unsupported native training plan version"
+            )
         if self.khar_digest != CANONICAL_KHAR_DIGEST_V1:
-            raise NativeIntelligenceTrainingLineageError("native training plan is not bound to canonical Khar v1")
+            raise NativeIntelligenceTrainingLineageError(
+                "native training plan is not bound to canonical Khar v1"
+            )
         if self.base_model_id != CANONICAL_BASE_MODEL_V1:
-            raise NativeIntelligenceTrainingLineageError("native training plan base model is not canonical v1")
+            raise NativeIntelligenceTrainingLineageError(
+                "native training plan base model is not canonical v1"
+            )
         if self.authority is not False:
-            raise NativeIntelligenceTrainingLineageError("native training plan cannot carry authority")
+            raise NativeIntelligenceTrainingLineageError(
+                "native training plan cannot carry authority"
+            )
 
         revision = _digest(self.base_model_revision, "base_model_revision", length=40)
         weights = _digest(self.base_weights_digest, "base_weights_digest")
         source = _digest(self.source_commit, "source_commit", length=40)
         curriculum = _digest(self.curriculum_digest, "curriculum_digest")
-        holdout = _digest(self.constitutional_holdout_digest, "constitutional_holdout_digest")
+        holdout = _digest(
+            self.constitutional_holdout_digest,
+            "constitutional_holdout_digest",
+        )
         corpus = _digest(self.training_corpus_digest, "training_corpus_digest")
         export = _digest(self.training_export_digest, "training_export_digest")
         train = _digest(self.train_split_digest, "train_split_digest")
-        validation = _digest(self.validation_split_digest, "validation_split_digest")
+        validation = _digest(
+            self.validation_split_digest,
+            "validation_split_digest",
+        )
         test = _digest(self.test_split_digest, "test_split_digest")
         config = _digest(self.training_config_digest, "training_config_digest")
         method = _text(self.training_method, "training_method", max_length=64)
 
         if len({train, validation, test}) != 3:
-            raise NativeIntelligenceTrainingLineageError("train/validation/test split digests must be distinct")
+            raise NativeIntelligenceTrainingLineageError(
+                "train/validation/test split digests must be distinct"
+            )
         if holdout in {corpus, export, train, validation, test}:
-            raise NativeIntelligenceTrainingLineageError("constitutional holdout cannot be reused as training material")
+            raise NativeIntelligenceTrainingLineageError(
+                "constitutional holdout cannot be reused as training material"
+            )
 
         expected = _hash(
             b"plan",
@@ -128,11 +159,15 @@ class NativeTrainingPlanV1:
             },
         )
         if self.digest != expected:
-            raise NativeIntelligenceTrainingLineageError("native training plan seal mismatch")
+            raise NativeIntelligenceTrainingLineageError(
+                "native training plan seal mismatch"
+            )
 
 
 @dataclass(frozen=True, slots=True)
 class NativeTrainingReceiptV1:
+    """Artifact receipt only; it is not a model identity receipt."""
+
     plan_digest: str
     adapter_digest: str
     final_checkpoint_digest: str
@@ -146,20 +181,40 @@ class NativeTrainingReceiptV1:
 
     def assert_for(self, plan: NativeTrainingPlanV1) -> None:
         if self.version != 1:
-            raise NativeIntelligenceTrainingLineageError("unsupported native training receipt version")
+            raise NativeIntelligenceTrainingLineageError(
+                "unsupported native training receipt version"
+            )
         plan.assert_sealed()
         if self.plan_digest != plan.digest:
-            raise NativeIntelligenceTrainingLineageError("training receipt belongs to a different plan")
+            raise NativeIntelligenceTrainingLineageError(
+                "training receipt belongs to a different plan"
+            )
         if self.authority is not False:
-            raise NativeIntelligenceTrainingLineageError("training receipt cannot carry authority")
+            raise NativeIntelligenceTrainingLineageError(
+                "training receipt cannot carry authority"
+            )
         if self.deployment_approved is not False:
-            raise NativeIntelligenceTrainingLineageError("training completion is not deployment approval")
+            raise NativeIntelligenceTrainingLineageError(
+                "training completion is not deployment approval"
+            )
         adapter = _digest(self.adapter_digest, "adapter_digest")
-        checkpoint = _digest(self.final_checkpoint_digest, "final_checkpoint_digest")
+        checkpoint = _digest(
+            self.final_checkpoint_digest,
+            "final_checkpoint_digest",
+        )
         log = _digest(self.trainer_log_digest, "trainer_log_digest")
-        evidence = _digest(self.completion_evidence_digest, "completion_evidence_digest")
-        if isinstance(self.completed_steps, bool) or not isinstance(self.completed_steps, int) or self.completed_steps < 1:
-            raise NativeIntelligenceTrainingLineageError("completed_steps must be a positive integer")
+        evidence = _digest(
+            self.completion_evidence_digest,
+            "completion_evidence_digest",
+        )
+        if (
+            isinstance(self.completed_steps, bool)
+            or not isinstance(self.completed_steps, int)
+            or self.completed_steps < 1
+        ):
+            raise NativeIntelligenceTrainingLineageError(
+                "completed_steps must be a positive integer"
+            )
         expected = _hash(
             b"receipt",
             {
@@ -174,7 +229,9 @@ class NativeTrainingReceiptV1:
             },
         )
         if self.digest != expected:
-            raise NativeIntelligenceTrainingLineageError("native training receipt seal mismatch")
+            raise NativeIntelligenceTrainingLineageError(
+                "native training receipt seal mismatch"
+            )
 
 
 def seal_native_training_plan_v1(
@@ -187,7 +244,7 @@ def seal_native_training_plan_v1(
     training_config_digest: str,
     training_method: str,
 ) -> NativeTrainingPlanV1:
-    """Seal exact logical and byte-materialized balanced training identity before compute."""
+    """Seal exact balanced logical and byte-materialized training identity."""
 
     holdout.assert_sealed()
     try:
@@ -200,8 +257,15 @@ def seal_native_training_plan_v1(
     result = NativeTrainingPlanV1(
         khar_digest=CANONICAL_KHAR_DIGEST_V1,
         base_model_id=CANONICAL_BASE_MODEL_V1,
-        base_model_revision=_digest(base_model_revision, "base_model_revision", length=40),
-        base_weights_digest=_digest(base_weights_digest, "base_weights_digest"),
+        base_model_revision=_digest(
+            base_model_revision,
+            "base_model_revision",
+            length=40,
+        ),
+        base_weights_digest=_digest(
+            base_weights_digest,
+            "base_weights_digest",
+        ),
         source_commit=holdout.source_commit,
         curriculum_digest=holdout.curriculum_digest,
         constitutional_holdout_digest=holdout.digest,
@@ -210,8 +274,15 @@ def seal_native_training_plan_v1(
         train_split_digest=corpus.split_digest("train"),
         validation_split_digest=corpus.split_digest("validation"),
         test_split_digest=corpus.split_digest("test"),
-        training_config_digest=_digest(training_config_digest, "training_config_digest"),
-        training_method=_text(training_method, "training_method", max_length=64),
+        training_config_digest=_digest(
+            training_config_digest,
+            "training_config_digest",
+        ),
+        training_method=_text(
+            training_method,
+            "training_method",
+            max_length=64,
+        ),
         authority=False,
         digest="",
     )
@@ -252,16 +323,22 @@ def seal_native_training_receipt_v1(
     completed_steps: int,
     completion_evidence_digest: str,
 ) -> NativeTrainingReceiptV1:
-    """Seal completed training evidence without granting deployment authority."""
+    """Seal completed artifact evidence without granting model identity."""
 
     plan.assert_sealed()
     result = NativeTrainingReceiptV1(
         plan_digest=plan.digest,
         adapter_digest=_digest(adapter_digest, "adapter_digest"),
-        final_checkpoint_digest=_digest(final_checkpoint_digest, "final_checkpoint_digest"),
+        final_checkpoint_digest=_digest(
+            final_checkpoint_digest,
+            "final_checkpoint_digest",
+        ),
         trainer_log_digest=_digest(trainer_log_digest, "trainer_log_digest"),
         completed_steps=completed_steps,
-        completion_evidence_digest=_digest(completion_evidence_digest, "completion_evidence_digest"),
+        completion_evidence_digest=_digest(
+            completion_evidence_digest,
+            "completion_evidence_digest",
+        ),
         authority=False,
         deployment_approved=False,
         digest="",
@@ -290,17 +367,12 @@ def seal_native_training_receipt_v1(
 def build_native_intelligence_from_training_receipt_v1(
     plan: NativeTrainingPlanV1,
     receipt: NativeTrainingReceiptV1,
-) -> NativeIntelligenceIdentityV1:
-    """Bridge one sealed training receipt into the existing model identity."""
+):
+    """Reject the obsolete artifact-receipt-to-model-identity shortcut."""
 
     plan.assert_sealed()
     receipt.assert_for(plan)
-    return build_native_intelligence_identity(
-        base_model_revision=plan.base_model_revision,
-        base_weights_digest=plan.base_weights_digest,
-        curriculum_digest=plan.curriculum_digest,
-        adapter_digest=receipt.adapter_digest,
-        training_run_digest=receipt.digest,
-        source_commit=plan.source_commit,
-        training_method=plan.training_method,
+    raise NativeIntelligenceTrainingLineageError(
+        "artifact receipt cannot create native intelligence; "
+        "use an exact execution receipt"
     )
