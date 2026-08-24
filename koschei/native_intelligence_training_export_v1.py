@@ -11,6 +11,7 @@ from dataclasses import asdict, dataclass
 import hashlib
 import json
 from pathlib import Path
+import shutil
 import tempfile
 
 from .native_intelligence_holdout_v1 import NativeIntelligenceHoldoutV1
@@ -38,6 +39,18 @@ def _file_sha256(path: Path) -> str:
         for block in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+def _d64(value: str, label: str) -> str:
+    if not isinstance(value, str) or len(value) != 64:
+        raise NativeTrainingExportError(f"{label} must be a 64-character digest")
+    try:
+        int(value, 16)
+    except ValueError as error:
+        raise NativeTrainingExportError(f"{label} must be hexadecimal") from error
+    if value == "0" * 64:
+        raise NativeTrainingExportError(f"{label} cannot be zero")
+    return value.lower()
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,6 +81,14 @@ class NativeTrainingExportManifestV1:
     def assert_sealed(self) -> None:
         if self.version != 1 or self.schema != SCHEMA:
             raise NativeTrainingExportError("unsupported native training export manifest")
+        if not isinstance(self.source_commit, str) or len(self.source_commit) != 40:
+            raise NativeTrainingExportError("training export source_commit must be 40 hexadecimal characters")
+        try:
+            int(self.source_commit, 16)
+        except ValueError as error:
+            raise NativeTrainingExportError("training export source_commit must be hexadecimal") from error
+        _d64(self.constitutional_holdout_digest, "constitutional_holdout_digest")
+        _d64(self.corpus_digest, "corpus_digest")
         if self.authority is not False:
             raise NativeTrainingExportError("native training export cannot carry authority")
         if tuple(row.split for row in self.files) != SPLITS:
@@ -81,8 +102,8 @@ class NativeTrainingExportManifestV1:
         for row in self.files:
             if row.example_count < 1 or row.byte_count < 1:
                 raise NativeTrainingExportError("training export split cannot be empty")
-            if len(row.sha256) != 64 or len(row.corpus_split_digest) != 64:
-                raise NativeTrainingExportError("training export requires 64-character split digests")
+            _d64(row.sha256, f"{row.split} file sha256")
+            _d64(row.corpus_split_digest, f"{row.split} corpus split digest")
         expected = _hash(
             b"manifest",
             {
@@ -97,6 +118,26 @@ class NativeTrainingExportManifestV1:
         )
         if self.digest != expected:
             raise NativeTrainingExportError("native training export manifest seal mismatch")
+
+    def assert_for(
+        self,
+        holdout: NativeIntelligenceHoldoutV1,
+        corpus: NativeTrainingCorpusReleaseV1,
+    ) -> None:
+        self.assert_sealed()
+        holdout.assert_sealed()
+        corpus.assert_sealed(holdout)
+        if self.source_commit != corpus.source_commit:
+            raise NativeTrainingExportError("training export belongs to a different source commit")
+        if self.constitutional_holdout_digest != holdout.digest:
+            raise NativeTrainingExportError("training export belongs to a different constitutional holdout")
+        if self.corpus_digest != corpus.digest:
+            raise NativeTrainingExportError("training export belongs to a different corpus release")
+        if self.corpus_example_count != corpus.example_count:
+            raise NativeTrainingExportError("training export corpus example count mismatch")
+        for row in self.files:
+            if row.corpus_split_digest != corpus.split_digest(row.split):
+                raise NativeTrainingExportError(f"training export split identity mismatch: {row.split}")
 
 
 def _training_row(example) -> dict[str, object]:
@@ -148,8 +189,8 @@ def write_native_training_export_v1(
         raise FileExistsError(destination)
     destination.parent.mkdir(parents=True, exist_ok=True)
 
-    with tempfile.TemporaryDirectory(dir=destination.parent) as temporary:
-        root = Path(temporary)
+    root = Path(tempfile.mkdtemp(prefix=".koschei-training-", dir=destination.parent))
+    try:
         files = tuple(_write_split(root / f"{split}.jsonl", corpus, split) for split in SPLITS)
         manifest = NativeTrainingExportManifestV1(
             schema=SCHEMA,
@@ -177,19 +218,21 @@ def write_native_training_export_v1(
                 },
             ),
         )
-        manifest.assert_sealed()
+        manifest.assert_for(holdout, corpus)
         (root / "manifest.json").write_text(
             json.dumps(manifest.to_dict(), ensure_ascii=False, sort_keys=True, indent=2) + "\n",
             encoding="utf-8",
             newline="\n",
         )
         root.rename(destination)
+    except Exception:
+        if root.exists():
+            shutil.rmtree(root, ignore_errors=True)
+        raise
     return manifest
 
 
-def load_native_training_export_manifest_v1(
-    path: str | Path,
-) -> NativeTrainingExportManifestV1:
+def load_native_training_export_manifest_v1(path: str | Path) -> NativeTrainingExportManifestV1:
     """Load and self-verify a materialized training export manifest."""
 
     try:
@@ -212,10 +255,7 @@ def load_native_training_export_manifest_v1(
     return manifest
 
 
-def verify_native_training_export_v1(
-    manifest: NativeTrainingExportManifestV1,
-    directory: str | Path,
-) -> None:
+def verify_native_training_export_v1(manifest: NativeTrainingExportManifestV1, directory: str | Path) -> None:
     """Verify exact split bytes against one sealed export manifest."""
 
     manifest.assert_sealed()
