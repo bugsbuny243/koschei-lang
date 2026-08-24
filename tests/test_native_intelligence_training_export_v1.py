@@ -1,4 +1,5 @@
 import json
+from dataclasses import replace
 from pathlib import Path
 import tempfile
 import unittest
@@ -7,6 +8,7 @@ from koschei.native_intelligence_holdout_v1 import build_native_intelligence_hol
 from koschei.native_intelligence_training_corpus_v1 import build_native_training_corpus_v1
 from koschei.native_intelligence_training_export_v1 import (
     NativeTrainingExportError,
+    load_native_training_export_manifest_v1,
     verify_native_training_export_v1,
     write_native_training_export_v1,
 )
@@ -27,7 +29,7 @@ class NativeIntelligenceTrainingExportV1Tests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "release"
             manifest = write_native_training_export_v1(self.holdout, self.corpus, output)
-            manifest.assert_sealed()
+            manifest.assert_for(self.holdout, self.corpus)
             verify_native_training_export_v1(manifest, output)
 
             self.assertEqual([row.split for row in manifest.files], ["train", "validation", "test"])
@@ -42,6 +44,15 @@ class NativeIntelligenceTrainingExportV1Tests(unittest.TestCase):
             self.assertTrue(rows)
             self.assertTrue(all(row["split"] == "test" for row in rows))
             self.assertTrue(all(row["authority"] is False for row in rows))
+
+    def test_manifest_load_round_trip_preserves_exact_identity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "release"
+            expected = write_native_training_export_v1(self.holdout, self.corpus, output)
+            loaded = load_native_training_export_manifest_v1(output / "manifest.json")
+            self.assertEqual(loaded, expected)
+            loaded.assert_for(self.holdout, self.corpus)
+            verify_native_training_export_v1(loaded, output)
 
     def test_export_refuses_overwrite(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -61,6 +72,17 @@ class NativeIntelligenceTrainingExportV1Tests(unittest.TestCase):
                 "byte count mismatch|file digest mismatch|example count mismatch",
             ):
                 verify_native_training_export_v1(manifest, output)
+
+    def test_manifest_cannot_be_rebound_to_another_corpus(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "release"
+            manifest = write_native_training_export_v1(self.holdout, self.corpus, output)
+            forged = replace(manifest, corpus_digest="f" * 64)
+            with self.assertRaisesRegex(
+                NativeTrainingExportError,
+                "manifest seal mismatch|different corpus release",
+            ):
+                forged.assert_for(self.holdout, self.corpus)
 
 
 if __name__ == "__main__":
