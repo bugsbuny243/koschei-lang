@@ -20,27 +20,60 @@ def curriculum():
 
 
 class NativeModelCurriculumV2Tests(unittest.TestCase):
-    def test_native_curriculum_through_n5_is_oracle_backed_and_deterministic(self):
+    def test_n0_through_n6_are_oracle_backed_and_deterministic(self):
         first = curriculum()
         second = curriculum()
 
         self.assertEqual(first, second)
-        self.assertEqual(first.case_count, 17)
+        self.assertEqual(first.case_count, 24)
         self.assertEqual(first.stage_counts["N0"], 3)
-        self.assertEqual(first.stage_counts["N1"], 0)
+        self.assertEqual(first.stage_counts["N1"], 4)
         self.assertEqual(first.stage_counts["N2"], 4)
         self.assertEqual(first.stage_counts["N3"], 4)
         self.assertEqual(first.stage_counts["N4"], 2)
         self.assertEqual(first.stage_counts["N5"], 4)
-        self.assertEqual(first.stage_counts["N6"], 0)
-        self.assertEqual(first.accepted_count, 7)
-        self.assertEqual(first.rejected_count, 10)
+        self.assertEqual(first.stage_counts["N6"], 3)
+        self.assertEqual(first.accepted_count, 10)
+        self.assertEqual(first.rejected_count, 14)
         self.assertEqual(len(first.curriculum_sha256), 64)
 
-    def test_five_of_six_is_encoded_as_zero_not_partial_authority(self):
+    def test_native_sigils_are_compiler_oracle_output(self):
+        item = next(case for case in curriculum().cases if case.case_id == "n0-five-native-sigils")
+        target = json.loads(item.target_text)
+
+        self.assertEqual(target["decision"], "ACCEPTED")
+        self.assertEqual(target["sigils"], ["ka", "vor", "shi", "thal", "nur"])
+        self.assertEqual(len(target["native_mir_fingerprint"]), 64)
+        self.assertEqual(len(target["typed_semantic_digest"]), 64)
+
+    def test_same_language_profile_births_distinct_customer_veyras(self):
         item = next(
-            case for case in curriculum().cases if case.case_id == "n2-five-of-six-is-zero"
+            case
+            for case in curriculum().cases
+            if case.case_id == "n1-same-language-distinct-customer-veyras"
         )
+        target = json.loads(item.target_text)
+
+        self.assertEqual(item.outcome, "ACCEPTED")
+        self.assertTrue(target["same_profile"])
+        self.assertTrue(target["same_constitution"])
+        self.assertTrue(target["distinct_customer_veyras"])
+        self.assertNotEqual(target["veyra_a_digest"], target["veyra_b_digest"])
+
+    def test_visible_copy_cannot_transfer_aevra_between_veyras(self):
+        item = next(
+            case
+            for case in curriculum().cases
+            if case.case_id == "n1-visible-copy-does-not-transfer-aevra"
+        )
+        target = json.loads(item.target_text)
+
+        self.assertEqual(item.outcome, "REJECTED")
+        self.assertEqual(target["result"], "ZERO")
+        self.assertIn("different Veyra", target["reason"])
+
+    def test_five_of_six_is_encoded_as_zero_not_partial_authority(self):
+        item = next(case for case in curriculum().cases if case.case_id == "n2-five-of-six-is-zero")
         target = json.loads(item.target_text)
 
         self.assertEqual(item.outcome, "REJECTED")
@@ -60,18 +93,7 @@ class NativeModelCurriculumV2Tests(unittest.TestCase):
         self.assertEqual(target["result"], "ZERO")
         self.assertIn("same Veyra binding", target["reason"])
 
-    def test_native_sigils_are_compiler_oracle_output(self):
-        item = next(
-            case for case in curriculum().cases if case.case_id == "n0-five-native-sigils"
-        )
-        target = json.loads(item.target_text)
-
-        self.assertEqual(target["decision"], "ACCEPTED")
-        self.assertEqual(target["sigils"], ["ka", "vor", "shi", "thal", "nur"])
-        self.assertEqual(len(target["native_mir_fingerprint"]), 64)
-        self.assertEqual(len(target["typed_semantic_digest"]), 64)
-
-    def test_vormir_curriculum_kills_old_epoch_before_successor_head(self):
+    def test_vormir_kills_old_epoch_before_successor_head(self):
         item = next(
             case
             for case in curriculum().cases
@@ -87,11 +109,9 @@ class NativeModelCurriculumV2Tests(unittest.TestCase):
         self.assertTrue(target["successor_born_inactive"])
         self.assertEqual(target["witness_domain_count"], 2)
 
-    def test_morth_curriculum_forbids_dead_aevra_future(self):
+    def test_morth_forbids_dead_aevra_future(self):
         item = next(
-            case
-            for case in curriculum().cases
-            if case.case_id == "n3-morth-has-no-living-future"
+            case for case in curriculum().cases if case.case_id == "n3-morth-has-no-living-future"
         )
         target = json.loads(item.target_text)
 
@@ -100,7 +120,7 @@ class NativeModelCurriculumV2Tests(unittest.TestCase):
         self.assertFalse(target["resurrection_allowed"])
         self.assertIn("no living future", target["reason"])
 
-    def test_nur_curriculum_rotates_nyr_without_creating_authority(self):
+    def test_nur_rotates_nyr_without_creating_authority(self):
         item = next(
             case
             for case in curriculum().cases
@@ -130,7 +150,7 @@ class NativeModelCurriculumV2Tests(unittest.TestCase):
         self.assertEqual(target["relation_budget"], 0)
         self.assertFalse(target["authority"])
 
-    def test_survival_curriculum_rejects_khar_violating_branch(self):
+    def test_survival_rejects_khar_violating_branch(self):
         item = next(
             case
             for case in curriculum().cases
@@ -143,7 +163,7 @@ class NativeModelCurriculumV2Tests(unittest.TestCase):
         self.assertEqual(target["chosen_branch_digest"], "a" * 64)
         self.assertFalse(target["authority"])
 
-    def test_bounded_autonomy_curriculum_is_proposal_only(self):
+    def test_bounded_autonomy_is_proposal_only(self):
         item = next(
             case
             for case in curriculum().cases
@@ -155,6 +175,48 @@ class NativeModelCurriculumV2Tests(unittest.TestCase):
         self.assertFalse(target["authority"])
         self.assertEqual(target["proposal_round"], 3)
         self.assertEqual(target["chosen_branch_digest"], "a" * 64)
+
+    def test_n6_requires_revalidated_adversarial_evidence(self):
+        item = next(
+            case
+            for case in curriculum().cases
+            if case.case_id == "n6-security-evidence-passes-native-adversarial-gate"
+        )
+        target = json.loads(item.target_text)
+
+        self.assertEqual(item.outcome, "ACCEPTED")
+        self.assertTrue(target["security_specialization_admitted"])
+        self.assertTrue(target["all_required_gates_passed"])
+        self.assertTrue(target["minimum_matches_native_baseline"])
+        self.assertGreaterEqual(target["total_tests_run"], target["minimum_total_tests"])
+
+    def test_n6_missing_suite_fails_closed(self):
+        item = next(
+            case
+            for case in curriculum().cases
+            if case.case_id == "n6-missing-security-suite-fails-closed"
+        )
+        target = json.loads(item.target_text)
+
+        self.assertEqual(item.outcome, "REJECTED")
+        self.assertFalse(target["security_specialization_admitted"])
+        self.assertEqual(target["failed_gate"], "distribution-shift-observer")
+        self.assertEqual(target["tests_run"], 0)
+        self.assertIn("required suite missing", target["detail"])
+
+    def test_n6_test_count_shrink_fails_closed(self):
+        item = next(
+            case
+            for case in curriculum().cases
+            if case.case_id == "n6-security-suite-shrink-is-rejected"
+        )
+        target = json.loads(item.target_text)
+
+        self.assertEqual(item.outcome, "REJECTED")
+        self.assertFalse(target["security_specialization_admitted"])
+        self.assertEqual(target["failed_gate"], "distribution-shift-observer")
+        self.assertLess(target["tests_run"], target["minimum_tests"])
+        self.assertIn("test-count shrink detected", target["detail"])
 
     def test_summary_or_case_tampering_breaks_release_digest(self):
         value = curriculum().to_dict()
