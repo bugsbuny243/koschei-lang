@@ -8,20 +8,25 @@ Two entry points are explicit:
 
 - ``enforce_survival_branch_effect`` composes the base constitutional Galaxy
   path and remains useful where no external implementation witness exists;
-- ``enforce_witnessed_survival_branch_effect`` is the stronger deployment path
-  and additionally requires an externally witnessed Khar implementation root.
+- ``enforce_witnessed_survival_branch_effect`` is the stronger deployment path.
+  It forwards the original implementation measurement, witnesses and external
+  witness key material so the witnessed Galaxy boundary can freshly verify them.
 
-Automation and recovery code must not silently treat the base path as proof of
-physical compiler/runtime identity.
+Automation and recovery code must not silently treat a cached verification
+report as proof of physical compiler/runtime identity.
 """
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Callable, TypeVar
 
 from .galaxy_execution_gate_v1 import enforce_galaxy_critical_effect
 from .galaxy_identity_v1 import AevraIdentity, VeyraIdentity
 from .khar_failure_independence_v1 import FailureIndependentSathra
-from .khar_implementation_root_v1 import VerifiedKharImplementationRootV1
+from .khar_implementation_root_v1 import (
+    KharImplementationMeasurementV1,
+    KharImplementationWitnessV1,
+)
 from .khar_sathra_v1 import Sathra
 from .khar_witnessed_galaxy_execution_v1 import enforce_witnessed_galaxy_critical_effect
 from .matrix_horizon_fence_v1 import DurableMatrixHorizonFence
@@ -136,7 +141,9 @@ def enforce_survival_branch_effect(
 
 def enforce_witnessed_survival_branch_effect(
     *,
-    implementation_root: VerifiedKharImplementationRootV1,
+    implementation_measurement: KharImplementationMeasurementV1,
+    implementation_witnesses: tuple[KharImplementationWitnessV1, ...],
+    implementation_witness_keys: Mapping[str, bytes],
     decision: SurvivalBranchDecision,
     branch: SurvivalBranch,
     survival_binding: SurvivalEventBinding,
@@ -157,7 +164,7 @@ def enforce_witnessed_survival_branch_effect(
     failure_independence: FailureIndependentSathra,
     effect: Callable[[CanonicalEffectRequest], _T],
 ) -> tuple[EnforcementDecision, _T | None, AtomicClaim]:
-    """Execute survival mode only after exact-event and implementation witnesses agree."""
+    """Execute survival mode only after exact-event and fresh witness verification."""
 
     _require_exact_survival_binding(
         decision=decision,
@@ -174,7 +181,9 @@ def enforce_witnessed_survival_branch_effect(
         sathra_binding=sathra_binding,
     )
     return enforce_witnessed_galaxy_critical_effect(
-        implementation_root=implementation_root,
+        implementation_measurement=implementation_measurement,
+        implementation_witnesses=implementation_witnesses,
+        implementation_witness_keys=implementation_witness_keys,
         black_hole=black_hole,
         matrix_horizon=matrix_horizon,
         coordinator=coordinator,
