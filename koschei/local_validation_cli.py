@@ -73,6 +73,16 @@ def _steps(profile: str, candidate: str, adversarial_json: Path) -> tuple[tuple[
                 "import koschei, pytest; print('koschei+pytest import: PASS')",
             ),
         ),
+        (
+            "lang-sentinel-separation",
+            (
+                sys.executable,
+                "-m",
+                "koschei.lang_project_boundary_v1",
+                "--repo-root",
+                ".",
+            ),
+        ),
         ("verify-script-syntax", ("bash", "-n", "verify.sh")),
         ("repository-truth", ("bash", "verify.sh")),
         (
