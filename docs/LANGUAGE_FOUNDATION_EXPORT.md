@@ -1,6 +1,6 @@
 # Koschei Language Foundation Corpus v1
 
-Koschei Sentinel must learn Koschei from repository truth before it is trained to teach or assist with the language. The language repository therefore owns the authoritative export boundary.
+Koschei Lang owns the authoritative export boundary for language-foundation material used by optional downstream model training and evaluation. No external Koschei project is required for this corpus to exist, verify or remain useful.
 
 ## What v1 exports
 
@@ -52,6 +52,8 @@ A downstream dataset builder must keep a family entirely inside one of train, va
 
 ## Trust boundary
 
-The trusted build path proves which exported bytes came from the clean checked-out Koschei language commit and emits a canonical corpus SHA-256 for downstream pinning. The digest is not a digital signature; a downstream consumer must obtain the expected commit and corpus digest through its trusted handoff rather than trusting values copied from an untrusted artifact.
+The trusted build path proves which exported bytes came from the clean checked-out Koschei Lang commit and emits a canonical corpus SHA-256 for downstream pinning. The digest is not a digital signature; a downstream consumer must obtain the expected commit and corpus digest through its trusted handoff rather than trusting values copied from an untrusted artifact.
 
 The corpus does not claim that every sentence in documentation is a formal language specification, that every example is production-safe, or that a model trained on the corpus understands Koschei. Those are separate validation gates.
+
+Koschei Sentinel is frozen and is not a consumer dependency or trust root for this exporter. Historical Git revisions may mention an earlier Sentinel handoff; those references are superseded by the active Lang-only architecture.
