@@ -1,13 +1,16 @@
 """Qwen397B-specific launch-to-model-identity execution lineage v1.
 
-The generic execution objects bind plan/launch/artifacts, but Qwen397B model
-identity additionally requires that the plan still re-derives from the canonical
-base preflight, exact export and zero-truncation tokenizer evidence. This module
-is the only v1 bridge from completed Qwen training execution into
-NativeIntelligenceIdentityV1.
+Qwen execution is valid only for a source commit with a sealed full/clean local
+validation receipt. GitHub-hosted CI status is deliberately irrelevant. The
+receipt is rechecked at run-start, final execution receipt and model-identity
+minting so a generic launch path cannot bypass source validation.
 """
 from __future__ import annotations
 
+from .local_validation_v1 import (
+    LocalValidationError,
+    LocalValidationReceiptV1,
+)
 from .native_intelligence_qwen397b_preflight_v1 import Qwen397BPreflightEvidenceV1
 from .native_intelligence_qwen397b_profile_v1 import (
     Qwen397BKoscheiTrainingProfileV1,
@@ -39,6 +42,17 @@ class Qwen397BExecutionError(ValueError):
     pass
 
 
+def _require_source_validation(
+    plan: NativeTrainingPlanV1,
+    validation_receipt: LocalValidationReceiptV1,
+) -> None:
+    try:
+        plan.assert_sealed()
+        validation_receipt.require_for_release(plan.source_commit)
+    except (ValueError, LocalValidationError) as error:
+        raise Qwen397BExecutionError(str(error)) from error
+
+
 def _require_qwen_plan(
     plan: NativeTrainingPlanV1,
     manifest: NativeTrainingExportManifestV1,
@@ -64,6 +78,7 @@ def seal_qwen397b_training_run_start_v1(
     manifest: NativeTrainingExportManifestV1,
     preflight: Qwen397BPreflightEvidenceV1,
     token_profile: Qwen397BTokenProfileV1,
+    validation_receipt: LocalValidationReceiptV1,
     *,
     provider: str,
     job_reference_digest: str,
@@ -71,6 +86,7 @@ def seal_qwen397b_training_run_start_v1(
     profile: Qwen397BKoscheiTrainingProfileV1 | None = None,
 ) -> NativeTrainingRunStartV1:
     profile = profile or canonical_qwen397b_koschei_profile_v1()
+    _require_source_validation(plan, validation_receipt)
     _require_qwen_plan(plan, manifest, preflight, token_profile, profile)
     try:
         return seal_native_training_run_start_v1(
@@ -91,12 +107,14 @@ def seal_qwen397b_training_execution_receipt_v1(
     manifest: NativeTrainingExportManifestV1,
     preflight: Qwen397BPreflightEvidenceV1,
     token_profile: Qwen397BTokenProfileV1,
+    validation_receipt: LocalValidationReceiptV1,
     run_start: NativeTrainingRunStartV1,
     artifact_receipt: NativeTrainingReceiptV1,
     *,
     profile: Qwen397BKoscheiTrainingProfileV1 | None = None,
 ) -> NativeTrainingExecutionReceiptV1:
     profile = profile or canonical_qwen397b_koschei_profile_v1()
+    _require_source_validation(plan, validation_receipt)
     _require_qwen_plan(plan, manifest, preflight, token_profile, profile)
     try:
         return seal_native_training_execution_receipt_v1(
@@ -116,15 +134,17 @@ def build_qwen397b_native_intelligence_from_execution_receipt_v1(
     manifest: NativeTrainingExportManifestV1,
     preflight: Qwen397BPreflightEvidenceV1,
     token_profile: Qwen397BTokenProfileV1,
+    validation_receipt: LocalValidationReceiptV1,
     run_start: NativeTrainingRunStartV1,
     artifact_receipt: NativeTrainingReceiptV1,
     execution_receipt: NativeTrainingExecutionReceiptV1,
     *,
     profile: Qwen397BKoscheiTrainingProfileV1 | None = None,
 ) -> NativeIntelligenceIdentityV1:
-    """Create Qwen native intelligence only from complete Qwen execution evidence."""
+    """Create Qwen native intelligence only from complete validated execution evidence."""
 
     profile = profile or canonical_qwen397b_koschei_profile_v1()
+    _require_source_validation(plan, validation_receipt)
     _require_qwen_plan(plan, manifest, preflight, token_profile, profile)
     try:
         execution_receipt.assert_for(
