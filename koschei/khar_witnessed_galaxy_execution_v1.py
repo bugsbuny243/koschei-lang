@@ -1,22 +1,33 @@
-"""Galaxy execution wrapper that requires witnessed Khar implementation evidence.
+"""Galaxy execution wrapper that freshly verifies Khar implementation witnesses.
 
 The base Galaxy gate proves language/runtime constitutional relations.  This
 wrapper adds a stronger precondition: independent external witnesses must agree
 on the exact implementation measurement for this Veyra, native MIR and epoch.
 Only then is the ordinary constitutional gate allowed to run.
 
-The verified implementation root is evidence only.  It grants no authority and
-cannot replace Khar, Sathra, Matrix/Hara, Morth, failure-root independence or
-one-shot finality.
+A ``VerifiedKharImplementationRootV1`` is a non-authoritative verification
+report, not a credential.  This privileged boundary never accepts such a report
+by itself: it re-verifies the original measurement and witness MACs against
+external witness key material on every entry.  Directly constructing a report
+therefore cannot bypass witness verification.
+
+The external keys remain a deployment trust boundary.  Koschei software cannot
+prove that caller-supplied bytes came from TPM/TEE/HSM/isolated verifier storage;
+concrete deployments must source those keys independently from program state.
 """
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Callable, TypeVar
 
 from .galaxy_execution_gate_v1 import enforce_galaxy_critical_effect
 from .galaxy_identity_v1 import AevraIdentity, VeyraIdentity
 from .khar_failure_independence_v1 import FailureIndependentSathra
-from .khar_implementation_root_v1 import VerifiedKharImplementationRootV1
+from .khar_implementation_root_v1 import (
+    KharImplementationMeasurementV1,
+    KharImplementationWitnessV1,
+    verify_khar_implementation_root,
+)
 from .khar_sathra_v1 import Sathra
 from .matrix_horizon_fence_v1 import DurableMatrixHorizonFence
 from .matrix_reality_v1 import HaraIdentity, MatrixAdmission, MatrixIdentity
@@ -40,7 +51,9 @@ class KharWitnessedGalaxyExecutionError(ValueError):
 
 def enforce_witnessed_galaxy_critical_effect(
     *,
-    implementation_root: VerifiedKharImplementationRootV1,
+    implementation_measurement: KharImplementationMeasurementV1,
+    implementation_witnesses: tuple[KharImplementationWitnessV1, ...],
+    implementation_witness_keys: Mapping[str, bytes],
     black_hole: DurableBlackHole,
     matrix_horizon: DurableMatrixHorizonFence,
     coordinator: AtomicExecutionCoordinator,
@@ -58,18 +71,19 @@ def enforce_witnessed_galaxy_critical_effect(
     failure_independence: FailureIndependentSathra,
     effect: Callable[[CanonicalEffectRequest], _T],
 ) -> tuple[EnforcementDecision, _T | None, AtomicClaim]:
-    """Execute only when the external implementation root matches this reality."""
+    """Reverify implementation witnesses, then execute the exact Galaxy event."""
 
     try:
-        if not isinstance(implementation_root, VerifiedKharImplementationRootV1):
-            raise KharWitnessedGalaxyExecutionError("invalid witnessed implementation root")
-        implementation_root.assert_for(
+        root = verify_khar_implementation_root(
+            implementation_measurement,
+            implementation_witnesses,
+            witness_keys=implementation_witness_keys,
+        )
+        root.assert_for(
             veyra_digest=veyra.digest,
             native_mir_fingerprint=mir.fingerprint,
             epoch=request.epoch,
         )
-    except KharWitnessedGalaxyExecutionError:
-        raise
     except ValueError as error:
         raise KharWitnessedGalaxyExecutionError(str(error)) from error
 
