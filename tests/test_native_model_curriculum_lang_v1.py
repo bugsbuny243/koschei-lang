@@ -1,3 +1,4 @@
+import hashlib
 import json
 from pathlib import Path
 import tempfile
@@ -120,7 +121,7 @@ class LangNativeCurriculumBoundaryTests(unittest.TestCase):
         self.assertFalse(target["cross_veyra_operational_map_reuse"])
         self.assertFalse(target["authority"])
 
-    def test_missing_hardening_case_is_rejected_even_if_release_is_resealed(self):
+    def test_missing_hardening_case_is_rejected_even_after_attacker_reseals(self):
         active = self.active().to_dict()
         active["cases"] = [
             case for case in active["cases"]
@@ -129,11 +130,21 @@ class LangNativeCurriculumBoundaryTests(unittest.TestCase):
         active["case_count"] -= 1
         active["stage_counts"]["N4"] -= 1
         active["accepted_count"] -= 1
+        payload = dict(active)
+        payload.pop("curriculum_sha256")
+        active["curriculum_sha256"] = hashlib.sha256(
+            json.dumps(
+                payload,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
 
-        # Structural v2 verification will reject the stale release digest before
-        # the semantic hardening check. This is still fail-closed at the active
-        # training boundary.
-        with self.assertRaises(LangNativeCurriculumError):
+        with self.assertRaisesRegex(
+            LangNativeCurriculumError,
+            "missing hardening cases",
+        ):
             verify_lang_native_model_curriculum_v1(active)
 
     def test_active_write_load_round_trip_and_legacy_file_fails(self):
