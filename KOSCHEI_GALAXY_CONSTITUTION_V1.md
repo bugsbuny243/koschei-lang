@@ -4,13 +4,17 @@ Status: architectural invariant, implementation in progress
 
 This contract extends `KOSCHEI_LIBRARY_UNIVERSE_CONTRACT_V1.md` and the main Koschei Lang vision without replacing them. Koschei remains a general-purpose native language with a small visible surface, a deep Library, and executable Universe physics. The Galaxy layer defines how a customer-specific living Universe may exist without exposing a stable security map as ordinary project structure.
 
-## 1. Khar: non-weakening constitutional physics
+## 1. Khar: canonical non-substitutable physics
 
-Khar is the name for the laws a Koschei implementation must satisfy in order to remain Koschei. Khar is not a file, process, super-user, recovery credential, or privileged object.
-
-A new compiler, Library implementation, Universe profile, recovery path, or customer Galaxy may extend behavior only when the extension does not weaken an already-active Khar law.
+Khar is the public constitutional law set an implementation must satisfy in order to remain Koschei. Khar is not a secret file, process, super-user, recovery credential, or privileged object.
 
 No emergency, recovery, debug, migration, operator, autonomous subsystem, or internal Library path may silently reinterpret a Khar law into a weaker rule.
+
+Current first enforcement slice: `koschei/khar_constitution_v1.py` defines the exact public canonical Khar v1 law identifiers and derives one canonical digest from them. `birth_canonical_veyra()` binds a Veyra to that digest. `koschei/galaxy_execution_gate_v1.py` rejects a Veyra whose constitution digest was caller-substituted.
+
+Khar v1 is intentionally rigid: changing a law string while keeping the v1 identity is rejected. Future constitutional growth must use an explicit successor-constitution protocol; it must not silently rewrite v1.
+
+This is a language/runtime identity guarantee, not a claim that software bytes can never be replaced on a compromised machine. Proving that the executing compiler/runtime binary itself is the approved implementation still requires an external/measured trust root that Koschei can verify and bind. That physical root is future work.
 
 ## 2. No Golden Tray
 
@@ -47,7 +51,7 @@ Two customer systems may speak the same Koschei language without sharing the sam
 
 `copy(bytes) != birth(Aevra)` is a design law. A copied visible representation does not independently create canonical living identity.
 
-Current first enforcement slice: `koschei/galaxy_identity_v1.py` seals Veyra identity without storing a topology map and binds Aevra birth to one Veyra, one native-MIR compiler product, one canonical sigil subject, one birth epoch and explicit birth evidence. This is identity separation; full distributed Galaxy geometry remains future work.
+Current first enforcement slice: `koschei/galaxy_identity_v1.py` seals Veyra identity without storing a topology map and binds Aevra birth to one Veyra, one native-MIR compiler product, one canonical sigil subject, one birth epoch and explicit birth evidence. Strong constitutional execution additionally requires that Veyra to be canonical-Khar-bound.
 
 ## 5. Six Khar axes
 
@@ -134,27 +138,43 @@ Matrix is a controlled local execution reality inside one Veyra. Hara is one Aev
 
 A tighter canonical relation between Matrix identity and the `rha` axis remains future work.
 
-## 12. Survival branch selection
+## 12. Survival branch selection and exact-event binding
 
 Survival-branch reasoning is deterministic physics, not an AI sovereign deciding what to do.
 
 `koschei/survival_branch_v1.py` defines explicit branch metrics for authority escape, cross-domain spread, evidence loss, irreversible loss, availability loss and recoverability. Branches that weaken Khar or exceed hard safety ceilings are rejected before scoring. By default any authority escape or cross-domain spread makes a branch ineligible.
 
-Eligible branches are ranked by a deterministic objective. The result is a sealed plan commitment only; it grants no authority and cannot execute itself. A selected branch must still become an exact critical event through normal Galaxy laws.
+`koschei/survival_event_binding_v1.py` derives the selected branch's action commitment from the exact native MIR, Veyra, Aevra, Matrix, Hara, canonical request and epoch. The selected plan cannot be moved to a different request, Matrix/Hara, Aevra, Veyra or reality.
+
+`koschei/survival_execution_gate_v1.py` then requires that exact survival binding before delegating to the normal strongest Galaxy gate. The survival selector still grants no authority and cannot bypass Khar, Morth, current Hara, 6/6, failure-root independence or atomic one-shot finality.
 
 If no candidate future preserves Khar within hard ceilings, selection fails closed instead of choosing the least-bad unsafe branch.
 
-## 13. Autonomous systems
+## 13. Bounded autonomous systems
 
-Automated or model-driven systems may operate inside Koschei, but they do not gain sovereignty over Khar. They must not weaken concurrence, rewrite evidence finality, manufacture an axis, bypass current-Hara finality or declare their own policy constitutional.
+Automated or model-driven systems may operate inside Koschei, but they do not gain sovereignty over Khar.
 
-## 14. Strongest current critical path
+`koschei/bounded_autonomy_v1.py` is the first native bounded-autonomy slice. Automation may rank an explicitly bounded candidate set through the same deterministic Khar-bound survival selector. Candidate count, proposal round and objective are sealed. The proposal is explicitly `authority=False`; changing the candidate set, objective, chosen decision or authority bit invalidates it.
 
-The strongest current composed critical path is:
+`koschei/bounded_autonomy_execution_v1.py` gives automation no side door. A proposal must revalidate against the exact candidate set/objective/bounds, must execute only its selected branch, and then must pass the complete survival-event and Galaxy constitutional gates.
 
-`native MIR -> Aevra/Veyra -> sealed Matrix/Hara -> durable current-Hara check -> living/Morth check -> exact request proof -> 6/6 Sathra -> six failure-root proof -> atomic one-shot claim -> decision/effect finality`
+Autonomy therefore may propose and orchestrate within explicit bounds; it cannot weaken concurrence, rewrite evidence finality, manufacture an axis, bypass current-Hara/Morth finality, replace Khar, or declare its own policy constitutional.
 
-This path is implemented by `koschei/galaxy_execution_gate_v1.py` together with the modules it verifies. New privileged Galaxy work should not intentionally bypass the strongest available constitutional gate.
+## 14. Strongest current critical paths
+
+Normal constitutional critical path:
+
+`canonical Khar -> native MIR -> Aevra/Veyra -> sealed Matrix/Hara -> durable current-Hara -> living/Morth -> exact request proof -> 6/6 Sathra -> six failure-root proof -> atomic one-shot claim -> decision/effect finality`
+
+Survival-mode path adds:
+
+`Khar-safe candidate futures -> deterministic survival decision -> exact survival-event binding -> normal constitutional critical path`
+
+Bounded-autonomy path adds:
+
+`bounded authority-free proposal -> exact chosen survival branch -> survival-mode path`
+
+These paths are implemented by `galaxy_execution_gate_v1.py`, `survival_execution_gate_v1.py`, and `bounded_autonomy_execution_v1.py` together with the modules they verify. New privileged Galaxy work should not intentionally bypass the strongest applicable constitutional gate.
 
 ## 15. Implementation order
 
@@ -170,8 +190,11 @@ This path is implemented by `koschei/galaxy_execution_gate_v1.py` together with 
 10. **FIRST SLICE APPLIED** — Matrix/Hara identity and admission;
 11. **FIRST SLICE APPLIED** — durable cross-Matrix Hara Event Horizon;
 12. **FIRST SLICE APPLIED** — deterministic Khar-bound survival-branch selection;
-13. **NEXT** — bind survival decisions to exact Galaxy events without giving the selector authority;
-14. then bounded autonomous orchestration and stronger physical failure-root attestation.
+13. **FIRST SLICE APPLIED** — survival decision bound to exact Galaxy event and survival execution gate;
+14. **FIRST SLICE APPLIED** — canonical non-substitutable Khar v1 at strongest execution gate;
+15. **FIRST SLICE APPLIED** — bounded authority-free autonomous proposal and execution composition;
+16. **NEXT** — measured/externally attested implementation-root binding for Khar and stronger physical failure-root evidence;
+17. then tighter `rha`/Matrix reality coupling, lineage-wide Black Hole composition and later cryptographic/quantum work with explicit evidence rather than naming alone.
 
 `FIRST SLICE APPLIED` means a concrete enforced path and tests exist. It does not mean the entire constitutional area is complete.
 
