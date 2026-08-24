@@ -4,9 +4,9 @@ A critical effect must not accept a reusable or context-free Sathra. This layer
 binds one sealed Sathra to one compiler-produced Aevra, one customer Veyra, one
 canonical effect request, one epoch and the exact native MIR reality.
 
-The existing native proof/request gate remains responsible for Library proof and
-request replay protection. This layer adds the Galaxy constitutional requirement
-that critical execution also possesses a valid 6/6 Sathra for that same event.
+The durable path additionally claims the exact request atomically before any
+critical effect runs and finalizes that claim after the decision. The same Sathra
+and exact request therefore cannot be replayed into a second critical event.
 """
 from __future__ import annotations
 
@@ -16,6 +16,15 @@ from typing import Callable, TypeVar
 
 from .galaxy_identity_v1 import AevraIdentity, VeyraIdentity
 from .khar_sathra_v1 import Sathra
+from .native_sigil_atomic_execution_coordinator_v1 import (
+    AtomicClaim,
+    AtomicExecutionCoordinator,
+)
+from .native_sigil_enforcement_gate_v1 import (
+    EnforcementDecision,
+    PrivilegedEffectIntent,
+    evaluate_enforcement,
+)
 from .native_sigil_mir_v1 import NativeSigilMir
 from .native_sigil_proof_pipeline_v1 import NativeSigilProofBundle
 from .native_sigil_request_binding_v1 import (
@@ -23,7 +32,6 @@ from .native_sigil_request_binding_v1 import (
     RequestBoundProof,
     enforce_bound_effect,
 )
-from .native_sigil_enforcement_gate_v1 import EnforcementDecision
 
 _CTX = b"koschei.sathra-request-binding/v1\x00"
 _T = TypeVar("_T")
@@ -52,9 +60,6 @@ class SathraRequestBinding:
         request: CanonicalEffectRequest,
         sathra: Sathra,
     ) -> None:
-        # Normalize failures from the lower identity/MIR/request/Sathra layers so
-        # callers cannot accidentally treat a malformed constituent as a valid
-        # Galaxy-level binding merely because it raised a different exception.
         try:
             mir.assert_sealed()
             veyra.assert_sealed()
@@ -157,7 +162,11 @@ def enforce_sathra_bound_effect(
     sathra_binding: SathraRequestBinding,
     effect: Callable[[CanonicalEffectRequest], _T],
 ) -> tuple[EnforcementDecision, _T | None]:
-    """Run a critical effect only after both proof binding and exact 6/6 Sathra."""
+    """Reference non-durable gate for exact 6/6 binding.
+
+    Production critical execution should prefer `enforce_atomic_sathra_bound_effect`
+    so the Sathra event is durably one-shot.
+    """
 
     sathra_binding.assert_sealed(mir, veyra, aevra, request, sathra)
     return enforce_bound_effect(
@@ -167,3 +176,61 @@ def enforce_sathra_bound_effect(
         request_bound_proof,
         effect,
     )
+
+
+def enforce_atomic_sathra_bound_effect(
+    mir: NativeSigilMir,
+    veyra: VeyraIdentity,
+    aevra: AevraIdentity,
+    request: CanonicalEffectRequest,
+    proof: NativeSigilProofBundle,
+    request_bound_proof: RequestBoundProof,
+    sathra: Sathra,
+    sathra_binding: SathraRequestBinding,
+    coordinator: AtomicExecutionCoordinator,
+    effect: Callable[[CanonicalEffectRequest], _T],
+) -> tuple[EnforcementDecision, _T | None, AtomicClaim]:
+    """Consume one exact Sathra event through the durable atomic boundary."""
+
+    sathra_binding.assert_sealed(mir, veyra, aevra, request, sathra)
+    request_bound_proof.assert_sealed(mir, request, proof)
+
+    intent = PrivilegedEffectIntent(
+        effect_id=request.effect_id,
+        subject=request.subject,
+        operation=request.operation,
+        request_digest=request.request_digest,
+    )
+    decision = evaluate_enforcement(mir, proof, intent)
+
+    # Claim only after the complete proof/Sathra chain is validated, but before
+    # any effect can run. Duplicate exact events fail here durably.
+    claim = coordinator.atomic_claim(request, proof.digest)
+
+    if decision.decision != "ALLOW":
+        terminal = "CONTAINED" if decision.decision == "CONTAIN" else "REJECTED"
+        final_claim = coordinator.finalize_claim(
+            claim,
+            state=terminal,
+            decision_digest=decision.digest,
+        )
+        return decision, None, final_claim
+
+    try:
+        value = effect(request)
+    except Exception:
+        # The caller cannot safely know whether an external effect partially
+        # occurred. Preserve that ambiguity durably and block replay.
+        coordinator.finalize_claim(
+            claim,
+            state="UNCERTAIN",
+            decision_digest=decision.digest,
+        )
+        raise
+
+    final_claim = coordinator.finalize_claim(
+        claim,
+        state="COMMITTED",
+        decision_digest=decision.digest,
+    )
+    return decision, value, final_claim
