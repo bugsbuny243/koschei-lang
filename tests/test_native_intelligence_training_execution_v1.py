@@ -136,19 +136,19 @@ class NativeIntelligenceTrainingExecutionV1Tests(unittest.TestCase):
                 foreign_artifact,
             )
 
-    def test_model_identity_uses_execution_receipt_as_training_run_identity(self):
-        identity = build_native_intelligence_from_execution_receipt_v1(
-            self.plan,
-            self.launch,
-            self.manifest,
-            self.run_start,
-            self.artifact_receipt,
-            self.execution_receipt,
-        )
-        identity.assert_sealed()
-        self.assertEqual(identity.adapter_digest, self.execution_receipt.adapter_digest)
-        self.assertEqual(identity.training_run_digest, self.execution_receipt.digest)
-        self.assertFalse(identity.authority)
+    def test_generic_execution_receipt_cannot_mint_model_identity(self):
+        with self.assertRaisesRegex(
+            NativeTrainingExecutionError,
+            "model-family-specific execution bridge",
+        ):
+            build_native_intelligence_from_execution_receipt_v1(
+                self.plan,
+                self.launch,
+                self.manifest,
+                self.run_start,
+                self.artifact_receipt,
+                self.execution_receipt,
+            )
 
     def test_tampered_execution_receipt_fails_closed(self):
         forged = replace(self.execution_receipt, completed_steps=124)
