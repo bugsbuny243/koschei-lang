@@ -1,9 +1,9 @@
 """Active Lang-only release profile for the native model curriculum.
 
 The underlying executable oracle implementation remains the compatible v2
-curriculum format. This profile removes the cancelled Sentinel-merge semantics
-from active releases, rejects legacy merged curricula at the training boundary,
-and requires additional executable N3/N4 Matrix/Nur hardening cases.
+curriculum format. This profile removes cancelled cross-project semantics,
+rejects legacy merged curricula at the training boundary, retires the faithful
+Nyr-v1 root-label example, and requires executable N3/N4 Matrix/Nur hardening.
 """
 from __future__ import annotations
 
@@ -29,6 +29,9 @@ from .native_model_curriculum_v2 import (
 
 ACTIVE_PROFILE = "koschei-lang.native-curriculum-profile.v1"
 N6_FAMILY = "lang-defensive-reasoning:current-evidence"
+RETIRED_ACTIVE_CASE_IDS = (
+    "n4-nur-rotates-nyr-without-authority",
+)
 _FORBIDDEN_ACTIVE_FRAGMENTS = (
     "sentinel",
     "historical-security-material",
@@ -98,8 +101,29 @@ def _rewrite_n6_case(case: NativeCurriculumCaseV2) -> NativeCurriculumCaseV2:
 
 
 def _reseal(curriculum: NativeModelCurriculumV2) -> NativeModelCurriculumV2:
-    cases = tuple(_rewrite_n6_case(case) for case in curriculum.cases)
-    provisional = replace(curriculum, cases=cases, curriculum_sha256="0" * 64)
+    cases = tuple(
+        _rewrite_n6_case(case)
+        for case in curriculum.cases
+        if case.case_id not in RETIRED_ACTIVE_CASE_IDS
+    )
+    stage_counts = {stage: 0 for stage in curriculum.stage_counts}
+    accepted = 0
+    rejected = 0
+    for case in cases:
+        stage_counts[case.stage] += 1
+        if case.outcome == "ACCEPTED":
+            accepted += 1
+        else:
+            rejected += 1
+    provisional = replace(
+        curriculum,
+        cases=cases,
+        case_count=len(cases),
+        stage_counts=stage_counts,
+        accepted_count=accepted,
+        rejected_count=rejected,
+        curriculum_sha256="0" * 64,
+    )
     payload = provisional.to_dict()
     payload.pop("curriculum_sha256", None)
     digest = hashlib.sha256(_canonical_json(payload).encode("utf-8")).hexdigest()
@@ -118,6 +142,13 @@ def verify_lang_native_model_curriculum_v1(
             raise LangNativeCurriculumError(
                 f"active Lang curriculum contains cancelled Sentinel-merge semantics: {fragment}"
             )
+
+    case_ids = {case.case_id for case in verified.cases}
+    retired = tuple(case_id for case_id in RETIRED_ACTIVE_CASE_IDS if case_id in case_ids)
+    if retired:
+        raise LangNativeCurriculumError(
+            f"active Lang curriculum contains retired faithful Nyr cases: {retired!r}"
+        )
 
     n6 = tuple(case for case in verified.cases if case.stage == "N6")
     if len(n6) != 3:
@@ -138,7 +169,7 @@ def build_lang_native_model_curriculum_v1(
     source_commit: str,
     parent_curriculum_digest: str,
 ) -> NativeModelCurriculumV2:
-    """Build the active Lang-only curriculum without changing oracle compatibility."""
+    """Build the active Lang-only curriculum without changing release compatibility."""
 
     legacy_shape = build_native_model_curriculum_v2(
         source_commit=source_commit,
