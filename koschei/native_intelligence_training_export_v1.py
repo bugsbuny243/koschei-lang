@@ -14,10 +14,7 @@ from pathlib import Path
 import tempfile
 
 from .native_intelligence_holdout_v1 import NativeIntelligenceHoldoutV1
-from .native_intelligence_training_corpus_v1 import (
-    NativeTrainingCorpusReleaseV1,
-    SPLITS,
-)
+from .native_intelligence_training_corpus_v1 import NativeTrainingCorpusReleaseV1, SPLITS
 
 _CTX = b"koschei.native-intelligence-training-export/v1\x00"
 SCHEMA = "koschei.native-intelligence-training-export/v1"
@@ -153,10 +150,7 @@ def write_native_training_export_v1(
 
     with tempfile.TemporaryDirectory(dir=destination.parent) as temporary:
         root = Path(temporary)
-        files = tuple(
-            _write_split(root / f"{split}.jsonl", corpus, split)
-            for split in SPLITS
-        )
+        files = tuple(_write_split(root / f"{split}.jsonl", corpus, split) for split in SPLITS)
         manifest = NativeTrainingExportManifestV1(
             schema=SCHEMA,
             source_commit=corpus.source_commit,
@@ -190,6 +184,31 @@ def write_native_training_export_v1(
             newline="\n",
         )
         root.rename(destination)
+    return manifest
+
+
+def load_native_training_export_manifest_v1(
+    path: str | Path,
+) -> NativeTrainingExportManifestV1:
+    """Load and self-verify a materialized training export manifest."""
+
+    try:
+        value = json.loads(Path(path).read_text(encoding="utf-8"))
+        files = tuple(NativeTrainingSplitFileV1(**row) for row in value["files"])
+        manifest = NativeTrainingExportManifestV1(
+            schema=value["schema"],
+            source_commit=value["source_commit"],
+            constitutional_holdout_digest=value["constitutional_holdout_digest"],
+            corpus_digest=value["corpus_digest"],
+            corpus_example_count=value["corpus_example_count"],
+            files=files,
+            authority=value["authority"],
+            digest=value["digest"],
+            version=value.get("version", 1),
+        )
+    except (OSError, json.JSONDecodeError, KeyError, TypeError) as error:
+        raise NativeTrainingExportError(f"invalid native training export manifest: {error}") from error
+    manifest.assert_sealed()
     return manifest
 
 
