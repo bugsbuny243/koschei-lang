@@ -118,15 +118,19 @@ Current first enforcement slice: `koschei/vormir_sacrifice_v1.py` retains the ol
 
 This first slice proves durable epoch sacrifice. It does not yet prove that the witness domains have physically independent failure roots, nor does it yet express every possible Aevra-level sacrifice.
 
-## 10. Morth, Event Horizon, and Black Hole direction
+## 10. Morth, Event Horizon, and Black Hole
 
 Morth denotes a path that no longer has a valid future in the living Galaxy.
 
-Event Horizon denotes the irreversible boundary after which an old authority/reality path cannot return through ordinary rollback.
+Event Horizon denotes the irreversible boundary after which an old Aevra/authority/reality path cannot return through ordinary rollback.
 
-Black Hole denotes the terminal sink for dead authority, stale epoch state, consumed events, and compromised lineage. Historical evidence may remain inspectable; dead power must not escape into a new epoch.
+Black Hole denotes the terminal sink for dead identity, dead authority, stale epoch state, consumed events, and compromised lineage. Historical evidence may remain inspectable; dead power must not escape into a new living path.
 
-Existing durable epoch tombstones, atomic event finality, containment, replay fencing, Vormir sacrifice and rebirth mechanisms are foundations for this unified law, not proof that the complete model is finished.
+Current first enforcement slice: `koschei/morth_black_hole_v1.py` provides an append-only durable Black Hole for canonical Aevra identities. Crossing its Event Horizon writes a sealed Morth record with Veyra, Aevra, death epoch, cause and evidence. There is deliberately no delete, restore or unbury API. A Morth Aevra is rejected before atomic Sathra execution even when the request and six-axis concurrence are otherwise valid.
+
+Rebirth is explicitly distinct from resurrection: the same visible Koschei subject may be born again only as a different Aevra identity after the Morth epoch. The old Aevra digest remains terminal and inspectable.
+
+This first slice covers Aevra finality and composes with existing durable epoch tombstones and one-shot event finality. Full Matrix/lineage-wide Black Hole composition remains future work.
 
 ## 11. Matrix direction
 
@@ -148,8 +152,8 @@ The implementation sequence is:
 4. **FIRST SLICE APPLIED** — define Veyra identity and customer-Galaxy identity separation without creating a new golden topology-map object;
 5. **FIRST SLICE APPLIED** — define observer projection / time-bounded visible-surface rules under `nur`;
 6. **FIRST SLICE APPLIED** — implement durable Vormir epoch-sacrifice physics;
-7. **NEXT** — unify Morth / Event Horizon / Black Hole lifecycle conservation;
-8. prove real failure independence for the six axes;
+7. **FIRST SLICE APPLIED** — unify the first Aevra-level Morth / Event Horizon / Black Hole enforcement path;
+8. **NEXT** — prove real failure independence for the six axes;
 9. expand adversarial tests for attacker-specific model learning and cross-customer generalization;
 10. only then grow higher Galaxy mechanisms such as survival branching and advanced autonomous orchestration.
 
