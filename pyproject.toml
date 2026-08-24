@@ -48,6 +48,7 @@ ks-foundation-export = "koschei.foundation_export_cli:main"
 ks-model-curriculum = "koschei.model_curriculum_cli:main"
 ks-native-model-curriculum = "koschei.native_model_curriculum_cli_v2:main"
 ks-native-training-corpus = "koschei.native_intelligence_training_corpus_cli_v1:main"
+ks-local-validate = "koschei.local_validation_cli:main"
 ks-universe = "koschei.universe_cli:main"
 ks-universe-remote = "koschei.universe_remote_app_v1:main"
 
