@@ -4,8 +4,10 @@ import koschei.bounded_autonomy_execution_v1 as autonomy_gate
 import koschei.survival_execution_gate_v1 as survival_gate
 
 
-def test_witnessed_survival_routes_only_to_witnessed_galaxy_gate(monkeypatch):
-    implementation_root = object()
+def test_witnessed_survival_routes_raw_witness_evidence_only_to_witnessed_galaxy(monkeypatch):
+    measurement = object()
+    witnesses = (object(), object())
+    witness_keys = {"a": b"A" * 32, "b": b"B" * 32}
     observed = {}
 
     monkeypatch.setattr(
@@ -32,7 +34,9 @@ def test_witnessed_survival_routes_only_to_witnessed_galaxy_gate(monkeypatch):
     )
 
     result = survival_gate.enforce_witnessed_survival_branch_effect(
-        implementation_root=implementation_root,
+        implementation_measurement=measurement,
+        implementation_witnesses=witnesses,
+        implementation_witness_keys=witness_keys,
         decision=object(),
         branch=object(),
         survival_binding=object(),
@@ -56,11 +60,16 @@ def test_witnessed_survival_routes_only_to_witnessed_galaxy_gate(monkeypatch):
 
     assert result == ("decision", "result", "claim")
     assert "binding" in observed
-    assert observed["witnessed"]["implementation_root"] is implementation_root
+    assert observed["witnessed"]["implementation_measurement"] is measurement
+    assert observed["witnessed"]["implementation_witnesses"] is witnesses
+    assert observed["witnessed"]["implementation_witness_keys"] is witness_keys
+    assert "implementation_root" not in observed["witnessed"]
 
 
-def test_witnessed_autonomy_routes_only_to_witnessed_survival_gate(monkeypatch):
-    implementation_root = object()
+def test_witnessed_autonomy_routes_raw_witness_evidence_only_to_witnessed_survival(monkeypatch):
+    measurement = object()
+    witnesses = (object(), object())
+    witness_keys = {"a": b"A" * 32, "b": b"B" * 32}
     proposal = SimpleNamespace(decision=object())
     observed = {}
 
@@ -88,7 +97,9 @@ def test_witnessed_autonomy_routes_only_to_witnessed_survival_gate(monkeypatch):
     )
 
     result = autonomy_gate.enforce_witnessed_bounded_autonomy_effect(
-        implementation_root=implementation_root,
+        implementation_measurement=measurement,
+        implementation_witnesses=witnesses,
+        implementation_witness_keys=witness_keys,
         proposal=proposal,
         branches=(object(),),
         objective=object(),
@@ -115,5 +126,8 @@ def test_witnessed_autonomy_routes_only_to_witnessed_survival_gate(monkeypatch):
 
     assert result == ("decision", "result", "claim")
     assert "proposal" in observed
-    assert observed["witnessed"]["implementation_root"] is implementation_root
+    assert observed["witnessed"]["implementation_measurement"] is measurement
+    assert observed["witnessed"]["implementation_witnesses"] is witnesses
+    assert observed["witnessed"]["implementation_witness_keys"] is witness_keys
     assert observed["witnessed"]["decision"] is proposal.decision
+    assert "implementation_root" not in observed["witnessed"]
