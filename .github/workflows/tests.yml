@@ -1,11 +1,12 @@
 name: Koschei Compiler Tests
 
+# GitHub-hosted Actions are not part of the canonical validation boundary for
+# this repository. The hosted Free-plan allowance is unavailable, so automatic
+# push/PR runs would only create false-red status noise. Keep this workflow as a
+# manual fallback recipe; the real path is `ks-local-validate --profile full`
+# with receipt/evidence stored outside the checkout.
 on:
-  push:
-    branches:
-      - main
-      - agent/**
-  pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -13,7 +14,6 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -28,165 +28,22 @@ jobs:
         with:
           go-version: "1.21"
 
-      - name: Install package and test runner
+      - name: Install package and local validator dependencies
         run: python -m pip install -e . pytest
 
-      - name: Run unit tests
-        run: python -m unittest discover -s tests -v
-
-      - name: Check capability example
-        run: python -m koschei check examples/capability.ks
-
-      - name: Check runtime demo
-        run: python -m koschei check examples/runtime_demo.ks
-
-      - name: Run runtime demo
-        run: python -m koschei run examples/runtime_demo.ks
-
-      - name: Check control flow example
-        run: python -m koschei check examples/control_flow.ks
-
-      - name: Run control flow example
+      - name: Run canonical full validation recipe
         run: |
-          output="$(python -m koschei run examples/control_flow.ks)"
-          test "$output" = $'3\n2\n1\nKoschei control flow: PASS'
+          ks-local-validate \
+            --profile full \
+            --output /tmp/koschei-local-validation.json \
+            --evidence-dir /tmp/koschei-validation-evidence
 
-      - name: Build native binary
-        run: python -m koschei build examples/hello.ks -o /tmp/koschei-hello
-
-      - name: Native binary matches interpreter
-        run: |
-          native="$(/tmp/koschei-hello)"
-          interpreted="$(python -m koschei run examples/hello.ks)"
-          test "$native" = "$interpreted"
-
-      - name: Native capability runtime matches interpreter
-        run: |
-          python -m koschei build examples/runtime_demo.ks -o /tmp/koschei-runtime
-          native="$(KOSCHEI_RUNTIME_NAME=Native /tmp/koschei-runtime)"
-          interpreted="$(KOSCHEI_RUNTIME_NAME=Native python -m koschei run examples/runtime_demo.ks)"
-          test "$native" = "$interpreted"
-          case "$native" in
-            *"Merhaba Native"*) ;;
-            *) echo "HATA: native capability runtime beklenen env çıktısını vermedi" >&2; exit 1 ;;
-          esac
-
-      - name: Validate v0.10 diagnostics and project tools
-        shell: bash
-        run: |
-          set -euo pipefail
-          python -m koschei version | grep -F "Koschei 0.10.0"
-          python -m koschei check --json examples/hello.ks \
-            | python -c 'import json,sys; data=json.load(sys.stdin); assert data["ok"] and data["modules"] == 1'
-          tmp="$(mktemp -d)"
-          trap 'rm -rf "$tmp"' EXIT
-          python -m koschei new ci-project --path "$tmp/ci-project"
-          python -m koschei check --json "$tmp/ci-project" \
-            | python -c 'import json,sys; assert json.load(sys.stdin)["ok"]'
-          python -m koschei run "$tmp/ci-project" | grep -F "Hello from ci-project"
-          python -m koschei build "$tmp/ci-project" -o "$tmp/app"
-          test "$("$tmp/app")" = "Hello from ci-project"
-
-      - name: Validate VS Code extension
-        shell: bash
-        run: |
-          set -euo pipefail
-          node --check editors/vscode/extension.js
-          python -c 'import json; from pathlib import Path; [json.loads(Path(p).read_text(encoding="utf-8")) for p in ("editors/vscode/package.json", "editors/vscode/language-configuration.json", "editors/vscode/syntaxes/koschei.tmLanguage.json")]'
-
-      - name: Capability manifest for showcase
-        run: python -m koschei caps examples/showcase.ks
-
-      - name: Pure example requests no capabilities
-        run: python -m koschei caps examples/hello.ks --deny disk --deny net --deny env --deny process
-
-      - name: Policy gate rejects undeclared network access
-        run: |
-          if python -m koschei caps examples/showcase.ks --deny net; then
-            echo "HATA: politika kapısı ağ talebini reddetmeliydi" >&2
-            exit 1
-          fi
-
-      - name: Examples stay canonically formatted
-        run: |
-          for file in examples/*.ks; do
-            python -m koschei fmt --check "$file"
-          done
-
-      - name: Run v0.7 daily-programming example
-        run: |
-          output="$(python -m koschei run examples/daily.ks)"
-          case "$output" in
-            *"Kişi sayısı: 3"*) ;;
-            *) echo "HATA: v0.7 günlük program örneği beklenen çıktıyı vermedi" >&2; exit 1 ;;
-          esac
-
-      - name: Run v0.8 algebraic-type example
-        run: |
-          output="$(python -m koschei run examples/v08_types.ks)"
-          test "$output" = $'Gönderildi: Onur\nişlem başarısız'
-
-      - name: Native v0.8 algebraic types match interpreter
-        run: |
-          python -m koschei build examples/v08_types.ks -o /tmp/koschei-v08-types
-          native="$(/tmp/koschei-v08-types)"
-          interpreted="$(python -m koschei run examples/v08_types.ks)"
-          test "$native" = "$interpreted"
-
-      - name: Native v0.8 daily collections match interpreter
-        run: |
-          python -m koschei build examples/daily.ks -o /tmp/koschei-daily
-          native="$(/tmp/koschei-daily)"
-          interpreted="$(python -m koschei run examples/daily.ks)"
-          test "$native" = "$interpreted"
-
-      - name: Native v0.8 maps match interpreter
-        run: |
-          python -m koschei build examples/maps.ks -o /tmp/koschei-maps
-          native="$(/tmp/koschei-maps)"
-          interpreted="$(python -m koschei run examples/maps.ks)"
-          test "$native" = "$interpreted"
-
-      - name: Native v0.8 structs match interpreter
-        run: |
-          python -m koschei build examples/holders.ks -o /tmp/koschei-holders
-          native="$(/tmp/koschei-holders)"
-          interpreted="$(python -m koschei run examples/holders.ks)"
-          test "$native" = "$interpreted"
-
-      - name: Native v0.8 modules match interpreter
-        run: |
-          python -m koschei build examples/app.ks -o /tmp/koschei-app
-          native="$(/tmp/koschei-app)"
-          interpreted="$(python -m koschei run examples/app.ks)"
-          test "$native" = "$interpreted"
-
-      - name: Run data-structure example
-        run: |
-          output="$(python -m koschei run examples/holders.ks)"
-          case "$output" in
-            *KRITIK*) ;;
-            *) echo "HATA: holders örneği beklenen çıktıyı vermedi" >&2; exit 1 ;;
-          esac
-
-      - name: Multi-file program runs
-        run: |
-          output="$(python -m koschei run examples/app.ks)"
-          case "$output" in
-            *KRITIK*) ;;
-            *) echo "HATA: app örneği beklenen çıktıyı vermedi" >&2; exit 1 ;;
-          esac
-
-      - name: Supply-chain attack still does not compile
-        run: |
-          if python -m koschei check examples/supply_chain/main.ks; then
-            echo "HATA: yetkisiz modül derlenmemeliydi" >&2
-            exit 1
-          fi
-
-      - name: Module examples stay canonically formatted
-        run: |
-          python -m koschei fmt --check examples/app.ks
-          python -m koschei fmt --check examples/risk.ks
-          python -m koschei fmt --check examples/supply_chain/main.ks
-          python -m koschei fmt --check examples/supply_chain/analytics.ks
+      - name: Upload sealed validation receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: koschei-local-validation
+          path: |
+            /tmp/koschei-local-validation.json
+            /tmp/koschei-validation-evidence
+          if-no-files-found: warn
