@@ -5,8 +5,10 @@ may begin, the exact train and validation export bytes must be formatted with th
 pinned Qwen tokenizer and measured. V1 permits zero silent truncation: if one
 example exceeds the cap, the corpus/profile must be changed and resealed.
 
-The sealed test split is intentionally absent from this evidence because it is
-not a trainer input.
+The token profile binds not only a formatting-version label but the exact stdlib
+formatter contract digest, so prompt/role drift cannot silently reuse an old
+preflight. The sealed test split is intentionally absent from this evidence
+because it is not a trainer input.
 """
 from __future__ import annotations
 
@@ -17,11 +19,14 @@ import string
 
 from .native_intelligence_qwen397b_base_spec_v1 import CANONICAL_QWEN397B_REVISION_V1
 from .native_intelligence_qwen397b_profile_v1 import Qwen397BKoscheiTrainingProfileV1
+from .native_intelligence_qwen397b_sft_format_v1 import (
+    FORMATTING_VERSION_V1,
+    qwen397b_format_contract_digest_v1,
+)
 from .native_intelligence_training_export_v1 import NativeTrainingExportManifestV1
 
 _CTX = b"koschei.native-intelligence-qwen397b-token-profile/v1\x00"
 _HEX = frozenset(string.hexdigits.lower())
-FORMATTING_VERSION_V1 = "koschei-sft-messages/v1"
 
 
 class Qwen397BTokenProfileError(ValueError):
@@ -55,6 +60,7 @@ class Qwen397BTokenProfileV1:
     training_export_digest: str
     tokenizer_revision: str
     formatting_version: str
+    format_contract_digest: str
     max_length: int
     train_examples: int
     validation_examples: int
@@ -73,6 +79,7 @@ class Qwen397BTokenProfileV1:
             "training_export_digest": self.training_export_digest,
             "tokenizer_revision": self.tokenizer_revision,
             "formatting_version": self.formatting_version,
+            "format_contract_digest": self.format_contract_digest,
             "max_length": self.max_length,
             "train_examples": self.train_examples,
             "validation_examples": self.validation_examples,
@@ -100,6 +107,10 @@ class Qwen397BTokenProfileV1:
             raise Qwen397BTokenProfileError("tokenizer revision drift")
         if self.formatting_version != FORMATTING_VERSION_V1:
             raise Qwen397BTokenProfileError("SFT formatting version drift")
+        expected_format = qwen397b_format_contract_digest_v1()
+        if self.format_contract_digest != expected_format:
+            raise Qwen397BTokenProfileError("SFT format contract digest mismatch")
+        _digest(self.format_contract_digest, "format_contract_digest")
         if self.max_length != profile.max_sequence_length:
             raise Qwen397BTokenProfileError("token profile max length differs from training profile")
         expected_counts = {row.split: row.example_count for row in manifest.files}
@@ -157,6 +168,7 @@ def seal_qwen397b_token_profile_v1(
         training_export_digest=manifest.digest,
         tokenizer_revision=tokenizer_revision,
         formatting_version=formatting_version,
+        format_contract_digest=qwen397b_format_contract_digest_v1(),
         max_length=profile.max_sequence_length,
         train_examples=train_examples,
         validation_examples=validation_examples,
