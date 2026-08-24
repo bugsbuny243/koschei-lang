@@ -1,9 +1,9 @@
 name: Koschei Ceremony Report
 
+# Automatic GitHub-hosted CI is disabled. This benchmark recipe is retained for
+# manual use only; release evidence comes from `ks-local-validate --profile full`.
 on:
-  pull_request:
-  push:
-    branches: [main]
+  workflow_dispatch:
 
 jobs:
   ceremony:
@@ -13,6 +13,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: python -m pip install -e .
+      - run: python -m pip install -e . pytest
       - name: Check benchmark programs and report ratios
         run: ./bench/ceremony/check.sh
