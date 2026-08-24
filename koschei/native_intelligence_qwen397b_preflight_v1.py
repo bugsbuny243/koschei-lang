@@ -16,6 +16,10 @@ import hashlib
 import json
 import string
 
+from .native_intelligence_qwen397b_base_spec_v1 import (
+    CANONICAL_QWEN397B_MODEL_ID_V1,
+    CANONICAL_QWEN397B_REVISION_V1,
+)
 from .native_intelligence_qwen397b_profile_v1 import (
     OFFICIAL_ARCHITECTURE,
     OFFICIAL_EXPERTS,
@@ -24,8 +28,6 @@ from .native_intelligence_qwen397b_profile_v1 import (
     OFFICIAL_TEXT_HIDDEN_SIZE,
     OFFICIAL_TEXT_LAYERS,
 )
-from .native_intelligence_qwen397b_training_plan_v1 import CANONICAL_QWEN397B_REVISION_V1
-from .native_intelligence_v1 import CANONICAL_BASE_MODEL_V1
 
 _CTX = b"koschei.native-intelligence-qwen397b-preflight/v1\x00"
 _HEX = frozenset(string.hexdigits.lower())
@@ -103,7 +105,7 @@ class Qwen397BPreflightEvidenceV1:
     def assert_sealed(self) -> None:
         if self.version != 1:
             raise Qwen397BPreflightError("unsupported Qwen397B preflight version")
-        if self.repo_id != CANONICAL_BASE_MODEL_V1:
+        if self.repo_id != CANONICAL_QWEN397B_MODEL_ID_V1:
             raise Qwen397BPreflightError("Qwen397B preflight repo mismatch")
         if self.requested_revision != CANONICAL_QWEN397B_REVISION_V1:
             raise Qwen397BPreflightError("Qwen397B requested revision drift")
