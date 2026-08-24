@@ -33,7 +33,9 @@ This law does not claim that source bytes can never leak. It requires that visib
 
 The compiler and Library may produce authorized proofs and diagnostics, but a source tree must not be accepted as a substitute for Veyra, epoch, evidence, or living-event identity.
 
-Long-term target: time-bounded observer projections may vary without changing the canonical Aevra meaning. Such projections must never be allowed to change Khar semantics.
+Time-bounded observer projections may vary without changing canonical Aevra meaning. Such projections must never be allowed to change Khar semantics.
+
+Current first enforcement slice: `koschei/nur_nyr_projection_v1.py` derives observer/epoch-specific Nyr surfaces from sealed native MIR and a sealed Veyra. Canonical sigil roots remain visible while canonical subject names and Veyra identity are absent from the visible Nyr surface. This is not yet a claim that the entire customer Galaxy topology is hidden.
 
 ## 4. Aevra and Veyra
 
@@ -44,6 +46,8 @@ Veyra denotes the customer-specific living Galaxy geometry in which Aevra relati
 Two customer systems may speak the same Koschei language without sharing the same Veyra. Learning one customer's operational geometry must not be a language-level guarantee of another customer's geometry.
 
 `copy(bytes) != birth(Aevra)` is a design law. A copied visible representation does not independently create canonical living identity.
+
+Current first enforcement slice: `koschei/galaxy_identity_v1.py` seals Veyra identity without storing a topology map and binds Aevra birth to one Veyra, one native-MIR compiler product, one canonical sigil subject, one birth epoch and explicit birth evidence. This is identity separation; full distributed Galaxy geometry remains future work.
 
 ## 5. Six Khar axes
 
@@ -84,7 +88,9 @@ Current enforcement: `koschei/khar_sathra_v1.py` implements and seals this rule.
 
 Sathra is the moment in which six valid axes concur on one critical event. It is not a reusable master authority and must not become an Infinity-Gauntlet-style object that grants unrelated future outcomes.
 
-Long-term enforcement target: request/effect execution must consume a Sathra bound to the exact event and must not accept a Sathra from another Aevra, Veyra, epoch, reality, or operation.
+Current first enforcement slice: `koschei/sathra_request_binding_v1.py` binds one Sathra to the exact canonical privileged request, Aevra, Veyra, epoch and native-MIR executable reality before delegating to the existing proof/request enforcement gate. A Sathra from another request, Veyra, Aevra, epoch or MIR is rejected.
+
+Future work must add one-shot consumption/finality so a valid exact-event Sathra cannot remain reusable after its event has completed.
 
 ## 7. Axis independence
 
@@ -92,7 +98,7 @@ Compromise or observation of one Khar axis must not automatically reveal, synthe
 
 A valid `vaal` witness is not an `esh` witness. A valid `teyr` witness is not a `rha` witness. The Galaxy must not hide a single common trust object behind six different names.
 
-Failure-independence tests must eventually prove that six logical axes are also separated by their real failure roots.
+Logical independence is currently enforced by requiring six distinct axis witnesses. Failure-independence tests must still prove that six logical axes are also separated by their real failure roots.
 
 ## 8. No permanent attack map
 
@@ -100,9 +106,9 @@ Koschei is designed under the assumption that an attacker may use models trained
 
 The architecture target is therefore stronger than syntax novelty. The attacker should not receive a stable operational map merely by learning the language grammar, conventional file organization, or one customer's prior observations.
 
-Long-term target: authorized observer surfaces can be time-bounded and compartment-specific while canonical evidence continuity remains intact.
+Current first enforcement slice combines the existing `library_adversary_learning_resistance_v0.py` and `library_adaptive_visibility_v0.py` with `nur_nyr_projection_v1.py`: observer/session pressure controls a rotating visibility envelope, and the Nyr surface changes across visibility epochs, observer sessions and customer Veyras while canonical MIR remains unchanged.
 
-This target must not rely on obscurity as the only defense. If a projection leaks, Khar concurrence and independence laws remain mandatory.
+This is not yet a claim that every runtime artifact, timing channel, memory observation or external side channel is non-learnable. The projection layer is one part of No Golden Tray, not its sole defense. If a projection leaks, Khar concurrence and independence laws remain mandatory.
 
 ## 9. Vormir direction
 
@@ -134,18 +140,20 @@ Automated or model-driven systems may operate inside Koschei, but they do not ga
 
 ## 13. Implementation order
 
-The next implementation sequence is:
+The implementation sequence is:
 
-1. keep the native `lexer -> parser -> AST -> typed semantics -> MIR -> Library -> Universe -> proof -> enforcement` chain working and fail-closed;
-2. bind native sigil MIR into the canonical module/compiler spine rather than leaving a parallel path;
-3. bind exact critical requests to six-axis Sathra concurrence;
-4. define Veyra identity and customer-Galaxy separation without creating a new golden map object;
-5. define observer projection / time-bounded visible-surface rules under `nur`;
-6. implement Vormir irreversible sacrifice physics;
+1. **FIRST SLICE APPLIED** — keep the native `lexer -> parser -> AST -> typed semantics -> MIR -> Library -> Universe -> proof -> enforcement` chain working and fail-closed;
+2. **FIRST SLICE APPLIED** — bind native sigil MIR into the canonical module/compiler spine rather than leaving a parallel path;
+3. **FIRST SLICE APPLIED** — bind exact critical requests to six-axis Sathra concurrence;
+4. **FIRST SLICE APPLIED** — define Veyra identity and customer-Galaxy identity separation without creating a new golden topology-map object;
+5. **FIRST SLICE APPLIED** — define observer projection / time-bounded visible-surface rules under `nur`;
+6. **NEXT** — implement Vormir irreversible sacrifice physics;
 7. unify Morth / Event Horizon / Black Hole lifecycle conservation;
 8. prove real failure independence for the six axes;
 9. expand adversarial tests for attacker-specific model learning and cross-customer generalization;
 10. only then grow higher Galaxy mechanisms such as survival branching and advanced autonomous orchestration.
+
+The phrase `FIRST SLICE APPLIED` means a concrete enforced path and tests now exist. It does not mean the complete constitutional area is finished.
 
 ## 14. Anti-drift rule
 
