@@ -13,6 +13,7 @@ from koschei.khar_failure_independence_v1 import (
 )
 from koschei.khar_sathra_v1 import AxisWitness, seal_sathra
 from koschei.library_proof_envelope_v1 import make_receipt
+from koschei.matrix_horizon_fence_v1 import DurableMatrixHorizonFence
 from koschei.matrix_reality_v1 import admit_matrix_hara, birth_hara, birth_matrix
 from koschei.morth_black_hole_v1 import DurableBlackHole
 from koschei.native_sigil_atomic_execution_coordinator_v1 import (
@@ -142,10 +143,11 @@ def build():
     )
 
 
-def kwargs(values, black_hole, coordinator, effect):
+def kwargs(values, black_hole, matrix_horizon, coordinator, effect):
     mir, proof, veyra, aevra, matrix, hara, matrix_admission, request, bound, sathra, sb, independence = values
     return dict(
         black_hole=black_hole,
+        matrix_horizon=matrix_horizon,
         coordinator=coordinator,
         mir=mir,
         veyra=veyra,
@@ -163,18 +165,31 @@ def kwargs(values, black_hole, coordinator, effect):
     )
 
 
-def test_complete_galaxy_gate_executes_one_living_independent_matrix_event_once():
+def open_world(directory, values):
+    black_hole = DurableBlackHole(Path(directory) / "black-hole.sqlite3")
+    horizon = DurableMatrixHorizonFence(Path(directory) / "matrix-horizon.sqlite3")
+    coordinator = AtomicExecutionCoordinator(Path(directory) / "execution.sqlite3")
+    state = initial_universe_state(("ka", "vor", "shi", "thal", "nur"), epoch=7)
+    coordinator.initialize(state)
+    horizon.initialize(values[6])
+    return black_hole, horizon, coordinator
+
+
+def close_world(black_hole, horizon, coordinator):
+    black_hole.close()
+    horizon.close()
+    coordinator.close()
+
+
+def test_complete_galaxy_gate_executes_one_living_independent_current_hara_event_once():
     values = build()
     request = values[7]
-    state = initial_universe_state(("ka", "vor", "shi", "thal", "nur"), epoch=7)
     calls = []
     with tempfile.TemporaryDirectory() as directory:
-        with DurableBlackHole(Path(directory) / "black-hole.sqlite3") as black_hole, AtomicExecutionCoordinator(
-            Path(directory) / "execution.sqlite3"
-        ) as coordinator:
-            coordinator.initialize(state)
+        black_hole, horizon, coordinator = open_world(directory, values)
+        try:
             decision, value, claim = enforce_galaxy_critical_effect(
-                **kwargs(values, black_hole, coordinator, lambda item: calls.append(item.digest) or "done")
+                **kwargs(values, black_hole, horizon, coordinator, lambda item: calls.append(item.digest) or "done")
             )
             assert decision.decision == "ALLOW"
             assert value == "done"
@@ -182,19 +197,18 @@ def test_complete_galaxy_gate_executes_one_living_independent_matrix_event_once(
             assert calls == [request.digest]
             with pytest.raises(AtomicExecutionCoordinatorError):
                 enforce_galaxy_critical_effect(
-                    **kwargs(values, black_hole, coordinator, lambda _: "must-not-run")
+                    **kwargs(values, black_hole, horizon, coordinator, lambda _: "must-not-run")
                 )
+        finally:
+            close_world(black_hole, horizon, coordinator)
 
 
-def test_morth_blocks_complete_six_axis_independent_matrix_event():
+def test_morth_blocks_complete_current_hara_event():
     values = build()
     mir, _, veyra, aevra = values[:4]
-    state = initial_universe_state(("ka", "vor", "shi", "thal", "nur"), epoch=7)
     with tempfile.TemporaryDirectory() as directory:
-        with DurableBlackHole(Path(directory) / "black-hole.sqlite3") as black_hole, AtomicExecutionCoordinator(
-            Path(directory) / "execution.sqlite3"
-        ) as coordinator:
-            coordinator.initialize(state)
+        black_hole, horizon, coordinator = open_world(directory, values)
+        try:
             black_hole.enter_event_horizon(
                 aevra,
                 veyra,
@@ -205,35 +219,87 @@ def test_morth_blocks_complete_six_axis_independent_matrix_event():
             )
             with pytest.raises(GalaxyExecutionError, match="no living future"):
                 enforce_galaxy_critical_effect(
-                    **kwargs(values, black_hole, coordinator, lambda _: "must-not-run")
+                    **kwargs(values, black_hole, horizon, coordinator, lambda _: "must-not-run")
                 )
+        finally:
+            close_world(black_hole, horizon, coordinator)
 
 
 def test_foreign_failure_independence_is_rejected_before_execution():
     values = list(build())
     values[11] = replace(values[11], sathra_digest=d("foreign"))
-    state = initial_universe_state(("ka", "vor", "shi", "thal", "nur"), epoch=7)
     with tempfile.TemporaryDirectory() as directory:
-        with DurableBlackHole(Path(directory) / "black-hole.sqlite3") as black_hole, AtomicExecutionCoordinator(
-            Path(directory) / "execution.sqlite3"
-        ) as coordinator:
-            coordinator.initialize(state)
+        black_hole, horizon, coordinator = open_world(directory, tuple(values))
+        try:
             with pytest.raises(GalaxyExecutionError):
                 enforce_galaxy_critical_effect(
-                    **kwargs(tuple(values), black_hole, coordinator, lambda _: "must-not-run")
+                    **kwargs(tuple(values), black_hole, horizon, coordinator, lambda _: "must-not-run")
                 )
+        finally:
+            close_world(black_hole, horizon, coordinator)
 
 
 def test_foreign_matrix_admission_is_rejected_before_execution():
     values = list(build())
-    values[6] = replace(values[6], hara_digest=d("foreign-hara"))
-    state = initial_universe_state(("ka", "vor", "shi", "thal", "nur"), epoch=7)
+    original_admission = values[6]
+    values[6] = replace(original_admission, hara_digest=d("foreign-hara"))
     with tempfile.TemporaryDirectory() as directory:
-        with DurableBlackHole(Path(directory) / "black-hole.sqlite3") as black_hole, AtomicExecutionCoordinator(
-            Path(directory) / "execution.sqlite3"
-        ) as coordinator:
-            coordinator.initialize(state)
+        # Initialize the durable horizon with the real admission, then attempt to
+        # execute with the forged one.
+        black_hole = DurableBlackHole(Path(directory) / "black-hole.sqlite3")
+        horizon = DurableMatrixHorizonFence(Path(directory) / "matrix-horizon.sqlite3")
+        coordinator = AtomicExecutionCoordinator(Path(directory) / "execution.sqlite3")
+        try:
+            coordinator.initialize(
+                initial_universe_state(("ka", "vor", "shi", "thal", "nur"), epoch=7)
+            )
+            horizon.initialize(original_admission)
             with pytest.raises(GalaxyExecutionError):
                 enforce_galaxy_critical_effect(
-                    **kwargs(tuple(values), black_hole, coordinator, lambda _: "must-not-run")
+                    **kwargs(tuple(values), black_hole, horizon, coordinator, lambda _: "must-not-run")
                 )
+        finally:
+            close_world(black_hole, horizon, coordinator)
+
+
+def test_non_current_hara_is_rejected_before_effect():
+    values = build()
+    stale_admission = values[6]
+    with tempfile.TemporaryDirectory() as directory:
+        black_hole, horizon, coordinator = open_world(directory, values)
+        try:
+            # Directly tombstone the old Hara by staging a next Matrix/Hara for
+            # the same Aevra. The old request remains epoch 7 and must fail before
+            # reaching the effect callback.
+            mir, _, veyra, aevra = values[:4]
+            next_matrix = birth_matrix(
+                veyra,
+                instance_digest=d("matrix-b"),
+                reality_commitment_digest=d("matrix-reality-b"),
+                birth_epoch=8,
+            )
+            next_hara = birth_hara(
+                next_matrix,
+                veyra,
+                aevra,
+                mir,
+                horizon_commitment_digest=d("hara-b"),
+                epoch=8,
+            )
+            next_admission = admit_matrix_hara(
+                next_matrix,
+                next_hara,
+                veyra,
+                aevra,
+                mir,
+                evidence_digest=d("matrix-admission-b"),
+            )
+            horizon.advance(stale_admission, next_admission, cause_digest=d("matrix-move"))
+            calls = []
+            with pytest.raises(GalaxyExecutionError):
+                enforce_galaxy_critical_effect(
+                    **kwargs(values, black_hole, horizon, coordinator, lambda _: calls.append(1))
+                )
+            assert calls == []
+        finally:
+            close_world(black_hole, horizon, coordinator)
