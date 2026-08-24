@@ -3,6 +3,10 @@ from pathlib import Path
 import tempfile
 import unittest
 
+from koschei.local_validation_v1 import (
+    seal_local_validation_receipt_v1,
+    seal_local_validation_step_v1,
+)
 from koschei.native_intelligence_holdout_v1 import build_native_intelligence_holdout_v1
 from koschei.native_intelligence_qwen397b_base_spec_v1 import (
     CANONICAL_QWEN397B_REVISION_V1,
@@ -35,6 +39,25 @@ from koschei.native_intelligence_v1 import CANONICAL_BASE_MODEL_V1
 from koschei.native_model_curriculum_v2 import build_native_model_curriculum_v2
 
 
+def validation_receipt(*, source_commit: str = "a" * 40, profile: str = "full", clean: bool = True):
+    step = seal_local_validation_step_v1(
+        step_id="full-validation",
+        command=("ks-local-validate", "--profile", "full"),
+        returncode=0,
+        stdout_sha256="d" * 64,
+        stderr_sha256="e" * 64,
+    )
+    return seal_local_validation_receipt_v1(
+        source_commit=source_commit,
+        checkout_clean=clean,
+        profile=profile,
+        python_version="Python 3.12.0",
+        go_version="go version go1.21 linux/amd64",
+        platform="Linux-test",
+        steps=(step,),
+    )
+
+
 class Qwen397BLaunchV1Tests(unittest.TestCase):
     def setUp(self):
         curriculum = build_native_model_curriculum_v2(
@@ -52,6 +75,7 @@ class Qwen397BLaunchV1Tests(unittest.TestCase):
             self.holdout, self.corpus, self.release
         )
         self.profile = canonical_qwen397b_koschei_profile_v1()
+        self.validation = validation_receipt()
         self.preflight = seal_qwen397b_preflight_v1(
             repo_id=CANONICAL_BASE_MODEL_V1,
             requested_revision=CANONICAL_QWEN397B_REVISION_V1,
@@ -90,19 +114,20 @@ class Qwen397BLaunchV1Tests(unittest.TestCase):
             profile=self.profile,
         )
 
-    def launch(self):
+    def launch(self, validation=None):
         return seal_qwen397b_training_launch_v1(
             self.plan,
             self.manifest,
             self.preflight,
             self.token_profile,
+            validation or self.validation,
             self.release,
             trainer_environment_digest="b" * 64,
             launcher_digest="c" * 64,
             profile=self.profile,
         )
 
-    def test_qwen_launch_rechecks_full_plan_and_exposes_no_test_path(self):
+    def test_qwen_launch_rechecks_full_plan_validation_and_exposes_no_test_path(self):
         launch = self.launch()
         inputs = materialize_qwen397b_trainer_inputs_v1(
             launch,
@@ -110,6 +135,7 @@ class Qwen397BLaunchV1Tests(unittest.TestCase):
             self.manifest,
             self.preflight,
             self.token_profile,
+            self.validation,
             self.release,
             profile=self.profile,
         )
@@ -117,6 +143,16 @@ class Qwen397BLaunchV1Tests(unittest.TestCase):
         self.assertEqual(inputs.gradient_source_splits, ("train",))
         self.assertEqual(inputs.evaluation_only_splits, ("validation",))
         self.assertFalse(launch.authority)
+
+    def test_stale_core_or_dirty_validation_blocks_qwen_launch(self):
+        invalid_receipts = (
+            validation_receipt(source_commit="c" * 40),
+            validation_receipt(profile="core"),
+            validation_receipt(clean=False),
+        )
+        for receipt in invalid_receipts:
+            with self.assertRaises(Qwen397BLaunchError):
+                self.launch(receipt)
 
     def test_tampered_token_preflight_blocks_qwen_launch(self):
         forged = replace(self.token_profile, train_truncated_examples=1)
@@ -126,6 +162,7 @@ class Qwen397BLaunchV1Tests(unittest.TestCase):
                 self.manifest,
                 self.preflight,
                 forged,
+                self.validation,
                 self.release,
                 trainer_environment_digest="b" * 64,
                 launcher_digest="c" * 64,
@@ -148,6 +185,7 @@ class Qwen397BLaunchV1Tests(unittest.TestCase):
                 self.manifest,
                 self.preflight,
                 self.token_profile,
+                self.validation,
                 self.release,
                 trainer_environment_digest="b" * 64,
                 launcher_digest="c" * 64,
