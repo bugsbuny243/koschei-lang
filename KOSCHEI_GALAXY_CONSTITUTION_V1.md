@@ -14,9 +14,11 @@ Current enforcement: `koschei/khar_constitution_v1.py` defines the exact public 
 
 Khar v1 is intentionally rigid: changing a law string while keeping the v1 identity is rejected. Future constitutional growth must use an explicit successor-constitution protocol; it must not silently rewrite v1.
 
-Canonical law identity alone cannot prove that the executing compiler/runtime bytes are the approved implementation. `koschei/khar_implementation_root_v1.py` is the first enforcement slice for that boundary. It binds canonical Khar, customer Veyra, native MIR, execution epoch, compiler/runtime measurements and the existing native-build/release/maturity evidence digests into one implementation measurement. At least two witnesses from distinct failure roots must authenticate the exact same measurement before an authority-free `VerifiedKharImplementationRootV1` exists.
+Canonical law identity alone cannot prove that the executing compiler/runtime bytes are the approved implementation. `koschei/khar_implementation_root_v1.py` is the first enforcement slice for that boundary. It binds canonical Khar, customer Veyra, native MIR, execution epoch, compiler/runtime measurements and the existing native-build/release/maturity evidence digests into one implementation measurement. At least two witnesses from distinct failure roots must authenticate the exact same measurement.
 
-`koschei/khar_witnessed_galaxy_execution_v1.py` requires that verified root to match the exact Veyra, native MIR and request epoch before delegating to the base constitutional Galaxy gate. Witness keys are deliberately not stored in Koschei source and must come from an external deployment anchor. This is a real software verification contract for external measurement evidence; it is not a claim that Python code can physically attest its own host. TPM/TEE/HSM, isolated verifier, transparency service or other physical root integration remains deployment-specific future work.
+`VerifiedKharImplementationRootV1` is only an authority-free verification report. Its deterministic seal is not a credential and privileged execution must never accept the report by itself. `koschei/khar_witnessed_galaxy_execution_v1.py` therefore re-verifies the original implementation measurement and every witness MAC against external witness-key material at execution entry, then requires the freshly derived report to match the exact Veyra, native MIR and request epoch before the base constitutional Galaxy gate can run. Direct construction, copying or replay of a report cannot substitute for witness verification.
+
+Witness keys are deliberately not stored in Koschei source and must come from an external deployment anchor. This is a software verification contract for external measurement evidence; it is not a claim that Python code can prove that caller-supplied key bytes originated in protected hardware. TPM/TEE/HSM, isolated verifier, transparency service or another physically independent root remains deployment-specific work and must be bound without turning one external object into a golden master authority.
 
 ## 2. No Golden Tray
 
@@ -98,7 +100,7 @@ Compromise or observation of one Khar axis must not automatically reveal, synthe
 
 Current first enforcement slice: `koschei/khar_failure_independence_v1.py` binds each Sathra axis witness to an explicit failure-root digest, independent attestation-domain digest and evidence. All six roots must differ, all six attestation domains must differ, one root cannot self-attest, and one axis root cannot act as another axis's attestation domain.
 
-`koschei/galaxy_execution_gate_v1.py` makes this proof part of the base critical-execution path. Where external implementation witnesses exist, `koschei/khar_witnessed_galaxy_execution_v1.py` sits above that base path and requires independent implementation failure roots before execution can even reach it.
+`koschei/galaxy_execution_gate_v1.py` makes this proof part of the base critical-execution path. Where external implementation witnesses exist, `koschei/khar_witnessed_galaxy_execution_v1.py` sits above that base path and freshly verifies independent implementation failure roots before execution can even reach it.
 
 This is enforceable identity separation, not a claim that physical independence is proven merely by different digest labels. Hardware, operator, infrastructure and organizational independence require externally produced evidence bound to these roots.
 
@@ -148,7 +150,7 @@ Survival-branch reasoning is deterministic physics, not an AI sovereign deciding
 
 `koschei/survival_event_binding_v1.py` derives the selected branch's action commitment from the exact native MIR, Veyra, Aevra, Matrix, Hara, canonical request and epoch. The selected plan cannot be moved to a different request, Matrix/Hara, Aevra, Veyra or reality.
 
-`koschei/survival_execution_gate_v1.py` requires that exact survival binding before delegating to Galaxy execution. Its witnessed entry point additionally requires the same external implementation root as the normal witnessed Galaxy path. The survival selector still grants no authority and cannot bypass Khar, implementation-root evidence, Morth, current Hara, 6/6, failure-root independence or atomic one-shot finality.
+`koschei/survival_execution_gate_v1.py` requires that exact survival binding before delegating to Galaxy execution. Its witnessed entry point forwards the original implementation measurement, witness set and external witness-key material to the witnessed Galaxy boundary for fresh verification. A cached verification report is not accepted. The survival selector still grants no authority and cannot bypass Khar, implementation witnesses, Morth, current Hara, 6/6, failure-root independence or atomic one-shot finality.
 
 If no candidate future preserves Khar within hard ceilings, selection fails closed instead of choosing the least-bad unsafe branch.
 
@@ -158,7 +160,7 @@ Automated or model-driven systems may operate inside Koschei, but they do not ga
 
 `koschei/bounded_autonomy_v1.py` is the first native bounded-autonomy slice. Automation may rank an explicitly bounded candidate set through the same deterministic Khar-bound survival selector. Candidate count, proposal round and objective are sealed. The proposal is explicitly `authority=False`; changing the candidate set, objective, chosen decision or authority bit invalidates it.
 
-`koschei/bounded_autonomy_execution_v1.py` gives automation no side door. A proposal must revalidate against the exact candidate set/objective/bounds, must execute only its selected branch, and then must pass the complete survival-event and Galaxy constitutional gates. Its witnessed entry point routes only through witnessed survival and witnessed Galaxy execution; automation cannot downgrade implementation-root verification merely by choosing another branch.
+`koschei/bounded_autonomy_execution_v1.py` gives automation no side door. A proposal must revalidate against the exact candidate set/objective/bounds, must execute only its selected branch, and then must pass the complete survival-event and Galaxy constitutional gates. Its witnessed entry point propagates raw implementation measurement/witness evidence to witnessed survival; automation cannot downgrade fresh implementation-root verification by selecting another branch or injecting a prebuilt report.
 
 Autonomy therefore may propose and orchestrate within explicit bounds; it cannot weaken concurrence, rewrite evidence finality, manufacture an axis, bypass current-Hara/Morth finality, replace Khar, bypass implementation witnesses, or declare its own policy constitutional.
 
@@ -170,7 +172,7 @@ Base constitutional critical path:
 
 Witnessed deployment path adds before the base path:
 
-`compiler/runtime measurement + verified build/release/maturity evidence -> 2+ independent external witness roots -> exact Khar/Veyra/MIR/epoch implementation root -> base constitutional critical path`
+`compiler/runtime measurement + build/release/maturity evidence digests -> 2+ independent external witness MACs + external verifier material -> fresh witness verification -> exact Khar/Veyra/MIR/epoch report -> base constitutional critical path`
 
 Survival-mode witnessed path adds:
 
@@ -199,7 +201,7 @@ These paths are implemented by `khar_implementation_root_v1.py`, `khar_witnessed
 13. **FIRST SLICE APPLIED** — survival decision bound to exact Galaxy event and survival execution gate;
 14. **FIRST SLICE APPLIED** — canonical non-substitutable Khar v1 at base execution gate;
 15. **FIRST SLICE APPLIED** — bounded authority-free autonomous proposal and execution composition;
-16. **FIRST SLICE APPLIED** — externally witnessed Khar implementation-root measurement bound to Veyra/native-MIR/epoch, propagated through Galaxy, survival and bounded-autonomy execution;
+16. **FIRST SLICE APPLIED** — externally witnessed Khar implementation measurement with fresh witness re-verification at Galaxy, survival and bounded-autonomy execution boundaries; cached/constructed verification reports are not accepted as credentials;
 17. **NEXT** — bind concrete deployment roots (measured host / isolated verifier / hardware root) to the witness contract and strengthen physical failure-root evidence;
 18. then tighter `rha`/Matrix reality coupling, lineage-wide Black Hole composition and later cryptographic/quantum work with explicit evidence rather than naming alone.
 
