@@ -7,6 +7,7 @@ from pathlib import Path
 from .model_curriculum import ModelCurriculumError
 from .model_curriculum_cli import verify_trusted_checkout
 from .native_model_curriculum_v2 import (
+    STAGES,
     NativeModelCurriculumError,
     build_native_model_curriculum_v2,
     load_native_model_curriculum_v2,
@@ -53,8 +54,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"CASES: {curriculum.case_count}")
         print(f"ACCEPTED: {curriculum.accepted_count}")
         print(f"REJECTED: {curriculum.rejected_count}")
-        print(f"N0: {curriculum.stage_counts['N0']}")
-        print(f"N2: {curriculum.stage_counts['N2']}")
+        for stage in STAGES:
+            print(f"{stage}: {curriculum.stage_counts[stage]}")
         print(f"CURRICULUM SHA256: {curriculum.curriculum_sha256}")
         return 0
     except (NativeModelCurriculumError, FileExistsError, OSError) as error:
