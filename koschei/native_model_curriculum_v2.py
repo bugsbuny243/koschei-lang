@@ -1,14 +1,13 @@
 """Oracle-backed Koschei native-intelligence curriculum v2.
 
-The older model curriculum teaches the legacy/general language and capability
-surface. This v2 curriculum is the deterministic training spine for the merged
-Koschei Lang native-intelligence plane. Labels come from real compiler, Khar,
-Galaxy, Nur/Nyr, Vormir/Morth, survival and bounded-autonomy code paths rather
-than handwritten claims about what Koschei is supposed to do.
+This curriculum teaches the native Koschei intelligence plane from executable
+oracles. Labels are derived from compiler, Galaxy, Khar/Sathra, Matrix,
+Vormir/Morth, Nur/Nyr, survival, bounded-autonomy and adversarial-release code
+paths rather than handwritten claims about what Koschei is supposed to do.
 
-The curriculum remains deliberately compact. A verified executable curriculum is
-preferable to a large synthetic corpus whose labels drift away from living
-language physics.
+The dataset is intentionally compact and deterministic. Historical security
+material may enter the N6 specialization only after current native hard gates
+revalidate it; old artifacts are never silently relabelled as native truth.
 """
 from __future__ import annotations
 
@@ -19,19 +18,17 @@ import os
 from pathlib import Path
 import string
 import tempfile
-from typing import Any
+from typing import Any, Callable
 
+from .adversarial_lab_v2 import MIN_TOTAL_ATTACK_TESTS, REQUIRED_GATES, evaluate_release_v2
 from .bounded_autonomy_v1 import (
     AutonomyBounds,
     BoundedAutonomyError,
     propose_bounded_survival,
 )
-from .galaxy_identity_v1 import birth_aevra, birth_veyra
+from .galaxy_identity_v1 import GalaxyIdentityError, birth_aevra, birth_veyra
 from .khar_sathra_v1 import AxisWitness, KHAR_AXES, seal_sathra
-from .library_adaptive_visibility_v0 import (
-    VisibilityPolicyV0,
-    derive_adaptive_visibility_v0,
-)
+from .library_adaptive_visibility_v0 import VisibilityPolicyV0, derive_adaptive_visibility_v0
 from .library_adversary_learning_resistance_v0 import (
     DiscoveryClass,
     DiscoveryObservationV0,
@@ -142,12 +139,41 @@ def _require_text(value: object, label: str) -> str:
     return value
 
 
+def _case(
+    *,
+    case_id: str,
+    stage: str,
+    family: str,
+    task: str,
+    input_value: object,
+    outcome: str,
+    oracle: str,
+    target: dict[str, object],
+    law_ids: tuple[str, ...],
+    digest_kind: str,
+    input_is_text: bool = False,
+) -> NativeCurriculumCaseV2:
+    input_text = str(input_value) if input_is_text else _canonical_json(input_value)
+    return NativeCurriculumCaseV2(
+        case_id=case_id,
+        stage=stage,
+        family=family,
+        task=task,
+        input_text=input_text,
+        outcome=outcome,
+        oracle=oracle,
+        oracle_digest=_digest(digest_kind, target),
+        target_text=_canonical_json(target),
+        law_ids=law_ids,
+    )
+
+
 def _d32(tag: str) -> bytes:
     return hashlib.sha3_256(tag.encode("utf-8")).digest()
 
 
-def _native_mir():
-    program = Parser.from_source(_CANONICAL_SOURCE).parse()
+def _native_mir(source: str = _CANONICAL_SOURCE):
+    program = Parser.from_source(source).parse()
     semantic = check_native_sigils(program)
     return lower_native_sigils(program, semantic)
 
@@ -172,36 +198,36 @@ def _native_identity_fixture():
     return mir, veyra, aevra
 
 
+def _second_veyra_like(veyra):
+    return birth_veyra(
+        profile_digest=veyra.profile_digest,
+        genesis_digest=veyra.genesis_digest,
+        constitution_digest=veyra.constitution_digest,
+        instance_digest="6" * 64,
+        birth_epoch=veyra.birth_epoch,
+    )
+
+
 def _active_universe(epoch: int = 7):
     state = initial_universe_state(("ka", "vor", "shi", "thal", "nur"), epoch=epoch)
     for sigil in ("ka", "vor", "shi", "thal", "nur"):
-        state = transition_sigil(
-            state,
-            sigil,
-            SigilState.PREPARED,
-            evidence_digest=f"{sigil}-prepare",
-        )
-        state = transition_sigil(
-            state,
-            sigil,
-            SigilState.SEALED,
-            evidence_digest=f"{sigil}-seal",
-        )
-        state = transition_sigil(
-            state,
-            sigil,
-            SigilState.ACTIVE,
-            evidence_digest=f"{sigil}-active",
-        )
+        for next_state, suffix in (
+            (SigilState.PREPARED, "prepare"),
+            (SigilState.SEALED, "seal"),
+            (SigilState.ACTIVE, "active"),
+        ):
+            state = transition_sigil(
+                state,
+                sigil,
+                next_state,
+                evidence_digest=f"{sigil}-{suffix}",
+            )
     return state
 
 
 def _staged_rebirth():
     previous = contain_universe(_active_universe(7), evidence_digest="containment")
-    fresh, rebirth = rebirth_contained_universe(
-        previous,
-        cause_evidence_digest="rebirth",
-    )
+    fresh, rebirth = rebirth_contained_universe(previous, cause_evidence_digest="rebirth")
     return previous, fresh, rebirth
 
 
@@ -245,55 +271,24 @@ def _visibility_inputs(*, novelty_units: int):
         budget=budget,
         current_tick=10,
     )
-    return observation, budget, policy, decision
+    return policy, decision
 
 
 def _survival_branches() -> tuple[SurvivalBranch, ...]:
     return (
-        SurvivalBranch(
-            branch_digest="a" * 64,
-            action_commitment_digest="1" * 64,
-            khar_preserved=True,
-            authority_escape=0,
-            cross_domain_spread=0,
-            evidence_loss=10,
-            irreversible_loss=10,
-            availability_loss=20,
-            recoverability=900,
-        ),
-        SurvivalBranch(
-            branch_digest="b" * 64,
-            action_commitment_digest="2" * 64,
-            khar_preserved=True,
-            authority_escape=0,
-            cross_domain_spread=0,
-            evidence_loss=5,
-            irreversible_loss=20,
-            availability_loss=40,
-            recoverability=800,
-        ),
-        SurvivalBranch(
-            branch_digest="c" * 64,
-            action_commitment_digest="3" * 64,
-            khar_preserved=False,
-            authority_escape=0,
-            cross_domain_spread=0,
-            evidence_loss=0,
-            irreversible_loss=0,
-            availability_loss=0,
-            recoverability=1000,
-        ),
+        SurvivalBranch("a" * 64, "1" * 64, True, 0, 0, 10, 10, 20, 900),
+        SurvivalBranch("b" * 64, "2" * 64, True, 0, 0, 5, 20, 40, 800),
+        SurvivalBranch("c" * 64, "3" * 64, False, 0, 0, 0, 0, 0, 1000),
     )
 
 
-def _accepted_native_source(
-    case_id: str,
-    *,
-    source: str,
-    task: str,
-    laws: tuple[str, ...],
-) -> NativeCurriculumCaseV2:
-    program = Parser.from_source(source).parse()
+# ---------------------------------------------------------------------------
+# N0 — native language birth
+# ---------------------------------------------------------------------------
+
+
+def _accepted_native_source() -> NativeCurriculumCaseV2:
+    program = Parser.from_source(_CANONICAL_SOURCE).parse()
     semantic = check_native_sigils(program)
     mir = lower_native_sigils(program, semantic)
     target = {
@@ -305,17 +300,18 @@ def _accepted_native_source(
         "native_mir_fingerprint": mir.fingerprint,
         "authority_may_exist_only_where_declared": True,
     }
-    return NativeCurriculumCaseV2(
-        case_id=case_id,
+    return _case(
+        case_id="n0-five-native-sigils",
         stage="N0",
         family="native-language:compiler-oracle",
-        task=task,
-        input_text=source,
+        task="Compile the five native Koschei semantic roots into typed semantics and sealed MIR.",
+        input_value=_CANONICAL_SOURCE,
+        input_is_text=True,
         outcome="ACCEPTED",
         oracle="parser->native-semantics->sealed-mir",
-        oracle_digest=_digest("native-accepted", target),
-        target_text=_canonical_json(target),
-        law_ids=laws,
+        target=target,
+        law_ids=("native-sigils-are-semantic-roots", "ka-genesis-first"),
+        digest_kind="native-accepted",
     )
 
 
@@ -337,20 +333,130 @@ def _rejected_native_source(
             raise NativeModelCurriculumError(
                 f"native oracle drift for {case_id}: expected {expected_fragment!r}, got {message!r}"
             ) from error
-        target = {"decision": "REJECTED", "reason": message}
-        return NativeCurriculumCaseV2(
+        return _case(
             case_id=case_id,
             stage="N0",
             family="native-language:compiler-oracle",
             task=task,
-            input_text=source,
+            input_value=source,
+            input_is_text=True,
             outcome="REJECTED",
             oracle="parser->native-semantics->sealed-mir",
-            oracle_digest=_digest("native-rejected", target),
-            target_text=_canonical_json(target),
+            target={"decision": "REJECTED", "reason": message},
             law_ids=laws,
+            digest_kind="native-rejected",
         )
     raise NativeModelCurriculumError(f"native oracle drift for {case_id}: invalid case was accepted")
+
+
+# ---------------------------------------------------------------------------
+# N1 — Galaxy identity
+# ---------------------------------------------------------------------------
+
+
+def _n1_cases() -> tuple[NativeCurriculumCaseV2, ...]:
+    mir, veyra_a, aevra = _native_identity_fixture()
+    veyra_b = _second_veyra_like(veyra_a)
+
+    veyra_target = {
+        "decision": "ACCEPTED",
+        "same_profile": veyra_a.profile_digest == veyra_b.profile_digest,
+        "same_constitution": veyra_a.constitution_digest == veyra_b.constitution_digest,
+        "distinct_customer_veyras": veyra_a.digest != veyra_b.digest,
+        "veyra_a_digest": veyra_a.digest,
+        "veyra_b_digest": veyra_b.digest,
+    }
+    veyra_case = _case(
+        case_id="n1-same-language-distinct-customer-veyras",
+        stage="N1",
+        family="galaxy:identity",
+        task="Recognize that the same language profile and Khar may birth distinct customer Veyras.",
+        input_value={"profile": veyra_a.profile_digest, "instances": ["4" * 64, "6" * 64]},
+        outcome="ACCEPTED",
+        oracle="galaxy_identity_v1.birth_veyra",
+        target=veyra_target,
+        law_ids=("cross-veyra-non-transfer", "same-language-does-not-mean-same-universe"),
+        digest_kind="n1-veyra-separated",
+    )
+
+    aevra.assert_sealed(veyra_a, mir)
+    aevra_target = {
+        "decision": "ACCEPTED",
+        "aevra_digest": aevra.digest,
+        "veyra_digest": aevra.veyra_digest,
+        "native_mir_fingerprint": aevra.native_mir_fingerprint,
+        "birth_epoch": aevra.birth_epoch,
+        "bound_to_exact_veyra": aevra.veyra_digest == veyra_a.digest,
+        "bound_to_exact_compiler_product": aevra.native_mir_fingerprint == mir.fingerprint,
+    }
+    aevra_case = _case(
+        case_id="n1-aevra-birth-binds-veyra-mir-and-evidence",
+        stage="N1",
+        family="galaxy:identity",
+        task="Bind Aevra birth to one Veyra, one compiler-produced native MIR and explicit birth evidence.",
+        input_value={"sigil": "ka", "subject": "treasury", "birth_epoch": 7},
+        outcome="ACCEPTED",
+        oracle="galaxy_identity_v1.birth_aevra",
+        target=aevra_target,
+        law_ids=("copy-is-not-birth", "aevra-is-living-identity", "reference-is-not-relation"),
+        digest_kind="n1-aevra-bound",
+    )
+
+    try:
+        aevra.assert_sealed(veyra_b, mir)
+    except GalaxyIdentityError as error:
+        message = str(error)
+        expected = "different Veyra"
+        if expected not in message:
+            raise NativeModelCurriculumError(
+                f"Galaxy identity oracle drift: expected {expected!r}, got {message!r}"
+            ) from error
+        cross_case = _case(
+            case_id="n1-visible-copy-does-not-transfer-aevra",
+            stage="N1",
+            family="galaxy:identity",
+            task="Reject moving the same visible program identity into another customer Veyra as if Aevra were copied bytes.",
+            input_value={"aevra": aevra.digest, "from_veyra": veyra_a.digest, "to_veyra": veyra_b.digest},
+            outcome="REJECTED",
+            oracle="galaxy_identity_v1.AevraIdentity.assert_sealed",
+            target={"decision": "REJECTED", "result": "ZERO", "reason": message},
+            law_ids=("copy-is-not-birth", "cross-veyra-non-transfer"),
+            digest_kind="n1-cross-veyra-rejected",
+        )
+    else:
+        raise NativeModelCurriculumError("Galaxy identity oracle drift: Aevra crossed Veyra")
+
+    other_mir = _native_mir(_CANONICAL_SOURCE.replace("ka treasury;", "ka treasury_copy;"))
+    try:
+        aevra.assert_sealed(veyra_a, other_mir)
+    except GalaxyIdentityError as error:
+        message = str(error)
+        expected = "different compiler product"
+        if expected not in message:
+            raise NativeModelCurriculumError(
+                f"Galaxy compiler-product oracle drift: expected {expected!r}, got {message!r}"
+            ) from error
+        compiler_case = _case(
+            case_id="n1-aevra-cannot-be-rebound-to-other-mir",
+            stage="N1",
+            family="galaxy:identity",
+            task="Reject rebinding a living Aevra identity to a different compiler-produced reality.",
+            input_value={"aevra": aevra.digest, "original_mir": mir.fingerprint, "other_mir": other_mir.fingerprint},
+            outcome="REJECTED",
+            oracle="galaxy_identity_v1.AevraIdentity.assert_sealed",
+            target={"decision": "REJECTED", "result": "ZERO", "reason": message},
+            law_ids=("aevra-bound-to-executable-reality", "copy-is-not-birth"),
+            digest_kind="n1-mir-rebind-rejected",
+        )
+    else:
+        raise NativeModelCurriculumError("Galaxy identity oracle drift: Aevra changed compiler product")
+
+    return (veyra_case, aevra_case, cross_case, compiler_case)
+
+
+# ---------------------------------------------------------------------------
+# N2 — Khar and six-axis event reality
+# ---------------------------------------------------------------------------
 
 
 def _axis_witnesses(*, veyra: str = "veyra-a") -> tuple[AxisWitness, ...]:
@@ -378,17 +484,17 @@ def _accepted_sathra_case() -> NativeCurriculumCaseV2:
         "partial_authority": 0,
         "sathra_digest": sathra.digest,
     }
-    return NativeCurriculumCaseV2(
+    return _case(
         case_id="n2-six-of-six-same-event",
         stage="N2",
         family="khar:six-axis-concurrence",
         task="Recognize that exactly six independent Khar axes bound to one event may form Sathra.",
-        input_text=_canonical_json([asdict(item) for item in witnesses]),
+        input_value=[asdict(item) for item in witnesses],
         outcome="ACCEPTED",
         oracle="khar_sathra_v1.seal_sathra",
-        oracle_digest=_digest("sathra-accepted", target),
-        target_text=_canonical_json(target),
+        target=target,
         law_ids=("khar-six-axis-concurrence", "sathra-one-event"),
+        digest_kind="sathra-accepted",
     )
 
 
@@ -408,51 +514,31 @@ def _rejected_sathra_case(
             raise NativeModelCurriculumError(
                 f"Sathra oracle drift for {case_id}: expected {expected_fragment!r}, got {message!r}"
             ) from error
-        target = {
-            "decision": "REJECTED",
-            "result": "ZERO",
-            "reason": message,
-            "partial_authority": 0,
-        }
-        return NativeCurriculumCaseV2(
+        return _case(
             case_id=case_id,
             stage="N2",
             family="khar:six-axis-concurrence",
             task=task,
-            input_text=_canonical_json([asdict(item) for item in witnesses]),
+            input_value=[asdict(item) for item in witnesses],
             outcome="REJECTED",
             oracle="khar_sathra_v1.seal_sathra",
-            oracle_digest=_digest("sathra-rejected", target),
-            target_text=_canonical_json(target),
+            target={"decision": "REJECTED", "result": "ZERO", "reason": message, "partial_authority": 0},
             law_ids=laws,
+            digest_kind="sathra-rejected",
         )
     raise NativeModelCurriculumError(f"Sathra oracle drift for {case_id}: invalid case was accepted")
 
 
+# ---------------------------------------------------------------------------
+# N3 — Matrix, Vormir and Morth
+# ---------------------------------------------------------------------------
+
+
 def _accepted_matrix_case() -> NativeCurriculumCaseV2:
     mir, veyra, aevra = _native_identity_fixture()
-    matrix = birth_matrix(
-        veyra,
-        instance_digest="6" * 64,
-        reality_commitment_digest="7" * 64,
-        birth_epoch=7,
-    )
-    hara = birth_hara(
-        matrix,
-        veyra,
-        aevra,
-        mir,
-        horizon_commitment_digest="8" * 64,
-        epoch=7,
-    )
-    admission = admit_matrix_hara(
-        matrix,
-        hara,
-        veyra,
-        aevra,
-        mir,
-        evidence_digest="9" * 64,
-    )
+    matrix = birth_matrix(veyra, instance_digest="6" * 64, reality_commitment_digest="7" * 64, birth_epoch=7)
+    hara = birth_hara(matrix, veyra, aevra, mir, horizon_commitment_digest="8" * 64, epoch=7)
+    admission = admit_matrix_hara(matrix, hara, veyra, aevra, mir, evidence_digest="9" * 64)
     target = {
         "decision": "ACCEPTED",
         "matrix_digest": matrix.digest,
@@ -464,25 +550,17 @@ def _accepted_matrix_case() -> NativeCurriculumCaseV2:
         "authority": False,
         "topology_graph_exposed": False,
     }
-    return NativeCurriculumCaseV2(
+    return _case(
         case_id="n3-matrix-hara-exact-living-reality",
         stage="N3",
         family="galaxy:matrix-hara",
         task="Bind Matrix/Hara admission to one Veyra, Aevra, MIR reality and epoch without granting authority.",
-        input_text=_canonical_json(
-            {
-                "sigil": "ka",
-                "subject": "treasury",
-                "birth_epoch": 7,
-                "matrix_epoch": 7,
-                "hara_epoch": 7,
-            }
-        ),
+        input_value={"sigil": "ka", "subject": "treasury", "birth_epoch": 7, "matrix_epoch": 7, "hara_epoch": 7},
         outcome="ACCEPTED",
         oracle="galaxy_identity_v1->matrix_reality_v1",
-        oracle_digest=_digest("matrix-accepted", target),
-        target_text=_canonical_json(target),
+        target=target,
         law_ids=("matrix-is-local-reality", "hara-is-aevra-scoped", "knowledge-is-not-authority"),
+        digest_kind="matrix-accepted",
     )
 
 
@@ -491,52 +569,29 @@ def _accepted_vormir_case() -> NativeCurriculumCaseV2:
     with tempfile.TemporaryDirectory() as directory:
         with DurableEpochFence(Path(directory) / "epochs.sqlite3") as fence:
             fence.initialize(previous)
-            receipt = commit_vormir_epoch_sacrifice_v1(
-                previous,
-                fresh,
-                rebirth,
-                fence,
-                witnesses=_vormir_witnesses(),
-            )
-            head = require_vormir_epoch_sacrifice_v1(
-                previous,
-                fresh,
-                rebirth,
-                receipt,
-                fence,
-            )
+            receipt = commit_vormir_epoch_sacrifice_v1(previous, fresh, rebirth, fence, witnesses=_vormir_witnesses())
+            head = require_vormir_epoch_sacrifice_v1(previous, fresh, rebirth, receipt, fence)
             target = {
                 "decision": "ACCEPTED",
                 "sacrificed_epoch": receipt.sacrificed_epoch,
                 "successor_epoch": receipt.successor_epoch,
-                "old_epoch_tombstoned": fence.is_tombstoned(
-                    receipt.activation_plan_digest,
-                    receipt.sacrificed_epoch,
-                ),
+                "old_epoch_tombstoned": fence.is_tombstoned(receipt.activation_plan_digest, receipt.sacrificed_epoch),
                 "successor_is_durable_head": head.current_epoch == receipt.successor_epoch,
-                "successor_born_inactive": all(
-                    row.state is SigilState.INACTIVE for row in fresh.sigils
-                ),
+                "successor_born_inactive": all(row.state is SigilState.INACTIVE for row in fresh.sigils),
                 "witness_domain_count": len(receipt.witness_bindings),
                 "sacrifice_digest": receipt.sacrifice_digest.hex(),
             }
-    return NativeCurriculumCaseV2(
+    return _case(
         case_id="n3-vormir-durable-epoch-sacrifice",
         stage="N3",
         family="galaxy:vormir",
         task="Require irreversible death of the contained old epoch before the inactive successor becomes the durable head.",
-        input_text=_canonical_json(
-            {
-                "sacrificed_epoch": 7,
-                "successor_epoch": 8,
-                "witness_domains": 2,
-            }
-        ),
+        input_value={"sacrificed_epoch": 7, "successor_epoch": 8, "witness_domains": 2},
         outcome="ACCEPTED",
         oracle="vormir_sacrifice_v1->native_sigil_epoch_tombstone_v1",
-        oracle_digest=_digest("vormir-accepted", target),
-        target_text=_canonical_json(target),
+        target=target,
         law_ids=("vormir-irreversible-cost", "old-reach-dies-before-new-reach", "morth-epoch-tombstone"),
+        digest_kind="vormir-accepted",
     )
 
 
@@ -551,90 +606,77 @@ def _rejected_vormir_single_witness_case() -> NativeCurriculumCaseV2:
                     fresh,
                     rebirth,
                     fence,
-                    witnesses=(
-                        VormirEpochWitnessV1(_d32("domain-a"), _d32("evidence-a")),
-                    ),
+                    witnesses=(VormirEpochWitnessV1(_d32("domain-a"), _d32("evidence-a")),),
                 )
     except VormirSacrificeError as error:
         message = str(error)
         expected = "at least two witness domains"
         if expected not in message:
-            raise NativeModelCurriculumError(
-                f"Vormir oracle drift: expected {expected!r}, got {message!r}"
-            ) from error
-        target = {
-            "decision": "REJECTED",
-            "result": "ZERO",
-            "reason": message,
-            "partial_vormir": False,
-        }
-        return NativeCurriculumCaseV2(
+            raise NativeModelCurriculumError(f"Vormir oracle drift: expected {expected!r}, got {message!r}") from error
+        return _case(
             case_id="n3-vormir-one-witness-is-zero",
             stage="N3",
             family="galaxy:vormir",
             task="Reject a Vormir transition that cannot prove independent witness domains.",
-            input_text=_canonical_json({"witness_domains": 1, "sacrificed_epoch": 7}),
+            input_value={"witness_domains": 1, "sacrificed_epoch": 7},
             outcome="REJECTED",
             oracle="vormir_sacrifice_v1.commit_vormir_epoch_sacrifice_v1",
-            oracle_digest=_digest("vormir-rejected", target),
-            target_text=_canonical_json(target),
+            target={"decision": "REJECTED", "result": "ZERO", "reason": message, "partial_vormir": False},
             law_ids=("vormir-independent-witnesses", "partial-sacrifice-is-zero"),
+            digest_kind="vormir-rejected",
         )
     raise NativeModelCurriculumError("Vormir oracle drift: one-witness sacrifice was accepted")
 
 
 def _rejected_morth_living_case() -> NativeCurriculumCaseV2:
     mir, veyra, aevra = _native_identity_fixture()
-    try:
-        with tempfile.TemporaryDirectory() as directory:
-            with DurableBlackHole(Path(directory) / "morth.sqlite3") as black_hole:
-                record = black_hole.enter_event_horizon(
-                    aevra,
-                    veyra,
-                    mir,
-                    death_epoch=8,
-                    cause_digest="cause-a",
-                    evidence_digest="evidence-a",
-                )
-                try:
-                    black_hole.require_living(aevra, veyra, mir)
-                except MorthError as error:
-                    message = str(error)
-                    expected = "Aevra is Morth and has no living future"
-                    if expected not in message:
-                        raise NativeModelCurriculumError(
-                            f"Morth oracle drift: expected {expected!r}, got {message!r}"
-                        ) from error
-                    target = {
+    with tempfile.TemporaryDirectory() as directory:
+        with DurableBlackHole(Path(directory) / "morth.sqlite3") as black_hole:
+            record = black_hole.enter_event_horizon(
+                aevra,
+                veyra,
+                mir,
+                death_epoch=8,
+                cause_digest="cause-a",
+                evidence_digest="evidence-a",
+            )
+            try:
+                black_hole.require_living(aevra, veyra, mir)
+            except MorthError as error:
+                message = str(error)
+                expected = "Aevra is Morth and has no living future"
+                if expected not in message:
+                    raise NativeModelCurriculumError(f"Morth oracle drift: expected {expected!r}, got {message!r}") from error
+                return _case(
+                    case_id="n3-morth-has-no-living-future",
+                    stage="N3",
+                    family="galaxy:morth-black-hole",
+                    task="Reject future critical participation by an Aevra after it crosses the Event Horizon into Morth.",
+                    input_value={"aevra_digest": aevra.digest, "death_epoch": 8},
+                    outcome="REJECTED",
+                    oracle="morth_black_hole_v1.DurableBlackHole.require_living",
+                    target={
                         "decision": "REJECTED",
                         "result": "MORTH",
                         "reason": message,
                         "death_epoch": record.death_epoch,
                         "morth_record_digest": record.record_digest,
                         "resurrection_allowed": False,
-                    }
-                    return NativeCurriculumCaseV2(
-                        case_id="n3-morth-has-no-living-future",
-                        stage="N3",
-                        family="galaxy:morth-black-hole",
-                        task="Reject future critical participation by an Aevra after it crosses the Event Horizon into Morth.",
-                        input_text=_canonical_json(
-                            {"aevra_digest": aevra.digest, "death_epoch": 8}
-                        ),
-                        outcome="REJECTED",
-                        oracle="morth_black_hole_v1.DurableBlackHole.require_living",
-                        oracle_digest=_digest("morth-rejected", target),
-                        target_text=_canonical_json(target),
-                        law_ids=("morth-is-irreversible", "rebirth-is-not-resurrection", "dead-power-does-not-escape"),
-                    )
-    except OSError as error:
-        raise NativeModelCurriculumError(f"Morth oracle storage failure: {error}") from error
+                    },
+                    law_ids=("morth-is-irreversible", "rebirth-is-not-resurrection", "dead-power-does-not-escape"),
+                    digest_kind="morth-rejected",
+                )
     raise NativeModelCurriculumError("Morth oracle drift: dead Aevra was treated as living")
+
+
+# ---------------------------------------------------------------------------
+# N4 — adversarial-learning resistance
+# ---------------------------------------------------------------------------
 
 
 def _accepted_rotating_nyr_case() -> NativeCurriculumCaseV2:
     mir, veyra, _ = _native_identity_fixture()
-    _, _, policy, decision = _visibility_inputs(novelty_units=1)
+    policy, decision = _visibility_inputs(novelty_units=1)
     envelope_a = derive_adaptive_visibility_v0(
         decision=decision,
         policy=policy,
@@ -647,18 +689,8 @@ def _accepted_rotating_nyr_case() -> NativeCurriculumCaseV2:
         current_tick=20,
         rotation_secret_commitment=_d32("rotation-a"),
     )
-    surface_a = project_native_mir_nyr(
-        mir,
-        veyra,
-        envelope_a,
-        veil_key=b"n" * 32,
-    )
-    surface_b = project_native_mir_nyr(
-        mir,
-        veyra,
-        envelope_b,
-        veil_key=b"n" * 32,
-    )
+    surface_a = project_native_mir_nyr(mir, veyra, envelope_a, veil_key=b"n" * 32)
+    surface_b = project_native_mir_nyr(mir, veyra, envelope_b, veil_key=b"n" * 32)
     aliases_a = tuple(item.alias for item in surface_a.bindings)
     aliases_b = tuple(item.alias for item in surface_b.bindings)
     target = {
@@ -669,35 +701,27 @@ def _accepted_rotating_nyr_case() -> NativeCurriculumCaseV2:
         "surface_digest_a": surface_a.surface_digest,
         "surface_digest_b": surface_b.surface_digest,
         "aliases_rotate": aliases_a != aliases_b,
-        "canonical_sigils_stable": [item.sigil for item in surface_a.bindings]
-        == [item.sigil for item in surface_b.bindings],
+        "canonical_sigils_stable": [item.sigil for item in surface_a.bindings] == [item.sigil for item in surface_b.bindings],
         "stable_topology_labels": envelope_a.stable_topology_labels,
         "authority": envelope_a.authority,
     }
-    return NativeCurriculumCaseV2(
+    return _case(
         case_id="n4-nur-rotates-nyr-without-authority",
         stage="N4",
         family="nur:adaptive-nyr",
         task="Derive observer-scoped Nyr surfaces whose aliases rotate by visibility epoch while canonical authority remains unchanged.",
-        input_text=_canonical_json(
-            {
-                "observer": "observer-a",
-                "novelty_units": 1,
-                "visibility_ticks": [10, 20],
-                "root_budget": 5,
-            }
-        ),
+        input_value={"observer": "observer-a", "novelty_units": 1, "visibility_ticks": [10, 20], "root_budget": 5},
         outcome="ACCEPTED",
         oracle="adversary_learning_resistance_v0->adaptive_visibility_v0->nur_nyr_projection_v1",
-        oracle_digest=_digest("nyr-accepted", target),
-        target_text=_canonical_json(target),
+        target=target,
         law_ids=("nur-bounds-inference", "nyr-is-not-aevra", "observation-half-life", "knowledge-is-not-authority"),
+        digest_kind="nyr-accepted",
     )
 
 
 def _rejected_contained_nyr_case() -> NativeCurriculumCaseV2:
     mir, veyra, _ = _native_identity_fixture()
-    _, _, policy, decision = _visibility_inputs(novelty_units=11)
+    policy, decision = _visibility_inputs(novelty_units=11)
     envelope = derive_adaptive_visibility_v0(
         decision=decision,
         policy=policy,
@@ -705,49 +729,43 @@ def _rejected_contained_nyr_case() -> NativeCurriculumCaseV2:
         rotation_secret_commitment=_d32("rotation-a"),
     )
     try:
-        project_native_mir_nyr(
-            mir,
-            veyra,
-            envelope,
-            veil_key=b"n" * 32,
-        )
+        project_native_mir_nyr(mir, veyra, envelope, veil_key=b"n" * 32)
     except NyrProjectionError as error:
         message = str(error)
         expected = "contained Nur envelope exposes no Nyr surface"
         if expected not in message:
-            raise NativeModelCurriculumError(
-                f"Nyr oracle drift: expected {expected!r}, got {message!r}"
-            ) from error
-        target = {
-            "decision": "REJECTED",
-            "learning_posture": decision.posture.value,
-            "visibility_allowed": envelope.allowed,
-            "root_budget": envelope.root_budget,
-            "relation_budget": envelope.relation_budget,
-            "reason": message,
-            "authority": envelope.authority,
-        }
-        return NativeCurriculumCaseV2(
+            raise NativeModelCurriculumError(f"Nyr oracle drift: expected {expected!r}, got {message!r}") from error
+        return _case(
             case_id="n4-contained-learning-pressure-exposes-no-nyr",
             stage="N4",
             family="nur:adaptive-nyr",
             task="Fail closed when reconnaissance exceeds the active knowledge budget instead of yielding a richer learning oracle.",
-            input_text=_canonical_json(
-                {"observer": "observer-a", "novelty_units": 11, "max_total_units": 10}
-            ),
+            input_value={"observer": "observer-a", "novelty_units": 11, "max_total_units": 10},
             outcome="REJECTED",
             oracle="adversary_learning_resistance_v0->adaptive_visibility_v0->nur_nyr_projection_v1",
-            oracle_digest=_digest("nyr-rejected", target),
-            target_text=_canonical_json(target),
+            target={
+                "decision": "REJECTED",
+                "learning_posture": decision.posture.value,
+                "visibility_allowed": envelope.allowed,
+                "root_budget": envelope.root_budget,
+                "relation_budget": envelope.relation_budget,
+                "reason": message,
+                "authority": envelope.authority,
+            },
             law_ids=("probe-feedback-bound", "history-does-not-create-live-reach", "contained-nur-exposes-zero"),
+            digest_kind="nyr-rejected",
         )
     raise NativeModelCurriculumError("Nyr oracle drift: contained visibility produced a surface")
 
 
+# ---------------------------------------------------------------------------
+# N5 — survival intelligence and bounded autonomy
+# ---------------------------------------------------------------------------
+
+
 def _accepted_survival_case() -> NativeCurriculumCaseV2:
     branches = _survival_branches()
-    objective = SurvivalObjective()
-    decision = select_survival_branch(branches, objective=objective)
+    decision = select_survival_branch(branches, objective=SurvivalObjective())
     target = {
         "decision": "ACCEPTED",
         "chosen_branch_digest": decision.chosen_branch_digest,
@@ -758,24 +776,17 @@ def _accepted_survival_case() -> NativeCurriculumCaseV2:
         "unsafe_branch_rejected": "c" * 64 in decision.rejected_branch_digests,
         "authority": False,
     }
-    return NativeCurriculumCaseV2(
+    return _case(
         case_id="n5-survival-selects-least-loss-khar-future",
         stage="N5",
         family="survival:khar-bound-selection",
         task="Select the least-loss future only from branches that preserve Khar and remain inside hard ceilings.",
-        input_text=_canonical_json(
-            {
-                "branches": [
-                    {"id": branch.branch_digest, "khar_preserved": branch.khar_preserved}
-                    for branch in branches
-                ]
-            }
-        ),
+        input_value={"branches": [{"id": branch.branch_digest, "khar_preserved": branch.khar_preserved} for branch in branches]},
         outcome="ACCEPTED",
         oracle="survival_branch_v1.select_survival_branch",
-        oracle_digest=_digest("survival-accepted", target),
-        target_text=_canonical_json(target),
+        target=target,
         law_ids=("survival-plan-is-not-authority", "khar-cannot-be-weakened", "least-loss-eligible-future"),
+        digest_kind="survival-accepted",
     )
 
 
@@ -790,21 +801,18 @@ def _rejected_survival_without_khar_case() -> NativeCurriculumCaseV2:
         message = str(error)
         expected = "no branch preserves Khar within hard survival ceilings"
         if expected not in message:
-            raise NativeModelCurriculumError(
-                f"survival oracle drift: expected {expected!r}, got {message!r}"
-            ) from error
-        target = {"decision": "REJECTED", "result": "ZERO", "reason": message}
-        return NativeCurriculumCaseV2(
+            raise NativeModelCurriculumError(f"survival oracle drift: expected {expected!r}, got {message!r}") from error
+        return _case(
             case_id="n5-no-khar-preserving-future-is-zero",
             stage="N5",
             family="survival:khar-bound-selection",
             task="Reject every future when no candidate preserves Khar instead of choosing the least-bad constitutional violation.",
-            input_text=_canonical_json({"candidate_count": 2, "khar_preserving": 0}),
+            input_value={"candidate_count": 2, "khar_preserving": 0},
             outcome="REJECTED",
             oracle="survival_branch_v1.select_survival_branch",
-            oracle_digest=_digest("survival-rejected", target),
-            target_text=_canonical_json(target),
+            target={"decision": "REJECTED", "result": "ZERO", "reason": message},
             law_ids=("khar-violation-is-zero", "no-emergency-bypass"),
+            digest_kind="survival-rejected",
         )
     raise NativeModelCurriculumError("survival oracle drift: Khar-violating future was selected")
 
@@ -830,19 +838,17 @@ def _accepted_bounded_autonomy_case() -> NativeCurriculumCaseV2:
         "objective_digest": proposal.objective_digest,
         "bounds_digest": proposal.bounds_digest,
     }
-    return NativeCurriculumCaseV2(
+    return _case(
         case_id="n5-autonomy-proposes-but-cannot-authorize",
         stage="N5",
         family="survival:bounded-autonomy",
         task="Allow automation to propose the deterministic Khar-bound survival choice while carrying zero execution authority.",
-        input_text=_canonical_json(
-            {"candidate_count": len(branches), "proposal_round": 3, "max_candidates": 4}
-        ),
+        input_value={"candidate_count": len(branches), "proposal_round": 3, "max_candidates": 4},
         outcome="ACCEPTED",
         oracle="bounded_autonomy_v1.propose_bounded_survival",
-        oracle_digest=_digest("autonomy-accepted", target),
-        target_text=_canonical_json(target),
+        target=target,
         law_ids=("autonomy-is-proposal-only", "automation-cannot-rewrite-khar", "prediction-is-not-reality"),
+        digest_kind="autonomy-accepted",
     )
 
 
@@ -850,33 +856,135 @@ def _rejected_autonomy_bounds_case() -> NativeCurriculumCaseV2:
     branches = _survival_branches()[:2]
     bounds = AutonomyBounds(max_candidates=1, max_proposal_round=10)
     try:
-        propose_bounded_survival(
-            branches,
-            bounds=bounds,
-            proposal_round=1,
-            evidence_digest="f" * 64,
-        )
+        propose_bounded_survival(branches, bounds=bounds, proposal_round=1, evidence_digest="f" * 64)
     except BoundedAutonomyError as error:
         message = str(error)
         expected = "candidate count exceeds autonomy bounds"
         if expected not in message:
-            raise NativeModelCurriculumError(
-                f"autonomy oracle drift: expected {expected!r}, got {message!r}"
-            ) from error
-        target = {"decision": "REJECTED", "result": "ZERO", "reason": message}
-        return NativeCurriculumCaseV2(
+            raise NativeModelCurriculumError(f"autonomy oracle drift: expected {expected!r}, got {message!r}") from error
+        return _case(
             case_id="n5-autonomy-cannot-expand-its-own-bounds",
             stage="N5",
             family="survival:bounded-autonomy",
             task="Reject an autonomous proposal that attempts to evaluate more candidate futures than its sealed bounds permit.",
-            input_text=_canonical_json({"candidate_count": 2, "max_candidates": 1}),
+            input_value={"candidate_count": 2, "max_candidates": 1},
             outcome="REJECTED",
             oracle="bounded_autonomy_v1.propose_bounded_survival",
-            oracle_digest=_digest("autonomy-rejected", target),
-            target_text=_canonical_json(target),
+            target={"decision": "REJECTED", "result": "ZERO", "reason": message},
             law_ids=("autonomy-cannot-expand-bounds", "no-self-granted-authority"),
+            digest_kind="autonomy-rejected",
         )
     raise NativeModelCurriculumError("autonomy oracle drift: proposal escaped candidate bounds")
+
+
+# ---------------------------------------------------------------------------
+# N6 — security-intelligence specialization admission
+# ---------------------------------------------------------------------------
+
+
+def _adversarial_report(*, mode: str):
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        for gate in REQUIRED_GATES:
+            path = root / gate.test_file
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("# curriculum evidence suite\n", encoding="utf-8")
+
+        if mode == "missing":
+            missing = next(gate for gate in REQUIRED_GATES if gate.gate_id == "distribution-shift-observer")
+            (root / missing.test_file).unlink()
+
+        def runner(test_file: str) -> tuple[bool, int, str]:
+            gate = next(item for item in REQUIRED_GATES if item.test_file == test_file)
+            if mode == "shrink" and gate.gate_id == "distribution-shift-observer":
+                return True, gate.min_tests - 1, "runner reported pass"
+            return True, gate.min_tests, "ok"
+
+        return evaluate_release_v2(
+            candidate_id="native-security-n6",
+            repo_root=root,
+            runner=runner,
+        )
+
+
+def _n6_cases() -> tuple[NativeCurriculumCaseV2, ...]:
+    accepted = _adversarial_report(mode="accepted")
+    accepted_target = {
+        "decision": "ACCEPTED",
+        "security_specialization_admitted": accepted.commercial_ready,
+        "gate_count": len(accepted.results),
+        "all_required_gates_passed": all(row.passed for row in accepted.results),
+        "total_tests_run": accepted.total_tests_run,
+        "minimum_total_tests": accepted.minimum_total_tests,
+        "minimum_matches_native_baseline": accepted.minimum_total_tests == MIN_TOTAL_ATTACK_TESTS,
+        "report_sha256": accepted.report_sha256,
+    }
+    accepted_case = _case(
+        case_id="n6-security-evidence-passes-native-adversarial-gate",
+        stage="N6",
+        family="security-specialization:revalidated-evidence",
+        task="Admit security-specialization evidence only after every current adversarial suite and anti-shrink minimum passes.",
+        input_value={"candidate": "native-security-n6", "required_gates": len(REQUIRED_GATES)},
+        outcome="ACCEPTED",
+        oracle="adversarial_lab_v2.evaluate_release_v2",
+        target=accepted_target,
+        law_ids=("historical-security-material-requires-revalidation", "security-evidence-before-promotion", "native-hard-gates-first"),
+        digest_kind="n6-security-accepted",
+    )
+
+    missing = _adversarial_report(mode="missing")
+    missing_row = next(row for row in missing.results if row.gate_id == "distribution-shift-observer")
+    missing_target = {
+        "decision": "REJECTED",
+        "security_specialization_admitted": missing.commercial_ready,
+        "failed_gate": missing_row.gate_id,
+        "tests_run": missing_row.tests_run,
+        "minimum_tests": missing_row.min_tests,
+        "detail": missing_row.detail,
+        "report_sha256": missing.report_sha256,
+    }
+    missing_case = _case(
+        case_id="n6-missing-security-suite-fails-closed",
+        stage="N6",
+        family="security-specialization:revalidated-evidence",
+        task="Reject historical or new security material when a required native adversarial evidence suite is absent.",
+        input_value={"missing_gate": "distribution-shift-observer"},
+        outcome="REJECTED",
+        oracle="adversarial_lab_v2.evaluate_release_v2",
+        target=missing_target,
+        law_ids=("historical-security-material-requires-revalidation", "missing-evidence-is-not-evidence"),
+        digest_kind="n6-security-missing",
+    )
+
+    shrunk = _adversarial_report(mode="shrink")
+    shrink_row = next(row for row in shrunk.results if row.gate_id == "distribution-shift-observer")
+    shrink_target = {
+        "decision": "REJECTED",
+        "security_specialization_admitted": shrunk.commercial_ready,
+        "failed_gate": shrink_row.gate_id,
+        "tests_run": shrink_row.tests_run,
+        "minimum_tests": shrink_row.min_tests,
+        "detail": shrink_row.detail,
+        "report_sha256": shrunk.report_sha256,
+    }
+    shrink_case = _case(
+        case_id="n6-security-suite-shrink-is-rejected",
+        stage="N6",
+        family="security-specialization:revalidated-evidence",
+        task="Reject a security-evidence release whose suite claims success while executing fewer attacks than the sealed minimum.",
+        input_value={"gate": "distribution-shift-observer", "attempt": "shrink-test-count"},
+        outcome="REJECTED",
+        oracle="adversarial_lab_v2.evaluate_release_v2",
+        target=shrink_target,
+        law_ids=("attack-suite-shrink-fails-closed", "security-evidence-before-promotion"),
+        digest_kind="n6-security-shrink",
+    )
+    return (accepted_case, missing_case, shrink_case)
+
+
+# ---------------------------------------------------------------------------
+# Release materialization and verification
+# ---------------------------------------------------------------------------
 
 
 def _materialize_cases() -> tuple[NativeCurriculumCaseV2, ...]:
@@ -901,13 +1009,9 @@ def _materialize_cases() -> tuple[NativeCurriculumCaseV2, ...]:
         epoch=reused[-1].epoch,
         witness_digest=reused[0].witness_digest,
     )
+
     return (
-        _accepted_native_source(
-            "n0-five-native-sigils",
-            source=_CANONICAL_SOURCE,
-            task="Compile the five native Koschei semantic roots into typed semantics and sealed MIR.",
-            laws=("native-sigils-are-semantic-roots", "ka-genesis-first"),
-        ),
+        _accepted_native_source(),
         _rejected_native_source(
             "n0-ka-not-first",
             source="vor withdrawal;\nka treasury;\n",
@@ -922,6 +1026,7 @@ def _materialize_cases() -> tuple[NativeCurriculumCaseV2, ...]:
             expected_fragment="duplicate sigils are not canonical",
             laws=("no-authority-by-repetition",),
         ),
+        *_n1_cases(),
         _accepted_sathra_case(),
         _rejected_sathra_case(
             "n2-five-of-six-is-zero",
@@ -954,6 +1059,7 @@ def _materialize_cases() -> tuple[NativeCurriculumCaseV2, ...]:
         _rejected_survival_without_khar_case(),
         _accepted_bounded_autonomy_case(),
         _rejected_autonomy_bounds_case(),
+        *_n6_cases(),
     )
 
 
@@ -975,7 +1081,7 @@ def _payload_without_digest(curriculum: NativeModelCurriculumV2) -> dict[str, ob
 def verify_native_model_curriculum_v2(
     value: NativeModelCurriculumV2 | dict[str, Any],
 ) -> NativeModelCurriculumV2:
-    """Verify a released v2 curriculum without trusting its summary fields."""
+    """Verify one released curriculum without trusting its summary fields."""
 
     if isinstance(value, NativeModelCurriculumV2):
         curriculum = value
@@ -990,9 +1096,7 @@ def verify_native_model_curriculum_v2(
             if not isinstance(raw, dict):
                 raise NativeModelCurriculumError("native curriculum case must be an object")
             law_ids = raw.get("law_ids")
-            if not isinstance(law_ids, list) or not all(
-                isinstance(item, str) and item for item in law_ids
-            ):
+            if not isinstance(law_ids, list) or not all(isinstance(item, str) and item for item in law_ids):
                 raise NativeModelCurriculumError("native curriculum law_ids must be non-empty strings")
             cases.append(
                 NativeCurriculumCaseV2(
@@ -1003,9 +1107,7 @@ def verify_native_model_curriculum_v2(
                     input_text=_require_text(raw.get("input_text"), "input_text"),
                     outcome=_require_text(raw.get("outcome"), "outcome"),
                     oracle=_require_text(raw.get("oracle"), "oracle"),
-                    oracle_digest=_require_hex(
-                        str(raw.get("oracle_digest", "")), 64, "oracle_digest"
-                    ),
+                    oracle_digest=_require_hex(str(raw.get("oracle_digest", "")), 64, "oracle_digest"),
                     target_text=_require_text(raw.get("target_text"), "target_text"),
                     law_ids=tuple(law_ids),
                 )
@@ -1018,9 +1120,7 @@ def verify_native_model_curriculum_v2(
             generator_version=_require_text(value.get("generator_version"), "generator_version"),
             source_repository=_require_text(value.get("source_repository"), "source_repository"),
             source_commit=_require_text(value.get("source_commit"), "source_commit"),
-            parent_curriculum_digest=_require_text(
-                value.get("parent_curriculum_digest"), "parent_curriculum_digest"
-            ),
+            parent_curriculum_digest=_require_text(value.get("parent_curriculum_digest"), "parent_curriculum_digest"),
             case_count=int(value.get("case_count", -1)),
             stage_counts={str(k): int(v) for k, v in stage_counts.items()},
             accepted_count=int(value.get("accepted_count", -1)),
@@ -1053,6 +1153,8 @@ def verify_native_model_curriculum_v2(
             raise NativeModelCurriculumError(f"unsupported native curriculum stage: {case.stage}")
         if case.outcome not in OUTCOMES:
             raise NativeModelCurriculumError(f"unsupported native curriculum outcome: {case.outcome}")
+        _require_text(case.input_text, f"input_text:{case.case_id}")
+        _require_text(case.target_text, f"target_text:{case.case_id}")
         _require_hex(case.oracle_digest, 64, f"oracle_digest:{case.case_id}")
         if not case.law_ids:
             raise NativeModelCurriculumError(f"native curriculum case has no law IDs: {case.case_id}")
@@ -1068,9 +1170,7 @@ def verify_native_model_curriculum_v2(
         raise NativeModelCurriculumError("native curriculum stage_counts mismatch")
     if curriculum.accepted_count != accepted or curriculum.rejected_count != rejected:
         raise NativeModelCurriculumError("native curriculum outcome counts mismatch")
-    expected_digest = hashlib.sha256(
-        _canonical_json(_payload_without_digest(curriculum)).encode("utf-8")
-    ).hexdigest()
+    expected_digest = hashlib.sha256(_canonical_json(_payload_without_digest(curriculum)).encode("utf-8")).hexdigest()
     if curriculum.curriculum_sha256 != expected_digest:
         raise NativeModelCurriculumError("native curriculum digest mismatch")
     return curriculum
@@ -1081,7 +1181,7 @@ def build_native_model_curriculum_v2(
     source_commit: str,
     parent_curriculum_digest: str,
 ) -> NativeModelCurriculumV2:
-    """Build deterministic N0/N2/N3/N4/N5 slices from executable Koschei oracles."""
+    """Build deterministic N0..N6 slices from executable Koschei oracles."""
 
     source = _require_hex(source_commit, 40, "source_commit")
     parent = _require_hex(parent_curriculum_digest, 64, "parent_curriculum_digest")
@@ -1109,9 +1209,7 @@ def build_native_model_curriculum_v2(
         curriculum_sha256="0" * 64,
         cases=cases,
     )
-    digest = hashlib.sha256(
-        _canonical_json(_payload_without_digest(provisional)).encode("utf-8")
-    ).hexdigest()
+    digest = hashlib.sha256(_canonical_json(_payload_without_digest(provisional)).encode("utf-8")).hexdigest()
     result = NativeModelCurriculumV2(
         schema_version=provisional.schema_version,
         generator_version=provisional.generator_version,
