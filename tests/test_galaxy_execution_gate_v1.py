@@ -9,11 +9,11 @@ from koschei.galaxy_execution_gate_v1 import GalaxyExecutionError, enforce_galax
 from koschei.galaxy_identity_v1 import birth_aevra, birth_veyra
 from koschei.khar_failure_independence_v1 import (
     AxisFailureRootAttestation,
-    KharFailureIndependenceError,
     seal_failure_independent_sathra,
 )
 from koschei.khar_sathra_v1 import AxisWitness, seal_sathra
 from koschei.library_proof_envelope_v1 import make_receipt
+from koschei.matrix_reality_v1 import admit_matrix_hara, birth_hara, birth_matrix
 from koschei.morth_black_hole_v1 import DurableBlackHole
 from koschei.native_sigil_atomic_execution_coordinator_v1 import (
     AtomicExecutionCoordinator,
@@ -66,6 +66,28 @@ def build():
         birth_evidence_digest=d("birth"),
         birth_epoch=7,
     )
+    matrix = birth_matrix(
+        veyra,
+        instance_digest=d("matrix-a"),
+        reality_commitment_digest=d("matrix-reality-a"),
+        birth_epoch=7,
+    )
+    hara = birth_hara(
+        matrix,
+        veyra,
+        aevra,
+        mir,
+        horizon_commitment_digest=d("hara-a"),
+        epoch=7,
+    )
+    matrix_admission = admit_matrix_hara(
+        matrix,
+        hara,
+        veyra,
+        aevra,
+        mir,
+        evidence_digest=d("matrix-admission"),
+    )
     request = seal_effect_request(
         mir,
         effect_id="withdrawal-42",
@@ -104,12 +126,46 @@ def build():
             for axis in ("khor", "sei", "rha", "vaal", "teyr", "esh")
         ),
     )
-    return mir, proof, veyra, aevra, request, bound, sathra, sathra_binding, independence
+    return (
+        mir,
+        proof,
+        veyra,
+        aevra,
+        matrix,
+        hara,
+        matrix_admission,
+        request,
+        bound,
+        sathra,
+        sathra_binding,
+        independence,
+    )
 
 
-def test_complete_galaxy_gate_executes_one_living_independent_event_once():
+def kwargs(values, black_hole, coordinator, effect):
+    mir, proof, veyra, aevra, matrix, hara, matrix_admission, request, bound, sathra, sb, independence = values
+    return dict(
+        black_hole=black_hole,
+        coordinator=coordinator,
+        mir=mir,
+        veyra=veyra,
+        aevra=aevra,
+        matrix=matrix,
+        hara=hara,
+        matrix_admission=matrix_admission,
+        request=request,
+        proof=proof,
+        request_bound_proof=bound,
+        sathra=sathra,
+        sathra_binding=sb,
+        failure_independence=independence,
+        effect=effect,
+    )
+
+
+def test_complete_galaxy_gate_executes_one_living_independent_matrix_event_once():
     values = build()
-    mir, proof, veyra, aevra, request, bound, sathra, sb, independence = values
+    request = values[7]
     state = initial_universe_state(("ka", "vor", "shi", "thal", "nur"), epoch=7)
     calls = []
     with tempfile.TemporaryDirectory() as directory:
@@ -118,18 +174,7 @@ def test_complete_galaxy_gate_executes_one_living_independent_event_once():
         ) as coordinator:
             coordinator.initialize(state)
             decision, value, claim = enforce_galaxy_critical_effect(
-                black_hole=black_hole,
-                coordinator=coordinator,
-                mir=mir,
-                veyra=veyra,
-                aevra=aevra,
-                request=request,
-                proof=proof,
-                request_bound_proof=bound,
-                sathra=sathra,
-                sathra_binding=sb,
-                failure_independence=independence,
-                effect=lambda item: calls.append(item.digest) or "done",
+                **kwargs(values, black_hole, coordinator, lambda item: calls.append(item.digest) or "done")
             )
             assert decision.decision == "ALLOW"
             assert value == "done"
@@ -137,23 +182,13 @@ def test_complete_galaxy_gate_executes_one_living_independent_event_once():
             assert calls == [request.digest]
             with pytest.raises(AtomicExecutionCoordinatorError):
                 enforce_galaxy_critical_effect(
-                    black_hole=black_hole,
-                    coordinator=coordinator,
-                    mir=mir,
-                    veyra=veyra,
-                    aevra=aevra,
-                    request=request,
-                    proof=proof,
-                    request_bound_proof=bound,
-                    sathra=sathra,
-                    sathra_binding=sb,
-                    failure_independence=independence,
-                    effect=lambda _: "must-not-run",
+                    **kwargs(values, black_hole, coordinator, lambda _: "must-not-run")
                 )
 
 
-def test_morth_blocks_complete_six_axis_independent_event():
-    mir, proof, veyra, aevra, request, bound, sathra, sb, independence = build()
+def test_morth_blocks_complete_six_axis_independent_matrix_event():
+    values = build()
+    mir, _, veyra, aevra = values[:4]
     state = initial_universe_state(("ka", "vor", "shi", "thal", "nur"), epoch=7)
     with tempfile.TemporaryDirectory() as directory:
         with DurableBlackHole(Path(directory) / "black-hole.sqlite3") as black_hole, AtomicExecutionCoordinator(
@@ -170,24 +205,13 @@ def test_morth_blocks_complete_six_axis_independent_event():
             )
             with pytest.raises(GalaxyExecutionError, match="no living future"):
                 enforce_galaxy_critical_effect(
-                    black_hole=black_hole,
-                    coordinator=coordinator,
-                    mir=mir,
-                    veyra=veyra,
-                    aevra=aevra,
-                    request=request,
-                    proof=proof,
-                    request_bound_proof=bound,
-                    sathra=sathra,
-                    sathra_binding=sb,
-                    failure_independence=independence,
-                    effect=lambda _: "must-not-run",
+                    **kwargs(values, black_hole, coordinator, lambda _: "must-not-run")
                 )
 
 
-def test_independence_proof_for_foreign_sathra_is_rejected_before_execution():
-    mir, proof, veyra, aevra, request, bound, sathra, sb, independence = build()
-    forged = replace(independence, sathra_digest=d("foreign"))
+def test_foreign_failure_independence_is_rejected_before_execution():
+    values = list(build())
+    values[11] = replace(values[11], sathra_digest=d("foreign"))
     state = initial_universe_state(("ka", "vor", "shi", "thal", "nur"), epoch=7)
     with tempfile.TemporaryDirectory() as directory:
         with DurableBlackHole(Path(directory) / "black-hole.sqlite3") as black_hole, AtomicExecutionCoordinator(
@@ -196,16 +220,20 @@ def test_independence_proof_for_foreign_sathra_is_rejected_before_execution():
             coordinator.initialize(state)
             with pytest.raises(GalaxyExecutionError):
                 enforce_galaxy_critical_effect(
-                    black_hole=black_hole,
-                    coordinator=coordinator,
-                    mir=mir,
-                    veyra=veyra,
-                    aevra=aevra,
-                    request=request,
-                    proof=proof,
-                    request_bound_proof=bound,
-                    sathra=sathra,
-                    sathra_binding=sb,
-                    failure_independence=forged,
-                    effect=lambda _: "must-not-run",
+                    **kwargs(tuple(values), black_hole, coordinator, lambda _: "must-not-run")
+                )
+
+
+def test_foreign_matrix_admission_is_rejected_before_execution():
+    values = list(build())
+    values[6] = replace(values[6], hara_digest=d("foreign-hara"))
+    state = initial_universe_state(("ka", "vor", "shi", "thal", "nur"), epoch=7)
+    with tempfile.TemporaryDirectory() as directory:
+        with DurableBlackHole(Path(directory) / "black-hole.sqlite3") as black_hole, AtomicExecutionCoordinator(
+            Path(directory) / "execution.sqlite3"
+        ) as coordinator:
+            coordinator.initialize(state)
+            with pytest.raises(GalaxyExecutionError):
+                enforce_galaxy_critical_effect(
+                    **kwargs(tuple(values), black_hole, coordinator, lambda _: "must-not-run")
                 )
