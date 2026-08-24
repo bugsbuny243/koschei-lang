@@ -23,6 +23,7 @@ _COMMIT_RE = re.compile(r"^[a-f0-9]{40}$")
 _SHA_RE = re.compile(r"^[a-f0-9]{64}$")
 _ALLOWED_BLOB_MODES = {"100644", "100755"}
 _ROOT_REFERENCES = {"README.md", "README.tr.md", "README.en.md"}
+_RETIRED_PROJECT_TOKEN = "sentinel"
 _CORPUS_KEYS = {
     "schema_version",
     "generator_version",
@@ -141,6 +142,10 @@ def verify_language_foundation_corpus(corpus: dict[str, Any]) -> dict[str, Any]:
             raise LanguageFoundationExportError(f"invalid foundation document kind: {kind}")
         relative = document["path"]
         _verify_relative_path(relative)
+        if not _included_source(relative):
+            raise LanguageFoundationExportError(
+                f"foundation source is outside the active Lang corpus boundary: {relative}"
+            )
         expected_family = _family(relative, kind)
         if document["family"] != expected_family:
             raise LanguageFoundationExportError(f"foundation family mismatch: {relative}")
@@ -233,6 +238,9 @@ def _git_tree_entries(root: Path, source_commit: str) -> list[tuple[str, str, st
 
 
 def _included_source(relative: str) -> bool:
+    lowered_parts = tuple(part.lower() for part in Path(relative).parts)
+    if any(_RETIRED_PROJECT_TOKEN in part for part in lowered_parts):
+        return False
     if relative in _ROOT_REFERENCES:
         return True
     if relative.startswith("docs/") and relative.endswith(".md"):
