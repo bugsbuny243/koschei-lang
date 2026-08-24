@@ -17,8 +17,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from koschei.native_intelligence_qwen397b_base_spec_v1 import CANONICAL_QWEN397B_REVISION_V1
 from koschei.native_intelligence_qwen397b_preflight_v1 import seal_qwen397b_preflight_v1
-from koschei.native_intelligence_qwen397b_training_plan_v1 import CANONICAL_QWEN397B_REVISION_V1
 from koschei.native_intelligence_v1 import CANONICAL_BASE_MODEL_V1
 
 
