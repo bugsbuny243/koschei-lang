@@ -1,10 +1,9 @@
 """Sealed training-plan and training-receipt lineage for native intelligence v1.
 
-A model adapter is not accepted merely because a file exists after a training
-job. Before training starts, Koschei seals the exact base revision/weights,
-source commit, constitutional holdout, a verified training-corpus release,
-configuration and method into a plan. The public plan API deliberately accepts a
-sealed corpus object rather than caller-supplied corpus/split digests.
+Before compute starts, Koschei seals the exact base revision/weights, source
+commit, constitutional holdout, verified oracle corpus, exact exported JSONL byte
+manifest, training configuration and method. Caller-supplied corpus/split hashes
+are not accepted by the public plan API.
 
 After training, adapter/checkpoint/log evidence is sealed into a receipt bound to
 that exact plan. The receipt digest is the ``training_run_digest`` consumed by
@@ -21,6 +20,7 @@ import string
 from .khar_constitution_v1 import CANONICAL_KHAR_DIGEST_V1
 from .native_intelligence_holdout_v1 import NativeIntelligenceHoldoutV1
 from .native_intelligence_training_corpus_v1 import NativeTrainingCorpusReleaseV1
+from .native_intelligence_training_export_v1 import NativeTrainingExportManifestV1
 from .native_intelligence_v1 import (
     CANONICAL_BASE_MODEL_V1,
     NativeIntelligenceIdentityV1,
@@ -36,12 +36,7 @@ class NativeIntelligenceTrainingLineageError(ValueError):
 
 
 def _canonical_json(value: object) -> bytes:
-    return json.dumps(
-        value,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
 
 def _hash(kind: bytes, payload: object) -> str:
@@ -50,27 +45,16 @@ def _hash(kind: bytes, payload: object) -> str:
 
 def _digest(value: str, label: str, *, length: int = 64) -> str:
     if not isinstance(value, str) or len(value) != length:
-        raise NativeIntelligenceTrainingLineageError(
-            f"{label} must be {length} hexadecimal characters"
-        )
+        raise NativeIntelligenceTrainingLineageError(f"{label} must be {length} hexadecimal characters")
     lowered = value.lower()
     if any(char not in _HEX for char in lowered) or lowered == "0" * length:
-        raise NativeIntelligenceTrainingLineageError(
-            f"{label} must be a non-zero hexadecimal value"
-        )
+        raise NativeIntelligenceTrainingLineageError(f"{label} must be a non-zero hexadecimal value")
     return lowered
 
 
 def _text(value: str, label: str, *, max_length: int = 96) -> str:
-    if (
-        not isinstance(value, str)
-        or not value
-        or len(value) > max_length
-        or "\x00" in value
-    ):
-        raise NativeIntelligenceTrainingLineageError(
-            f"{label} must be non-empty bounded text"
-        )
+    if not isinstance(value, str) or not value or len(value) > max_length or "\x00" in value:
+        raise NativeIntelligenceTrainingLineageError(f"{label} must be non-empty bounded text")
     return value
 
 
@@ -84,6 +68,7 @@ class NativeTrainingPlanV1:
     curriculum_digest: str
     constitutional_holdout_digest: str
     training_corpus_digest: str
+    training_export_digest: str
     train_split_digest: str
     validation_split_digest: str
     test_split_digest: str
@@ -95,21 +80,13 @@ class NativeTrainingPlanV1:
 
     def assert_sealed(self) -> None:
         if self.version != 1:
-            raise NativeIntelligenceTrainingLineageError(
-                "unsupported native training plan version"
-            )
+            raise NativeIntelligenceTrainingLineageError("unsupported native training plan version")
         if self.khar_digest != CANONICAL_KHAR_DIGEST_V1:
-            raise NativeIntelligenceTrainingLineageError(
-                "native training plan is not bound to canonical Khar v1"
-            )
+            raise NativeIntelligenceTrainingLineageError("native training plan is not bound to canonical Khar v1")
         if self.base_model_id != CANONICAL_BASE_MODEL_V1:
-            raise NativeIntelligenceTrainingLineageError(
-                "native training plan base model is not canonical v1"
-            )
+            raise NativeIntelligenceTrainingLineageError("native training plan base model is not canonical v1")
         if self.authority is not False:
-            raise NativeIntelligenceTrainingLineageError(
-                "native training plan cannot carry authority"
-            )
+            raise NativeIntelligenceTrainingLineageError("native training plan cannot carry authority")
 
         revision = _digest(self.base_model_revision, "base_model_revision", length=40)
         weights = _digest(self.base_weights_digest, "base_weights_digest")
@@ -117,6 +94,7 @@ class NativeTrainingPlanV1:
         curriculum = _digest(self.curriculum_digest, "curriculum_digest")
         holdout = _digest(self.constitutional_holdout_digest, "constitutional_holdout_digest")
         corpus = _digest(self.training_corpus_digest, "training_corpus_digest")
+        export = _digest(self.training_export_digest, "training_export_digest")
         train = _digest(self.train_split_digest, "train_split_digest")
         validation = _digest(self.validation_split_digest, "validation_split_digest")
         test = _digest(self.test_split_digest, "test_split_digest")
@@ -124,13 +102,9 @@ class NativeTrainingPlanV1:
         method = _text(self.training_method, "training_method", max_length=64)
 
         if len({train, validation, test}) != 3:
-            raise NativeIntelligenceTrainingLineageError(
-                "train/validation/test split digests must be distinct"
-            )
-        if holdout in {corpus, train, validation, test}:
-            raise NativeIntelligenceTrainingLineageError(
-                "constitutional holdout cannot be reused as training corpus or split"
-            )
+            raise NativeIntelligenceTrainingLineageError("train/validation/test split digests must be distinct")
+        if holdout in {corpus, export, train, validation, test}:
+            raise NativeIntelligenceTrainingLineageError("constitutional holdout cannot be reused as training material")
 
         expected = _hash(
             b"plan",
@@ -143,6 +117,7 @@ class NativeTrainingPlanV1:
                 "curriculum_digest": curriculum,
                 "constitutional_holdout_digest": holdout,
                 "training_corpus_digest": corpus,
+                "training_export_digest": export,
                 "train_split_digest": train,
                 "validation_split_digest": validation,
                 "test_split_digest": test,
@@ -170,34 +145,20 @@ class NativeTrainingReceiptV1:
 
     def assert_for(self, plan: NativeTrainingPlanV1) -> None:
         if self.version != 1:
-            raise NativeIntelligenceTrainingLineageError(
-                "unsupported native training receipt version"
-            )
+            raise NativeIntelligenceTrainingLineageError("unsupported native training receipt version")
         plan.assert_sealed()
         if self.plan_digest != plan.digest:
-            raise NativeIntelligenceTrainingLineageError(
-                "training receipt belongs to a different plan"
-            )
+            raise NativeIntelligenceTrainingLineageError("training receipt belongs to a different plan")
         if self.authority is not False:
-            raise NativeIntelligenceTrainingLineageError(
-                "training receipt cannot carry authority"
-            )
+            raise NativeIntelligenceTrainingLineageError("training receipt cannot carry authority")
         if self.deployment_approved is not False:
-            raise NativeIntelligenceTrainingLineageError(
-                "training completion is not deployment approval"
-            )
+            raise NativeIntelligenceTrainingLineageError("training completion is not deployment approval")
         adapter = _digest(self.adapter_digest, "adapter_digest")
         checkpoint = _digest(self.final_checkpoint_digest, "final_checkpoint_digest")
         log = _digest(self.trainer_log_digest, "trainer_log_digest")
         evidence = _digest(self.completion_evidence_digest, "completion_evidence_digest")
-        if (
-            isinstance(self.completed_steps, bool)
-            or not isinstance(self.completed_steps, int)
-            or self.completed_steps < 1
-        ):
-            raise NativeIntelligenceTrainingLineageError(
-                "completed_steps must be a positive integer"
-            )
+        if isinstance(self.completed_steps, bool) or not isinstance(self.completed_steps, int) or self.completed_steps < 1:
+            raise NativeIntelligenceTrainingLineageError("completed_steps must be a positive integer")
         expected = _hash(
             b"receipt",
             {
@@ -218,22 +179,19 @@ class NativeTrainingReceiptV1:
 def seal_native_training_plan_v1(
     holdout: NativeIntelligenceHoldoutV1,
     corpus: NativeTrainingCorpusReleaseV1,
+    export_manifest: NativeTrainingExportManifestV1,
     *,
     base_model_revision: str,
     base_weights_digest: str,
     training_config_digest: str,
     training_method: str,
 ) -> NativeTrainingPlanV1:
-    """Seal the immutable identity of a training run before compute begins.
-
-    Corpus and split digests are accepted only through a verified corpus release.
-    This prevents a caller from manufacturing arbitrary digest strings that were
-    never produced by the oracle-backed corpus generator.
-    """
+    """Seal exact logical and byte-materialized training identity before compute."""
 
     holdout.assert_sealed()
     try:
         corpus.assert_sealed(holdout)
+        export_manifest.assert_for(holdout, corpus)
     except ValueError as error:
         raise NativeIntelligenceTrainingLineageError(str(error)) from error
 
@@ -246,6 +204,7 @@ def seal_native_training_plan_v1(
         curriculum_digest=holdout.curriculum_digest,
         constitutional_holdout_digest=holdout.digest,
         training_corpus_digest=corpus.digest,
+        training_export_digest=export_manifest.digest,
         train_split_digest=corpus.split_digest("train"),
         validation_split_digest=corpus.split_digest("validation"),
         test_split_digest=corpus.split_digest("test"),
@@ -268,6 +227,7 @@ def seal_native_training_plan_v1(
                 "curriculum_digest": result.curriculum_digest,
                 "constitutional_holdout_digest": result.constitutional_holdout_digest,
                 "training_corpus_digest": result.training_corpus_digest,
+                "training_export_digest": result.training_export_digest,
                 "train_split_digest": result.train_split_digest,
                 "validation_split_digest": result.validation_split_digest,
                 "test_split_digest": result.test_split_digest,
