@@ -10,7 +10,6 @@ from pathlib import Path
 import platform as platform_module
 import subprocess
 import sys
-import tempfile
 
 from .local_validation_v1 import (
     LocalValidationError,
@@ -23,6 +22,16 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def _require_external_path(path: Path, label: str) -> None:
+    try:
+        path.relative_to(REPO_ROOT)
+    except ValueError:
+        return
+    raise LocalValidationError(
+        f"{label} must live outside the repository checkout; use /tmp or the Drive validation vault"
+    )
 
 
 def _git(*args: str) -> str:
@@ -140,8 +149,8 @@ def build_parser() -> argparse.ArgumentParser:
         description="Run Koschei release validation without GitHub-hosted Actions",
     )
     parser.add_argument("--profile", choices=("core", "full"), default="full")
-    parser.add_argument("--output", required=True, help="receipt JSON path")
-    parser.add_argument("--evidence-dir", required=True, help="stdout/stderr evidence directory")
+    parser.add_argument("--output", required=True, help="receipt JSON path outside the checkout")
+    parser.add_argument("--evidence-dir", required=True, help="stdout/stderr evidence directory outside the checkout")
     parser.add_argument(
         "--development",
         action="store_true",
@@ -162,6 +171,8 @@ def main(argv: list[str] | None = None) -> int:
         return 64
 
     try:
+        _require_external_path(output, "validation receipt")
+        _require_external_path(evidence_dir, "validation evidence directory")
         source_commit = _git("rev-parse", "HEAD").lower()
         checkout_clean = _git("status", "--porcelain", "--untracked-files=normal") == ""
         if not checkout_clean and not args.development:
