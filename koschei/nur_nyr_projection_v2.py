@@ -162,7 +162,12 @@ def require_nyr_surface_v2(
     *,
     veil_key: bytes,
 ) -> None:
-    """Verify a Nyr v2 projection against hidden canonical inputs."""
+    """Verify projection integrity against hidden canonical inputs.
+
+    This verifies that a visible surface is the exact projection of the supplied
+    living inputs. Call :func:`require_live_nyr_surface_v2` at execution or
+    observation boundaries where replay of an expired projection must fail.
+    """
 
     expected = project_native_mir_nyr_v2(
         mir,
@@ -172,3 +177,31 @@ def require_nyr_surface_v2(
     )
     if surface != expected:
         raise NyrProjectionV2Error("Nyr v2 surface does not match living Galaxy projection")
+
+
+def require_live_nyr_surface_v2(
+    surface: NyrSurfaceV2,
+    mir: NativeSigilMir,
+    veyra: VeyraIdentity,
+    envelope: AdaptiveVisibilityEnvelopeV0,
+    *,
+    veil_key: bytes,
+    current_visibility_epoch: int,
+) -> None:
+    """Fail closed unless a Nyr v2 surface is both authentic and currently live.
+
+    The execution/observation boundary supplies the current visibility epoch.
+    A surface is valid only in its birth epoch and expires before the next epoch.
+    This makes an old, correctly generated Nyr surface non-reusable after epoch
+    rotation instead of treating integrity as equivalent to liveness.
+    """
+
+    if not isinstance(current_visibility_epoch, int) or current_visibility_epoch < 0:
+        raise NyrProjectionV2Error("current visibility epoch must be a non-negative integer")
+    require_nyr_surface_v2(surface, mir, veyra, envelope, veil_key=veil_key)
+    if surface.expires_before_epoch != surface.visibility_epoch + 1:
+        raise NyrProjectionV2Error("Nyr v2 surface carries an invalid expiry boundary")
+    if current_visibility_epoch != surface.visibility_epoch:
+        if current_visibility_epoch >= surface.expires_before_epoch:
+            raise NyrProjectionV2Error("Nyr v2 surface has expired and cannot be replayed")
+        raise NyrProjectionV2Error("Nyr v2 surface is not valid for the current visibility epoch")
