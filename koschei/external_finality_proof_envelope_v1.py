@@ -1,8 +1,9 @@
 """End-to-end external-finality provenance envelope for Koschei Lang v1.
 
-A provider verdict or finality attestation is not sufficient by itself.  This module
-re-verifies the complete effect-execution provenance chain plus both finality trust
-roles before exposing `provider-finalized`, `provider-rejected`, or `provider-pending`.
+A provider verdict or finality attestation is not sufficient by itself. This module
+re-verifies the complete effect-execution provenance chain, the authenticated
+provider-native raw-response verification receipt, and both finality trust roles
+before exposing `provider-finalized`, `provider-rejected`, or `provider-pending`.
 
 The envelope carries no authority and is never a capability.
 """
@@ -25,6 +26,7 @@ from .external_finality_attestation_v1 import (
 from .native_sigil_mir_v1 import NativeSigilMir
 from .native_sigil_proof_pipeline_v1 import NativeSigilProofBundle
 from .native_sigil_request_binding_v1 import CanonicalEffectRequest, RequestBoundProof
+from .provider_native_verifier_v1 import ProviderNativeVerificationReceiptV1
 
 _CTX = b"koschei.external-finality-proof-envelope/v1\x00"
 _TERMINALS = frozenset({"provider-pending", "provider-finalized", "provider-rejected"})
@@ -35,10 +37,13 @@ class ExternalFinalityProofEnvelopeV1Error(ValueError):
 
 
 def _digest(*, effect_envelope: EffectExecutionProofEnvelopeV1,
+            native_receipt: ProviderNativeVerificationReceiptV1,
             verdict: ExternalProviderFinalityVerdictV1,
             attestation: ExternalFinalityAttestationV1) -> str:
     rows = (
         f"effect_envelope={effect_envelope.envelope_digest}",
+        f"native_verification_receipt={native_receipt.receipt_digest}",
+        f"raw_response={native_receipt.raw_response_digest}",
         f"provider_verdict={verdict.verdict_digest}",
         f"finality_attestation={attestation.attestation_digest}",
         f"provider={attestation.provider_id}",
@@ -54,6 +59,8 @@ def _digest(*, effect_envelope: EffectExecutionProofEnvelopeV1,
 @dataclass(frozen=True, slots=True)
 class ExternalFinalityProofEnvelopeV1:
     effect_execution_envelope_digest: str
+    provider_native_verification_receipt_digest: str
+    raw_provider_response_digest: str
     provider_verdict_digest: str
     finality_attestation_digest: str
     provider_id: str
@@ -68,6 +75,9 @@ class ExternalFinalityProofEnvelopeV1:
     def assert_valid(self, *,
                      effect_envelope: EffectExecutionProofEnvelopeV1,
                      effect_receipt: EffectExecutionReceiptV1,
+                     effect_result_bytes: bytes,
+                     raw_provider_response_bytes: bytes,
+                     native_receipt: ProviderNativeVerificationReceiptV1,
                      base: ExecutionProofEnvelopeV1,
                      grant: ExternalAdapterGrantV1,
                      evidence: ExternalAdapterEvidenceV1,
@@ -84,6 +94,7 @@ class ExternalFinalityProofEnvelopeV1:
                      decision_key: bytes,
                      runtime_key: bytes,
                      effect_key: bytes,
+                     provider_native_verifier_key: bytes,
                      provider_verifier_key: bytes,
                      finality_key: bytes) -> None:
         if self.authority:
@@ -91,26 +102,22 @@ class ExternalFinalityProofEnvelopeV1:
         if self.terminal_state not in _TERMINALS:
             raise ExternalFinalityProofEnvelopeV1Error("unknown external finality proof-envelope terminal state")
         effect_envelope.assert_valid(
-            base=base,
-            effect_receipt=effect_receipt,
-            grant=grant,
-            evidence=evidence,
-            mir=mir,
-            request=request,
-            proof=proof,
-            bound=bound,
-            basis=basis,
-            decision=decision,
-            permit=permit,
-            consumption=consumption,
-            decision_key=decision_key,
-            runtime_key=runtime_key,
-            effect_key=effect_key,
+            base=base, effect_receipt=effect_receipt, grant=grant, evidence=evidence,
+            mir=mir, request=request, proof=proof, bound=bound, basis=basis,
+            decision=decision, permit=permit, consumption=consumption,
+            decision_key=decision_key, runtime_key=runtime_key, effect_key=effect_key,
         )
         if effect_envelope.terminal_state != "effect-completed":
             raise ExternalFinalityProofEnvelopeV1Error(
                 "external finality proof requires a locally completed effect"
             )
+        native_receipt.assert_authenticated(
+            provider_native_verifier_key=provider_native_verifier_key,
+            effect_envelope=effect_envelope,
+            effect_receipt=effect_receipt,
+            effect_result_bytes=effect_result_bytes,
+            raw_response_bytes=raw_provider_response_bytes,
+        )
         verdict.assert_authenticated(
             provider_verifier_key=provider_verifier_key,
             effect_envelope=effect_envelope,
@@ -121,8 +128,20 @@ class ExternalFinalityProofEnvelopeV1:
             effect_envelope=effect_envelope,
             verdict=verdict,
         )
+        bridge_fields = (
+            (verdict.provider_id, native_receipt.provider_id, "native provider"),
+            (verdict.external_reference_digest, native_receipt.verified_reference_digest, "native reference"),
+            (verdict.provider_proof_digest, native_receipt.provider_proof_digest, "native proof"),
+            (verdict.observed_epoch, native_receipt.observed_epoch, "native epoch"),
+            (verdict.state, native_receipt.state, "native state"),
+        )
+        for actual, expected, label in bridge_fields:
+            if actual != expected:
+                raise ExternalFinalityProofEnvelopeV1Error(f"provider verdict {label} mismatch")
         expected_fields = (
             (self.effect_execution_envelope_digest, effect_envelope.envelope_digest, "effect envelope"),
+            (self.provider_native_verification_receipt_digest, native_receipt.receipt_digest, "native verification receipt"),
+            (self.raw_provider_response_digest, native_receipt.raw_response_digest, "raw provider response"),
             (self.provider_verdict_digest, verdict.verdict_digest, "provider verdict"),
             (self.finality_attestation_digest, attestation.attestation_digest, "finality attestation"),
             (self.provider_id, attestation.provider_id, "provider"),
@@ -138,6 +157,7 @@ class ExternalFinalityProofEnvelopeV1:
                 )
         if self.envelope_digest != _digest(
             effect_envelope=effect_envelope,
+            native_receipt=native_receipt,
             verdict=verdict,
             attestation=attestation,
         ):
@@ -151,6 +171,9 @@ class ExternalFinalityProofEnvelopeV1:
 def seal_external_finality_proof_envelope_v1(*,
                                              effect_envelope: EffectExecutionProofEnvelopeV1,
                                              effect_receipt: EffectExecutionReceiptV1,
+                                             effect_result_bytes: bytes,
+                                             raw_provider_response_bytes: bytes,
+                                             native_receipt: ProviderNativeVerificationReceiptV1,
                                              base: ExecutionProofEnvelopeV1,
                                              grant: ExternalAdapterGrantV1,
                                              evidence: ExternalAdapterEvidenceV1,
@@ -167,34 +190,37 @@ def seal_external_finality_proof_envelope_v1(*,
                                              decision_key: bytes,
                                              runtime_key: bytes,
                                              effect_key: bytes,
+                                             provider_native_verifier_key: bytes,
                                              provider_verifier_key: bytes,
                                              finality_key: bytes) -> ExternalFinalityProofEnvelopeV1:
-    """Seal finality provenance only after the entire prior execution chain re-verifies."""
+    """Seal finality provenance only after raw provider verification and full execution lineage verify."""
     effect_envelope.assert_valid(
-        base=base,
-        effect_receipt=effect_receipt,
-        grant=grant,
-        evidence=evidence,
-        mir=mir,
-        request=request,
-        proof=proof,
-        bound=bound,
-        basis=basis,
-        decision=decision,
-        permit=permit,
-        consumption=consumption,
-        decision_key=decision_key,
-        runtime_key=runtime_key,
-        effect_key=effect_key,
+        base=base, effect_receipt=effect_receipt, grant=grant, evidence=evidence,
+        mir=mir, request=request, proof=proof, bound=bound, basis=basis,
+        decision=decision, permit=permit, consumption=consumption,
+        decision_key=decision_key, runtime_key=runtime_key, effect_key=effect_key,
     )
-    if effect_envelope.terminal_state != "effect-completed":
-        raise ExternalFinalityProofEnvelopeV1Error(
-            "external finality proof requires a locally completed effect"
-        )
+    native_receipt.assert_authenticated(
+        provider_native_verifier_key=provider_native_verifier_key,
+        effect_envelope=effect_envelope,
+        effect_receipt=effect_receipt,
+        effect_result_bytes=effect_result_bytes,
+        raw_response_bytes=raw_provider_response_bytes,
+    )
     verdict.assert_authenticated(
         provider_verifier_key=provider_verifier_key,
         effect_envelope=effect_envelope,
     )
+    if (
+        verdict.provider_id != native_receipt.provider_id
+        or verdict.external_reference_digest != native_receipt.verified_reference_digest
+        or verdict.provider_proof_digest != native_receipt.provider_proof_digest
+        or verdict.observed_epoch != native_receipt.observed_epoch
+        or verdict.state != native_receipt.state
+    ):
+        raise ExternalFinalityProofEnvelopeV1Error(
+            "provider verdict is not derived from native verification receipt"
+        )
     attestation.assert_authenticated(
         provider_verifier_key=provider_verifier_key,
         finality_key=finality_key,
@@ -203,6 +229,8 @@ def seal_external_finality_proof_envelope_v1(*,
     )
     result = ExternalFinalityProofEnvelopeV1(
         effect_execution_envelope_digest=effect_envelope.envelope_digest,
+        provider_native_verification_receipt_digest=native_receipt.receipt_digest,
+        raw_provider_response_digest=native_receipt.raw_response_digest,
         provider_verdict_digest=verdict.verdict_digest,
         finality_attestation_digest=attestation.attestation_digest,
         provider_id=attestation.provider_id,
@@ -214,12 +242,16 @@ def seal_external_finality_proof_envelope_v1(*,
     )
     object.__setattr__(result, "envelope_digest", _digest(
         effect_envelope=effect_envelope,
+        native_receipt=native_receipt,
         verdict=verdict,
         attestation=attestation,
     ))
     result.assert_valid(
         effect_envelope=effect_envelope,
         effect_receipt=effect_receipt,
+        effect_result_bytes=effect_result_bytes,
+        raw_provider_response_bytes=raw_provider_response_bytes,
+        native_receipt=native_receipt,
         base=base,
         grant=grant,
         evidence=evidence,
@@ -236,6 +268,7 @@ def seal_external_finality_proof_envelope_v1(*,
         decision_key=decision_key,
         runtime_key=runtime_key,
         effect_key=effect_key,
+        provider_native_verifier_key=provider_native_verifier_key,
         provider_verifier_key=provider_verifier_key,
         finality_key=finality_key,
     )
