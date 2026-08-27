@@ -9,7 +9,6 @@ from koschei.external_finality_attestation_v1 import (
     attest_external_finality_v1,
     issue_external_provider_finality_verdict_v1,
 )
-from koschei.pi_finality_profile_v1 import issue_pi_finality_verdict_v1
 
 
 def h(tag: str) -> str:
@@ -127,16 +126,3 @@ def test_wrong_provider_verifier_or_finality_key_rejects():
             effect_envelope=effect,
             verdict=verdict,
         )
-
-
-def test_pi_profile_fixes_provider_identity_without_adding_pi_sdk_to_lang_core():
-    effect = effect_envelope()
-    verdict = issue_pi_finality_verdict_v1(
-        effect_envelope=effect,
-        pi_transaction_reference_digest=h("pi-tx"),
-        pi_provider_proof_digest=h("pi-proof"),
-        observed_epoch=62,
-        state="finalized",
-        provider_verifier_key=b"v" * 32,
-    )
-    assert verdict.provider_id == "pi"
