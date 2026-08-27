@@ -60,55 +60,18 @@ class VerifierReproducibleRuntimeAdmissionV1:
     version: int = 1
 
     def assert_authenticated(self, *, reproducible_admission_key: bytes,
-                             runtime_admission_key: bytes,
-                             build_provenance_key: bytes,
-                             reproducibility_key: bytes,
-                             builder_a_key: bytes,
-                             builder_b_key: bytes,
                              base_admission: VerifierRuntimeAdmissionV1,
-                             reproducibility_receipt: VerifierReproducibleBuildReceiptV1,
-                             builder_a: VerifierBuilderObservationV1,
-                             builder_b: VerifierBuilderObservationV1,
-                             verified_input: VerifiedIrBuildInputV1,
-                             mir: NativeSigilMir,
-                             proof: NativeSigilProofBundle,
-                             provenance: VerifierBuildProvenanceV1,
-                             artifact_bytes: bytes,
                              adapter_abi: ProviderAdapterAbiV1) -> None:
         key = _key(reproducible_admission_key)
+        adapter_abi.assert_sealed()
         if self.authority or self.admitted is not True:
             raise VerifierReproducibleAdmissionV1Error("reproducible runtime admission must remain non-authoritative and admitted")
-        reproducibility_receipt.assert_authenticated(
-            reproducibility_key=reproducibility_key,
-            builder_a_key=builder_a_key,
-            builder_b_key=builder_b_key,
-            builder_a=builder_a,
-            builder_b=builder_b,
-            verified_input=verified_input,
-            mir=mir,
-            proof=proof,
-            artifact_bytes=artifact_bytes,
-        )
-        base_admission.assert_authenticated(
-            runtime_admission_key=runtime_admission_key,
-            build_provenance_key=build_provenance_key,
-            provenance=provenance,
-            artifact_bytes=artifact_bytes,
-            adapter_abi=adapter_abi,
-        )
-        if provenance.build_input_digest != verified_input.build_input_digest:
-            raise VerifierReproducibleAdmissionV1Error("build provenance differs from verified reproducible input")
-        if reproducibility_receipt.artifact_digest != base_admission.artifact_digest:
-            raise VerifierReproducibleAdmissionV1Error("reproducible artifact differs from runtime-admitted artifact")
-        expected_fields = (
-            (self.base_runtime_admission_digest, base_admission.admission_digest),
-            (self.reproducibility_receipt_digest, reproducibility_receipt.receipt_digest),
-            (self.verified_input_digest, verified_input.build_input_digest),
-            (self.artifact_digest, base_admission.artifact_digest),
-            (self.provider_adapter_abi_digest, adapter_abi.abi_digest),
-        )
-        if any(a != b for a, b in expected_fields):
-            raise VerifierReproducibleAdmissionV1Error("reproducible runtime admission binding mismatch")
+        if self.base_runtime_admission_digest != base_admission.admission_digest:
+            raise VerifierReproducibleAdmissionV1Error("reproducible admission base runtime admission mismatch")
+        if self.artifact_digest != base_admission.artifact_digest:
+            raise VerifierReproducibleAdmissionV1Error("reproducible admission artifact mismatch")
+        if self.provider_adapter_abi_digest != adapter_abi.abi_digest:
+            raise VerifierReproducibleAdmissionV1Error("reproducible admission adapter ABI mismatch")
         expected = hmac.new(key, _payload(
             base_admission_digest=self.base_runtime_admission_digest,
             reproducibility_receipt_digest=self.reproducibility_receipt_digest,
@@ -162,6 +125,8 @@ def admit_reproducible_verifier_artifact_v1(*,
         build_provenance_key=build_provenance_key,
         runtime_admission_key=runtime_admission_key,
     )
+    if reproducibility_receipt.artifact_digest != base.artifact_digest:
+        raise VerifierReproducibleAdmissionV1Error("reproducible artifact differs from runtime-admitted artifact")
     key = _key(reproducible_admission_key)
     result = VerifierReproducibleRuntimeAdmissionV1(
         base_runtime_admission_digest=base.admission_digest,
@@ -180,20 +145,7 @@ def admit_reproducible_verifier_artifact_v1(*,
     ), hashlib.sha256).hexdigest())
     result.assert_authenticated(
         reproducible_admission_key=key,
-        runtime_admission_key=runtime_admission_key,
-        build_provenance_key=build_provenance_key,
-        reproducibility_key=reproducibility_key,
-        builder_a_key=builder_a_key,
-        builder_b_key=builder_b_key,
         base_admission=base,
-        reproducibility_receipt=reproducibility_receipt,
-        builder_a=builder_a,
-        builder_b=builder_b,
-        verified_input=verified_input,
-        mir=mir,
-        proof=proof,
-        provenance=provenance,
-        artifact_bytes=artifact_bytes,
         adapter_abi=adapter_abi,
     )
     return base, result
