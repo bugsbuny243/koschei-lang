@@ -1,97 +1,92 @@
 # KOSCHEI EXTERNAL ADAPTER CONTRACT V1
 
-## Purpose
+Status: IMPLEMENTED BOOTSTRAP BOUNDARY
 
-Koschei Lang must interoperate with external systems without importing their trust model into canonical Koschei semantics.
+## PURPOSE
 
-External systems may include payment networks, identity providers, banks, cloud platforms, blockchains, developer platforms, or customer-owned services. Their SDKs, protocols, credentials, settlement rules, and operational semantics remain outside Koschei Lang.
+External providers may report identity, payment, cloud, bank, chain or other facts,
+but those facts are not Koschei authority. Provider SDK/protocol semantics stay
+outside canonical Koschei Lang semantics.
 
-The Lang-side contract admits only bounded evidence through a scoped, time-limited, non-authoritative grant.
+The generic boundary is:
 
-## Canonical boundary
+`External Provider -> Provider Adapter -> ExternalAdapterGrantV1 -> ExternalAdapterEvidenceV1`
 
-External Provider
-→ provider-specific adapter
-→ ExternalAdapterGrantV1
-→ sealed ExternalAdapterEvidenceV1
-→ Koschei policy / execution
+When an external fact is later relevant to a privileged Koschei effect, the only
+sanctioned handoff is:
 
-The external provider is not a capability issuer for Koschei execution authority.
+`ExternalAdapterEvidenceV1`
+`-> existing native Koschei MIR/request/proof/enforcement chain`
+`-> CanonicalAuthorityBasisV1`
+`-> AuthorizationDecisionV1`
+`-> ExecutionPermitV1`
 
-## Grant semantics
+## GRANT
 
-`ExternalAdapterGrantV1` is bound to:
+`ExternalAdapterGrantV1` binds:
 
-- provider identity
-- Koschei consumer/application identity
-- subject scope digest
-- explicit action set
-- valid-from epoch
-- expires-before epoch
-- authority = false
+- provider id,
+- consumer/app id,
+- subject-scope digest,
+- explicit action set,
+- valid-from epoch,
+- expires-before epoch,
+- `authority=False`.
 
-A grant cannot widen itself after issuance without breaking its seal.
+The grant permits an adapter action; it does not grant the resulting application a
+privileged Koschei effect.
 
-## Evidence semantics
+## EVIDENCE
 
-External evidence is opaque to this generic layer. The generic contract proves only that:
+`ExternalAdapterEvidenceV1` binds an opaque external-evidence digest to exactly one
+grant, provider, action and observation epoch. Evidence is also explicitly
+non-authoritative.
 
-- the evidence digest was admitted under one exact sealed grant
-- the provider matches that grant
-- the action was explicitly permitted
-- the observation occurred during the grant lifetime
-- the evidence object itself has not been modified after admission
-- the evidence carries no Koschei ambient authority
+## CANONICAL AUTHORITY HANDOFF
 
-Provider-specific adapters remain responsible for validating provider-native proofs before presenting their digest to this boundary.
+The authorization bridge no longer accepts a caller-provided authority-basis digest.
+It derives one from Koschei's existing native privileged-effect path. External
+subject scope must match the deterministic scope of the sealed canonical Koschei
+request before a decision can be issued.
 
-## Pi implementation
+Therefore:
 
-Pi Network is the first provider-specific adapter profile.
-
-The Pi profile currently admits only:
-
-- `identity.verify`
-- `payment.request`
-- `payment.observe`
-
-Pi SDK semantics, payment settlement, wallet custody, network calls, and Pi-specific trust assumptions do not become Koschei language semantics.
+`external fact != authority`
+`adapter grant != privileged effect grant`
+`evidence != permission`
+`native ALLOW + exact evidence binding -> narrow authenticated decision`
 
 ## PROTECTS AGAINST
 
-- copying the same security-sealing implementation independently into every provider adapter
-- external facts becoming ambient Koschei disk/network/process authority
-- evidence rebinding to a different provider or grant
-- use of actions outside the explicit grant
-- reuse of expired grants
-- mutation of sealed grant/evidence fields after issuance
-- permanent coupling of canonical Koschei semantics to one SDK shape
+- duplicated grant/evidence security physics across providers,
+- ambient authority from external facts,
+- ungranted or expired adapter actions,
+- cross-provider/cross-grant evidence rebinding,
+- external subject evidence being bridged to another canonical request identity,
+- permanent coupling of provider SDK shapes to canonical Koschei semantics.
 
 ## DOES NOT PROTECT AGAINST
 
-- a compromised or dishonest external provider
-- a provider-specific adapter that accepts false native proofs before hashing them
-- compromise of the Koschei host/runtime or trusted policy state
-- settlement, finality, chargeback, economic, or identity guarantees owned by the provider
-- leakage of external credentials outside the Lang boundary
+- compromised/dishonest external providers,
+- provider-specific adapters accepting false native proofs,
+- compromise/bugs in later native Koschei authority enforcement,
+- provider-owned settlement/finality/economic guarantees,
+- host/runtime/key compromise.
 
 ## ASSUMPTIONS
 
-- provider-specific adapters validate their native protocol correctly
-- current epoch is supplied from trusted Koschei runtime state
-- digest algorithms and sealed object implementations remain intact
-- external credentials are not embedded into Koschei source
+- provider-specific adapters correctly validate their native protocols,
+- adapter grant/evidence epoch state is trusted at the authoritative boundary,
+- external credentials remain outside Koschei source,
+- privileged effects cannot bypass native Koschei authority and permit enforcement.
 
 ## FAILURE MODE
 
-If provider-specific code can bypass `ExternalAdapterGrantV1` and inject external facts directly into authoritative execution, the boundary collapses.
+The boundary fails if provider code can inject facts directly into privileged
+execution, if an adapter can widen its grant, or if the later native authority path
+can be bypassed.
 
-If adapter code treats an external fact as a Koschei capability rather than evidence, ambient authority can re-enter the system.
+## PROVIDER PROFILES
 
-If runtime epoch state is attacker-controlled, expired-grant replay protection is ineffective.
-
-## Design rule
-
-Provider-specific adapters may narrow the generic contract, but they must not widen it.
-
-A provider can define a smaller action vocabulary or stricter lifetime/policy checks. It cannot turn external evidence into unrestricted Koschei authority.
+Pi is the first profile. Future bank/cloud/EVM/etc. profiles may narrow this generic
+contract but may not widen it or redefine external evidence as ambient authority.
