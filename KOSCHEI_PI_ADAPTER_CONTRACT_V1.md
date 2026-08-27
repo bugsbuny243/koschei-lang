@@ -1,13 +1,12 @@
 # KOSCHEI PI ADAPTER CONTRACT V1
 
-Status: IMPLEMENTED PROFILE / EXTERNAL PI SDK IMPLEMENTATION NOT PART OF LANG
+Status: IMPLEMENTED BOOTSTRAP PROFILE / EXTERNAL PI SDK IMPLEMENTATION NOT PART OF LANG
 
 ## PURPOSE
 
 Pi is the first provider profile for Koschei Lang's generic external-adapter boundary.
-Pi Network SDK, wallet custody, settlement and chain behavior remain outside Koschei
-Lang. The adapter may introduce verified external facts; it may not introduce ambient
-Koschei authority.
+Pi SDK/network/payment logic remains outside Koschei Lang. The adapter may introduce
+verified external facts; it may not introduce ambient Koschei authority.
 
 ## ALLOWED PI ACTIONS
 
@@ -17,77 +16,75 @@ The v1 profile recognizes only:
 - `payment.request`
 - `payment.observe`
 
-Every action remains app/consumer, subject and epoch scoped through the generic
-`ExternalAdapterGrantV1` physics.
+Every action remains consumer, subject and epoch scoped through generic adapter grants.
 
 ## AUTHORITY HANDOFF
 
 A Pi payment or identity fact is never an execution capability.
 
-The sanctioned path is:
+Sanctioned authority path:
 
 `Pi native fact`
-`-> Pi adapter validation`
 `-> ExternalAdapterEvidenceV1(provider=pi)`
 `-> Koschei Native MIR + Canonical Effect Request + Request-Bound Proof`
 `-> CanonicalAuthorityBasisV1`
 `-> AuthorizationDecisionV1`
 `-> ExecutionPermitV1`
-`-> single exact effect`
+`-> single measured effect`
 
-The external grant's `subject_scope_digest` must match the deterministic canonical
-scope derived from the sealed Koschei request's subject and identity digest before an
-authorization decision can be issued.
+## PI PROVIDER-FINALITY VERIFIER PATH
 
-## KOSCHEI LAB EXAMPLE
+Provider-finality verification is separately gated:
 
-A settled Pi payment may be admitted as `payment.observe` evidence. A separate
-Koschei native request may ask for `subscription.enable`. Only when the existing
-native Koschei proof/enforcement chain returns ALLOW for that exact request can the
-bridge derive an authorization decision and single-use execution permit.
+`effect result txid bytes`
+`-> verifier VerifiedIrBuildInputV1`
+`-> authenticated ToolchainProvenanceV1`
+`-> builder A + builder B observations`
+`-> VerifierReproducibleBuildReceiptV1`
+`-> VerifierBuildProvenanceV1`
+`-> ProviderAdapterAbiV1`
+`-> VerifierReproducibleRuntimeAdmissionV1`
+`-> raw Pi response bytes`
+`-> Pi-native verifier`
+`-> provider verdict`
+`-> ExternalFinalityProofEnvelopeV1`
 
-There is no rule of the form:
+The Pi wrapper cannot choose a raw `toolchain_digest`, bypass the reproducible admission
+gate, or promote local `effect-completed` into provider finality by itself.
 
-`Pi payment -> arbitrary Koschei authority`
-
-and neither the Pi adapter, decision issuer nor permit minter receives a free-form
-argument that can widen `subscription.enable` into `treasury.withdraw` after native
-authority evaluation.
+Pi SDK calls, wallet custody, settlement, consensus and a production backend JSON parser
+remain outside Lang core.
 
 ## PROTECTS AGAINST
 
-- Pi facts becoming ambient disk/network/process/treasury authority,
-- ungranted Pi adapter actions,
-- expired external grants,
-- cross-grant evidence rebinding,
-- external subject scope being bridged to another canonical request identity,
-- operation widening after native Koschei authorization,
+- Pi facts becoming ambient authority,
+- ungranted/expired adapter evidence,
+- subject or operation widening after native authorization,
+- provider verification without the two-builder reproducibility gate,
+- caller-selected toolchain digest on sanctioned verifier build paths,
+- relabeling verifier build evidence under another signed toolchain identity,
 - hard-coupling Pi SDK shapes into canonical language semantics.
 
 ## DOES NOT PROTECT AGAINST
 
-- compromised or dishonest Pi provider/SDK behavior,
-- a Pi-specific adapter accepting false native evidence before admission,
-- compromised Koschei native enforcement/runtime/key custody,
-- Pi settlement/finality/economic guarantees,
-- host compromise or side channels.
+- compromised/dishonest Pi provider or SDK behavior,
+- a malicious verifier/toolchain that is legitimately signed and admitted,
+- compromised signing/build/runtime/finality keys,
+- common-mode compiler defects across independent builders,
+- Pi settlement/economic guarantees beyond verified provider evidence,
+- host compromise, replay-state rollback or measure-A/execute-B TOCTOU.
 
 ## ASSUMPTIONS
 
 - Pi-specific native verification is implemented correctly outside Lang core,
+- signed toolchain bytes are the bytes actually used by builders,
+- builder identities map to independent build authorities,
 - external credentials are not embedded into Koschei source,
-- Koschei native authority/proof evaluation is fail-closed,
-- runtime lifecycle/epoch and key custody are trusted at the authoritative boundary.
+- native authority/proof evaluation and runtime admission fail closed.
 
 ## FAILURE MODE
 
-The separation collapses if Pi/provider code can bypass generic evidence admission or
-invoke privileged effects without the native authority -> decision -> permit chain.
-It also collapses if the trusted Koschei enforcement/runtime boundary itself is
-compromised.
-
-## PRODUCT BOUNDARY
-
-Koschei Lab may expose Attack Demo / Build Secure Pi App / verified provenance UX, but
-that product surface must consume these Lang contracts rather than moving Pi Network
-business logic into Koschei Lang.
+The separation collapses if provider code bypasses generic evidence admission, if lower
+verification primitives bypass reproducible admission, or if trusted runtime/signing
+boundaries are compromised. Signed/reproducible provenance authenticates identity and
+agreement; it does not prove semantic correctness.
