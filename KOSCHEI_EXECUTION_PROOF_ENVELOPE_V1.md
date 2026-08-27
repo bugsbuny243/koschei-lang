@@ -41,13 +41,16 @@ exact single-use permit consumption.
 `payment-settled`, or any remote side-effect completion state. A consumed permit and a
 completed side effect are different facts.
 
-Effect execution is represented by the separate higher layer:
+Higher layers preserve the separation instead of mutating this V1 meaning:
 
 `ExecutionProofEnvelopeV1(permit-consumed)`
 `-> EffectExecutionReceiptV1`
 `-> EffectExecutionProofEnvelopeV1(effect-completed | effect-failed)`
+`-> ExternalProviderFinalityVerdictV1`
+`-> ExternalFinalityAttestationV1`
+`-> ExternalFinalityProofEnvelopeV1(provider-pending | provider-finalized | provider-rejected)`
 
-Keeping the layers separate preserves the original meaning of this V1 envelope.
+A local `effect-completed` claim still does not imply remote finality.
 
 ## CONSUMPTION RECEIPT
 
@@ -102,7 +105,8 @@ It is provenance, not permission.
 - host compromise or side channels,
 - false external evidence admitted earlier,
 - downstream effect failure after permit consumption,
-- proof that a remote system finalized the requested transition.
+- proof that a remote system finalized the requested transition without the higher
+  external-finality layer.
 
 ## ASSUMPTIONS
 
@@ -124,11 +128,19 @@ consumption receipts for the same permit. HMAC does not replace monotonic consen
 If the runtime key is compromised, permit/consumption authenticity in that trust role
 is lost.
 
-## EFFECT COMPANION
+## HIGHER PROVENANCE LAYERS
 
-`EffectExecutionReceiptV1` and `EffectExecutionProofEnvelopeV1` are now implemented as
-separate companion layers. They distinguish local `effect-completed` and
-`effect-failed` without changing this base envelope's semantics.
+The local effect companion layers are implemented as:
 
-Those states still do NOT imply remote Pi/blockchain/bank/cloud settlement or finality.
-Provider-finality attestation is the next independent evidence layer.
+- `koschei/effect_execution_receipt_v1.py`
+- `koschei/effect_execution_proof_envelope_v1.py`
+
+The external finality layers are implemented as:
+
+- `koschei/external_finality_attestation_v1.py`
+- `koschei/external_finality_proof_envelope_v1.py`
+- `koschei/pi_finality_profile_v1.py`
+- `KOSCHEI_EXTERNAL_FINALITY_ATTESTATION_V1.md`
+
+The remaining hard problem is provider-native verification and durable runtime/key
+custody, not relabeling this base envelope with stronger semantics.
