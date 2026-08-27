@@ -1,0 +1,216 @@
+"""Independent verifier reproducible-build verification for Koschei Lang v1.
+
+Two independently authenticated builder observations must bind the same
+VerifiedIrBuildInputV1 and produce the same exact verifier artifact digest before a
+reproducibility receipt can be sealed. This is provenance, not execution authority.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+import hashlib
+import hmac
+
+from .native_sigil_mir_v1 import NativeSigilMir
+from .native_sigil_proof_pipeline_v1 import NativeSigilProofBundle
+from .verified_ir_build_input_v1 import VerifiedIrBuildInputV1
+from .verifier_build_provenance_v1 import measure_verifier_artifact_v1
+
+_OBS_CTX = b"koschei.verifier-builder-observation/v1\x00"
+_REPRO_CTX = b"koschei.verifier-reproducible-build/v1\x00"
+
+
+class VerifierReproducibleBuildV1Error(ValueError):
+    pass
+
+
+def _key(value: bytes, label: str) -> bytes:
+    if not isinstance(value, bytes) or len(value) < 32:
+        raise VerifierReproducibleBuildV1Error(f"{label} must contain at least 32 bytes")
+    return value
+
+
+def _text(value: str, label: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise VerifierReproducibleBuildV1Error(f"{label} cannot be empty")
+    return value.strip()
+
+
+def _obs_payload(*, builder_id: str, verified_input_digest: str,
+                 toolchain_digest: str, build_profile: str,
+                 artifact_digest: str) -> bytes:
+    rows = (
+        f"builder={builder_id}",
+        f"verified_input={verified_input_digest}",
+        f"toolchain={toolchain_digest}",
+        f"profile={build_profile}",
+        f"artifact={artifact_digest}",
+        "authority=0",
+    )
+    return _OBS_CTX + "\n".join(rows).encode()
+
+
+@dataclass(frozen=True, slots=True)
+class VerifierBuilderObservationV1:
+    builder_id: str
+    verified_input_digest: str
+    toolchain_digest: str
+    build_profile: str
+    artifact_digest: str
+    observation_digest: str
+    authority: bool = False
+    version: int = 1
+
+    def assert_authenticated(self, *, builder_key: bytes,
+                             verified_input: VerifiedIrBuildInputV1,
+                             mir: NativeSigilMir,
+                             proof: NativeSigilProofBundle,
+                             artifact_bytes: bytes) -> None:
+        key = _key(builder_key, "builder_key")
+        verified_input.assert_sealed(mir=mir, proof=proof)
+        if self.authority:
+            raise VerifierReproducibleBuildV1Error("builder observation cannot carry ambient authority")
+        if self.verified_input_digest != verified_input.build_input_digest:
+            raise VerifierReproducibleBuildV1Error("builder observation verified-input mismatch")
+        measured = measure_verifier_artifact_v1(artifact_bytes)
+        if self.artifact_digest != measured:
+            raise VerifierReproducibleBuildV1Error("builder observation artifact mismatch")
+        expected = hmac.new(key, _obs_payload(
+            builder_id=_text(self.builder_id, "builder_id"),
+            verified_input_digest=self.verified_input_digest,
+            toolchain_digest=self.toolchain_digest,
+            build_profile=_text(self.build_profile, "build_profile"),
+            artifact_digest=self.artifact_digest,
+        ), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(self.observation_digest, expected):
+            raise VerifierReproducibleBuildV1Error("builder observation authentication failed")
+
+
+def attest_builder_observation_v1(*, builder_id: str,
+                                  builder_key: bytes,
+                                  verified_input: VerifiedIrBuildInputV1,
+                                  mir: NativeSigilMir,
+                                  proof: NativeSigilProofBundle,
+                                  artifact_bytes: bytes,
+                                  toolchain_digest: str,
+                                  build_profile: str) -> VerifierBuilderObservationV1:
+    key = _key(builder_key, "builder_key")
+    verified_input.assert_sealed(mir=mir, proof=proof)
+    artifact = measure_verifier_artifact_v1(artifact_bytes)
+    result = VerifierBuilderObservationV1(
+        builder_id=_text(builder_id, "builder_id"),
+        verified_input_digest=verified_input.build_input_digest,
+        toolchain_digest=toolchain_digest,
+        build_profile=_text(build_profile, "build_profile"),
+        artifact_digest=artifact,
+        observation_digest="",
+    )
+    object.__setattr__(result, "observation_digest", hmac.new(key, _obs_payload(
+        builder_id=result.builder_id,
+        verified_input_digest=result.verified_input_digest,
+        toolchain_digest=result.toolchain_digest,
+        build_profile=result.build_profile,
+        artifact_digest=result.artifact_digest,
+    ), hashlib.sha256).hexdigest())
+    result.assert_authenticated(builder_key=key, verified_input=verified_input, mir=mir, proof=proof, artifact_bytes=artifact_bytes)
+    return result
+
+
+def _repro_payload(*, verified_input_digest: str, artifact_digest: str,
+                   builder_a_id: str, builder_a_observation: str,
+                   builder_b_id: str, builder_b_observation: str) -> bytes:
+    rows = (
+        f"verified_input={verified_input_digest}",
+        f"artifact={artifact_digest}",
+        f"builder_a={builder_a_id}",
+        f"builder_a_observation={builder_a_observation}",
+        f"builder_b={builder_b_id}",
+        f"builder_b_observation={builder_b_observation}",
+        "reproducible=1",
+        "authority=0",
+    )
+    return _REPRO_CTX + "\n".join(rows).encode()
+
+
+@dataclass(frozen=True, slots=True)
+class VerifierReproducibleBuildReceiptV1:
+    verified_input_digest: str
+    artifact_digest: str
+    builder_a_id: str
+    builder_a_observation_digest: str
+    builder_b_id: str
+    builder_b_observation_digest: str
+    receipt_digest: str
+    reproducible: bool = True
+    authority: bool = False
+    version: int = 1
+
+    def assert_authenticated(self, *, reproducibility_key: bytes,
+                             builder_a_key: bytes, builder_b_key: bytes,
+                             builder_a: VerifierBuilderObservationV1,
+                             builder_b: VerifierBuilderObservationV1,
+                             verified_input: VerifiedIrBuildInputV1,
+                             mir: NativeSigilMir, proof: NativeSigilProofBundle,
+                             artifact_bytes: bytes) -> None:
+        key = _key(reproducibility_key, "reproducibility_key")
+        if self.authority or self.reproducible is not True:
+            raise VerifierReproducibleBuildV1Error("reproducible-build receipt must remain non-authoritative and reproducible")
+        if builder_a.builder_id == builder_b.builder_id:
+            raise VerifierReproducibleBuildV1Error("reproducible build requires distinct builder identities")
+        builder_a.assert_authenticated(builder_key=builder_a_key, verified_input=verified_input, mir=mir, proof=proof, artifact_bytes=artifact_bytes)
+        builder_b.assert_authenticated(builder_key=builder_b_key, verified_input=verified_input, mir=mir, proof=proof, artifact_bytes=artifact_bytes)
+        if builder_a.artifact_digest != builder_b.artifact_digest:
+            raise VerifierReproducibleBuildV1Error("independent builders produced different verifier artifacts")
+        expected_fields = (
+            (self.verified_input_digest, verified_input.build_input_digest),
+            (self.artifact_digest, builder_a.artifact_digest),
+            (self.builder_a_id, builder_a.builder_id),
+            (self.builder_a_observation_digest, builder_a.observation_digest),
+            (self.builder_b_id, builder_b.builder_id),
+            (self.builder_b_observation_digest, builder_b.observation_digest),
+        )
+        if any(a != b for a, b in expected_fields):
+            raise VerifierReproducibleBuildV1Error("reproducible-build receipt binding mismatch")
+        expected = hmac.new(key, _repro_payload(
+            verified_input_digest=self.verified_input_digest,
+            artifact_digest=self.artifact_digest,
+            builder_a_id=self.builder_a_id,
+            builder_a_observation=self.builder_a_observation_digest,
+            builder_b_id=self.builder_b_id,
+            builder_b_observation=self.builder_b_observation_digest,
+        ), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(self.receipt_digest, expected):
+            raise VerifierReproducibleBuildV1Error("reproducible-build receipt authentication failed")
+
+
+def seal_reproducible_build_receipt_v1(*, reproducibility_key: bytes,
+                                       builder_a_key: bytes, builder_b_key: bytes,
+                                       builder_a: VerifierBuilderObservationV1,
+                                       builder_b: VerifierBuilderObservationV1,
+                                       verified_input: VerifiedIrBuildInputV1,
+                                       mir: NativeSigilMir, proof: NativeSigilProofBundle,
+                                       artifact_bytes: bytes) -> VerifierReproducibleBuildReceiptV1:
+    if builder_a.builder_id == builder_b.builder_id:
+        raise VerifierReproducibleBuildV1Error("reproducible build requires distinct builder identities")
+    builder_a.assert_authenticated(builder_key=builder_a_key, verified_input=verified_input, mir=mir, proof=proof, artifact_bytes=artifact_bytes)
+    builder_b.assert_authenticated(builder_key=builder_b_key, verified_input=verified_input, mir=mir, proof=proof, artifact_bytes=artifact_bytes)
+    if builder_a.artifact_digest != builder_b.artifact_digest:
+        raise VerifierReproducibleBuildV1Error("independent builders produced different verifier artifacts")
+    result = VerifierReproducibleBuildReceiptV1(
+        verified_input_digest=verified_input.build_input_digest,
+        artifact_digest=builder_a.artifact_digest,
+        builder_a_id=builder_a.builder_id,
+        builder_a_observation_digest=builder_a.observation_digest,
+        builder_b_id=builder_b.builder_id,
+        builder_b_observation_digest=builder_b.observation_digest,
+        receipt_digest="",
+    )
+    key = _key(reproducibility_key, "reproducibility_key")
+    object.__setattr__(result, "receipt_digest", hmac.new(key, _repro_payload(
+        verified_input_digest=result.verified_input_digest,
+        artifact_digest=result.artifact_digest,
+        builder_a_id=result.builder_a_id,
+        builder_a_observation=result.builder_a_observation_digest,
+        builder_b_id=result.builder_b_id,
+        builder_b_observation=result.builder_b_observation_digest,
+    ), hashlib.sha256).hexdigest())
+    return result
