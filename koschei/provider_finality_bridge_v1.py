@@ -10,6 +10,7 @@ from .external_finality_attestation_v1 import (
 from .provider_adapter_abi_v1 import ProviderAdapterAbiV1
 from .provider_native_verifier_v1 import ProviderNativeVerificationReceiptV1
 from .verifier_build_provenance_v1 import VerifierBuildProvenanceV1, VerifierRuntimeAdmissionV1
+from .verifier_reproducible_admission_v1 import VerifierReproducibleRuntimeAdmissionV1
 
 
 class ProviderFinalityBridgeV1Error(ValueError):
@@ -20,10 +21,12 @@ def issue_provider_finality_verdict_from_native_receipt_v1(*,
     native_receipt: ProviderNativeVerificationReceiptV1,
     adapter_abi: ProviderAdapterAbiV1,
     runtime_admission: VerifierRuntimeAdmissionV1,
+    reproducible_admission: VerifierReproducibleRuntimeAdmissionV1,
     provenance: VerifierBuildProvenanceV1,
     verifier_artifact_bytes: bytes,
     build_provenance_key: bytes,
     runtime_admission_key: bytes,
+    reproducible_admission_key: bytes,
     effect_envelope: EffectExecutionProofEnvelopeV1,
     effect_receipt: EffectExecutionReceiptV1,
     effect_result_bytes: bytes,
@@ -36,10 +39,12 @@ def issue_provider_finality_verdict_from_native_receipt_v1(*,
         provider_native_verifier_key=provider_native_verifier_key,
         adapter_abi=adapter_abi,
         runtime_admission=runtime_admission,
+        reproducible_admission=reproducible_admission,
         provenance=provenance,
         verifier_artifact_bytes=verifier_artifact_bytes,
         build_provenance_key=build_provenance_key,
         runtime_admission_key=runtime_admission_key,
+        reproducible_admission_key=reproducible_admission_key,
         effect_envelope=effect_envelope,
         effect_receipt=effect_receipt,
         effect_result_bytes=effect_result_bytes,
