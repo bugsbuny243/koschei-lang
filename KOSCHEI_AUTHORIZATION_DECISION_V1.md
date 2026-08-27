@@ -1,123 +1,153 @@
 # KOSCHEI AUTHORIZATION DECISION V1
 
-Status: IMPLEMENTED BOOTSTRAP PROTOTYPE / NOT YET NATIVE-ENFORCED
+Status: IMPLEMENTED BOOTSTRAP PROTOTYPE / NATIVE AUTHORITY INPUT WIRED / FINAL RUNTIME ISOLATION PENDING
 
 ## PURPOSE
 
 External evidence is not permission, and a permit issuer must not invent authority.
-Koschei therefore inserts an authenticated canonical decision between admitted
-external evidence and execution-permit minting:
+The v1 bridge now derives its authority basis from Koschei's existing native
+privileged-effect path rather than accepting a caller-supplied capability digest:
 
-`External Evidence -> Canonical Authority/Policy Evaluation -> Authorization Decision -> Execution Permit -> Consume`
+`External Evidence`
+`-> Native MIR + Canonical Effect Request + Request-Bound Proof`
+`-> Native Enforcement Decision`
+`-> CanonicalAuthorityBasisV1`
+`-> AuthorizationDecisionV1`
+`-> ExecutionPermitV1`
+`-> Single Consume`
 
-The decision records what the canonical Koschei authority layer already decided. It
-does not create new authority merely because an HMAC key exists.
+No parallel capability system is introduced by this bridge.
 
-## SEMANTIC INVARIANTS
+## CANONICAL AUTHORITY BASIS
 
-An `AuthorizationDecisionV1` is bound to:
+`koschei/canonical_authority_basis_v1.py` turns the already-existing native chain into
+a deterministic, non-ambient receipt.
 
-- exact external evidence digest,
-- provider and consumer,
-- subject scope,
-- exact operation,
-- exact request/challenge digest,
-- exact decision epoch,
-- canonical authority-basis digest,
-- canonical policy digest,
-- outcome: `allow`, `deny`, or `contain`.
+It re-verifies:
 
-The whole record is HMAC-SHA256 authenticated with a decision key that is separate
-from the execution-permit key.
+- sealed `NativeSigilMir`,
+- sealed `CanonicalEffectRequest`,
+- sealed `RequestBoundProof`,
+- `NativeSigilProofBundle`,
+- the resulting `EnforcementDecision` (`ALLOW`, `DENY`, `CONTAIN`).
 
-Only an authenticated `allow` decision may be narrowed into an execution permit.
-`deny` and `contain` are terminal for permit minting.
+The basis binds:
+
+- canonical request digest,
+- request-bound proof digest,
+- enforcement-decision digest,
+- native MIR fingerprint,
+- Universe-plan digest,
+- proof digest,
+- canonical subject-scope digest,
+- operation,
+- epoch,
+- native enforcement outcome.
+
+`authority=False` is explicit: the receipt describes verified authority state; it is
+not itself ambient authority.
+
+## SUBJECT SCOPE
+
+External adapter subject scope is compared with a deterministic scope derived from
+the sealed canonical request's `subject + identity_digest`.
+
+This prevents an external grant for one subject identity from being used as the
+bridge for a different canonical privileged request.
+
+## ISSUER SURFACE
+
+`issue_authorization_decision_v1(...)` no longer accepts:
+
+- `authority_basis_digest`,
+- `policy_digest`,
+- `outcome`,
+- `operation`,
+- `request_digest`.
+
+Those fields are derived after the native authority basis is re-verified.
+
+For v1, `policy_digest` is the sealed native MIR fingerprint: the executable Koschei
+program identity whose Library/proof path produced the enforcement result.
+
+The decision outcome is mapped directly from native enforcement:
+
+- `ALLOW -> allow`
+- `DENY -> deny`
+- `CONTAIN -> contain`
+
+Only `allow` may later mint an execution permit.
 
 ## KEY SEPARATION
 
-Decision authentication and permit authentication deliberately use separate keys.
+- `decision_key` authenticates the external-evidence -> canonical-decision bridge.
+- `runtime_key` authenticates the later execution permit.
 
-- `decision_key`: belongs to the trusted canonical authority/policy decision boundary.
-- `runtime_key`: belongs to the permit mint/consume boundary.
-
-Compromise of one key is still serious, but key separation prevents one primitive
-from automatically impersonating the other trust role.
-
-## AUTHORITY BASIS
-
-`authority_basis_digest` identifies the already-established canonical capability or
-authority basis used by policy evaluation. It is authenticated as part of the
-decision.
-
-The bootstrap issuer accepts this digest as an input because the full native
-capability-consolidation path is not yet wired into this prototype. Therefore the
-Python issuer is NOT proof that the supplied authority basis was genuinely produced
-by the canonical capability engine.
-
-Native integration MUST source this digest directly from the canonical authority
-engine, not from observer/provider input.
-
-## POLICY BINDING
-
-`policy_digest` identifies the exact policy/semantic decision basis. Changing policy
-identity after issuance invalidates the decision authentication.
-
-This creates a provenance edge:
-
-`authority basis + policy + evidence + request + operation + epoch -> decision digest`
-
-The execution permit then binds that `decision_digest` again.
+The two keys have different trust roles and must remain separate.
 
 ## PROTECTS AGAINST
 
-- changing allow/deny/contain after decision issuance,
-- changing operation or request after decision issuance,
-- changing authority-basis or policy identity after issuance,
-- rebinding a decision to another evidence object,
-- rebinding provider/consumer/subject fields,
-- forging a valid decision without the decision key under stated cryptographic assumptions,
-- permit minting from an authenticated deny/contain decision.
+- caller injection of a fake authority-basis digest,
+- caller selection of allow/deny/contain at decision issuance,
+- caller selection of a wider operation or different request at decision issuance,
+- rebinding an external subject scope to another canonical request identity,
+- bridging external evidence from a different epoch than the canonical request,
+- tampering with MIR/request/proof/bound-proof/enforcement identities after basis derivation,
+- changing authenticated decision fields after issuance,
+- permit minting from native DENY or CONTAIN outcomes.
 
 ## DOES NOT PROTECT AGAINST
 
-- compromise of the decision key,
-- a malicious trusted decision issuer,
-- a caller that supplies a fake `authority_basis_digest` to the bootstrap issuer,
-- incorrect canonical policy evaluation before issuance,
-- compromised host/runtime/key custody,
-- false external evidence admitted earlier in the chain.
+- bugs or compromise inside the existing native MIR/Library/proof/enforcement chain,
+- compromise of `decision_key`,
+- malicious code inside the trusted native decision issuer compartment,
+- false external evidence admitted before this boundary,
+- host/runtime compromise,
+- side channels or memory/key disclosure,
+- durable replay-state rollback at the later permit boundary.
 
 ## ASSUMPTIONS
 
-- decision key is at least 32 bytes and outside observer/provider control,
-- provider-specific evidence admission already succeeded,
-- native authority/policy evaluation is fail-closed,
-- authority basis and policy digests are generated by trusted canonical components,
-- epoch source is trusted and monotonic for the protected universe.
+- `NativeSigilMir`, request binding, proof verification and enforcement remain fail-closed,
+- native MIR fingerprint is a stable executable policy identity for this v1 bridge,
+- decision key is at least 32 bytes and outside provider/observer control,
+- external grant/evidence validation already succeeded,
+- canonical request epoch and runtime epoch originate from trusted Koschei lifecycle state in production.
 
 ## FAILURE MODE
 
-The authority guarantee collapses if arbitrary application/provider code can obtain
-the decision key or invoke the native decision issuer with attacker-chosen authority
-basis while bypassing canonical capability evaluation.
+Authority integrity fails if the native enforcement chain itself can be bypassed or
+if arbitrary code can obtain the decision key and impersonate the trusted issuer.
 
-Therefore the Python `issue_authorization_decision_v1(...)` function is a semantic
-prototype and testable contract, not the final security boundary.
+The Python implementation proves semantic binding and fail-closed checks; it does
+not prove that production key custody or process isolation is physically
+unbypassable. Native runtime integration must make the canonical basis -> decision
+issuer the authoritative bridge.
 
 ## PI EXAMPLE
 
 `Pi payment.observe evidence`
-`-> canonical subscription capability/policy evaluation`
-`-> decision(outcome=allow, operation=subscription.enable, request=R, epoch=E)`
-`-> permit inherits decision operation/request`
-`-> consume once`
+`-> sealed Koschei request: subscription.enable`
+`-> request-bound native proof`
+`-> native ALLOW`
+`-> canonical authority basis`
+`-> AuthorizationDecision(operation=subscription.enable)`
+`-> single-use permit`
 
-A payment observation cannot select a treasury operation because the permit minter
-no longer accepts an arbitrary operation argument.
+The Pi adapter cannot turn the payment into `treasury.withdraw`, and the decision
+issuer no longer accepts a string/digest parameter that could manufacture that
+wider authority.
 
 ## NEXT
 
-Wire `authority_basis_digest` to the repo's canonical capability consolidation path
-and produce a machine-readable proof envelope containing the decision digest,
-permit digest, authority basis, policy identity, evidence provenance and final effect
-result.
+Create the machine-verifiable **Proof Envelope** that commits the complete lineage:
+
+`external grant/evidence`
+`-> native MIR/request/bound proof`
+`-> canonical authority basis`
+`-> authorization decision`
+`-> execution permit`
+`-> consume/effect outcome`
+
+Then move permit replay state and decision/permit key custody from Python bootstrap
+objects into a runtime-owned monotonic/transactional boundary.
