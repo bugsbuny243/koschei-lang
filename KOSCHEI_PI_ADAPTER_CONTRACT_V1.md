@@ -1,138 +1,93 @@
 # KOSCHEI PI ADAPTER CONTRACT V1
 
-Status: experimental Lang-side interoperability boundary.
+Status: IMPLEMENTED PROFILE / EXTERNAL PI SDK IMPLEMENTATION NOT PART OF LANG
 
-## Purpose
+## PURPOSE
 
-Koschei Lang may be demonstrated and commercialized inside the Pi ecosystem, but Pi-specific execution, wallet, settlement, or SDK behavior must not become part of Koschei's canonical language semantics.
+Pi is the first provider profile for Koschei Lang's generic external-adapter boundary.
+Pi Network SDK, wallet custody, settlement and chain behavior remain outside Koschei
+Lang. The adapter may introduce verified external facts; it may not introduce ambient
+Koschei authority.
 
-Pi is an external ecosystem. Koschei remains the authority/identity/representation/execution system.
+## ALLOWED PI ACTIONS
 
-The allowed direction is:
-
-Pi external fact -> non-authoritative adapter -> scoped Koschei capability -> sealed evidence -> Koschei policy/execution decision
-
-The forbidden direction is:
-
-Pi SDK/API semantics -> Koschei canonical semantics
-
-or
-
-external Pi identity/payment fact -> ambient Koschei authority
-
-## V1 actions
-
-The first contract deliberately exposes only three abstract adapter actions:
+The v1 profile recognizes only:
 
 - `identity.verify`
 - `payment.request`
 - `payment.observe`
 
-These are semantic interface labels, not implementations of Pi APIs.
+Every action remains app/consumer, subject and epoch scoped through the generic
+`ExternalAdapterGrantV1` physics.
 
-A later concrete adapter may map official Pi SDK operations onto these labels, but the adapter remains outside canonical Koschei semantics and must be replaceable without changing the language.
+## AUTHORITY HANDOFF
 
-## Capability physics
+A Pi payment or identity fact is never an execution capability.
 
-Every Pi adapter grant is:
+The sanctioned path is:
 
-- app-scoped
-- subject-scoped by digest
-- action-scoped
-- time/epoch-scoped
-- sealed
-- non-authoritative outside its declared actions
+`Pi native fact`
+`-> Pi adapter validation`
+`-> ExternalAdapterEvidenceV1(provider=pi)`
+`-> Koschei Native MIR + Canonical Effect Request + Request-Bound Proof`
+`-> CanonicalAuthorityBasisV1`
+`-> AuthorizationDecisionV1`
+`-> ExecutionPermitV1`
+`-> single exact effect`
 
-The grant cannot widen itself and cannot create disk/network/process authority.
+The external grant's `subject_scope_digest` must match the deterministic canonical
+scope derived from the sealed Koschei request's subject and identity digest before an
+authorization decision can be issued.
 
-External Pi evidence is admitted only when:
+## KOSCHEI LAB EXAMPLE
 
-1. the capability seal is valid,
-2. the requested action is explicitly allowed,
-3. the current/observed epoch is inside the grant lifetime,
-4. the external evidence is represented by a digest,
-5. the resulting evidence object is itself sealed.
+A settled Pi payment may be admitted as `payment.observe` evidence. A separate
+Koschei native request may ask for `subscription.enable`. Only when the existing
+native Koschei proof/enforcement chain returns ALLOW for that exact request can the
+bridge derive an authorization decision and single-use execution permit.
 
-## Koschei Lab for Pi
+There is no rule of the form:
 
-The first Pi-facing product should not be a compiler download page. It should be a proof-oriented interactive application called `Koschei Lab`.
+`Pi payment -> arbitrary Koschei authority`
 
-### Public demo track
+and neither the Pi adapter, decision issuer nor permit minter receives a free-form
+argument that can widen `subscription.enable` into `treasury.withdraw` after native
+authority evaluation.
 
-The visitor sees concrete security behavior:
+## PROTECTS AGAINST
 
-1. No ambient authority demo
-   - malicious dependency attempts a forbidden effect
-   - Koschei rejects the effect because the required capability is absent
+- Pi facts becoming ambient disk/network/process/treasury authority,
+- ungranted Pi adapter actions,
+- expired external grants,
+- cross-grant evidence rebinding,
+- external subject scope being bridged to another canonical request identity,
+- operation widening after native Koschei authorization,
+- hard-coupling Pi SDK shapes into canonical language semantics.
 
-2. Rotating representation demo
-   - an observer-visible representation is captured
-   - epoch rotates
-   - replay becomes non-authoritative / rejected at the enforced boundary
+## DOES NOT PROTECT AGAINST
 
-3. Verified artifact chain demo
-   - Source Intent
-   - Verified IR
-   - Build Artifact
-   - Payload
-   - Execution evidence
+- compromised or dishonest Pi provider/SDK behavior,
+- a Pi-specific adapter accepting false native evidence before admission,
+- compromised Koschei native enforcement/runtime/key custody,
+- Pi settlement/finality/economic guarantees,
+- host compromise or side channels.
 
-The public message is not `our syntax is different`.
+## ASSUMPTIONS
 
-The message is:
+- Pi-specific native verification is implemented correctly outside Lang core,
+- external credentials are not embedded into Koschei source,
+- Koschei native authority/proof evaluation is fail-closed,
+- runtime lifecycle/epoch and key custody are trusted at the authoritative boundary.
 
-`The code you can observe is not automatically the authority that may execute.`
+## FAILURE MODE
 
-### Developer track
+The separation collapses if Pi/provider code can bypass generic evidence admission or
+invoke privileged effects without the native authority -> decision -> permit chain.
+It also collapses if the trusted Koschei enforcement/runtime boundary itself is
+compromised.
 
-A Pi developer enters through `Build Secure Pi App`.
+## PRODUCT BOUNDARY
 
-V1 developer flow:
-
-1. declare which Pi bridge actions the application needs,
-2. derive a least-authority adapter capability,
-3. compile/check the Koschei portion of the application,
-4. produce a capability manifest,
-5. produce provenance/artifact evidence,
-6. verify that external Pi evidence enters only through the adapter boundary.
-
-Future paid services may add hosted build verification, provenance storage, deployment attestation, team policy, and audit receipts. These are product-layer services; they do not alter Koschei language semantics.
-
-## Threat model
-
-### PROTECTS AGAINST
-
-- treating an external Pi identity/payment response as ambient Koschei authority,
-- using an adapter action that was never granted,
-- reusing a time-scoped adapter capability after expiry,
-- rebinding admitted external evidence to a different capability,
-- accidental coupling of Pi SDK implementation details to Koschei canonical semantics.
-
-### DOES NOT PROTECT AGAINST
-
-- compromise of the external Pi service or SDK itself,
-- a malicious adapter implementation that lies before evidence is hashed,
-- theft of secrets held outside Koschei custody,
-- compromise of the host process/runtime beneath the current bootstrap implementation,
-- economic or settlement guarantees that only the Pi network can provide.
-
-### ASSUMPTIONS
-
-- concrete Pi integration uses official, authenticated external interfaces,
-- trusted adapter code correctly maps Pi facts into the narrow abstract actions,
-- epoch state used for capability liveness is trusted,
-- Koschei's canonical compiler/runtime boundaries remain authoritative.
-
-### FAILURE MODE
-
-If external Pi data is allowed to bypass the adapter contract and directly create runtime authority, this boundary fails. If a concrete adapter is allowed to widen actions or lifetime after issuance, least-authority guarantees fail. If product code starts depending on Pi-specific SDK shapes inside canonical language semantics, Koschei becomes ecosystem-coupled and the architecture must be rejected.
-
-## Separation rule
-
-This work belongs only to Koschei Lang as an interoperability contract.
-
-It must not modify or absorb Koschei Web3 or Koschei Sentinel responsibilities.
-
-## Next technical slice
-
-After this contract is validated, the next Lang-side slice is a generic `ExternalCapabilityAdapter` contract so Pi becomes the first implementation rather than a permanent special case. Pi-specific SDK code should then live at the product/integration edge, not inside the canonical compiler or runtime core.
+Koschei Lab may expose Attack Demo / Build Secure Pi App / verified provenance UX, but
+that product surface must consume these Lang contracts rather than moving Pi Network
+business logic into Koschei Lang.
