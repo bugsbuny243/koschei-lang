@@ -1,12 +1,8 @@
 """Verifier artifact build provenance and runtime admission for Koschei Lang v1.
 
-Sanctioned build provenance derives its build-input digest from Koschei's existing
-sealed NativeSigilMir + NativeSigilProofBundle through VerifiedIrBuildInputV1. The
-low-level digest issuer remains an internal bootstrap primitive; provider/product code
-should use `attest_verifier_build_from_verified_ir_v1`.
-
-This V1 still proves artifact identity/provenance, not compiler/toolchain correctness or
-reproducible derivation from source.
+Sanctioned build provenance derives its build-input digest from the sealed Koschei
+native IR/proof world and its toolchain identity from authenticated
+ToolchainProvenanceV1. Callers cannot select either digest directly.
 """
 from __future__ import annotations
 
@@ -18,6 +14,7 @@ import string
 from .provider_adapter_abi_v1 import ProviderAdapterAbiV1
 from .native_sigil_mir_v1 import NativeSigilMir
 from .native_sigil_proof_pipeline_v1 import NativeSigilProofBundle
+from .toolchain_provenance_v1 import ToolchainProvenanceV1
 from .verified_ir_build_input_v1 import VerifiedIrBuildInputV1
 
 _BUILD_CTX = b"koschei.verifier-build-provenance/v1\x00"
@@ -114,9 +111,16 @@ class VerifierBuildProvenanceV1:
     def assert_from_verified_ir(self, *, verified_input: VerifiedIrBuildInputV1,
                                 mir: NativeSigilMir,
                                 proof: NativeSigilProofBundle,
+                                toolchain: ToolchainProvenanceV1,
+                                toolchain_artifact_bytes: bytes,
+                                toolchain_signing_key: bytes,
                                 build_provenance_key: bytes,
                                 artifact_bytes: bytes) -> None:
         verified_input.assert_sealed(mir=mir, proof=proof)
+        toolchain.assert_authenticated(
+            toolchain_signing_key=toolchain_signing_key,
+            toolchain_artifact_bytes=toolchain_artifact_bytes,
+        )
         self.assert_authenticated(
             build_provenance_key=build_provenance_key,
             artifact_bytes=artifact_bytes,
@@ -125,6 +129,10 @@ class VerifierBuildProvenanceV1:
             raise VerifierBuildProvenanceV1Error(
                 "verifier build provenance does not derive from supplied verified IR input"
             )
+        if self.toolchain_digest != toolchain.provenance_digest:
+            raise VerifierBuildProvenanceV1Error(
+                "verifier build provenance does not derive from supplied signed toolchain"
+            )
 
 
 def _attest_verifier_build_digest_v1(*, artifact_bytes: bytes,
@@ -132,23 +140,22 @@ def _attest_verifier_build_digest_v1(*, artifact_bytes: bytes,
                                      toolchain_digest: str,
                                      build_profile: str,
                                      build_provenance_key: bytes) -> VerifierBuildProvenanceV1:
-    """Internal bootstrap primitive. Sanctioned callers use verified-IR wrapper below."""
     key = _key(build_provenance_key, "build_provenance_key")
     artifact = measure_verifier_artifact_v1(artifact_bytes)
     build_input = _digest(build_input_digest, "build_input_digest")
-    toolchain = _digest(toolchain_digest, "toolchain_digest")
+    toolchain_digest = _digest(toolchain_digest, "toolchain_digest")
     profile = _text(build_profile, "build_profile")
     result = VerifierBuildProvenanceV1(
         artifact_digest=artifact,
         build_input_digest=build_input,
-        toolchain_digest=toolchain,
+        toolchain_digest=toolchain_digest,
         build_profile=profile,
         provenance_digest="",
     )
     object.__setattr__(result, "provenance_digest", hmac.new(key, _build_payload(
         artifact_digest=artifact,
         build_input_digest=build_input,
-        toolchain_digest=toolchain,
+        toolchain_digest=toolchain_digest,
         build_profile=profile,
     ), hashlib.sha256).hexdigest())
     result.assert_authenticated(build_provenance_key=key, artifact_bytes=artifact_bytes)
@@ -160,15 +167,21 @@ def attest_verifier_build_from_verified_ir_v1(*,
                                                mir: NativeSigilMir,
                                                proof: NativeSigilProofBundle,
                                                artifact_bytes: bytes,
-                                               toolchain_digest: str,
+                                               toolchain: ToolchainProvenanceV1,
+                                               toolchain_artifact_bytes: bytes,
+                                               toolchain_signing_key: bytes,
                                                build_profile: str,
                                                build_provenance_key: bytes) -> VerifierBuildProvenanceV1:
-    """Sanctioned build attestation: caller cannot choose build_input_digest."""
+    """Sanctioned build attestation: build input and toolchain identity are inherited."""
     verified_input.assert_sealed(mir=mir, proof=proof)
+    toolchain.assert_authenticated(
+        toolchain_signing_key=toolchain_signing_key,
+        toolchain_artifact_bytes=toolchain_artifact_bytes,
+    )
     result = _attest_verifier_build_digest_v1(
         artifact_bytes=artifact_bytes,
         build_input_digest=verified_input.build_input_digest,
-        toolchain_digest=toolchain_digest,
+        toolchain_digest=toolchain.provenance_digest,
         build_profile=build_profile,
         build_provenance_key=build_provenance_key,
     )
@@ -176,6 +189,9 @@ def attest_verifier_build_from_verified_ir_v1(*,
         verified_input=verified_input,
         mir=mir,
         proof=proof,
+        toolchain=toolchain,
+        toolchain_artifact_bytes=toolchain_artifact_bytes,
+        toolchain_signing_key=toolchain_signing_key,
         build_provenance_key=build_provenance_key,
         artifact_bytes=artifact_bytes,
     )
