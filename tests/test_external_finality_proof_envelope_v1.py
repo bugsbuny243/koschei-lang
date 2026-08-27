@@ -20,7 +20,9 @@ from koschei.pi_finality_profile_v1 import issue_pi_finality_verdict_v1, verify_
 from koschei.provider_adapter_abi_v1 import seal_provider_adapter_abi_v1
 from koschei.provider_native_verifier_v1 import ProviderNativeVerificationResultV1
 from koschei.verified_ir_build_input_v1 import derive_verified_ir_build_input_v1
-from koschei.verifier_build_provenance_v1 import attest_verifier_build_from_verified_ir_v1, admit_verifier_artifact_v1, measure_verifier_artifact_v1
+from koschei.verifier_build_provenance_v1 import attest_verifier_build_from_verified_ir_v1, measure_verifier_artifact_v1
+from koschei.verifier_reproducible_admission_v1 import admit_reproducible_verifier_artifact_v1
+from koschei.verifier_reproducible_build_v1 import attest_builder_observation_v1, seal_reproducible_build_receipt_v1
 
 SOURCE="""ka treasury;\nvor withdrawal;\nshi evidence;\nthal recovery;\nnur visibility;\n"""
 VERIFIER_SOURCE="""ka provider;\nshi proof;\nnur visibility;\n"""
@@ -37,6 +39,7 @@ def chain(finality_state="finalized"):
     grant=issue_external_adapter_grant_v1(provider_id="pi",consumer_id="koschei-lab-pi",subject_scope_digest=canonical_subject_scope_digest_v1(request),allowed_actions=("payment.observe",),valid_from_epoch=71,expires_before_epoch=72)
     evidence=admit_external_adapter_evidence_v1(grant,action="payment.observe",external_evidence_digest=h("settled-payment-71"),observed_epoch=71)
     dk,rk,ek,nk,vk,fk,bk,ak=b"d"*32,b"r"*32,b"e"*32,b"n"*32,b"v"*32,b"f"*32,b"b"*32,b"a"*32
+    ba,bb,repro_key,gate_key=b"1"*32,b"2"*32,b"3"*32,b"4"*32
     decision=issue_authorization_decision_v1(grant,evidence,basis,mir=mir,request=request,proof=proof,bound=bound,decision_key=dk)
     permit=mint_execution_permit_v1(grant,evidence,decision,runtime_key=rk,decision_key=dk); txid=b"pi-transaction-reference:71"
     consumption,effect_receipt,effect_result=execute_effect_with_receipt_v1(ledger=ExecutionPermitLedgerV1(),permit=permit,runtime_key=rk,decision_key=dk,effect_key=ek,grant=grant,evidence=evidence,decision=decision,mir=mir,request=request,current_epoch=71,effect=lambda _:txid)
@@ -46,32 +49,34 @@ def chain(finality_state="finalized"):
     verifier_artifact=b"compiled-pi-finality-verifier-v1"
     provenance=attest_verifier_build_from_verified_ir_v1(verified_input=verified_input,mir=verifier_mir,proof=verifier_proof,artifact_bytes=verifier_artifact,toolchain_digest=h("koschei-toolchain-v1"),build_profile="release-reproducible",build_provenance_key=bk)
     adapter_abi=seal_provider_adapter_abi_v1(provider_id="pi",adapter_id="pi-payment-finality",schema_id="opaque-pi-payment-response",schema_version="v1",verifier_implementation_digest=measure_verifier_artifact_v1(verifier_artifact))
-    runtime_admission=admit_verifier_artifact_v1(provenance=provenance,artifact_bytes=verifier_artifact,adapter_abi=adapter_abi,build_provenance_key=bk,runtime_admission_key=ak)
+    obs_a=attest_builder_observation_v1(builder_id="builder-a",builder_key=ba,verified_input=verified_input,mir=verifier_mir,proof=verifier_proof,artifact_bytes=verifier_artifact,toolchain_digest=h("toolchain-a"),build_profile="release-reproducible")
+    obs_b=attest_builder_observation_v1(builder_id="builder-b",builder_key=bb,verified_input=verified_input,mir=verifier_mir,proof=verifier_proof,artifact_bytes=verifier_artifact,toolchain_digest=h("toolchain-b"),build_profile="release-reproducible")
+    repro=seal_reproducible_build_receipt_v1(reproducibility_key=repro_key,builder_a_key=ba,builder_b_key=bb,builder_a=obs_a,builder_b=obs_b,verified_input=verified_input,mir=verifier_mir,proof=verifier_proof,artifact_bytes=verifier_artifact)
+    runtime_admission,reproducible_admission=admit_reproducible_verifier_artifact_v1(reproducible_admission_key=gate_key,runtime_admission_key=ak,build_provenance_key=bk,reproducibility_key=repro_key,builder_a_key=ba,builder_b_key=bb,reproducibility_receipt=repro,builder_a=obs_a,builder_b=obs_b,verified_input=verified_input,mir=verifier_mir,proof=verifier_proof,provenance=provenance,artifact_bytes=verifier_artifact,adapter_abi=adapter_abi)
     raw_pi_response=b"opaque-pi-backend-response:71"
-    native_receipt=verify_pi_native_payment_response_v1(adapter_abi=adapter_abi,runtime_admission=runtime_admission,provenance=provenance,verifier_artifact_bytes=verifier_artifact,build_provenance_key=bk,runtime_admission_key=ak,effect_envelope=effect_envelope,effect_receipt=effect_receipt,effect_result_txid_bytes=effect_result,raw_pi_response_bytes=raw_pi_response,observed_epoch=72,verifier=lambda raw:ProviderNativeVerificationResultV1(txid,b"canonical-pi-provider-proof:71:"+raw,finality_state),provider_native_verifier_key=nk)
-    verdict=issue_pi_finality_verdict_v1(native_receipt=native_receipt,adapter_abi=adapter_abi,runtime_admission=runtime_admission,provenance=provenance,verifier_artifact_bytes=verifier_artifact,build_provenance_key=bk,runtime_admission_key=ak,effect_envelope=effect_envelope,effect_receipt=effect_receipt,effect_result_txid_bytes=effect_result,raw_pi_response_bytes=raw_pi_response,provider_native_verifier_key=nk,provider_verifier_key=vk)
+    native_receipt=verify_pi_native_payment_response_v1(adapter_abi=adapter_abi,runtime_admission=runtime_admission,reproducible_admission=reproducible_admission,provenance=provenance,verifier_artifact_bytes=verifier_artifact,build_provenance_key=bk,runtime_admission_key=ak,reproducible_admission_key=gate_key,effect_envelope=effect_envelope,effect_receipt=effect_receipt,effect_result_txid_bytes=effect_result,raw_pi_response_bytes=raw_pi_response,observed_epoch=72,verifier=lambda raw:ProviderNativeVerificationResultV1(txid,b"canonical-pi-provider-proof:71:"+raw,finality_state),provider_native_verifier_key=nk)
+    verdict=issue_pi_finality_verdict_v1(native_receipt=native_receipt,adapter_abi=adapter_abi,runtime_admission=runtime_admission,reproducible_admission=reproducible_admission,provenance=provenance,verifier_artifact_bytes=verifier_artifact,build_provenance_key=bk,runtime_admission_key=ak,reproducible_admission_key=gate_key,effect_envelope=effect_envelope,effect_receipt=effect_receipt,effect_result_txid_bytes=effect_result,raw_pi_response_bytes=raw_pi_response,provider_native_verifier_key=nk,provider_verifier_key=vk)
     attestation=attest_external_finality_v1(effect_envelope=effect_envelope,verdict=verdict,provider_verifier_key=vk,finality_key=fk)
-    finality=seal_external_finality_proof_envelope_v1(adapter_abi=adapter_abi,provenance=provenance,runtime_admission=runtime_admission,verifier_artifact_bytes=verifier_artifact,build_provenance_key=bk,runtime_admission_key=ak,effect_envelope=effect_envelope,effect_receipt=effect_receipt,effect_result_bytes=effect_result,raw_provider_response_bytes=raw_pi_response,native_receipt=native_receipt,base=base,grant=grant,evidence=evidence,mir=mir,request=request,proof=proof,bound=bound,basis=basis,decision=decision,permit=permit,consumption=consumption,verdict=verdict,attestation=attestation,decision_key=dk,runtime_key=rk,effect_key=ek,provider_native_verifier_key=nk,provider_verifier_key=vk,finality_key=fk)
+    finality=seal_external_finality_proof_envelope_v1(adapter_abi=adapter_abi,provenance=provenance,runtime_admission=runtime_admission,reproducible_admission=reproducible_admission,verifier_artifact_bytes=verifier_artifact,build_provenance_key=bk,runtime_admission_key=ak,reproducible_admission_key=gate_key,effect_envelope=effect_envelope,effect_receipt=effect_receipt,effect_result_bytes=effect_result,raw_provider_response_bytes=raw_pi_response,native_receipt=native_receipt,base=base,grant=grant,evidence=evidence,mir=mir,request=request,proof=proof,bound=bound,basis=basis,decision=decision,permit=permit,consumption=consumption,verdict=verdict,attestation=attestation,decision_key=dk,runtime_key=rk,effect_key=ek,provider_native_verifier_key=nk,provider_verifier_key=vk,finality_key=fk)
     return locals()
 
-def validate(x,envelope=None,raw_response=None,adapter_abi=None,artifact=None):
-    (envelope or x["finality"]).assert_valid(adapter_abi=adapter_abi or x["adapter_abi"],provenance=x["provenance"],runtime_admission=x["runtime_admission"],verifier_artifact_bytes=artifact or x["verifier_artifact"],build_provenance_key=x["bk"],runtime_admission_key=x["ak"],effect_envelope=x["effect_envelope"],effect_receipt=x["effect_receipt"],effect_result_bytes=x["effect_result"],raw_provider_response_bytes=raw_response or x["raw_pi_response"],native_receipt=x["native_receipt"],base=x["base"],grant=x["grant"],evidence=x["evidence"],mir=x["mir"],request=x["request"],proof=x["proof"],bound=x["bound"],basis=x["basis"],decision=x["decision"],permit=x["permit"],consumption=x["consumption"],verdict=x["verdict"],attestation=x["attestation"],decision_key=x["dk"],runtime_key=x["rk"],effect_key=x["ek"],provider_native_verifier_key=x["nk"],provider_verifier_key=x["vk"],finality_key=x["fk"])
+def validate(x,envelope=None,raw_response=None,artifact=None,reproducible_admission=None):
+    (envelope or x["finality"]).assert_valid(adapter_abi=x["adapter_abi"],provenance=x["provenance"],runtime_admission=x["runtime_admission"],reproducible_admission=reproducible_admission or x["reproducible_admission"],verifier_artifact_bytes=artifact or x["verifier_artifact"],build_provenance_key=x["bk"],runtime_admission_key=x["ak"],reproducible_admission_key=x["gate_key"],effect_envelope=x["effect_envelope"],effect_receipt=x["effect_receipt"],effect_result_bytes=x["effect_result"],raw_provider_response_bytes=raw_response or x["raw_pi_response"],native_receipt=x["native_receipt"],base=x["base"],grant=x["grant"],evidence=x["evidence"],mir=x["mir"],request=x["request"],proof=x["proof"],bound=x["bound"],basis=x["basis"],decision=x["decision"],permit=x["permit"],consumption=x["consumption"],verdict=x["verdict"],attestation=x["attestation"],decision_key=x["dk"],runtime_key=x["rk"],effect_key=x["ek"],provider_native_verifier_key=x["nk"],provider_verifier_key=x["vk"],finality_key=x["fk"])
 
-def test_provider_finalized_requires_verified_ir_artifact_provenance_and_full_chain():
+def test_provider_finalized_requires_reproducible_verifier_and_full_chain():
     x=chain(); validate(x); x["finality"].assert_finalized()
-    assert x["provenance"].build_input_digest==x["verified_input"].build_input_digest
-    assert x["finality"].provider_adapter_abi_digest==x["adapter_abi"].abi_digest
-    assert x["finality"].verifier_build_provenance_digest==x["provenance"].provenance_digest
-    assert x["finality"].verifier_runtime_admission_digest==x["runtime_admission"].admission_digest
+    assert x["finality"].verifier_reproducibility_receipt_digest==x["repro"].receipt_digest
+    assert x["finality"].verifier_reproducible_runtime_admission_digest==x["reproducible_admission"].admission_digest
+    assert x["native_receipt"].reproducible_runtime_admission_digest==x["reproducible_admission"].admission_digest
     assert x["finality"].authority is False
 
 def test_pending_provider_state_cannot_be_promoted_to_finalized():
     x=chain("pending"); validate(x)
     with pytest.raises(ExternalFinalityProofEnvelopeV1Error,match="not proven"): x["finality"].assert_finalized()
 
-def test_finality_envelope_relabel_or_provenance_rebinding_is_rejected():
+def test_finality_envelope_relabel_or_reproducibility_rebinding_is_rejected():
     x=chain()
-    for forged in (replace(x["finality"],terminal_state="provider-rejected"),replace(x["finality"],external_reference_digest=h("other")),replace(x["finality"],verifier_runtime_admission_digest=h("other-admission"))):
+    for forged in (replace(x["finality"],terminal_state="provider-rejected"),replace(x["finality"],verifier_reproducibility_receipt_digest=h("other-repro")),replace(x["finality"],verifier_reproducible_runtime_admission_digest=h("other-gate"))):
         with pytest.raises(ExternalFinalityProofEnvelopeV1Error): validate(x,forged)
 
 def test_full_finality_proof_rejects_different_raw_response_or_loaded_artifact():
