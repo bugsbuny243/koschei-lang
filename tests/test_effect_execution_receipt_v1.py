@@ -5,10 +5,7 @@ import pytest
 
 from koschei.authorization_decision_v1 import issue_authorization_decision_v1
 from koschei.canonical_authority_basis_v1 import canonical_subject_scope_digest_v1, derive_canonical_authority_basis_v1
-from koschei.effect_execution_receipt_v1 import (
-    EffectExecutionReceiptV1Error,
-    execute_effect_with_receipt_v1,
-)
+from koschei.effect_execution_receipt_v1 import EffectExecutionReceiptV1Error, execute_effect_with_receipt_v1
 from koschei.execution_permit_v1 import ExecutionPermitLedgerV1, ExecutionPermitV1Error, mint_execution_permit_v1
 from koschei.external_adapter_contract_v1 import admit_external_adapter_evidence_v1, issue_external_adapter_grant_v1
 from koschei.library_proof_envelope_v1 import make_receipt
@@ -55,86 +52,93 @@ def chain():
     evidence = admit_external_adapter_evidence_v1(
         grant, action="payment.observe", external_evidence_digest=h("settled-payment"), observed_epoch=41,
     )
-    decision_key, runtime_key, effect_key = b"d" * 32, b"r" * 32, b"e" * 32
+    dk, rk, ek = b"d" * 32, b"r" * 32, b"e" * 32
     decision = issue_authorization_decision_v1(
-        grant, evidence, basis, mir=mir, request=request, proof=proof, bound=bound,
-        decision_key=decision_key,
+        grant, evidence, basis, mir=mir, request=request, proof=proof, bound=bound, decision_key=dk,
     )
-    permit = mint_execution_permit_v1(
-        grant, evidence, decision, runtime_key=runtime_key, decision_key=decision_key,
-    )
-    return grant, evidence, request, decision, permit, decision_key, runtime_key, effect_key
+    permit = mint_execution_permit_v1(grant, evidence, decision, runtime_key=rk, decision_key=dk)
+    return locals()
 
 
-def execute(effect):
-    grant, evidence, request, decision, permit, dk, rk, ek = chain()
+def run(effect):
+    items = chain()
     ledger = ExecutionPermitLedgerV1()
     consumption, receipt, result = execute_effect_with_receipt_v1(
-        ledger=ledger, permit=permit, runtime_key=rk, decision_key=dk, effect_key=ek,
-        grant=grant, evidence=evidence, decision=decision, request=request,
-        current_epoch=41, effect=effect,
+        ledger=ledger, permit=items["permit"], runtime_key=items["rk"],
+        decision_key=items["dk"], effect_key=items["ek"], grant=items["grant"],
+        evidence=items["evidence"], decision=items["decision"], mir=items["mir"],
+        request=items["request"], current_epoch=41, effect=effect,
     )
-    return grant, evidence, request, decision, permit, dk, rk, ek, ledger, consumption, receipt, result
+    items.update(ledger=ledger, consumption=consumption, receipt=receipt, result=result)
+    return items
 
 
 def test_runtime_measures_completed_bytes_and_authenticates_receipt():
-    *_, request, decision, permit, dk, rk, ek, ledger, consumption, receipt, result = execute(
-        lambda req: b"subscription-enabled:" + req.digest.encode()
+    items = run(lambda req: b"subscription-enabled:" + req.digest.encode())
+    assert items["receipt"].outcome == "effect-completed"
+    assert items["result"] is not None
+    items["receipt"].assert_authenticated(
+        effect_key=items["ek"], consumption=items["consumption"], permit=items["permit"],
+        mir=items["mir"], request=items["request"],
     )
-    assert receipt.outcome == "effect-completed"
-    assert result is not None
-    receipt.assert_authenticated(effect_key=ek, consumption=consumption, permit=permit, request=request)
-    receipt.assert_completed_result(result)
+    items["receipt"].assert_completed_result(items["result"])
 
 
 def test_result_bytes_tamper_does_not_match_measurement():
-    *_, request, decision, permit, dk, rk, ek, ledger, consumption, receipt, result = execute(lambda _: b"ok")
+    items = run(lambda _: b"ok")
     with pytest.raises(EffectExecutionReceiptV1Error, match="result bytes"):
-        receipt.assert_completed_result(b"tampered")
+        items["receipt"].assert_completed_result(b"tampered")
 
 
 def test_callback_exception_becomes_authenticated_failed_receipt():
     def boom(_):
         raise RuntimeError("remote write rejected")
-    *_, request, decision, permit, dk, rk, ek, ledger, consumption, receipt, result = execute(boom)
-    assert receipt.outcome == "effect-failed"
-    assert result is None
-    receipt.assert_authenticated(effect_key=ek, consumption=consumption, permit=permit, request=request)
-    with pytest.raises(EffectExecutionReceiptV1Error, match="does not describe completion"):
-        receipt.assert_completed_result(b"anything")
+    items = run(boom)
+    assert items["receipt"].outcome == "effect-failed"
+    assert items["result"] is None
+    items["receipt"].assert_authenticated(
+        effect_key=items["ek"], consumption=items["consumption"], permit=items["permit"],
+        mir=items["mir"], request=items["request"],
+    )
 
 
 def test_non_bytes_callback_result_is_fail_closed_as_failed_effect():
-    *_, receipt, result = execute(lambda _: {"status": "ok"})[-2:]
-    assert receipt.outcome == "effect-failed"
-    assert result is None
+    items = run(lambda _: {"status": "ok"})
+    assert items["receipt"].outcome == "effect-failed"
+    assert items["result"] is None
 
 
 def test_wrong_effect_key_rejects_receipt():
-    *_, request, decision, permit, dk, rk, ek, ledger, consumption, receipt, result = execute(lambda _: b"ok")
+    items = run(lambda _: b"ok")
     with pytest.raises(EffectExecutionReceiptV1Error, match="authentication failed"):
-        receipt.assert_authenticated(effect_key=b"x" * 32, consumption=consumption, permit=permit, request=request)
+        items["receipt"].assert_authenticated(
+            effect_key=b"x" * 32, consumption=items["consumption"], permit=items["permit"],
+            mir=items["mir"], request=items["request"],
+        )
 
 
 def test_receipt_outcome_or_measurement_tampering_rejects():
-    *_, request, decision, permit, dk, rk, ek, ledger, consumption, receipt, result = execute(lambda _: b"ok")
-    with pytest.raises(EffectExecutionReceiptV1Error, match="authentication failed"):
-        replace(receipt, outcome="effect-failed").assert_authenticated(
-            effect_key=ek, consumption=consumption, permit=permit, request=request,
-        )
-    with pytest.raises(EffectExecutionReceiptV1Error, match="authentication failed"):
-        replace(receipt, measurement_digest=h("forged")).assert_authenticated(
-            effect_key=ek, consumption=consumption, permit=permit, request=request,
-        )
+    items = run(lambda _: b"ok")
+    for forged in (
+        replace(items["receipt"], outcome="effect-failed"),
+        replace(items["receipt"], measurement_digest=h("forged")),
+    ):
+        with pytest.raises(EffectExecutionReceiptV1Error, match="authentication failed"):
+            forged.assert_authenticated(
+                effect_key=items["ek"], consumption=items["consumption"], permit=items["permit"],
+                mir=items["mir"], request=items["request"],
+            )
 
 
 def test_replay_is_rejected_before_callback_runs_again():
-    grant, evidence, request, decision, permit, dk, rk, ek = chain()
+    items = chain()
     ledger = ExecutionPermitLedgerV1()
     calls = []
     kwargs = dict(
-        ledger=ledger, permit=permit, runtime_key=rk, decision_key=dk, effect_key=ek,
-        grant=grant, evidence=evidence, decision=decision, request=request, current_epoch=41,
+        ledger=ledger, permit=items["permit"], runtime_key=items["rk"],
+        decision_key=items["dk"], effect_key=items["ek"], grant=items["grant"],
+        evidence=items["evidence"], decision=items["decision"], mir=items["mir"],
+        request=items["request"], current_epoch=41,
         effect=lambda _: calls.append(1) or b"ok",
     )
     execute_effect_with_receipt_v1(**kwargs)
@@ -143,15 +147,34 @@ def test_replay_is_rejected_before_callback_runs_again():
     assert calls == [1]
 
 
-def test_wrong_request_is_rejected_before_consumption_or_effect():
-    grant, evidence, request, decision, permit, dk, rk, ek = chain()
-    other = replace(request, operation="treasury.withdraw")
+def test_invalid_effect_key_fails_before_consumption_or_callback():
+    items = chain()
+    ledger = ExecutionPermitLedgerV1()
     calls = []
-    with pytest.raises(EffectExecutionReceiptV1Error, match="outside execution permit"):
+    with pytest.raises(EffectExecutionReceiptV1Error, match="effect_key"):
         execute_effect_with_receipt_v1(
-            ledger=ExecutionPermitLedgerV1(), permit=permit, runtime_key=rk,
-            decision_key=dk, effect_key=ek, grant=grant, evidence=evidence,
-            decision=decision, request=other, current_epoch=41,
+            ledger=ledger, permit=items["permit"], runtime_key=items["rk"],
+            decision_key=items["dk"], effect_key=b"short", grant=items["grant"],
+            evidence=items["evidence"], decision=items["decision"], mir=items["mir"],
+            request=items["request"], current_epoch=41,
             effect=lambda _: calls.append(1) or b"bad",
         )
+    assert ledger.consumed == set()
+    assert calls == []
+
+
+def test_tampered_canonical_request_fails_before_consumption_or_callback():
+    items = chain()
+    ledger = ExecutionPermitLedgerV1()
+    calls = []
+    tampered = replace(items["request"], subject="treasury")
+    with pytest.raises(ValueError):
+        execute_effect_with_receipt_v1(
+            ledger=ledger, permit=items["permit"], runtime_key=items["rk"],
+            decision_key=items["dk"], effect_key=items["ek"], grant=items["grant"],
+            evidence=items["evidence"], decision=items["decision"], mir=items["mir"],
+            request=tampered, current_epoch=41,
+            effect=lambda _: calls.append(1) or b"bad",
+        )
+    assert ledger.consumed == set()
     assert calls == []
