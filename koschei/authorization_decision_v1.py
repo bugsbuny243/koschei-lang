@@ -1,12 +1,13 @@
-"""Authenticated canonical authorization decisions for Koschei Lang v1.
+"""Authenticated authorization decisions derived from canonical Koschei authority v1.
 
-A decision is the bridge between canonical Koschei authority/policy evaluation and
-later execution-permit minting. External evidence does not authorize an operation.
-The trusted canonical authority layer must first produce an authenticated decision
-bound to the exact evidence, subject, operation, request and epoch.
+External evidence is not authority.  Decision content is no longer caller-selected:
+the trusted issuer verifies a CanonicalAuthorityBasisV1 produced by the existing
+native MIR -> request -> proof -> enforcement path and derives operation, exact
+request, epoch, policy identity, authority basis, and outcome from that receipt.
 
-This Python module is a bootstrap contract. Native integration must ensure only the
-canonical authority/policy engine can hold the decision key or invoke the issuer.
+The decision HMAC authenticates the derived bridge for later execution-permit
+minting.  The decision key does not replace the native authority checks that must
+succeed before issuance.
 """
 from __future__ import annotations
 
@@ -15,11 +16,16 @@ import hashlib
 import hmac
 import string
 
+from .canonical_authority_basis_v1 import CanonicalAuthorityBasisV1
 from .external_adapter_contract_v1 import ExternalAdapterEvidenceV1, ExternalAdapterGrantV1
+from .native_sigil_mir_v1 import NativeSigilMir
+from .native_sigil_proof_pipeline_v1 import NativeSigilProofBundle
+from .native_sigil_request_binding_v1 import CanonicalEffectRequest, RequestBoundProof
 
 _CTX = b"koschei.authorization-decision/v1\x00"
 _HEX = frozenset(string.hexdigits.lower())
 _OUTCOMES = frozenset({"allow", "deny", "contain"})
+_NATIVE_OUTCOME_MAP = {"ALLOW": "allow", "DENY": "deny", "CONTAIN": "contain"}
 
 
 class AuthorizationDecisionV1Error(ValueError):
@@ -122,27 +128,47 @@ class AuthorizationDecisionV1:
             raise AuthorizationDecisionV1Error("authorization decision does not allow execution")
 
 
-def issue_authorization_decision_v1(grant: ExternalAdapterGrantV1,
-                                    evidence: ExternalAdapterEvidenceV1, *,
-                                    decision_key: bytes, operation: str,
-                                    request_digest: str, authority_basis_digest: str,
-                                    policy_digest: str, outcome: str) -> AuthorizationDecisionV1:
-    """Trusted bootstrap issuer; native runtime must restrict this to canonical authority evaluation."""
+def issue_authorization_decision_v1(
+    grant: ExternalAdapterGrantV1,
+    evidence: ExternalAdapterEvidenceV1,
+    basis: CanonicalAuthorityBasisV1,
+    *,
+    mir: NativeSigilMir,
+    request: CanonicalEffectRequest,
+    proof: NativeSigilProofBundle,
+    bound: RequestBoundProof,
+    decision_key: bytes,
+) -> AuthorizationDecisionV1:
+    """Issue only from the verified native enforcement chain; no authority digest injection."""
     key = _key(decision_key)
     grant.assert_sealed()
     evidence.assert_sealed(grant)
-    operation = _text(operation, "operation")
-    request = _digest(request_digest, "request_digest")
-    authority_basis = _digest(authority_basis_digest, "authority_basis_digest")
-    policy = _digest(policy_digest, "policy_digest")
-    outcome = _text(outcome, "outcome")
-    if outcome not in _OUTCOMES:
-        raise AuthorizationDecisionV1Error("unknown authorization decision outcome")
-    epoch = _epoch(evidence.observed_epoch, "observed_epoch")
+    native_decision = basis.assert_sealed(mir=mir, request=request, proof=proof, bound=bound)
+    if basis.subject_scope_digest != grant.subject_scope_digest:
+        raise AuthorizationDecisionV1Error(
+            "external grant subject scope does not match canonical authority basis"
+        )
+    if basis.epoch != evidence.observed_epoch:
+        raise AuthorizationDecisionV1Error(
+            "canonical authority epoch does not match external evidence epoch"
+        )
+    outcome = _NATIVE_OUTCOME_MAP.get(native_decision.decision)
+    if outcome is None:
+        raise AuthorizationDecisionV1Error("unknown native enforcement outcome")
+    # The native MIR fingerprint is the executable policy/program identity for v1.
+    policy = _digest(mir.fingerprint, "native_mir_fingerprint")
     result = AuthorizationDecisionV1(
-        evidence.evidence_digest, grant.provider_id, grant.consumer_id,
-        grant.subject_scope_digest, operation, request, epoch,
-        authority_basis, policy, outcome, "",
+        evidence_digest=evidence.evidence_digest,
+        provider_id=grant.provider_id,
+        consumer_id=grant.consumer_id,
+        subject_scope_digest=basis.subject_scope_digest,
+        operation=basis.operation,
+        request_digest=basis.canonical_request_digest,
+        decision_epoch=basis.epoch,
+        authority_basis_digest=basis.basis_digest,
+        policy_digest=policy,
+        outcome=outcome,
+        decision_digest="",
     )
     mac = hmac.new(key, _payload(
         evidence_digest=result.evidence_digest, provider_id=result.provider_id,
