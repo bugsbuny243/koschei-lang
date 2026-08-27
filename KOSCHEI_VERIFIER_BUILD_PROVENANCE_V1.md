@@ -1,87 +1,95 @@
 # KOSCHEI VERIFIER BUILD PROVENANCE V1
 
-Status: IMPLEMENTED BOOTSTRAP PROTOTYPE / VERIFIED-IR BUILD INPUT + REPRODUCIBILITY-GATED PROVIDER PATH
+Status: IMPLEMENTED BOOTSTRAP PROTOTYPE / VERIFIED-IR + SIGNED-TOOLCHAIN BUILD INPUT / REPRODUCIBILITY GATE WIRED
 
 ## PURPOSE
 
-Koschei binds verifier implementation identity to sealed native semantic/proof input,
-exact artifact bytes, two independent builder observations, and runtime admission before
-provider-native verification may run.
+Verifier build provenance must not accept caller-selected semantic input or toolchain
+identity. The sanctioned path derives its build input from existing sealed Koschei native
+IR/proof structures and derives its toolchain identity from authenticated
+`ToolchainProvenanceV1`.
 
 Sanctioned chain:
 
 `NativeSigilMir + NativeSigilProofBundle`
 `-> VerifiedIrBuildInputV1`
-`-> builder A observation + builder B observation`
-`-> VerifierReproducibleBuildReceiptV1`
+`-> ToolchainProvenanceV1`
+`-> verifier artifact bytes`
 `-> VerifierBuildProvenanceV1`
+`-> reproducible builder evidence`
 `-> ProviderAdapterAbiV1`
-`-> VerifierRuntimeAdmissionV1`
-`-> VerifierReproducibleRuntimeAdmissionV1`
-`-> ProviderNativeVerificationReceiptV1`
-`-> provider finality provenance`
+`-> runtime admission`
 
-## VERIFIED IR BUILD INPUT
+## VERIFIED IR INPUT
 
-`VerifiedIrBuildInputV1` binds the sealed native MIR fingerprint, Universe plan digest,
-native proof digest, Library proof digest and proof decision. The sanctioned build API
-does not accept a caller-selected build-input digest.
+`VerifiedIrBuildInputV1` binds MIR fingerprint, Universe plan, native proof, Library proof
+and proof decision. The sanctioned build API cannot choose `build_input_digest` directly.
 
-## ARTIFACT + REPRODUCIBILITY
+## SIGNED TOOLCHAIN INPUT
 
-The exact verifier artifact bytes are domain-separated SHA-256 measured. Build
-provenance, adapter ABI and base runtime admission must agree on that digest.
+`attest_verifier_build_from_verified_ir_v1(...)` now requires:
 
-Two distinct authenticated builder identities must additionally bind the same
-`VerifiedIrBuildInputV1` and produce the same artifact digest. Their agreement is sealed
-into `VerifierReproducibleBuildReceiptV1` and then into
-`VerifierReproducibleRuntimeAdmissionV1`.
+- authenticated `ToolchainProvenanceV1`,
+- exact toolchain artifact bytes,
+- toolchain signing key verification,
+- build profile,
+- exact verifier artifact bytes.
 
-Provider-native verification now requires the reproducibility-gated admission. Base
-`VerifierRuntimeAdmissionV1` alone is insufficient on the sanctioned path.
+The resulting `VerifierBuildProvenanceV1.toolchain_digest` is the authenticated toolchain
+provenance digest, not a caller-selected label.
 
-The provider-native receipt and final external-finality envelope carry the
-reproducibility receipt and gate digests so downstream provenance cannot silently drop
-the two-builder requirement.
+`assert_from_verified_ir(...)` revalidates both the verified semantic input and signed
+toolchain identity before accepting the build provenance binding.
+
+## ARTIFACT MEASUREMENT
+
+Verifier artifact measurement remains domain-separated SHA-256 over exact bytes. The same
+artifact identity must match build provenance, provider adapter ABI and runtime admission.
+
+## REPRODUCIBILITY
+
+Two independently authenticated builder observations bind their own signed toolchain
+provenance. Their exact toolchain provenance digests are carried into
+`VerifierReproducibleBuildReceiptV1`.
+
+The toolchain used by `VerifierBuildProvenanceV1` must appear in at least one builder
+observation before reproducible runtime admission can be minted.
 
 ## PROTECTS AGAINST
 
-- caller injection of arbitrary verifier build-input digest,
-- rebinding build provenance to another sealed MIR/proof world,
-- one builder alone declaring reproducibility,
-- two builders disagreeing on artifact bytes,
-- ABI claiming one verifier while different bytes are loaded,
-- sanctioned provider verification with only base runtime admission,
-- dropping reproducibility provenance from finality proof.
+- caller-selected build-input digest,
+- caller-selected toolchain digest on sanctioned build path,
+- build provenance relabeling under another signed toolchain,
+- verifier artifact substitution after provenance issuance,
+- introducing a build-provenance toolchain absent from reproducible builder evidence,
+- dropping artifact/reproducibility identity before provider finality verification.
 
 ## DOES NOT PROTECT AGAINST
 
-- malicious verifier semantics accepted by current native policy,
-- two colluding or identically compromised builders,
-- a shared compromised compiler/toolchain producing the same malicious artifact,
-- false toolchain provenance,
+- a malicious toolchain intentionally signed by trusted authority,
+- compromised signing/build/runtime keys,
+- compiler semantic bugs or miscompilation,
+- colluding builders or common-mode toolchain defects,
 - measure-A/execute-B runtime TOCTOU,
-- host/runtime or protected-key compromise.
+- host/runtime compromise.
 
 ## ASSUMPTIONS
 
-- native MIR/proof validation remains fail-closed,
-- production builder identities represent genuinely independent trust domains,
-- build/reproducibility/runtime keys remain separately protected,
-- runtime executes exactly the bytes it admitted,
-- production exposes no lower provider-verification bypass.
+- toolchain signing authority is protected,
+- signed toolchain bytes are the bytes actually used to build,
+- verified IR/proof validation remains fail-closed,
+- runtime executes the exact admitted verifier artifact.
 
 ## FAILURE MODE
 
-Reproducibility proves independent agreement on bytes, not semantic correctness. Shared
-compromise can make two builders reproduce the same malicious verifier. Likewise a
-runtime that measures artifact A and executes artifact B defeats the current provenance
-chain.
+Signed provenance authenticates identity, not correctness. A malicious compiler that is
+legitimately signed can still produce reproducible malicious output. Common-mode compiler
+defects can survive independent builds.
 
 ## NEXT
 
 1. Bind builder identities to independently attested build environments.
-2. Add signed compiler/toolchain provenance.
-3. Close measure-A/execute-B with immutable load-handle identity or equivalent native custody.
-4. Add revocation and epoch-scoped trust policy for builders/toolchains/artifacts/ABIs.
-5. Run canonical full validation before merge.
+2. Add epoch/revocation policy for toolchain and builder trust.
+3. Close measure-A/execute-B TOCTOU with immutable load handles.
+4. Explore diverse compiler/self-rebuild verification for stronger compiler correctness evidence.
+5. Produce canonical validation receipts before merge.
