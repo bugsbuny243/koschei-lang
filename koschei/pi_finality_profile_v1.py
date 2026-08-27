@@ -1,9 +1,8 @@
 """Pi-specific native verification/finality profile for Koschei Lang v1.
 
-Pi remains outside Koschei Lang core. This module fixes provider identity and requires
-one sealed ProviderAdapterAbiV1 for Pi-native verification. It does not invent a Pi
-backend JSON schema; the trusted adapter/verifier implementation identified by the ABI
-owns provider-specific parsing and verification.
+Pi remains outside Lang core. The profile requires a sealed Pi ABI plus authenticated
+build provenance and runtime admission for the exact verifier artifact before raw Pi
+responses may enter sanctioned verification.
 """
 from __future__ import annotations
 
@@ -19,6 +18,7 @@ from .provider_native_verifier_v1 import (
     ProviderNativeVerificationResultV1,
     verify_provider_native_response_v1,
 )
+from .verifier_build_provenance_v1 import VerifierBuildProvenanceV1, VerifierRuntimeAdmissionV1
 
 _PROVIDER_ID = "pi"
 
@@ -35,6 +35,11 @@ def _require_pi_abi(adapter_abi: ProviderAdapterAbiV1) -> None:
 
 def verify_pi_native_payment_response_v1(*,
     adapter_abi: ProviderAdapterAbiV1,
+    runtime_admission: VerifierRuntimeAdmissionV1,
+    provenance: VerifierBuildProvenanceV1,
+    verifier_artifact_bytes: bytes,
+    build_provenance_key: bytes,
+    runtime_admission_key: bytes,
     effect_envelope: EffectExecutionProofEnvelopeV1,
     effect_receipt: EffectExecutionReceiptV1,
     effect_result_txid_bytes: bytes,
@@ -48,6 +53,11 @@ def verify_pi_native_payment_response_v1(*,
         return verify_provider_native_response_v1(
             provider_id=_PROVIDER_ID,
             adapter_abi=adapter_abi,
+            runtime_admission=runtime_admission,
+            provenance=provenance,
+            verifier_artifact_bytes=verifier_artifact_bytes,
+            build_provenance_key=build_provenance_key,
+            runtime_admission_key=runtime_admission_key,
             effect_envelope=effect_envelope,
             effect_receipt=effect_receipt,
             effect_result_bytes=effect_result_txid_bytes,
@@ -63,6 +73,11 @@ def verify_pi_native_payment_response_v1(*,
 def issue_pi_finality_verdict_v1(*,
     native_receipt: ProviderNativeVerificationReceiptV1,
     adapter_abi: ProviderAdapterAbiV1,
+    runtime_admission: VerifierRuntimeAdmissionV1,
+    provenance: VerifierBuildProvenanceV1,
+    verifier_artifact_bytes: bytes,
+    build_provenance_key: bytes,
+    runtime_admission_key: bytes,
     effect_envelope: EffectExecutionProofEnvelopeV1,
     effect_receipt: EffectExecutionReceiptV1,
     effect_result_txid_bytes: bytes,
@@ -77,6 +92,11 @@ def issue_pi_finality_verdict_v1(*,
         return issue_provider_finality_verdict_from_native_receipt_v1(
             native_receipt=native_receipt,
             adapter_abi=adapter_abi,
+            runtime_admission=runtime_admission,
+            provenance=provenance,
+            verifier_artifact_bytes=verifier_artifact_bytes,
+            build_provenance_key=build_provenance_key,
+            runtime_admission_key=runtime_admission_key,
             effect_envelope=effect_envelope,
             effect_receipt=effect_receipt,
             effect_result_bytes=effect_result_txid_bytes,
