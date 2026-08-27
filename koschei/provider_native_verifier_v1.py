@@ -1,8 +1,8 @@
 """Provider-native raw-response verification boundary for Koschei Lang v1.
 
-The verifier callback may run only after the runtime proves that the exact loaded
-verifier artifact matches authenticated build provenance and the sealed provider ABI.
-Provider SDK/network parsing remains outside generic Lang core.
+The verifier callback may run only after the runtime proves both exact-artifact
+admission and a reproducibility-gated admission for that artifact. Provider SDK/network
+parsing remains outside generic Lang core.
 """
 from __future__ import annotations
 
@@ -14,10 +14,8 @@ from typing import Callable
 from .effect_execution_proof_envelope_v1 import EffectExecutionProofEnvelopeV1
 from .effect_execution_receipt_v1 import EffectExecutionReceiptV1
 from .provider_adapter_abi_v1 import ProviderAdapterAbiV1
-from .verifier_build_provenance_v1 import (
-    VerifierBuildProvenanceV1,
-    VerifierRuntimeAdmissionV1,
-)
+from .verifier_build_provenance_v1 import VerifierBuildProvenanceV1, VerifierRuntimeAdmissionV1
+from .verifier_reproducible_admission_v1 import VerifierReproducibleRuntimeAdmissionV1
 
 _CTX = b"koschei.provider-native-verifier/v1\x00"
 _RAW_CTX = b"koschei.provider-native-raw-response/v1\x00"
@@ -56,6 +54,8 @@ def _hash(ctx: bytes, value: bytes, label: str) -> str:
 
 def _payload(*, provider_id: str, adapter_abi_digest: str,
              verifier_implementation_digest: str, runtime_admission_digest: str,
+             reproducibility_receipt_digest: str,
+             reproducible_runtime_admission_digest: str,
              effect_envelope_digest: str, effect_receipt_digest: str,
              effect_measurement_digest: str, raw_response_digest: str,
              expected_reference_digest: str, verified_reference_digest: str,
@@ -65,6 +65,8 @@ def _payload(*, provider_id: str, adapter_abi_digest: str,
         f"adapter_abi={adapter_abi_digest}",
         f"verifier_implementation={verifier_implementation_digest}",
         f"runtime_admission={runtime_admission_digest}",
+        f"reproducibility_receipt={reproducibility_receipt_digest}",
+        f"reproducible_runtime_admission={reproducible_runtime_admission_digest}",
         f"effect_envelope={effect_envelope_digest}",
         f"effect_receipt={effect_receipt_digest}",
         f"effect_measurement={effect_measurement_digest}",
@@ -92,6 +94,8 @@ class ProviderNativeVerificationReceiptV1:
     adapter_abi_digest: str
     verifier_implementation_digest: str
     runtime_admission_digest: str
+    reproducibility_receipt_digest: str
+    reproducible_runtime_admission_digest: str
     effect_execution_envelope_digest: str
     effect_receipt_digest: str
     effect_measurement_digest: str
@@ -108,10 +112,12 @@ class ProviderNativeVerificationReceiptV1:
     def assert_authenticated(self, *, provider_native_verifier_key: bytes,
                              adapter_abi: ProviderAdapterAbiV1,
                              runtime_admission: VerifierRuntimeAdmissionV1,
+                             reproducible_admission: VerifierReproducibleRuntimeAdmissionV1,
                              provenance: VerifierBuildProvenanceV1,
                              verifier_artifact_bytes: bytes,
                              build_provenance_key: bytes,
                              runtime_admission_key: bytes,
+                             reproducible_admission_key: bytes,
                              effect_envelope: EffectExecutionProofEnvelopeV1,
                              effect_receipt: EffectExecutionReceiptV1,
                              effect_result_bytes: bytes,
@@ -123,6 +129,11 @@ class ProviderNativeVerificationReceiptV1:
             build_provenance_key=build_provenance_key,
             provenance=provenance,
             artifact_bytes=verifier_artifact_bytes,
+            adapter_abi=adapter_abi,
+        )
+        reproducible_admission.assert_authenticated(
+            reproducible_admission_key=reproducible_admission_key,
+            base_admission=runtime_admission,
             adapter_abi=adapter_abi,
         )
         if self.authority:
@@ -138,6 +149,10 @@ class ProviderNativeVerificationReceiptV1:
             raise ProviderNativeVerifierV1Error("provider-native receipt verifier implementation mismatch")
         if self.runtime_admission_digest != runtime_admission.admission_digest:
             raise ProviderNativeVerifierV1Error("provider-native receipt runtime admission mismatch")
+        if self.reproducibility_receipt_digest != reproducible_admission.reproducibility_receipt_digest:
+            raise ProviderNativeVerifierV1Error("provider-native receipt reproducibility receipt mismatch")
+        if self.reproducible_runtime_admission_digest != reproducible_admission.admission_digest:
+            raise ProviderNativeVerifierV1Error("provider-native receipt reproducible admission mismatch")
         if self.effect_execution_envelope_digest != effect_envelope.envelope_digest:
             raise ProviderNativeVerifierV1Error("provider-native receipt effect envelope mismatch")
         if self.effect_receipt_digest != effect_envelope.effect_receipt_digest:
@@ -162,6 +177,8 @@ class ProviderNativeVerificationReceiptV1:
             adapter_abi_digest=self.adapter_abi_digest,
             verifier_implementation_digest=self.verifier_implementation_digest,
             runtime_admission_digest=self.runtime_admission_digest,
+            reproducibility_receipt_digest=self.reproducibility_receipt_digest,
+            reproducible_runtime_admission_digest=self.reproducible_runtime_admission_digest,
             effect_envelope_digest=self.effect_execution_envelope_digest,
             effect_receipt_digest=self.effect_receipt_digest,
             effect_measurement_digest=self.effect_measurement_digest,
@@ -179,10 +196,12 @@ class ProviderNativeVerificationReceiptV1:
 def verify_provider_native_response_v1(*, provider_id: str,
                                        adapter_abi: ProviderAdapterAbiV1,
                                        runtime_admission: VerifierRuntimeAdmissionV1,
+                                       reproducible_admission: VerifierReproducibleRuntimeAdmissionV1,
                                        provenance: VerifierBuildProvenanceV1,
                                        verifier_artifact_bytes: bytes,
                                        build_provenance_key: bytes,
                                        runtime_admission_key: bytes,
+                                       reproducible_admission_key: bytes,
                                        effect_envelope: EffectExecutionProofEnvelopeV1,
                                        effect_receipt: EffectExecutionReceiptV1,
                                        effect_result_bytes: bytes,
@@ -197,6 +216,11 @@ def verify_provider_native_response_v1(*, provider_id: str,
         build_provenance_key=build_provenance_key,
         provenance=provenance,
         artifact_bytes=verifier_artifact_bytes,
+        adapter_abi=adapter_abi,
+    )
+    reproducible_admission.assert_authenticated(
+        reproducible_admission_key=reproducible_admission_key,
+        base_admission=runtime_admission,
         adapter_abi=adapter_abi,
     )
     provider = _text(provider_id, "provider_id")
@@ -227,6 +251,8 @@ def verify_provider_native_response_v1(*, provider_id: str,
         adapter_abi_digest=adapter_abi.abi_digest,
         verifier_implementation_digest=adapter_abi.verifier_implementation_digest,
         runtime_admission_digest=runtime_admission.admission_digest,
+        reproducibility_receipt_digest=reproducible_admission.reproducibility_receipt_digest,
+        reproducible_runtime_admission_digest=reproducible_admission.admission_digest,
         effect_execution_envelope_digest=effect_envelope.envelope_digest,
         effect_receipt_digest=effect_envelope.effect_receipt_digest,
         effect_measurement_digest=effect_envelope.measurement_digest,
@@ -243,6 +269,8 @@ def verify_provider_native_response_v1(*, provider_id: str,
         adapter_abi_digest=receipt.adapter_abi_digest,
         verifier_implementation_digest=receipt.verifier_implementation_digest,
         runtime_admission_digest=receipt.runtime_admission_digest,
+        reproducibility_receipt_digest=receipt.reproducibility_receipt_digest,
+        reproducible_runtime_admission_digest=receipt.reproducible_runtime_admission_digest,
         effect_envelope_digest=receipt.effect_execution_envelope_digest,
         effect_receipt_digest=receipt.effect_receipt_digest,
         effect_measurement_digest=receipt.effect_measurement_digest,
@@ -257,10 +285,12 @@ def verify_provider_native_response_v1(*, provider_id: str,
         provider_native_verifier_key=key,
         adapter_abi=adapter_abi,
         runtime_admission=runtime_admission,
+        reproducible_admission=reproducible_admission,
         provenance=provenance,
         verifier_artifact_bytes=verifier_artifact_bytes,
         build_provenance_key=build_provenance_key,
         runtime_admission_key=runtime_admission_key,
+        reproducible_admission_key=reproducible_admission_key,
         effect_envelope=effect_envelope,
         effect_receipt=effect_receipt,
         effect_result_bytes=effect_result_bytes,
