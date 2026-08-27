@@ -1,51 +1,83 @@
-"""Pi-specific provider profile for Koschei external finality attestation v1.
+"""Pi-specific native verification/finality profile for Koschei Lang v1.
 
-This module does not implement Pi networking, wallet custody, payment settlement, or
-blockchain consensus.  It only fixes the provider identity and Pi payment-finality
-vocabulary on top of Koschei's generic external finality contract.
+Pi remains outside Koschei Lang core. This module fixes only provider identity and
+binds the Pi payment transaction reference to Koschei's generic provider-native
+verification + finality bridge.
 
-A real Pi integration must verify Pi-native transaction/payment state outside this
-module and only then invoke the trusted verdict issuer while holding the provider
-verifier key.
+Current official Pi guidance exposes payment identifiers and transaction ids (`txid`),
+but this bootstrap intentionally does not hard-code an unverified response JSON
+schema. A trusted Pi adapter supplies the native parser/verifier callback. The entire
+successful effect-result bytes are treated as the canonical expected Pi txid bytes.
 """
 from __future__ import annotations
 
+from typing import Callable
+
 from .effect_execution_proof_envelope_v1 import EffectExecutionProofEnvelopeV1
-from .external_finality_attestation_v1 import (
-    ExternalFinalityAttestationV1Error,
-    ExternalProviderFinalityVerdictV1,
-    issue_external_provider_finality_verdict_v1,
+from .effect_execution_receipt_v1 import EffectExecutionReceiptV1
+from .external_finality_attestation_v1 import ExternalProviderFinalityVerdictV1
+from .provider_finality_bridge_v1 import issue_provider_finality_verdict_from_native_receipt_v1
+from .provider_native_verifier_v1 import (
+    ProviderNativeVerificationReceiptV1,
+    ProviderNativeVerificationResultV1,
+    verify_provider_native_response_v1,
 )
 
 _PROVIDER_ID = "pi"
-_PI_STATES = frozenset({"pending", "finalized", "rejected"})
 
 
 class PiFinalityProfileV1Error(ValueError):
     pass
 
 
-def issue_pi_finality_verdict_v1(
+def verify_pi_native_payment_response_v1(
     *,
     effect_envelope: EffectExecutionProofEnvelopeV1,
-    pi_transaction_reference_digest: str,
-    pi_provider_proof_digest: str,
+    effect_receipt: EffectExecutionReceiptV1,
+    effect_result_txid_bytes: bytes,
+    raw_pi_response_bytes: bytes,
     observed_epoch: int,
-    state: str,
-    provider_verifier_key: bytes,
-) -> ExternalProviderFinalityVerdictV1:
-    """Issue Pi verdict only after trusted Pi-native verification outside Lang core."""
-    if state not in _PI_STATES:
-        raise PiFinalityProfileV1Error("unknown Pi finality state")
+    verifier: Callable[[bytes], ProviderNativeVerificationResultV1],
+    provider_native_verifier_key: bytes,
+) -> ProviderNativeVerificationReceiptV1:
+    """Verify raw Pi response via trusted adapter and require exact txid-byte binding."""
     try:
-        return issue_external_provider_finality_verdict_v1(
+        return verify_provider_native_response_v1(
             provider_id=_PROVIDER_ID,
             effect_envelope=effect_envelope,
-            external_reference_digest=pi_transaction_reference_digest,
-            provider_proof_digest=pi_provider_proof_digest,
+            effect_receipt=effect_receipt,
+            effect_result_bytes=effect_result_txid_bytes,
+            raw_response_bytes=raw_pi_response_bytes,
             observed_epoch=observed_epoch,
-            state=state,
+            verifier=verifier,
+            provider_native_verifier_key=provider_native_verifier_key,
+        )
+    except ValueError as error:
+        raise PiFinalityProfileV1Error(str(error)) from error
+
+
+def issue_pi_finality_verdict_v1(
+    *,
+    native_receipt: ProviderNativeVerificationReceiptV1,
+    effect_envelope: EffectExecutionProofEnvelopeV1,
+    effect_receipt: EffectExecutionReceiptV1,
+    effect_result_txid_bytes: bytes,
+    raw_pi_response_bytes: bytes,
+    provider_native_verifier_key: bytes,
+    provider_verifier_key: bytes,
+) -> ExternalProviderFinalityVerdictV1:
+    """Issue Pi finality verdict only from an authenticated Pi-native verification receipt."""
+    if native_receipt.provider_id != _PROVIDER_ID:
+        raise PiFinalityProfileV1Error("Pi finality requires provider_id=pi")
+    try:
+        return issue_provider_finality_verdict_from_native_receipt_v1(
+            native_receipt=native_receipt,
+            effect_envelope=effect_envelope,
+            effect_receipt=effect_receipt,
+            effect_result_bytes=effect_result_txid_bytes,
+            raw_response_bytes=raw_pi_response_bytes,
+            provider_native_verifier_key=provider_native_verifier_key,
             provider_verifier_key=provider_verifier_key,
         )
-    except ExternalFinalityAttestationV1Error as error:
+    except ValueError as error:
         raise PiFinalityProfileV1Error(str(error)) from error
