@@ -68,7 +68,7 @@ def chain(effect, *, nonce="nonce-51"):
     consumption, effect_receipt, result = execute_effect_with_receipt_v1(
         ledger=ExecutionPermitLedgerV1(), permit=permit, runtime_key=rk,
         decision_key=dk, effect_key=ek, grant=grant, evidence=evidence,
-        decision=decision, request=request, current_epoch=51, effect=effect,
+        decision=decision, mir=mir, request=request, current_epoch=51, effect=effect,
     )
     base = seal_execution_proof_envelope_v1(
         grant=grant, evidence=evidence, mir=mir, request=request, proof=proof,
@@ -131,10 +131,7 @@ def test_effect_receipt_cannot_move_to_another_canonical_request_chain():
     first = chain(lambda _: b"first", nonce="nonce-a")
     second = chain(lambda _: b"second", nonce="nonce-b")
     assert first["request"].digest != second["request"].digest
-    forged = replace(
-        first["terminal"],
-        base_execution_envelope_digest=second["base"].envelope_digest,
-    )
+    forged = replace(first["terminal"], base_execution_envelope_digest=second["base"].envelope_digest)
     with pytest.raises((EffectExecutionProofEnvelopeV1Error, ValueError)):
         forged.assert_valid(
             base=second["base"], effect_receipt=first["effect_receipt"],
