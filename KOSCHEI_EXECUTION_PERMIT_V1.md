@@ -1,6 +1,6 @@
 # KOSCHEI EXECUTION PERMIT V1
 
-Status: IMPLEMENTED BOOTSTRAP PROTOTYPE / CANONICAL AUTHORITY BASIS WIRED / DURABLE NATIVE CONSUMPTION PENDING
+Status: IMPLEMENTED BOOTSTRAP PROTOTYPE / CANONICAL AUTHORITY BASIS WIRED / AUTHENTICATED CONSUMPTION RECEIPT WIRED / DURABLE NATIVE CONSUMPTION PENDING
 
 ## PURPOSE
 
@@ -15,6 +15,8 @@ The sanctioned chain is now:
 `-> AuthorizationDecisionV1`
 `-> ExecutionPermitV1`
 `-> Single Consume`
+`-> ExecutionConsumptionReceiptV1`
+`-> ExecutionProofEnvelopeV1`
 
 A permit is a narrowed transport of an already-authenticated native `allow` decision.
 It is not identity, ambient permission, or a replacement for Koschei's native
@@ -34,12 +36,14 @@ For permit P, decision D, evidence E and grant G:
 8. P is separately HMAC-authenticated with a runtime permit key of at least 32 bytes.
 9. P is live only in its bound epoch and exact request/operation.
 10. P is single-use through the sanctioned replay ledger.
-11. External evidence never becomes ambient authority merely by existing.
+11. Successful consumption emits an authenticated `ExecutionConsumptionReceiptV1`.
+12. External evidence never becomes ambient authority merely by existing.
+13. A consumption receipt proves accepted permit consumption, not external side-effect completion.
 
 ## KEY SEPARATION
 
 - `decision_key`: authenticates canonical-authority -> authorization-decision transition.
-- `runtime_key`: authenticates authorization-decision -> execution-permit transition.
+- `runtime_key`: authenticates authorization-decision -> execution-permit and consumption-receipt transitions.
 
 The keys have different trust roles and must remain separate.
 
@@ -67,20 +71,25 @@ The provenance chain is therefore:
 `native authority basis + external evidence`
 `-> authorization decision digest`
 `-> permit digest`
-`-> single consumption`
+`-> authenticated consumption receipt`
+`-> execution proof envelope`
 
 ## BOOTSTRAP IMPLEMENTATION
 
 - `koschei/canonical_authority_basis_v1.py`
 - `koschei/authorization_decision_v1.py`
 - `koschei/execution_permit_v1.py`
+- `koschei/execution_proof_envelope_v1.py`
 - `CanonicalAuthorityBasisV1`
 - `AuthorizationDecisionV1`
 - `ExecutionPermitV1`
+- `ExecutionConsumptionReceiptV1`
 - `ExecutionPermitLedgerV1`
+- `ExecutionProofEnvelopeV1`
 
-Decision and permit authentication use HMAC-SHA256 with separate keys and constant-time
-MAC comparison.
+Decision, permit and consumption-receipt authentication use HMAC-SHA256 with
+constant-time MAC comparison. The aggregate proof envelope uses deterministic SHA-256
+and re-verifies the authenticated lower layers; its hash is not a new authority key.
 
 ## PROTECTS AGAINST
 
@@ -91,38 +100,44 @@ MAC comparison.
 - cross-request and cross-decision reuse,
 - epoch replay,
 - same-permit replay through one trusted ledger,
+- silent relabeling of a verified consumption chain inside the proof envelope,
 - forgery without the relevant HMAC keys under stated assumptions.
 
 ## DOES NOT PROTECT AGAINST
 
 - compromise or bugs inside the native MIR/Library/proof/enforcement chain,
-- compromise of decision or permit keys,
-- malicious code inside a trusted issuer compartment,
+- compromise of decision or permit/runtime keys,
+- malicious code inside a trusted issuer/runtime compartment,
 - rollback/fork/loss of permit-consumption state,
 - workers that do not share authoritative replay state,
 - host/runtime compromise,
 - false external evidence admitted earlier in the chain,
-- side-channel or memory disclosure.
+- side-channel or memory disclosure,
+- failure of the real side effect after permit consumption.
 
 ## ASSUMPTIONS
 
 - native authority/proof evaluation is fail-closed,
-- decision and permit keys remain separated and outside provider/observer control,
+- decision and permit/runtime keys remain separated and outside provider/observer control,
 - canonical request epoch comes from trusted Koschei lifecycle state in production,
 - authoritative consumers share durable monotonic replay state,
-- external evidence admission already succeeded.
+- external evidence admission already succeeded,
+- callers do not interpret `permit-consumed` as `effect-completed`.
 
 ## FAILURE MODE
 
 Authority integrity fails if the native enforcement path can be bypassed or a trusted
 issuer/key is compromised.
 
-Authentication fails if either HMAC key is exposed.
+Authentication fails if either HMAC trust role is exposed.
 
 Replay protection fails if consumption state is reset, forked or not shared.
 
 The current Python ledger is therefore a semantic/bootstrap implementation, not a
 claim of durable cross-process replay protection.
+
+A valid consumption receipt can exist even if the downstream side effect fails after
+consumption. That is why V1 terminates at `permit-consumed`.
 
 ## PI EXAMPLE
 
@@ -133,14 +148,18 @@ claim of durable cross-process replay protection.
 `-> AuthorizationDecision(subscription.enable)`
 `-> permit inherits exact decision/request`
 `-> consume once`
-`-> exact subscription state transition`
+`-> authenticated consumption receipt`
+`-> proof envelope terminal=permit-consumed`
 
 Neither the Pi adapter nor the permit minter gets an argument that can rewrite that
 operation into `treasury.withdraw`.
 
 ## NEXT NATIVE STEP
 
-Emit a deterministic machine-verifiable **Proof Envelope** covering the complete
-lineage from external evidence through native authority basis, authorization decision,
-permit and final consume/effect result. Then move replay state and key custody into a
-runtime-owned monotonic/transactional boundary.
+Add a sanctioned **effect execution receipt** that consumes the permit, executes one
+bounded effect callback and measures the actual canonical outcome. Only that runtime-
+produced receipt may extend the proof-envelope terminal state from `permit-consumed`
+toward `effect-attempted` or `effect-completed`.
+
+Then move replay state and key custody into a runtime-owned monotonic/transactional
+boundary.
