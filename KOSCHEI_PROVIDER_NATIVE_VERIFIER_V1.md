@@ -1,100 +1,97 @@
 # KOSCHEI PROVIDER NATIVE VERIFIER V1
 
-Status: IMPLEMENTED BOOTSTRAP PROTOTYPE / REPRODUCIBILITY-GATED PROVIDER PATH / NETWORK ADAPTER REMAINS EXTERNAL
+Status: IMPLEMENTED BOOTSTRAP PROTOTYPE / ABI + REPRODUCIBLE SIGNED-TOOLCHAIN VERIFIER ADMISSION WIRED / PROVIDER NETWORK ADAPTER REMAINS EXTERNAL
 
 ## PURPOSE
 
-`effect-completed` is local. Provider finality must be derived from raw provider bytes
-through a known and reproducibly admitted verifier contract, not from caller-selected
-state/reference/proof.
+`effect-completed` is local. Provider finality must be derived from raw provider bytes through a known verifier contract, not from caller-selected state/reference/proof.
 
 Sanctioned path:
 
 `local effect result bytes`
-`-> ProviderAdapterAbiV1`
+`-> sealed ProviderAdapterAbiV1`
 `-> VerifiedIrBuildInputV1`
-`-> two independent builder observations`
+`-> signed ToolchainProvenanceV1`
+`-> two authenticated builder observations`
 `-> VerifierReproducibleBuildReceiptV1`
-`-> exact-artifact base runtime admission`
 `-> VerifierReproducibleRuntimeAdmissionV1`
 `-> raw provider response bytes`
-`-> provider-native verifier`
+`-> trusted provider-native verifier`
 `-> ProviderNativeVerificationReceiptV1`
 `-> receipt-bound provider verdict`
 `-> finality attestation`
 `-> ExternalFinalityProofEnvelopeV1`
 
-## REQUIRED VERIFIER ADMISSION
+## VERIFIER ADMISSION
 
-The provider-native verifier boundary no longer accepts base
-`VerifierRuntimeAdmissionV1` by itself. It requires a
-`VerifierReproducibleRuntimeAdmissionV1` authenticated under a separate gate key and
-bound to the exact base admission and provider ABI.
+The provider-native verifier callback cannot run with base artifact admission alone. The sanctioned API requires the reproducibility-gated admission that proves two distinct builder observations agreed on the exact verifier artifact.
 
-The native verification receipt binds:
+Builder observations no longer accept arbitrary toolchain digests. Each observation must bind authenticated `ToolchainProvenanceV1` backed by exact toolchain artifact bytes and a protected signing key.
 
-- provider adapter ABI digest,
+The build provenance toolchain must also appear in the reproducible builder evidence before runtime admission.
+
+## PROVIDER ADAPTER ABI
+
+`ProviderAdapterAbiV1` binds provider id, adapter id, schema id/version, verifier implementation digest and authority=false. The implementation digest must match exact runtime-admitted verifier artifact bytes.
+
+## NATIVE VERIFICATION RECEIPT
+
+The native receipt binds:
+
+- adapter ABI digest,
 - verifier implementation digest,
 - base runtime admission digest,
 - reproducibility receipt digest,
-- reproducible runtime-admission digest,
-- exact effect envelope and measurement,
-- raw response digest,
-- expected/verified external reference,
-- provider proof, epoch and state,
-- authority=false.
+- reproducible runtime admission digest,
+- exact effect envelope/measurement,
+- raw provider response digest,
+- expected and verified external reference,
+- provider proof,
+- observed epoch and state.
 
-A receipt cannot be validated after swapping the reproducibility gate, base admission,
-ABI, artifact identity, raw response, reference or provider state.
+## V1 REFERENCE CONTRACT
 
-## PI PROFILE
-
-Pi remains a provider-specific profile. Pi V1 requires the same reproducibility-gated
-admission before its raw response verifier callback can run. Lang core still does not
-invent a Pi backend JSON schema, wallet, consensus or settlement implementation.
+Successful effect callback bytes are the canonical expected external reference. Pi payment V1 uses canonical txid bytes. Provider-native verification must return the same canonical reference or fail before verdict issuance.
 
 ## PROTECTS AGAINST
 
-- caller-selected provider state/reference/proof after native verification,
+- caller-selected provider finality state/reference/proof,
 - raw provider response rebinding,
-- provider response referencing a different object than the measured local effect,
-- using one receipt under another provider/schema/verifier ABI,
-- sanctioned provider verification with only a single-builder/base runtime admission,
-- dropping reproducibility receipt/admission identity from final finality provenance.
+- using a different external reference than the measured effect,
+- verifier ABI relabeling,
+- provider verification without two-builder reproducibility gate,
+- caller-selected toolchain digest in sanctioned builder/build provenance path,
+- relabeling verifier evidence under another signed toolchain identity,
+- dropping reproducibility identity from finality provenance.
 
 ## DOES NOT PROTECT AGAINST
 
-- malicious verifier logic reproduced identically by both builders,
-- colluding builders or shared compromised toolchain,
-- compromised build/reproducibility/admission/verifier keys,
-- unauthenticated provider transport accepted by the verifier,
-- provider reorg/reversal after its own finality semantics,
-- measure-A/execute-B TOCTOU,
-- host/runtime compromise or replay-state rollback.
+- malicious/buggy verifier implementation that is legitimately built and admitted,
+- intentionally signed malicious compiler/toolchain,
+- compromised toolchain/builder/runtime/finality keys,
+- common-mode compiler defects across independent builders,
+- unauthenticated provider transport accepted by verifier,
+- provider reorg/reversal,
+- host/runtime compromise or replay-state rollback,
+- measure-A/execute-B runtime TOCTOU.
 
 ## ASSUMPTIONS
 
-- builder identities represent independent trust domains in production,
-- verified-IR/build/reproducibility/runtime keys remain separated and protected,
-- runtime executes the exact admitted artifact bytes,
-- provider-native production API does not expose a lower base-admission bypass,
-- provider verifier performs real provider-native validation,
-- final consumers validate the full `ExternalFinalityProofEnvelopeV1`.
+- toolchain signing authority is protected,
+- signed toolchain bytes are the actual compiler/toolchain bytes used by builders,
+- builder identities represent independent build authorities,
+- runtime executes exact admitted verifier bytes,
+- provider-native verifier performs real authenticated provider verification,
+- final consumers validate full ExternalFinalityProofEnvelopeV1.
 
 ## FAILURE MODE
 
-Reproducibility does not prove semantic correctness. Two builders can faithfully produce
-the same malicious output when they share a compromised compiler/toolchain or malicious
-verified input.
-
-The sanctioned bootstrap path now enforces reproducible admission end to end, but a
-production runtime would lose that property if it exposes a hidden alternate verifier
-entry point or measures artifact A while actually executing artifact B.
+Signed and reproducible does not mean correct. A malicious signed compiler or common-mode compiler defect can produce the same malicious verifier artifact across independent builders. The trust model therefore still needs environment attestation, revocation policy and stronger compiler correctness evidence.
 
 ## NEXT
 
-1. Bind builders to independently attested environments.
-2. Sign and verify compiler/toolchain provenance.
-3. Close measure-A/execute-B with immutable load handles or equivalent native runtime custody.
-4. Add epoch/revocation policy for builder, toolchain, artifact, ABI and verifier trust.
-5. Pin an exact supported Pi provider schema before a production parser is admitted.
+1. Bind builder identities to independently attested build environments.
+2. Add epoch/revocation policy for toolchain, builder, verifier artifact and ABI trust.
+3. Add immutable runtime load-handle identity to close measure-A/execute-B TOCTOU.
+4. Explore diverse-compiler/self-rebuild verification.
+5. Pin exact supported Pi backend/payment schema before production parser implementation.
