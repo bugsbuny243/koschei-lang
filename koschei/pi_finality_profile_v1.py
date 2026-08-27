@@ -1,13 +1,9 @@
 """Pi-specific native verification/finality profile for Koschei Lang v1.
 
-Pi remains outside Koschei Lang core. This module fixes only provider identity and
-binds the Pi payment transaction reference to Koschei's generic provider-native
-verification + finality bridge.
-
-Current official Pi guidance exposes payment identifiers and transaction ids (`txid`),
-but this bootstrap intentionally does not hard-code an unverified response JSON
-schema. A trusted Pi adapter supplies the native parser/verifier callback. The entire
-successful effect-result bytes are treated as the canonical expected Pi txid bytes.
+Pi remains outside Koschei Lang core. This module fixes provider identity and requires
+one sealed ProviderAdapterAbiV1 for Pi-native verification. It does not invent a Pi
+backend JSON schema; the trusted adapter/verifier implementation identified by the ABI
+owns provider-specific parsing and verification.
 """
 from __future__ import annotations
 
@@ -16,6 +12,7 @@ from typing import Callable
 from .effect_execution_proof_envelope_v1 import EffectExecutionProofEnvelopeV1
 from .effect_execution_receipt_v1 import EffectExecutionReceiptV1
 from .external_finality_attestation_v1 import ExternalProviderFinalityVerdictV1
+from .provider_adapter_abi_v1 import ProviderAdapterAbiV1
 from .provider_finality_bridge_v1 import issue_provider_finality_verdict_from_native_receipt_v1
 from .provider_native_verifier_v1 import (
     ProviderNativeVerificationReceiptV1,
@@ -30,8 +27,14 @@ class PiFinalityProfileV1Error(ValueError):
     pass
 
 
-def verify_pi_native_payment_response_v1(
-    *,
+def _require_pi_abi(adapter_abi: ProviderAdapterAbiV1) -> None:
+    adapter_abi.assert_sealed()
+    if adapter_abi.provider_id != _PROVIDER_ID:
+        raise PiFinalityProfileV1Error("Pi finality requires provider_id=pi")
+
+
+def verify_pi_native_payment_response_v1(*,
+    adapter_abi: ProviderAdapterAbiV1,
     effect_envelope: EffectExecutionProofEnvelopeV1,
     effect_receipt: EffectExecutionReceiptV1,
     effect_result_txid_bytes: bytes,
@@ -40,10 +43,11 @@ def verify_pi_native_payment_response_v1(
     verifier: Callable[[bytes], ProviderNativeVerificationResultV1],
     provider_native_verifier_key: bytes,
 ) -> ProviderNativeVerificationReceiptV1:
-    """Verify raw Pi response via trusted adapter and require exact txid-byte binding."""
+    _require_pi_abi(adapter_abi)
     try:
         return verify_provider_native_response_v1(
             provider_id=_PROVIDER_ID,
+            adapter_abi=adapter_abi,
             effect_envelope=effect_envelope,
             effect_receipt=effect_receipt,
             effect_result_bytes=effect_result_txid_bytes,
@@ -56,9 +60,9 @@ def verify_pi_native_payment_response_v1(
         raise PiFinalityProfileV1Error(str(error)) from error
 
 
-def issue_pi_finality_verdict_v1(
-    *,
+def issue_pi_finality_verdict_v1(*,
     native_receipt: ProviderNativeVerificationReceiptV1,
+    adapter_abi: ProviderAdapterAbiV1,
     effect_envelope: EffectExecutionProofEnvelopeV1,
     effect_receipt: EffectExecutionReceiptV1,
     effect_result_txid_bytes: bytes,
@@ -66,12 +70,13 @@ def issue_pi_finality_verdict_v1(
     provider_native_verifier_key: bytes,
     provider_verifier_key: bytes,
 ) -> ExternalProviderFinalityVerdictV1:
-    """Issue Pi finality verdict only from an authenticated Pi-native verification receipt."""
+    _require_pi_abi(adapter_abi)
     if native_receipt.provider_id != _PROVIDER_ID:
         raise PiFinalityProfileV1Error("Pi finality requires provider_id=pi")
     try:
         return issue_provider_finality_verdict_from_native_receipt_v1(
             native_receipt=native_receipt,
+            adapter_abi=adapter_abi,
             effect_envelope=effect_envelope,
             effect_receipt=effect_receipt,
             effect_result_bytes=effect_result_txid_bytes,
