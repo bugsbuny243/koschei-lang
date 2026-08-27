@@ -10,11 +10,10 @@ Koschei must be able to answer a stronger question than "was an effect allowed?"
 > decision and single-use execution permit caused this execution boundary to accept
 > one consumption?
 
-`ExecutionProofEnvelopeV1` is a machine-verifiable provenance envelope for that
-question. It does not create authority. It aggregates and re-verifies authority and
-integrity already established by existing Koschei components.
+`ExecutionProofEnvelopeV1` is the machine-verifiable base provenance envelope for that
+question. It does not create authority.
 
-The v1 chain is:
+The v1 base chain is:
 
 `ExternalAdapterGrantV1`
 `-> ExternalAdapterEvidenceV1`
@@ -34,48 +33,37 @@ This base envelope terminates at:
 
 `terminal_state = permit-consumed`
 
-This means the trusted bootstrap execution boundary authenticated and accepted one
-exact single-use permit consumption.
+It MUST NOT itself claim effect completion or external provider finality.
 
-`ExecutionProofEnvelopeV1` MUST NOT itself claim `effect-completed`, `payload-applied`,
-`payment-settled`, or any remote side-effect completion state. A consumed permit and a
-completed side effect are different facts.
-
-Higher layers preserve the separation instead of mutating this V1 meaning:
+Higher layers are separate:
 
 `ExecutionProofEnvelopeV1(permit-consumed)`
 `-> EffectExecutionReceiptV1`
 `-> EffectExecutionProofEnvelopeV1(effect-completed | effect-failed)`
+`-> ProviderNativeVerificationReceiptV1(raw provider response bound)`
 `-> ExternalProviderFinalityVerdictV1`
 `-> ExternalFinalityAttestationV1`
-`-> ExternalFinalityProofEnvelopeV1(provider-pending | provider-finalized | provider-rejected)`
+`-> ExternalFinalityProofEnvelopeV1(provider-*)`
 
-A local `effect-completed` claim still does not imply remote finality.
+Keeping the layers separate preserves the meaning of each proof state.
 
 ## CONSUMPTION RECEIPT
 
-`ExecutionPermitLedgerV1.consume(...)` returns `ExecutionConsumptionReceiptV1` after:
+`ExecutionPermitLedgerV1.consume(...)` returns `ExecutionConsumptionReceiptV1` only
+after permit/decision authentication, exact request-operation-epoch liveness checks,
+replay rejection, and insertion into the bootstrap consumed set.
 
-1. permit authentication,
-2. authorization-decision authentication,
-3. exact request/operation/epoch liveness checks,
-4. replay rejection,
-5. insertion into the bootstrap consumed-permit set.
-
-The receipt is HMAC-SHA256 authenticated with the runtime permit key and binds the
-exact permit, decision, evidence, operation, canonical request and epoch.
-
-The receipt is not a new permission. It is evidence of accepted consumption.
+The receipt is HMAC-authenticated under the runtime key. It is evidence of accepted
+consumption, not authority.
 
 ## ENVELOPE SEAL
 
-The envelope binds grant, evidence, native MIR, Universe plan, canonical request,
+The base envelope binds grant, evidence, native MIR, Universe plan, canonical request,
 native proof, request-bound proof, authority basis, authorization decision, permit,
 consumption receipt, subject scope, operation, epoch and terminal state.
 
-Its own `envelope_digest` is deterministic SHA-256 over these links. This digest is NOT
-an independent signature. Verification re-checks the underlying authenticated/sealed
-objects.
+Its own SHA-256 digest is deterministic provenance aggregation, not an independent
+signature. Verification re-checks the underlying sealed/authenticated objects.
 
 ## AUTHORITY RULE
 
@@ -83,7 +71,6 @@ objects.
 
 A proof envelope cannot mint a permit, authorize a new operation, widen capability
 scope, change epoch, substitute for native enforcement, or be replayed as authority.
-It is provenance, not permission.
 
 ## PROTECTS AGAINST
 
@@ -105,8 +92,7 @@ It is provenance, not permission.
 - host compromise or side channels,
 - false external evidence admitted earlier,
 - downstream effect failure after permit consumption,
-- proof that a remote system finalized the requested transition without the higher
-  external-finality layer.
+- external provider finality by itself.
 
 ## ASSUMPTIONS
 
@@ -128,19 +114,11 @@ consumption receipts for the same permit. HMAC does not replace monotonic consen
 If the runtime key is compromised, permit/consumption authenticity in that trust role
 is lost.
 
-## HIGHER PROVENANCE LAYERS
+## COMPANION LAYERS
 
-The local effect companion layers are implemented as:
+Local effect completion is represented by `EffectExecutionReceiptV1` and
+`EffectExecutionProofEnvelopeV1`.
 
-- `koschei/effect_execution_receipt_v1.py`
-- `koschei/effect_execution_proof_envelope_v1.py`
-
-The external finality layers are implemented as:
-
-- `koschei/external_finality_attestation_v1.py`
-- `koschei/external_finality_proof_envelope_v1.py`
-- `koschei/pi_finality_profile_v1.py`
-- `KOSCHEI_EXTERNAL_FINALITY_ATTESTATION_V1.md`
-
-The remaining hard problem is provider-native verification and durable runtime/key
-custody, not relabeling this base envelope with stronger semantics.
+External finality now additionally requires `ProviderNativeVerificationReceiptV1`,
+which binds raw provider response bytes and the exact callback-returned external
+reference before verdict/finality provenance is admitted.
