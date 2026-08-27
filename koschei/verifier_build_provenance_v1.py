@@ -1,9 +1,12 @@
 """Verifier artifact build provenance and runtime admission for Koschei Lang v1.
 
-This module does not prove semantic correctness of a verifier source program. It
-binds one exact verifier artifact byte string to authenticated build metadata and then
-requires runtime admission to re-measure the exact loaded artifact before a provider
-adapter ABI can rely on its implementation digest.
+Sanctioned build provenance derives its build-input digest from Koschei's existing
+sealed NativeSigilMir + NativeSigilProofBundle through VerifiedIrBuildInputV1. The
+low-level digest issuer remains an internal bootstrap primitive; provider/product code
+should use `attest_verifier_build_from_verified_ir_v1`.
+
+This V1 still proves artifact identity/provenance, not compiler/toolchain correctness or
+reproducible derivation from source.
 """
 from __future__ import annotations
 
@@ -13,6 +16,9 @@ import hmac
 import string
 
 from .provider_adapter_abi_v1 import ProviderAdapterAbiV1
+from .native_sigil_mir_v1 import NativeSigilMir
+from .native_sigil_proof_pipeline_v1 import NativeSigilProofBundle
+from .verified_ir_build_input_v1 import VerifiedIrBuildInputV1
 
 _BUILD_CTX = b"koschei.verifier-build-provenance/v1\x00"
 _ARTIFACT_CTX = b"koschei.verifier-artifact/v1\x00"
@@ -105,10 +111,28 @@ class VerifierBuildProvenanceV1:
         if not hmac.compare_digest(self.provenance_digest, expected):
             raise VerifierBuildProvenanceV1Error("verifier build provenance authentication failed")
 
+    def assert_from_verified_ir(self, *, verified_input: VerifiedIrBuildInputV1,
+                                mir: NativeSigilMir,
+                                proof: NativeSigilProofBundle,
+                                build_provenance_key: bytes,
+                                artifact_bytes: bytes) -> None:
+        verified_input.assert_sealed(mir=mir, proof=proof)
+        self.assert_authenticated(
+            build_provenance_key=build_provenance_key,
+            artifact_bytes=artifact_bytes,
+        )
+        if self.build_input_digest != verified_input.build_input_digest:
+            raise VerifierBuildProvenanceV1Error(
+                "verifier build provenance does not derive from supplied verified IR input"
+            )
 
-def attest_verifier_build_v1(*, artifact_bytes: bytes, build_input_digest: str,
-                             toolchain_digest: str, build_profile: str,
-                             build_provenance_key: bytes) -> VerifierBuildProvenanceV1:
+
+def _attest_verifier_build_digest_v1(*, artifact_bytes: bytes,
+                                     build_input_digest: str,
+                                     toolchain_digest: str,
+                                     build_profile: str,
+                                     build_provenance_key: bytes) -> VerifierBuildProvenanceV1:
+    """Internal bootstrap primitive. Sanctioned callers use verified-IR wrapper below."""
     key = _key(build_provenance_key, "build_provenance_key")
     artifact = measure_verifier_artifact_v1(artifact_bytes)
     build_input = _digest(build_input_digest, "build_input_digest")
@@ -131,6 +155,33 @@ def attest_verifier_build_v1(*, artifact_bytes: bytes, build_input_digest: str,
     return result
 
 
+def attest_verifier_build_from_verified_ir_v1(*,
+                                               verified_input: VerifiedIrBuildInputV1,
+                                               mir: NativeSigilMir,
+                                               proof: NativeSigilProofBundle,
+                                               artifact_bytes: bytes,
+                                               toolchain_digest: str,
+                                               build_profile: str,
+                                               build_provenance_key: bytes) -> VerifierBuildProvenanceV1:
+    """Sanctioned build attestation: caller cannot choose build_input_digest."""
+    verified_input.assert_sealed(mir=mir, proof=proof)
+    result = _attest_verifier_build_digest_v1(
+        artifact_bytes=artifact_bytes,
+        build_input_digest=verified_input.build_input_digest,
+        toolchain_digest=toolchain_digest,
+        build_profile=build_profile,
+        build_provenance_key=build_provenance_key,
+    )
+    result.assert_from_verified_ir(
+        verified_input=verified_input,
+        mir=mir,
+        proof=proof,
+        build_provenance_key=build_provenance_key,
+        artifact_bytes=artifact_bytes,
+    )
+    return result
+
+
 @dataclass(frozen=True, slots=True)
 class VerifierRuntimeAdmissionV1:
     build_provenance_digest: str
@@ -149,10 +200,7 @@ class VerifierRuntimeAdmissionV1:
         key = _key(runtime_admission_key, "runtime_admission_key")
         if self.authority or self.admitted is not True:
             raise VerifierBuildProvenanceV1Error("verifier runtime admission must remain non-authoritative and admitted")
-        provenance.assert_authenticated(
-            build_provenance_key=build_provenance_key,
-            artifact_bytes=artifact_bytes,
-        )
+        provenance.assert_authenticated(build_provenance_key=build_provenance_key, artifact_bytes=artifact_bytes)
         adapter_abi.assert_sealed()
         measured = measure_verifier_artifact_v1(artifact_bytes)
         if measured != adapter_abi.verifier_implementation_digest:
@@ -180,10 +228,7 @@ def admit_verifier_artifact_v1(*, provenance: VerifierBuildProvenanceV1,
                                build_provenance_key: bytes,
                                runtime_admission_key: bytes) -> VerifierRuntimeAdmissionV1:
     runtime_key = _key(runtime_admission_key, "runtime_admission_key")
-    provenance.assert_authenticated(
-        build_provenance_key=build_provenance_key,
-        artifact_bytes=artifact_bytes,
-    )
+    provenance.assert_authenticated(build_provenance_key=build_provenance_key, artifact_bytes=artifact_bytes)
     adapter_abi.assert_sealed()
     measured = measure_verifier_artifact_v1(artifact_bytes)
     if measured != adapter_abi.verifier_implementation_digest:
