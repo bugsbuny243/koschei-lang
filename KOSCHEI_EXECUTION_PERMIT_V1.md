@@ -4,124 +4,123 @@ Status: IMPLEMENTED BOOTSTRAP PROTOTYPE / NOT YET NATIVE-ENFORCED
 
 ## PURPOSE
 
-External facts are not execution authority.
+External evidence is not execution authority, and the permit issuer must not choose
+new authority on its own.
 
-The external-adapter boundary can admit a Pi payment observation, an identity fact,
-or a future cloud/bank/chain fact as sealed evidence. That evidence must not directly
-unlock a Koschei operation.
+The sanctioned chain is now:
 
-The v1 execution-permit boundary inserts a narrower transition:
+`External Evidence -> Canonical Authority/Policy Evaluation -> Authenticated Authorization Decision -> Authenticated Execution Permit -> Single Consume`
 
-`External Evidence -> Canonical Policy/Capability Check -> Authenticated Permit -> Single Execution Request`
-
-A permit is not a user identity and is not ambient permission. It is an authenticated,
-request-bound statement that a trusted Koschei runtime may accept for one exact
-operation during one exact epoch and consume once.
+A permit is a narrowed transport of an already-authenticated `allow` decision. It is
+not identity, ambient permission, or a replacement for canonical capability checks.
 
 ## SEMANTIC INVARIANTS
 
-For permit P derived from sealed external evidence E and grant G:
+For permit P, decision D, evidence E and grant G:
 
-1. P is bound to E.evidence_digest.
-2. P is bound to G.provider_id, G.consumer_id, and G.subject_scope_digest.
-3. P names exactly one operation.
-4. P is bound to one request/challenge digest.
-5. P is valid only in E.observed_epoch.
-6. P is authenticated with a runtime-held HMAC key of at least 32 bytes.
-7. P is single-use through the sanctioned consumption ledger.
-8. Changing operation, request, evidence, subject, provider, consumer, or epoch invalidates authentication or liveness.
-9. External evidence never becomes ambient disk/network/process/treasury authority merely by existing.
+1. D must authenticate under the dedicated decision key.
+2. D.outcome must equal `allow`.
+3. P is bound to D.decision_digest.
+4. P is bound to E.evidence_digest.
+5. P inherits provider, consumer, subject, operation, request and epoch from D/G/E.
+6. The permit mint API does not accept an independently chosen operation or request.
+7. P is separately authenticated with a runtime permit key of at least 32 bytes.
+8. P is valid only in its bound epoch and exact request/operation.
+9. P is single-use through the sanctioned replay ledger.
+10. External evidence never becomes ambient authority merely by existing.
+
+## KEY SEPARATION
+
+- canonical decision boundary: `decision_key`
+- execution permit boundary: `runtime_key`
+
+A permit cannot substitute for a decision and a decision cannot substitute for a
+permit. Both authenticated links are required by the bootstrap contract.
 
 ## AUTHORITY RULE
 
-HMAC authentication proves that the trusted permit issuer produced P. It does NOT,
-by itself, prove that the requested operation was authorized by Koschei policy.
+`AuthorizationDecisionV1` contains authenticated `authority_basis_digest` and
+`policy_digest` fields. `ExecutionPermitV1` then binds the resulting decision digest.
 
-Therefore the sanctioned mint path MUST occur only after the canonical Koschei
-capability/policy layer has established that the requested operation is already
-permitted for the bound subject and consumer. The permit narrows and transports
-that decision; it must never manufacture a new authority category.
+Therefore the provenance chain is:
 
-A future native integration should bind the permit cryptographically to the digest
-of the already-validated canonical capability/policy decision.
+`authority basis + policy + evidence + subject + operation + request + epoch`
+`-> authorization decision digest`
+`-> permit digest`
+`-> single consumption`
+
+The remaining bootstrap limitation is that the Python decision issuer still accepts
+`authority_basis_digest` as an input. Native integration must obtain that digest
+directly from the canonical capability/authority engine rather than caller input.
 
 ## BOOTSTRAP IMPLEMENTATION
 
-`koschei/execution_permit_v1.py`
-
+- `koschei/authorization_decision_v1.py`
+- `koschei/execution_permit_v1.py`
+- `AuthorizationDecisionV1`
 - `ExecutionPermitV1`
-- `mint_execution_permit_v1(...)`
 - `ExecutionPermitLedgerV1`
 
-Authentication uses HMAC-SHA256 with a runtime-held key. Permit comparison uses
-constant-time `hmac.compare_digest`.
-
-The request digest acts as a challenge/request binding. Capturing a permit for one
-request does not make it valid for a different request in the same epoch.
-
-The ledger rejects a second consumption of the same permit digest.
+Both decision and permit authentication use HMAC-SHA256 with separate keys and
+constant-time MAC comparison.
 
 ## PROTECTS AGAINST
 
-- changing the permitted operation after minting,
-- changing request/challenge binding after minting,
-- rebinding a permit to different external evidence,
-- rebinding provider/consumer/subject fields,
-- using a permit after its epoch rotates,
-- replaying the same permit twice through one trusted ledger,
-- forging a valid permit without the runtime HMAC key under the stated cryptographic assumptions,
-- treating external Pi/payment evidence itself as direct execution authority.
+- permit minting from authenticated `deny` or `contain` decisions,
+- permit minter selecting a wider operation than the canonical decision,
+- changing decision, operation, request, evidence, subject, provider, consumer or epoch,
+- changing authority-basis or policy identity after decision issuance,
+- cross-request and cross-decision reuse,
+- epoch replay,
+- same-permit replay through one trusted ledger,
+- forgery without the relevant HMAC keys under stated assumptions.
 
 ## DOES NOT PROTECT AGAINST
 
-- compromise or exfiltration of the runtime HMAC key,
-- a malicious trusted permit issuer,
-- a caller that mints before canonical capability/policy authorization,
-- rollback/loss of the consumption ledger,
-- replay across processes or machines that do not share trusted consumption state,
+- compromise of decision or runtime permit keys,
+- a malicious trusted canonical decision issuer,
+- fake authority-basis input accepted by the bootstrap Python issuer,
+- incorrect canonical policy/capability evaluation,
+- rollback/fork/loss of the consumption ledger,
+- workers that do not share authoritative replay state,
 - host/runtime compromise,
-- side channels, debugger inspection, crash dumps, or memory disclosure,
-- false external evidence admitted by a compromised provider-specific adapter.
+- false external evidence admitted earlier in the chain.
 
 ## ASSUMPTIONS
 
-- the HMAC key is generated and held outside observer control,
-- canonical Koschei policy/capability authorization runs before permit minting,
-- runtime epoch state is trusted and monotonic for the relevant execution universe,
-- consumption state cannot be silently rolled back,
-- provider-specific evidence admission has already succeeded.
+- decision and permit keys are separately held outside observer/provider control,
+- native authority/policy evaluation is fail-closed,
+- epoch state is trusted and monotonic,
+- authoritative consumers share durable monotonic replay state,
+- external evidence admission already succeeded.
 
 ## FAILURE MODE
 
-Replay protection collapses if runtime consumption state is reset, forked, or not
-shared across authoritative execution workers.
+Authority discipline collapses if application/provider code can invoke the native
+decision issuer with attacker-chosen authority basis while bypassing canonical
+capability evaluation.
 
-Authority discipline collapses if arbitrary code can call the mint function with
-the runtime key without first passing canonical policy/capability validation.
+Authentication collapses if either HMAC key is exposed.
 
-Authentication collapses if the runtime key is exposed.
+Replay protection collapses if consumption state is reset, forked or not shared.
 
-Therefore this Python implementation is a semantic/bootstrap prototype, not proof
-that bypass is physically impossible. The native runtime must make the sanctioned
-mint/consume path authoritative and keep key custody plus consumption state inside
-a trusted compartment.
+This Python implementation therefore demonstrates semantics and adversarial
+invariants; it is not proof of native isolation.
 
 ## PI EXAMPLE
 
-A Pi settlement observation should follow this shape:
-
 `Pi payment.observe evidence`
-`-> Koschei subscription policy check`
-`-> permit(operation=subscription.enable, request=<digest>, epoch=E)`
+`-> canonical subscription capability + policy evaluation`
+`-> allow decision(operation=subscription.enable, request=R, epoch=E)`
+`-> permit inherits decision digest/operation/request`
 `-> consume once`
 `-> exact subscription state transition`
 
-It must NOT become:
-
-`Pi payment observed -> user now has arbitrary Koschei authority`
+There is no permit API argument that can replace `subscription.enable` with
+`treasury.withdraw` after the canonical decision.
 
 ## NEXT NATIVE STEP
 
-Bind `ExecutionPermitV1` to the digest of a verified canonical Koschei capability or
-policy decision and move single-use consumption from the Python in-memory ledger to
-a runtime-owned monotonic/transactional state boundary.
+Wire `authority_basis_digest` directly to the repo's canonical capability
+consolidation path and emit a deterministic proof envelope covering evidence,
+authorization decision, permit consumption and final effect result.
