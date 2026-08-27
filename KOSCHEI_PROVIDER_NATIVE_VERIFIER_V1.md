@@ -1,151 +1,102 @@
 # KOSCHEI PROVIDER NATIVE VERIFIER V1
 
-Status: IMPLEMENTED BOOTSTRAP PROTOTYPE / PROVIDER NETWORK ADAPTER REMAINS EXTERNAL
+Status: IMPLEMENTED BOOTSTRAP PROTOTYPE / ADAPTER ABI IDENTITY WIRED / PROVIDER NETWORK ADAPTER REMAINS EXTERNAL
 
 ## PURPOSE
 
-`effect-completed` is a local Koschei fact. A provider-finality verdict must not be
-minted from caller-selected `state`, transaction digest, or proof digest.
+`effect-completed` is local. Provider finality must be derived from raw provider bytes
+through a known verifier contract, not from caller-selected state/reference/proof.
 
-The sanctioned bridge is:
+Sanctioned path:
 
 `local effect result bytes`
+`-> sealed ProviderAdapterAbiV1`
 `-> raw provider response bytes`
 `-> trusted provider-native verifier`
 `-> ProviderNativeVerificationReceiptV1`
-`-> ExternalProviderFinalityVerdictV1`
-`-> ExternalFinalityAttestationV1`
+`-> receipt-bound provider verdict`
+`-> finality attestation`
 `-> ExternalFinalityProofEnvelopeV1`
 
-The provider-native verifier remains provider-specific. Generic Koschei Lang core does
-not invent provider JSON schemas, consensus semantics, settlement rules, or network
-protocols.
+## PROVIDER ADAPTER ABI
 
-## V1 REFERENCE CONTRACT
+`ProviderAdapterAbiV1` identifies the verifier contract by binding:
 
-For V1, the complete successful effect callback result bytes are the canonical expected
-external reference.
+- provider id,
+- adapter id,
+- schema id,
+- schema version,
+- verifier implementation digest,
+- authority=false.
 
-For the Pi payment profile this means:
-
-`effect_result_bytes = canonical txid bytes`
-
-The trusted Pi verifier must extract/verify the Pi-native transaction reference from
-raw provider response/proof material and return exactly the same canonical txid bytes.
-A mismatch is rejected before a sanctioned finality verdict can be derived.
-
-If a future provider needs a richer effect-result structure, it MUST define a separate
-canonical extraction contract. V1 must not silently parse `repr`, arbitrary JSON field
-order, or caller-selected metadata.
+The ABI digest is deterministic provenance, not authority and not a code signature.
+Production must derive the verifier implementation digest from a reproducible/attested
+artifact rather than accepting an arbitrary label from application code.
 
 ## NATIVE VERIFICATION RECEIPT
 
-`ProviderNativeVerificationReceiptV1` binds:
+The receipt now binds the adapter ABI digest and verifier implementation digest in
+addition to the exact effect envelope, effect receipt/measurement, raw response,
+expected/verified external reference, provider proof, epoch and state.
 
-- provider id,
-- exact effect-execution envelope digest,
-- exact effect receipt digest,
-- exact local effect measurement digest,
-- raw provider response digest,
-- expected reference digest derived from local effect-result bytes,
-- verified reference digest returned by the trusted provider verifier,
-- canonical provider proof digest,
-- observed epoch,
-- provider-native state: pending/finalized/rejected,
-- authority=false.
+A receipt produced under schema/version/verifier A cannot validate under ABI B.
 
-The receipt is HMAC-SHA256 authenticated with a dedicated
-`provider_native_verifier_key`.
+## V1 REFERENCE CONTRACT
+
+The complete successful effect callback bytes are the canonical expected external
+reference. For Pi payment V1 these bytes are the canonical txid bytes. Provider-native
+verification must return the same canonical reference or fail before verdict issuance.
+
+No unverified Pi JSON schema is hard-coded in Lang core.
 
 ## TRUST-ROLE SEPARATION
 
-The finality chain now has distinct roles:
-
-- `decision_key`: canonical authorization bridge
-- `runtime_key`: permit/consumption
-- `effect_key`: local effect measurement
-- `provider_native_verifier_key`: raw provider response verification receipt
-- `provider_verifier_key`: provider finality verdict
-- `finality_key`: Koschei finality attestation
-
-Key separation does not make compromise harmless. It prevents one trust primitive from
-implicitly impersonating every later role.
-
-## SANCTIONED FINALITY BRIDGE
-
-`issue_provider_finality_verdict_from_native_receipt_v1(...)` derives provider id,
-external reference, provider proof, observed epoch, and state from the authenticated
-native verification receipt.
-
-Application/provider code must not select those fields again after native verification.
-The older Python low-level verdict issuer remains an implementation primitive for
-bootstrap compatibility and unit isolation; production/native API MUST not expose that
-primitive as the authoritative path.
-
-## PI PROFILE
-
-`pi_finality_profile_v1.py` fixes `provider_id = pi` and provides:
-
-- `verify_pi_native_payment_response_v1(...)`
-- `issue_pi_finality_verdict_v1(...)`
-
-The profile deliberately does not hard-code an unverified Pi backend JSON schema.
-Current official Pi materials document payment identifiers and transaction ids (`txid`)
-and transaction/payment verification APIs, but raw response parsing/network verification
-belongs in the trusted Pi adapter until an exact provider schema is pinned and tested.
+- decision_key: authorization bridge
+- runtime_key: permit/consumption
+- effect_key: local effect measurement
+- provider_native_verifier_key: ABI-bound raw-response verification receipt
+- provider_verifier_key: provider finality verdict
+- finality_key: Koschei finality attestation
 
 ## PROTECTS AGAINST
 
-- caller-selected finality state after native verification,
-- caller-selected transaction/reference digest after native verification,
-- caller-selected provider proof digest after native verification,
-- provider response verifying a different transaction than the locally measured effect result,
-- raw provider response rebinding after verification,
-- native verification receipt field tampering without its key,
-- finality verdict rebinding away from the native verification receipt in the full envelope,
-- dropping raw provider response provenance from the final end-to-end proof.
+- caller-selected provider finality state/reference/proof after native verification,
+- raw provider response rebinding,
+- provider response referencing a different external object than the measured effect,
+- presenting one native receipt under another provider/schema/schema-version ABI,
+- relabeling which verifier implementation produced a receipt,
+- dropping ABI/verifier identity from the end-to-end finality envelope.
 
 ## DOES NOT PROTECT AGAINST
 
-- a malicious or buggy provider-native verifier,
-- compromised provider-native verifier key,
-- provider API/consensus returning false information that the trusted verifier accepts,
-- host/runtime compromise,
-- network MITM if provider-native verifier fails to authenticate its transport/proof,
-- provider reorg/reversal after its own declared finality,
-- durable replay-state rollback elsewhere in the execution chain.
+- malicious/buggy verifier implementation whose digest is nevertheless trusted,
+- false implementation digests supplied by a compromised build/attestation authority,
+- compromised verifier/finality/runtime keys,
+- unauthenticated provider transport accepted by the verifier,
+- provider reorg/reversal after its own finality semantics,
+- host/runtime compromise or replay-state rollback.
 
 ## ASSUMPTIONS
 
-- provider-specific verifier performs real native validation before returning its result,
-- provider-native verifier canonicalizes the external reference deterministically,
-- successful effect-result bytes represent exactly one external reference in V1,
-- raw response bytes are the exact bytes observed by the verifier boundary,
-- all trust-role keys are separately protected,
-- full finality consumers validate `ExternalFinalityProofEnvelopeV1`, not a raw verdict alone.
+- ABI admission is controlled by trusted runtime policy,
+- verifier implementation digest corresponds to the code actually executed in production,
+- provider schema/version identity is pinned and reviewed,
+- provider-native verifier performs real authenticated provider verification,
+- final consumers validate the full ExternalFinalityProofEnvelopeV1.
 
 ## FAILURE MODE
 
-If the trusted provider-native verifier lies or is compromised, Koschei can prove which
-raw response digest and authenticated verifier receipt were used, but cannot manufacture
-truth about the external provider.
+ABI identity becomes decorative if application code can register arbitrary implementation
+digests as trusted. It becomes false provenance if the digest does not correspond to the
+executed verifier binary/module. Therefore production must bind ABI admission to build
+provenance/attestation.
 
-If production exposes the low-level caller-parameter verdict issuer as an authoritative
-API, the native-verification invariant can be bypassed. Native enforcement must expose
-only the receipt-bound bridge.
-
-If a provider response contains a different external reference than the effect-result
-bytes, verification must fail before verdict issuance.
+A valid receipt proves which admitted ABI/verifier identity was used and which raw response
+was measured; it cannot repair a verifier that accepts false provider data.
 
 ## NEXT
 
-Move the provider-native verifier interface behind a runtime-owned adapter ABI with:
-
-1. authenticated transport/provider proof verification,
-2. deterministic canonical parsing,
-3. provider schema/version identity,
-4. verifier implementation measurement/provenance,
-5. durable audit storage for raw-response digest + native verification receipt.
-
-For Pi, the next implementation should pin the exact supported Pi payment/backend API
-schema/version before any production parser is admitted.
+1. Bind `verifier_implementation_digest` to Koschei build-artifact provenance instead of a caller-provided digest.
+2. Define runtime adapter admission policy and revocation/epoch rules.
+3. Pin an exact supported Pi backend/payment schema before implementing a production parser.
+4. Move raw-response receipt storage and replay/audit state into durable runtime custody.
