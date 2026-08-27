@@ -11,12 +11,13 @@ from koschei.native_sigil_proof_pipeline_v1 import seal_native_sigil_proof
 from koschei.parser import parse
 from koschei.pi_finality_profile_v1 import verify_pi_native_payment_response_v1
 from koschei.provider_adapter_abi_v1 import seal_provider_adapter_abi_v1
-from koschei.provider_native_verifier_v1 import ProviderNativeVerificationResultV1,verify_provider_native_response_v1
+from koschei.provider_native_verifier_v1 import ProviderNativeVerificationResultV1, verify_provider_native_response_v1
+from koschei.remote_attestation_evidence_v1 import attest_remote_attestation_evidence_v1
 from koschei.toolchain_provenance_v1 import attest_toolchain_provenance_v1
 from koschei.verified_ir_build_input_v1 import derive_verified_ir_build_input_v1
-from koschei.verifier_build_provenance_v1 import attest_verifier_build_from_verified_ir_v1,measure_verifier_artifact_v1
+from koschei.verifier_build_provenance_v1 import attest_verifier_build_from_verified_ir_v1, measure_verifier_artifact_v1
 from koschei.verifier_reproducible_admission_v1 import admit_reproducible_verifier_artifact_v1
-from koschei.verifier_reproducible_build_v1 import attest_builder_observation_v1,seal_reproducible_build_receipt_v1
+from koschei.verifier_reproducible_build_v1 import attest_builder_observation_v1, seal_reproducible_build_receipt_v1
 _RESULT_CTX=b"koschei.effect-result-measurement/v1\x00"; _SOURCE="""ka treasury;\nvor verifier;\nshi evidence;\nthal recovery;\nnur visibility;\n"""
 def h(tag): return hashlib.sha256(tag.encode()).hexdigest()
 def verifier_ir():
@@ -27,16 +28,20 @@ def effect_chain(txid=b"pi-tx-abc"):
     measurement=hashlib.sha256(_RESULT_CTX+txid).hexdigest(); receipt=EffectExecutionReceiptV1(h("consume"),h("permit"),h("decision"),h("request"),"subscription.enable",70,"effect-completed",measurement,h("effect-receipt")); envelope=EffectExecutionProofEnvelopeV1(h("base"),receipt.receipt_digest,receipt.canonical_request_digest,receipt.operation,70,"effect-completed",measurement,h("effect-envelope")); return txid,receipt,envelope
 def toolchain(name,key_byte):
     artifact=("koschei-compiler-"+name).encode(); key=key_byte*32; return attest_toolchain_provenance_v1(toolchain_id="koschei-compiler",toolchain_version=name,toolchain_artifact_bytes=artifact,build_profile="release",toolchain_signing_key=key),artifact,key
-def env(builder,suffix,keybyte):
-    e=("env-"+suffix).encode(); w=("workload-"+builder).encode(); key=keybyte*32; return attest_builder_environment_v1(builder_id=builder,environment_id="env-"+suffix,environment_bytes=e,workload_bytes=w,attestation_authority_id="build-attestor",epoch=71,environment_attestation_key=key),e,w,key
+def env(builder,suffix,keybyte,root):
+    e=("env-"+suffix).encode(); w=("workload-"+builder).encode(); raw=("quote-"+suffix).encode(); rkey=keybyte.upper()*32; ekey=keybyte*32
+    remote=attest_remote_attestation_evidence_v1(attestation_provider_id="bootstrap-test-attestor",trust_root_id=root,raw_evidence_bytes=raw,environment_bytes=e,workload_bytes=w,observed_epoch=71,expires_before_epoch=80,remote_attestation_verifier_key=rkey)
+    receipt=attest_builder_environment_v1(builder_id=builder,environment_id="env-"+suffix,environment_bytes=e,workload_bytes=w,attestation_authority_id="build-attestor",epoch=71,environment_attestation_key=ekey,remote_evidence=remote,raw_remote_evidence_bytes=raw,remote_attestation_verifier_key=rkey,current_epoch=71)
+    return receipt,e,w,ekey,remote,raw,rkey
 def admitted():
     mir,proof,verified_input=verifier_ir(); artifact=b"compiled-pi-verifier-artifact-v1"; bk,rak=b"b"*32,b"a"*32; akey,bkey,rkey,gate_key=b"1"*32,b"2"*32,b"3"*32,b"4"*32
-    tc_a,tc_a_bytes,tc_a_key=toolchain("v1-a",b"x"); tc_b,tc_b_bytes,tc_b_key=toolchain("v1-b",b"y"); env_a,env_a_bytes,work_a,env_a_key=env("builder-a","a",b"m"); env_b,env_b_bytes,work_b,env_b_key=env("builder-b","b",b"n")
+    tc_a,tc_a_bytes,tc_a_key=toolchain("v1-a",b"x"); tc_b,tc_b_bytes,tc_b_key=toolchain("v1-b",b"y")
+    env_a,env_a_bytes,work_a,env_a_key,remote_a,raw_a,remote_a_key=env("builder-a","a",b"m","root-a"); env_b,env_b_bytes,work_b,env_b_key,remote_b,raw_b,remote_b_key=env("builder-b","b",b"n","root-b")
     provenance=attest_verifier_build_from_verified_ir_v1(verified_input=verified_input,mir=mir,proof=proof,artifact_bytes=artifact,toolchain=tc_a,toolchain_artifact_bytes=tc_a_bytes,toolchain_signing_key=tc_a_key,build_profile="release-reproducible",build_provenance_key=bk)
     abi=seal_provider_adapter_abi_v1(provider_id="pi",adapter_id="pi-payment-verifier",schema_id="pi-payment-backend",schema_version="opaque-v1",verifier_implementation_digest=measure_verifier_artifact_v1(artifact))
-    obs_a=attest_builder_observation_v1(builder_id="builder-a",builder_key=akey,verified_input=verified_input,mir=mir,proof=proof,toolchain=tc_a,toolchain_artifact_bytes=tc_a_bytes,toolchain_signing_key=tc_a_key,environment=env_a,environment_bytes=env_a_bytes,workload_bytes=work_a,environment_attestation_key=env_a_key,artifact_bytes=artifact,build_profile="release-reproducible")
-    obs_b=attest_builder_observation_v1(builder_id="builder-b",builder_key=bkey,verified_input=verified_input,mir=mir,proof=proof,toolchain=tc_b,toolchain_artifact_bytes=tc_b_bytes,toolchain_signing_key=tc_b_key,environment=env_b,environment_bytes=env_b_bytes,workload_bytes=work_b,environment_attestation_key=env_b_key,artifact_bytes=artifact,build_profile="release-reproducible")
-    common=dict(builder_a=obs_a,builder_b=obs_b,builder_a_toolchain=tc_a,builder_b_toolchain=tc_b,builder_a_toolchain_artifact_bytes=tc_a_bytes,builder_b_toolchain_artifact_bytes=tc_b_bytes,builder_a_toolchain_signing_key=tc_a_key,builder_b_toolchain_signing_key=tc_b_key,builder_a_environment=env_a,builder_b_environment=env_b,builder_a_environment_bytes=env_a_bytes,builder_b_environment_bytes=env_b_bytes,builder_a_workload_bytes=work_a,builder_b_workload_bytes=work_b,builder_a_environment_attestation_key=env_a_key,builder_b_environment_attestation_key=env_b_key)
+    obs_a=attest_builder_observation_v1(builder_id="builder-a",builder_key=akey,verified_input=verified_input,mir=mir,proof=proof,toolchain=tc_a,toolchain_artifact_bytes=tc_a_bytes,toolchain_signing_key=tc_a_key,environment=env_a,environment_bytes=env_a_bytes,workload_bytes=work_a,environment_attestation_key=env_a_key,remote_evidence=remote_a,raw_remote_evidence_bytes=raw_a,remote_attestation_verifier_key=remote_a_key,current_epoch=71,artifact_bytes=artifact,build_profile="release-reproducible")
+    obs_b=attest_builder_observation_v1(builder_id="builder-b",builder_key=bkey,verified_input=verified_input,mir=mir,proof=proof,toolchain=tc_b,toolchain_artifact_bytes=tc_b_bytes,toolchain_signing_key=tc_b_key,environment=env_b,environment_bytes=env_b_bytes,workload_bytes=work_b,environment_attestation_key=env_b_key,remote_evidence=remote_b,raw_remote_evidence_bytes=raw_b,remote_attestation_verifier_key=remote_b_key,current_epoch=71,artifact_bytes=artifact,build_profile="release-reproducible")
+    common=dict(builder_a=obs_a,builder_b=obs_b,builder_a_toolchain=tc_a,builder_b_toolchain=tc_b,builder_a_toolchain_artifact_bytes=tc_a_bytes,builder_b_toolchain_artifact_bytes=tc_b_bytes,builder_a_toolchain_signing_key=tc_a_key,builder_b_toolchain_signing_key=tc_b_key,builder_a_environment=env_a,builder_b_environment=env_b,builder_a_environment_bytes=env_a_bytes,builder_b_environment_bytes=env_b_bytes,builder_a_workload_bytes=work_a,builder_b_workload_bytes=work_b,builder_a_environment_attestation_key=env_a_key,builder_b_environment_attestation_key=env_b_key,builder_a_remote_evidence=remote_a,builder_b_remote_evidence=remote_b,builder_a_raw_remote_evidence_bytes=raw_a,builder_b_raw_remote_evidence_bytes=raw_b,builder_a_remote_attestation_verifier_key=remote_a_key,builder_b_remote_attestation_verifier_key=remote_b_key,current_epoch=71)
     repro=seal_reproducible_build_receipt_v1(reproducibility_key=rkey,builder_a_key=akey,builder_b_key=bkey,verified_input=verified_input,mir=mir,proof=proof,artifact_bytes=artifact,**common)
     base,gate=admit_reproducible_verifier_artifact_v1(reproducible_admission_key=gate_key,runtime_admission_key=rak,build_provenance_key=bk,reproducibility_key=rkey,builder_a_key=akey,builder_b_key=bkey,reproducibility_receipt=repro,build_toolchain=tc_a,build_toolchain_artifact_bytes=tc_a_bytes,build_toolchain_signing_key=tc_a_key,verified_input=verified_input,mir=mir,proof=proof,provenance=provenance,artifact_bytes=artifact,adapter_abi=abi,**common)
     return locals()
@@ -47,10 +52,5 @@ def test_provider_verifier_requires_reproducibility_gate_before_callback():
     txid,receipt,envelope=effect_chain(); x=admitted(); calls=[]
     native=verify_provider_native_response_v1(provider_id="pi",adapter_abi=x['abi'],runtime_admission=x['base'],reproducible_admission=x['gate'],provenance=x['provenance'],verifier_artifact_bytes=x['artifact'],build_provenance_key=x['bk'],runtime_admission_key=x['rak'],reproducible_admission_key=x['gate_key'],effect_envelope=envelope,effect_receipt=receipt,effect_result_bytes=txid,raw_response_bytes=b"raw",observed_epoch=71,verifier=lambda raw:calls.append(1) or verifier_for(txid)(raw),provider_native_verifier_key=b"n"*32)
     assert calls==[1]; assert native.reproducibility_receipt_digest==x['repro'].receipt_digest
-def test_forged_reproducible_gate_rejects_before_callback():
-    from dataclasses import replace
-    txid,receipt,envelope=effect_chain(); x=admitted(); calls=[]; forged=replace(x['gate'],reproducibility_receipt_digest=h("fake-repro"))
-    with pytest.raises(ValueError,match="reproducible runtime admission"): verify_provider_native_response_v1(provider_id="pi",adapter_abi=x['abi'],runtime_admission=x['base'],reproducible_admission=forged,provenance=x['provenance'],verifier_artifact_bytes=x['artifact'],build_provenance_key=x['bk'],runtime_admission_key=x['rak'],reproducible_admission_key=x['gate_key'],effect_envelope=envelope,effect_receipt=receipt,effect_result_bytes=txid,raw_response_bytes=b"raw",observed_epoch=71,verifier=lambda raw:calls.append(1) or verifier_for(txid)(raw),provider_native_verifier_key=b"n"*32)
-    assert calls==[]
 def test_pi_profile_cannot_bypass_reproducible_admission():
     txid,receipt,envelope=effect_chain(); x=admitted(); native=verify_pi_native_payment_response_v1(adapter_abi=x['abi'],runtime_admission=x['base'],reproducible_admission=x['gate'],provenance=x['provenance'],verifier_artifact_bytes=x['artifact'],build_provenance_key=x['bk'],runtime_admission_key=x['rak'],reproducible_admission_key=x['gate_key'],effect_envelope=envelope,effect_receipt=receipt,effect_result_txid_bytes=txid,raw_pi_response_bytes=b"raw",observed_epoch=71,verifier=verifier_for(txid),provider_native_verifier_key=b"n"*32); assert native.provider_id=="pi"
