@@ -1,177 +1,42 @@
 """Reproducibility-gated verifier runtime admission for Koschei Lang v1."""
 from __future__ import annotations
-
 from dataclasses import dataclass
-import hashlib
-import hmac
-
+import hashlib,hmac
+from .builder_environment_attestation_v1 import BuilderEnvironmentAttestationV1
 from .native_sigil_mir_v1 import NativeSigilMir
 from .native_sigil_proof_pipeline_v1 import NativeSigilProofBundle
 from .provider_adapter_abi_v1 import ProviderAdapterAbiV1
 from .toolchain_provenance_v1 import ToolchainProvenanceV1
 from .verified_ir_build_input_v1 import VerifiedIrBuildInputV1
-from .verifier_build_provenance_v1 import (
-    VerifierBuildProvenanceV1,
-    VerifierRuntimeAdmissionV1,
-    admit_verifier_artifact_v1,
-)
-from .verifier_reproducible_build_v1 import (
-    VerifierBuilderObservationV1,
-    VerifierReproducibleBuildReceiptV1,
-)
-
-_CTX = b"koschei.verifier-reproducible-runtime-admission/v1\x00"
-
-
-class VerifierReproducibleAdmissionV1Error(ValueError):
-    pass
-
-
-def _key(value: bytes) -> bytes:
-    if not isinstance(value, bytes) or len(value) < 32:
-        raise VerifierReproducibleAdmissionV1Error("reproducible_admission_key must contain at least 32 bytes")
-    return value
-
-
-def _payload(*, base_admission_digest: str, reproducibility_receipt_digest: str,
-             verified_input_digest: str, artifact_digest: str,
-             adapter_abi_digest: str) -> bytes:
-    rows = (
-        f"base_admission={base_admission_digest}",
-        f"reproducibility={reproducibility_receipt_digest}",
-        f"verified_input={verified_input_digest}",
-        f"artifact={artifact_digest}",
-        f"abi={adapter_abi_digest}",
-        "admitted=1",
-        "authority=0",
-    )
-    return _CTX + "\n".join(rows).encode()
-
-
-@dataclass(frozen=True, slots=True)
+from .verifier_build_provenance_v1 import VerifierBuildProvenanceV1,VerifierRuntimeAdmissionV1,admit_verifier_artifact_v1
+from .verifier_reproducible_build_v1 import VerifierBuilderObservationV1,VerifierReproducibleBuildReceiptV1
+_CTX=b"koschei.verifier-reproducible-runtime-admission/v1\x00"
+class VerifierReproducibleAdmissionV1Error(ValueError): pass
+def _key(v:bytes)->bytes:
+    if not isinstance(v,bytes) or len(v)<32: raise VerifierReproducibleAdmissionV1Error("reproducible_admission_key must contain at least 32 bytes")
+    return v
+def _payload(*,base_admission_digest,reproducibility_receipt_digest,verified_input_digest,artifact_digest,adapter_abi_digest):
+    rows=(f"base_admission={base_admission_digest}",f"reproducibility={reproducibility_receipt_digest}",f"verified_input={verified_input_digest}",f"artifact={artifact_digest}",f"abi={adapter_abi_digest}","admitted=1","authority=0")
+    return _CTX+"\n".join(rows).encode()
+@dataclass(frozen=True,slots=True)
 class VerifierReproducibleRuntimeAdmissionV1:
-    base_runtime_admission_digest: str
-    reproducibility_receipt_digest: str
-    verified_input_digest: str
-    artifact_digest: str
-    provider_adapter_abi_digest: str
-    admission_digest: str
-    admitted: bool = True
-    authority: bool = False
-    version: int = 1
-
-    def assert_authenticated(self, *, reproducible_admission_key: bytes,
-                             base_admission: VerifierRuntimeAdmissionV1,
-                             adapter_abi: ProviderAdapterAbiV1) -> None:
-        key = _key(reproducible_admission_key)
-        adapter_abi.assert_sealed()
-        if self.authority or self.admitted is not True:
-            raise VerifierReproducibleAdmissionV1Error("reproducible runtime admission must remain non-authoritative and admitted")
-        if self.base_runtime_admission_digest != base_admission.admission_digest:
-            raise VerifierReproducibleAdmissionV1Error("reproducible admission base runtime admission mismatch")
-        if self.artifact_digest != base_admission.artifact_digest:
-            raise VerifierReproducibleAdmissionV1Error("reproducible admission artifact mismatch")
-        if self.provider_adapter_abi_digest != adapter_abi.abi_digest:
-            raise VerifierReproducibleAdmissionV1Error("reproducible admission adapter ABI mismatch")
-        expected = hmac.new(key, _payload(
-            base_admission_digest=self.base_runtime_admission_digest,
-            reproducibility_receipt_digest=self.reproducibility_receipt_digest,
-            verified_input_digest=self.verified_input_digest,
-            artifact_digest=self.artifact_digest,
-            adapter_abi_digest=self.provider_adapter_abi_digest,
-        ), hashlib.sha256).hexdigest()
-        if not hmac.compare_digest(self.admission_digest, expected):
-            raise VerifierReproducibleAdmissionV1Error("reproducible runtime admission authentication failed")
-
-
-def admit_reproducible_verifier_artifact_v1(*,
-    reproducible_admission_key: bytes,
-    runtime_admission_key: bytes,
-    build_provenance_key: bytes,
-    reproducibility_key: bytes,
-    builder_a_key: bytes,
-    builder_b_key: bytes,
-    reproducibility_receipt: VerifierReproducibleBuildReceiptV1,
-    builder_a: VerifierBuilderObservationV1,
-    builder_b: VerifierBuilderObservationV1,
-    builder_a_toolchain: ToolchainProvenanceV1,
-    builder_b_toolchain: ToolchainProvenanceV1,
-    builder_a_toolchain_artifact_bytes: bytes,
-    builder_b_toolchain_artifact_bytes: bytes,
-    builder_a_toolchain_signing_key: bytes,
-    builder_b_toolchain_signing_key: bytes,
-    build_toolchain: ToolchainProvenanceV1,
-    build_toolchain_artifact_bytes: bytes,
-    build_toolchain_signing_key: bytes,
-    verified_input: VerifiedIrBuildInputV1,
-    mir: NativeSigilMir,
-    proof: NativeSigilProofBundle,
-    provenance: VerifierBuildProvenanceV1,
-    artifact_bytes: bytes,
-    adapter_abi: ProviderAdapterAbiV1,
-) -> tuple[VerifierRuntimeAdmissionV1, VerifierReproducibleRuntimeAdmissionV1]:
-    reproducibility_receipt.assert_authenticated(
-        reproducibility_key=reproducibility_key,
-        builder_a_key=builder_a_key,
-        builder_b_key=builder_b_key,
-        builder_a=builder_a,
-        builder_b=builder_b,
-        builder_a_toolchain=builder_a_toolchain,
-        builder_b_toolchain=builder_b_toolchain,
-        builder_a_toolchain_artifact_bytes=builder_a_toolchain_artifact_bytes,
-        builder_b_toolchain_artifact_bytes=builder_b_toolchain_artifact_bytes,
-        builder_a_toolchain_signing_key=builder_a_toolchain_signing_key,
-        builder_b_toolchain_signing_key=builder_b_toolchain_signing_key,
-        verified_input=verified_input,
-        mir=mir,
-        proof=proof,
-        artifact_bytes=artifact_bytes,
-    )
-    provenance.assert_from_verified_ir(
-        verified_input=verified_input,
-        mir=mir,
-        proof=proof,
-        toolchain=build_toolchain,
-        toolchain_artifact_bytes=build_toolchain_artifact_bytes,
-        toolchain_signing_key=build_toolchain_signing_key,
-        build_provenance_key=build_provenance_key,
-        artifact_bytes=artifact_bytes,
-    )
-    if provenance.toolchain_digest not in {
-        builder_a.toolchain_provenance_digest,
-        builder_b.toolchain_provenance_digest,
-    }:
-        raise VerifierReproducibleAdmissionV1Error(
-            "build provenance toolchain is absent from reproducible builder observations"
-        )
-    base = admit_verifier_artifact_v1(
-        provenance=provenance,
-        artifact_bytes=artifact_bytes,
-        adapter_abi=adapter_abi,
-        build_provenance_key=build_provenance_key,
-        runtime_admission_key=runtime_admission_key,
-    )
-    if reproducibility_receipt.artifact_digest != base.artifact_digest:
-        raise VerifierReproducibleAdmissionV1Error("reproducible artifact differs from runtime-admitted artifact")
-    key = _key(reproducible_admission_key)
-    result = VerifierReproducibleRuntimeAdmissionV1(
-        base_runtime_admission_digest=base.admission_digest,
-        reproducibility_receipt_digest=reproducibility_receipt.receipt_digest,
-        verified_input_digest=verified_input.build_input_digest,
-        artifact_digest=base.artifact_digest,
-        provider_adapter_abi_digest=adapter_abi.abi_digest,
-        admission_digest="",
-    )
-    object.__setattr__(result, "admission_digest", hmac.new(key, _payload(
-        base_admission_digest=result.base_runtime_admission_digest,
-        reproducibility_receipt_digest=result.reproducibility_receipt_digest,
-        verified_input_digest=result.verified_input_digest,
-        artifact_digest=result.artifact_digest,
-        adapter_abi_digest=result.provider_adapter_abi_digest,
-    ), hashlib.sha256).hexdigest())
-    result.assert_authenticated(
-        reproducible_admission_key=key,
-        base_admission=base,
-        adapter_abi=adapter_abi,
-    )
-    return base, result
+    base_runtime_admission_digest:str; reproducibility_receipt_digest:str; verified_input_digest:str; artifact_digest:str; provider_adapter_abi_digest:str; admission_digest:str; admitted:bool=True; authority:bool=False; version:int=1
+    def assert_authenticated(self,*,reproducible_admission_key:bytes,base_admission:VerifierRuntimeAdmissionV1,adapter_abi:ProviderAdapterAbiV1)->None:
+        key=_key(reproducible_admission_key); adapter_abi.assert_sealed()
+        if self.authority or self.admitted is not True: raise VerifierReproducibleAdmissionV1Error("reproducible runtime admission must remain non-authoritative and admitted")
+        if self.base_runtime_admission_digest!=base_admission.admission_digest: raise VerifierReproducibleAdmissionV1Error("reproducible admission base runtime admission mismatch")
+        if self.artifact_digest!=base_admission.artifact_digest: raise VerifierReproducibleAdmissionV1Error("reproducible admission artifact mismatch")
+        if self.provider_adapter_abi_digest!=adapter_abi.abi_digest: raise VerifierReproducibleAdmissionV1Error("reproducible admission adapter ABI mismatch")
+        expected=hmac.new(key,_payload(base_admission_digest=self.base_runtime_admission_digest,reproducibility_receipt_digest=self.reproducibility_receipt_digest,verified_input_digest=self.verified_input_digest,artifact_digest=self.artifact_digest,adapter_abi_digest=self.provider_adapter_abi_digest),hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(self.admission_digest,expected): raise VerifierReproducibleAdmissionV1Error("reproducible runtime admission authentication failed")
+def admit_reproducible_verifier_artifact_v1(**k):
+    k['reproducibility_receipt'].assert_authenticated(reproducibility_key=k['reproducibility_key'],builder_a_key=k['builder_a_key'],builder_b_key=k['builder_b_key'],builder_a=k['builder_a'],builder_b=k['builder_b'],builder_a_toolchain=k['builder_a_toolchain'],builder_b_toolchain=k['builder_b_toolchain'],builder_a_toolchain_artifact_bytes=k['builder_a_toolchain_artifact_bytes'],builder_b_toolchain_artifact_bytes=k['builder_b_toolchain_artifact_bytes'],builder_a_toolchain_signing_key=k['builder_a_toolchain_signing_key'],builder_b_toolchain_signing_key=k['builder_b_toolchain_signing_key'],builder_a_environment=k['builder_a_environment'],builder_b_environment=k['builder_b_environment'],builder_a_environment_bytes=k['builder_a_environment_bytes'],builder_b_environment_bytes=k['builder_b_environment_bytes'],builder_a_workload_bytes=k['builder_a_workload_bytes'],builder_b_workload_bytes=k['builder_b_workload_bytes'],builder_a_environment_attestation_key=k['builder_a_environment_attestation_key'],builder_b_environment_attestation_key=k['builder_b_environment_attestation_key'],verified_input=k['verified_input'],mir=k['mir'],proof=k['proof'],artifact_bytes=k['artifact_bytes'])
+    k['provenance'].assert_from_verified_ir(verified_input=k['verified_input'],mir=k['mir'],proof=k['proof'],toolchain=k['build_toolchain'],toolchain_artifact_bytes=k['build_toolchain_artifact_bytes'],toolchain_signing_key=k['build_toolchain_signing_key'],build_provenance_key=k['build_provenance_key'],artifact_bytes=k['artifact_bytes'])
+    if k['provenance'].toolchain_digest not in {k['builder_a'].toolchain_provenance_digest,k['builder_b'].toolchain_provenance_digest}: raise VerifierReproducibleAdmissionV1Error("build provenance toolchain is absent from reproducible builder observations")
+    if k['builder_a_environment'].environment_id==k['builder_b_environment'].environment_id or k['builder_a_environment'].environment_digest==k['builder_b_environment'].environment_digest: raise VerifierReproducibleAdmissionV1Error("reproducible runtime admission requires distinct attested builder environments")
+    base=admit_verifier_artifact_v1(provenance=k['provenance'],artifact_bytes=k['artifact_bytes'],adapter_abi=k['adapter_abi'],build_provenance_key=k['build_provenance_key'],runtime_admission_key=k['runtime_admission_key'])
+    if k['reproducibility_receipt'].artifact_digest!=base.artifact_digest: raise VerifierReproducibleAdmissionV1Error("reproducible artifact differs from runtime-admitted artifact")
+    key=_key(k['reproducible_admission_key']); result=VerifierReproducibleRuntimeAdmissionV1(base.admission_digest,k['reproducibility_receipt'].receipt_digest,k['verified_input'].build_input_digest,base.artifact_digest,k['adapter_abi'].abi_digest,"")
+    object.__setattr__(result,'admission_digest',hmac.new(key,_payload(base_admission_digest=result.base_runtime_admission_digest,reproducibility_receipt_digest=result.reproducibility_receipt_digest,verified_input_digest=result.verified_input_digest,artifact_digest=result.artifact_digest,adapter_abi_digest=result.provider_adapter_abi_digest),hashlib.sha256).hexdigest())
+    result.assert_authenticated(reproducible_admission_key=key,base_admission=base,adapter_abi=k['adapter_abi'])
+    return base,result
