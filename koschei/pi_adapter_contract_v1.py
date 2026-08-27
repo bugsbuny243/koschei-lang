@@ -26,7 +26,8 @@ class PiAdapterContractError(ValueError):
 
 
 def _translate_error(exc: ExternalAdapterContractError) -> PiAdapterContractError:
-    return PiAdapterContractError(str(exc))
+    message = str(exc).replace("grant", "capability")
+    return PiAdapterContractError(message)
 
 
 def _require_pi_actions(actions: tuple[str, ...]) -> tuple[str, ...]:
