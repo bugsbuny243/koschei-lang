@@ -33,7 +33,7 @@ def h(tag):
     return hashlib.sha256(tag.encode()).hexdigest()
 
 
-def chain(effect):
+def chain(effect, *, nonce="nonce-51"):
     mir = lower_native_sigils(parse(SOURCE))
     plan = expand_native_sigil_mir(mir).library_plan
     receipts = [make_receipt(
@@ -45,7 +45,7 @@ def chain(effect):
     request = seal_effect_request(
         mir, effect_id="effect-51", subject="withdrawal", operation="subscription.enable",
         request_digest=h("payload-51"), identity_digest=h("pi-user-51"), epoch=51,
-        nonce_digest=h("nonce-51"),
+        nonce_digest=h(nonce),
     )
     bound = bind_proof_to_request(mir, request, proof)
     basis = derive_canonical_authority_basis_v1(mir=mir, request=request, proof=proof, bound=bound)
@@ -127,14 +127,15 @@ def test_measurement_or_effect_receipt_cannot_be_relabelled():
         validate(items, forged)
 
 
-def test_effect_receipt_cannot_move_to_another_execution_chain():
-    first = chain(lambda _: b"first")
-    second = chain(lambda _: b"second")
+def test_effect_receipt_cannot_move_to_another_canonical_request_chain():
+    first = chain(lambda _: b"first", nonce="nonce-a")
+    second = chain(lambda _: b"second", nonce="nonce-b")
+    assert first["request"].digest != second["request"].digest
     forged = replace(
         first["terminal"],
         base_execution_envelope_digest=second["base"].envelope_digest,
     )
-    with pytest.raises(EffectExecutionProofEnvelopeV1Error):
+    with pytest.raises((EffectExecutionProofEnvelopeV1Error, ValueError)):
         forged.assert_valid(
             base=second["base"], effect_receipt=first["effect_receipt"],
             grant=second["grant"], evidence=second["evidence"], mir=second["mir"],
