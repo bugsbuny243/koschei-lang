@@ -1,5 +1,6 @@
 from dataclasses import replace
 import hashlib
+import inspect
 
 import pytest
 
@@ -69,10 +70,13 @@ def test_deny_decision_cannot_mint_permit():
         mint_execution_permit_v1(grant, evidence, decision, runtime_key=rk, decision_key=dk)
 
 
-def test_minter_cannot_choose_operation_outside_decision():
+def test_minter_api_cannot_choose_operation_or_request_outside_decision():
+    params = inspect.signature(mint_execution_permit_v1).parameters
+    assert "operation" not in params
+    assert "request_digest" not in params
     _, _, _, _, _, decision, permit = fixture_bundle()
     assert decision.operation == permit.operation == "subscription.enable"
-    assert "operation" not in mint_execution_permit_v1.__kwdefaults__ if mint_execution_permit_v1.__kwdefaults__ else True
+    assert decision.request_digest == permit.request_digest
 
 
 def test_tampered_operation_is_rejected_against_decision_before_mac_acceptance():
