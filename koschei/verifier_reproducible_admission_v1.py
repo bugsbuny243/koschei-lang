@@ -8,6 +8,7 @@ import hmac
 from .native_sigil_mir_v1 import NativeSigilMir
 from .native_sigil_proof_pipeline_v1 import NativeSigilProofBundle
 from .provider_adapter_abi_v1 import ProviderAdapterAbiV1
+from .toolchain_provenance_v1 import ToolchainProvenanceV1
 from .verified_ir_build_input_v1 import VerifiedIrBuildInputV1
 from .verifier_build_provenance_v1 import (
     VerifierBuildProvenanceV1,
@@ -93,6 +94,15 @@ def admit_reproducible_verifier_artifact_v1(*,
     reproducibility_receipt: VerifierReproducibleBuildReceiptV1,
     builder_a: VerifierBuilderObservationV1,
     builder_b: VerifierBuilderObservationV1,
+    builder_a_toolchain: ToolchainProvenanceV1,
+    builder_b_toolchain: ToolchainProvenanceV1,
+    builder_a_toolchain_artifact_bytes: bytes,
+    builder_b_toolchain_artifact_bytes: bytes,
+    builder_a_toolchain_signing_key: bytes,
+    builder_b_toolchain_signing_key: bytes,
+    build_toolchain: ToolchainProvenanceV1,
+    build_toolchain_artifact_bytes: bytes,
+    build_toolchain_signing_key: bytes,
     verified_input: VerifiedIrBuildInputV1,
     mir: NativeSigilMir,
     proof: NativeSigilProofBundle,
@@ -106,6 +116,12 @@ def admit_reproducible_verifier_artifact_v1(*,
         builder_b_key=builder_b_key,
         builder_a=builder_a,
         builder_b=builder_b,
+        builder_a_toolchain=builder_a_toolchain,
+        builder_b_toolchain=builder_b_toolchain,
+        builder_a_toolchain_artifact_bytes=builder_a_toolchain_artifact_bytes,
+        builder_b_toolchain_artifact_bytes=builder_b_toolchain_artifact_bytes,
+        builder_a_toolchain_signing_key=builder_a_toolchain_signing_key,
+        builder_b_toolchain_signing_key=builder_b_toolchain_signing_key,
         verified_input=verified_input,
         mir=mir,
         proof=proof,
@@ -115,9 +131,19 @@ def admit_reproducible_verifier_artifact_v1(*,
         verified_input=verified_input,
         mir=mir,
         proof=proof,
+        toolchain=build_toolchain,
+        toolchain_artifact_bytes=build_toolchain_artifact_bytes,
+        toolchain_signing_key=build_toolchain_signing_key,
         build_provenance_key=build_provenance_key,
         artifact_bytes=artifact_bytes,
     )
+    if provenance.toolchain_digest not in {
+        builder_a.toolchain_provenance_digest,
+        builder_b.toolchain_provenance_digest,
+    }:
+        raise VerifierReproducibleAdmissionV1Error(
+            "build provenance toolchain is absent from reproducible builder observations"
+        )
     base = admit_verifier_artifact_v1(
         provenance=provenance,
         artifact_bytes=artifact_bytes,
