@@ -1,6 +1,6 @@
 # KOSCHEI VERIFIER REPRODUCIBLE BUILD V1
 
-Status: IMPLEMENTED BOOTSTRAP PROTOTYPE / TWO-BUILDER REPRODUCIBILITY GATE / PROVIDER BRIDGE NOT YET SWITCHED
+Status: IMPLEMENTED BOOTSTRAP PROTOTYPE / TWO-BUILDER REPRODUCIBILITY GATE / PROVIDER PATH WIRED
 
 ## PURPOSE
 
@@ -9,7 +9,7 @@ requires two distinct authenticated builder identities to bind the same
 `VerifiedIrBuildInputV1` and independently report the same exact verifier artifact
 digest before a reproducibility receipt may be sealed.
 
-Sanctioned chain in this slice:
+Sanctioned chain:
 
 `NativeSigilMir + NativeSigilProofBundle`
 `-> VerifiedIrBuildInputV1`
@@ -20,6 +20,8 @@ Sanctioned chain in this slice:
 `-> ProviderAdapterAbiV1`
 `-> base VerifierRuntimeAdmissionV1`
 `-> VerifierReproducibleRuntimeAdmissionV1`
+`-> ProviderNativeVerificationReceiptV1`
+`-> provider verdict / finality provenance`
 
 ## BUILDER OBSERVATION
 
@@ -48,12 +50,21 @@ authority.
 
 ## RUNTIME GATE
 
-`VerifierReproducibleRuntimeAdmissionV1` layers over the existing runtime artifact
-admission. Minting the gate first verifies the full two-builder reproducibility receipt,
-then verifies build provenance and exact runtime artifact admission.
+`VerifierReproducibleRuntimeAdmissionV1` layers over exact-artifact runtime admission.
+Minting the gate verifies the full two-builder reproducibility receipt, verified-IR-bound
+build provenance, ABI binding, and exact runtime artifact measurement.
 
-Downstream consumers may authenticate the compact gate under a dedicated
-`reproducible_admission_key` and bind it to the exact base runtime admission and ABI.
+Provider-native verification now requires this gate. The base
+`VerifierRuntimeAdmissionV1` is not sufficient by itself for the sanctioned provider
+verification path.
+
+`ProviderNativeVerificationReceiptV1` binds both:
+
+- reproducibility receipt digest,
+- reproducible runtime-admission digest.
+
+`ExternalFinalityProofEnvelopeV1` carries the same digests so finality provenance cannot
+drop the reproducibility gate after provider verification.
 
 ## PROTECTS AGAINST
 
@@ -61,7 +72,9 @@ Downstream consumers may authenticate the compact gate under a dedicated
 - counting one builder identity twice,
 - two builders producing different artifact bytes while claiming reproducibility,
 - rebinding the reproducibility receipt to another verified input or artifact,
-- altering the reproducibility/runtime-admission link without the gate key.
+- altering the reproducibility/runtime-admission link without the gate key,
+- running the sanctioned provider-native verifier with only base runtime admission,
+- dropping reproducibility provenance from provider finality proof.
 
 ## DOES NOT PROTECT AGAINST
 
@@ -78,7 +91,8 @@ Downstream consumers may authenticate the compact gate under a dedicated
 - builder keys and reproducibility/gate keys are separately protected,
 - `VerifiedIrBuildInputV1` validation remains fail-closed,
 - artifact measurement is canonical and stable,
-- runtime executes the exact admitted bytes.
+- runtime executes the exact admitted bytes,
+- provider-native callers cannot bypass the reproducibility-gated API with an exposed lower primitive.
 
 ## FAILURE MODE
 
@@ -86,16 +100,14 @@ Reproducibility proves agreement, not correctness. Two compromised builders can 
 the same malicious artifact. If both builders share the same compromised toolchain, the
 receipt can still be reproducible while semantically unsafe.
 
-The current bootstrap provider-native verification path still consumes the older base
-`VerifierRuntimeAdmissionV1`. Therefore this slice must NOT yet be described as
-production-enforced reproducibility for provider finality. The next patch is to require
-`VerifierReproducibleRuntimeAdmissionV1` at the provider-native verifier boundary and
-carry its digest into finality provenance.
+If production exposes an alternate provider-native verification path that accepts only
+`VerifierRuntimeAdmissionV1`, the gate can be bypassed even though the sanctioned Python
+prototype is wired correctly.
 
 ## NEXT
 
-1. Switch provider-native verification to require the reproducibility-gated admission.
-2. Carry reproducibility receipt/gate digests into the final finality envelope.
-3. Bind builder identities to independent build environments/attestation.
-4. Add signed toolchain provenance.
-5. Add immutable load-handle identity to close measure-A/execute-B TOCTOU.
+1. Bind builder identities to independently attested build environments.
+2. Add signed compiler/toolchain provenance.
+3. Add immutable runtime load-handle identity to close measure-A/execute-B TOCTOU.
+4. Add revocation/epoch policy for builder, toolchain, artifact and adapter trust.
+5. Produce canonical validation receipts before merge.
