@@ -18,6 +18,7 @@ from .native_sigil_request_binding_v1 import CanonicalEffectRequest, RequestBoun
 from .provider_adapter_abi_v1 import ProviderAdapterAbiV1
 from .provider_native_verifier_v1 import ProviderNativeVerificationReceiptV1
 from .verifier_build_provenance_v1 import VerifierBuildProvenanceV1, VerifierRuntimeAdmissionV1
+from .verifier_reproducible_admission_v1 import VerifierReproducibleRuntimeAdmissionV1
 
 _CTX = b"koschei.external-finality-proof-envelope/v1\x00"
 _TERMINALS = frozenset({"provider-pending", "provider-finalized", "provider-rejected"})
@@ -31,6 +32,7 @@ def _digest(*, effect_envelope: EffectExecutionProofEnvelopeV1,
             adapter_abi: ProviderAdapterAbiV1,
             provenance: VerifierBuildProvenanceV1,
             runtime_admission: VerifierRuntimeAdmissionV1,
+            reproducible_admission: VerifierReproducibleRuntimeAdmissionV1,
             native_receipt: ProviderNativeVerificationReceiptV1,
             verdict: ExternalProviderFinalityVerdictV1,
             attestation: ExternalFinalityAttestationV1) -> str:
@@ -40,6 +42,8 @@ def _digest(*, effect_envelope: EffectExecutionProofEnvelopeV1,
         f"verifier_implementation={adapter_abi.verifier_implementation_digest}",
         f"build_provenance={provenance.provenance_digest}",
         f"runtime_admission={runtime_admission.admission_digest}",
+        f"reproducibility_receipt={reproducible_admission.reproducibility_receipt_digest}",
+        f"reproducible_runtime_admission={reproducible_admission.admission_digest}",
         f"native_verification_receipt={native_receipt.receipt_digest}",
         f"raw_response={native_receipt.raw_response_digest}",
         f"provider_verdict={verdict.verdict_digest}",
@@ -61,6 +65,8 @@ class ExternalFinalityProofEnvelopeV1:
     verifier_implementation_digest: str
     verifier_build_provenance_digest: str
     verifier_runtime_admission_digest: str
+    verifier_reproducibility_receipt_digest: str
+    verifier_reproducible_runtime_admission_digest: str
     provider_native_verification_receipt_digest: str
     raw_provider_response_digest: str
     provider_verdict_digest: str
@@ -81,9 +87,11 @@ class ExternalFinalityProofEnvelopeV1:
                      adapter_abi: ProviderAdapterAbiV1,
                      provenance: VerifierBuildProvenanceV1,
                      runtime_admission: VerifierRuntimeAdmissionV1,
+                     reproducible_admission: VerifierReproducibleRuntimeAdmissionV1,
                      verifier_artifact_bytes: bytes,
                      build_provenance_key: bytes,
                      runtime_admission_key: bytes,
+                     reproducible_admission_key: bytes,
                      native_receipt: ProviderNativeVerificationReceiptV1,
                      base: ExecutionProofEnvelopeV1,
                      grant: ExternalAdapterGrantV1,
@@ -116,12 +124,18 @@ class ExternalFinalityProofEnvelopeV1:
         )
         native_receipt.assert_authenticated(
             provider_native_verifier_key=provider_native_verifier_key,
-            adapter_abi=adapter_abi, runtime_admission=runtime_admission,
-            provenance=provenance, verifier_artifact_bytes=verifier_artifact_bytes,
+            adapter_abi=adapter_abi,
+            runtime_admission=runtime_admission,
+            reproducible_admission=reproducible_admission,
+            provenance=provenance,
+            verifier_artifact_bytes=verifier_artifact_bytes,
             build_provenance_key=build_provenance_key,
             runtime_admission_key=runtime_admission_key,
-            effect_envelope=effect_envelope, effect_receipt=effect_receipt,
-            effect_result_bytes=effect_result_bytes, raw_response_bytes=raw_provider_response_bytes,
+            reproducible_admission_key=reproducible_admission_key,
+            effect_envelope=effect_envelope,
+            effect_receipt=effect_receipt,
+            effect_result_bytes=effect_result_bytes,
+            raw_response_bytes=raw_provider_response_bytes,
         )
         verdict.assert_authenticated(provider_verifier_key=provider_verifier_key, effect_envelope=effect_envelope)
         attestation.assert_authenticated(
@@ -144,6 +158,8 @@ class ExternalFinalityProofEnvelopeV1:
             (self.verifier_implementation_digest, adapter_abi.verifier_implementation_digest, "verifier implementation"),
             (self.verifier_build_provenance_digest, provenance.provenance_digest, "build provenance"),
             (self.verifier_runtime_admission_digest, runtime_admission.admission_digest, "runtime admission"),
+            (self.verifier_reproducibility_receipt_digest, reproducible_admission.reproducibility_receipt_digest, "reproducibility receipt"),
+            (self.verifier_reproducible_runtime_admission_digest, reproducible_admission.admission_digest, "reproducible runtime admission"),
             (self.provider_native_verification_receipt_digest, native_receipt.receipt_digest, "native verification receipt"),
             (self.raw_provider_response_digest, native_receipt.raw_response_digest, "raw provider response"),
             (self.provider_verdict_digest, verdict.verdict_digest, "provider verdict"),
@@ -160,6 +176,7 @@ class ExternalFinalityProofEnvelopeV1:
         if self.envelope_digest != _digest(
             effect_envelope=effect_envelope, adapter_abi=adapter_abi,
             provenance=provenance, runtime_admission=runtime_admission,
+            reproducible_admission=reproducible_admission,
             native_receipt=native_receipt, verdict=verdict, attestation=attestation,
         ):
             raise ExternalFinalityProofEnvelopeV1Error("external finality proof-envelope seal mismatch")
@@ -171,20 +188,21 @@ class ExternalFinalityProofEnvelopeV1:
 
 def seal_external_finality_proof_envelope_v1(**kwargs) -> ExternalFinalityProofEnvelopeV1:
     effect_envelope = kwargs["effect_envelope"]
-    effect_receipt = kwargs["effect_receipt"]
     adapter_abi = kwargs["adapter_abi"]
     provenance = kwargs["provenance"]
     runtime_admission = kwargs["runtime_admission"]
+    reproducible_admission = kwargs["reproducible_admission"]
     native_receipt = kwargs["native_receipt"]
     verdict = kwargs["verdict"]
     attestation = kwargs["attestation"]
-    # Reuse the dataclass validator after constructing from authenticated links.
     result = ExternalFinalityProofEnvelopeV1(
         effect_execution_envelope_digest=effect_envelope.envelope_digest,
         provider_adapter_abi_digest=adapter_abi.abi_digest,
         verifier_implementation_digest=adapter_abi.verifier_implementation_digest,
         verifier_build_provenance_digest=provenance.provenance_digest,
         verifier_runtime_admission_digest=runtime_admission.admission_digest,
+        verifier_reproducibility_receipt_digest=reproducible_admission.reproducibility_receipt_digest,
+        verifier_reproducible_runtime_admission_digest=reproducible_admission.admission_digest,
         provider_native_verification_receipt_digest=native_receipt.receipt_digest,
         raw_provider_response_digest=native_receipt.raw_response_digest,
         provider_verdict_digest=verdict.verdict_digest,
@@ -199,6 +217,7 @@ def seal_external_finality_proof_envelope_v1(**kwargs) -> ExternalFinalityProofE
     object.__setattr__(result, "envelope_digest", _digest(
         effect_envelope=effect_envelope, adapter_abi=adapter_abi,
         provenance=provenance, runtime_admission=runtime_admission,
+        reproducible_admission=reproducible_admission,
         native_receipt=native_receipt, verdict=verdict, attestation=attestation,
     ))
     result.assert_valid(**kwargs)
