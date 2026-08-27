@@ -1,14 +1,14 @@
 # KOSCHEI EFFECT EXECUTION RECEIPT V1
 
-Status: IMPLEMENTED BOOTSTRAP PROTOTYPE / LOCAL RUNTIME EFFECT ATTESTATION / REMOTE FINALITY NOT PROVEN
+Status: IMPLEMENTED BOOTSTRAP PROTOTYPE / LOCAL EFFECT MEASUREMENT WIRED / PROVIDER NATIVE VERIFICATION SEPARATE
 
 ## PURPOSE
 
-A consumed execution permit is not proof that the requested effect completed.
-Koschei therefore separates permit consumption from effect execution and measures the
+A consumed execution permit is not proof that the requested effect completed. Koschei
+therefore separates permit consumption from effect execution and measures the
 runtime-observed callback outcome itself.
 
-Sanctioned path:
+Sanctioned local path:
 
 `ExecutionPermitV1`
 `-> ExecutionConsumptionReceiptV1`
@@ -23,25 +23,39 @@ No caller argument may declare `effect-completed` or provide a precomputed resul
 1. The exact permit must be authenticated and consumed first.
 2. The canonical request digest, operation and epoch must match the permit.
 3. The sanctioned executor invokes the callback itself.
-4. A successful callback must return `bytes`; arbitrary Python object serialization is not accepted as canonical measurement.
-5. Successful returned bytes are measured with SHA-256 under a domain-separated result context.
-6. A caught normal `Exception` becomes `effect-failed` and is measured from its qualified exception type plus message under a separate domain.
+4. A successful callback must return canonical `bytes`.
+5. Successful returned bytes are measured under a domain-separated result context.
+6. A caught normal `Exception` becomes `effect-failed` under a separate failure-measurement domain.
 7. The effect observation is HMAC-SHA256 authenticated with a dedicated `effect_key`.
-8. `effect_key` is distinct in role from `decision_key` and permit/consumption `runtime_key`.
+8. `effect_key` is distinct from decision/runtime/finality trust roles.
 9. The effect receipt carries `authority = false`.
-10. The higher effect envelope layers over the existing `permit-consumed` envelope rather than changing the older envelope's meaning.
+10. The higher effect envelope layers over the stable `permit-consumed` envelope.
 
 ## TERMINAL STATES
 
-`effect-completed`
+`effect-completed` means the local sanctioned callback returned canonical bytes and the
+exact returned bytes were measured.
 
-The runtime callback returned canonical bytes and the exact returned bytes were measured.
-This means local callback completion only.
+`effect-failed` means the callback raised a normal Exception or violated the bytes-result
+contract. The permit remains consumed.
 
-`effect-failed`
+Neither state is remote provider finality.
 
-The callback raised a normal Python `Exception`, or violated the required bytes-result
-contract. The permit remains consumed; the runtime does not silently make it reusable.
+## EXTERNAL REFERENCE BINDING
+
+For V1 provider-finality flows, the successful callback result may itself be the
+canonical external reference.
+
+For the Pi payment profile:
+
+`effect_result_bytes = canonical txid bytes`
+
+`ProviderNativeVerificationReceiptV1` later requires the trusted Pi-native verifier to
+extract/verify the same canonical txid from the exact raw provider response bytes.
+A different txid fails before sanctioned finality-verdict derivation.
+
+Providers needing richer effect results must define a later canonical extraction
+contract rather than silently parsing arbitrary object/JSON representations.
 
 ## PROTECTS AGAINST
 
@@ -50,40 +64,35 @@ contract. The permit remains consumed; the runtime does not silently make it reu
 - operation/request/epoch widening after permit consumption,
 - moving an effect receipt to a different canonical request/permit/consumption chain,
 - changing result measurement or terminal state after receipt issuance,
-- forging a locally valid effect receipt without the effect key under stated HMAC assumptions,
+- forging a locally valid effect receipt without the effect key,
 - replaying the same permit through one authoritative ledger before callback invocation.
 
 ## DOES NOT PROTECT AGAINST
 
-- a malicious or compromised effect executor holding `effect_key`,
+- malicious/compromised effect executor holding `effect_key`,
 - host/runtime compromise,
-- process kill, power loss, or fatal runtime termination between external side effect and receipt creation,
-- external provider lying or returning a misleading response,
-- asynchronous settlement/finality occurring after callback return,
-- replay-ledger rollback, fork, or non-shared state,
-- side channels or memory disclosure,
-- proof that remote Pi/blockchain/bank/cloud state actually finalized.
+- process death between irreversible external effect and receipt creation,
+- external provider lying or returning misleading data,
+- asynchronous settlement/finality after callback return,
+- replay-ledger rollback/fork/non-shared state,
+- side channels or memory disclosure.
 
 ## ASSUMPTIONS
 
-- `effect_key` is at least 32 bytes and isolated from provider/observer input,
-- `decision_key`, `runtime_key`, and `effect_key` remain separate trust roles,
-- the canonical request and permit chain has already been verified fail-closed,
-- authoritative execution uses durable monotonic consumption state in production,
-- effect callbacks expose canonical result bytes rather than unstable object representations.
+- effect key is isolated from provider/observer input,
+- trust-role keys remain separated,
+- canonical request and permit chain verify fail-closed,
+- production consumption state is durable/monotonic,
+- effect callbacks expose canonical bytes.
 
 ## FAILURE MODE
 
-If the callback performs an irreversible external effect and the process dies before the
-receipt is authenticated, Koschei may have an external effect without an effect receipt.
-This V1 does not solve distributed transaction atomicity.
+If the callback performs an irreversible external effect and the process dies before
+receipt authentication, Koschei may observe an external effect without an effect receipt.
+V1 does not solve distributed transaction atomicity.
 
-If a callback returns `bytes` claiming success before the external provider reaches finality,
-`effect-completed` proves only that the local callback completed with those bytes. It does
-not prove remote settlement.
-
-If replay state forks, the same permit may execute in more than one fork. HMAC receipts do
-not repair a broken monotonic consumption authority.
+If a callback returns bytes before the external provider reaches finality,
+`effect-completed` proves only local callback completion.
 
 ## PI EXAMPLE
 
@@ -91,17 +100,15 @@ not repair a broken monotonic consumption authority.
 `-> native Koschei ALLOW`
 `-> execution permit`
 `-> consume once`
-`-> runtime calls subscription-enable adapter`
-`-> adapter callback returns canonical response bytes`
+`-> runtime calls payment/subscription adapter`
+`-> callback returns canonical txid bytes`
 `-> effect-completed receipt`
-
-A later Pi-specific settlement/finality attestation may bind the provider's final transaction
-state to this receipt. That is a separate layer and must not be inferred from local callback
-completion.
+`-> raw Pi response verified against same txid`
+`-> provider-native verification receipt`
+`-> provider finality provenance`
 
 ## NEXT
 
-Define provider-finality attestation as a separate non-authoritative evidence layer and bind
-it to `EffectExecutionReceiptV1`. For Pi this should prove the exact provider transaction or
-state transition reached the required settlement/finality condition without moving Pi SDK
-semantics into Koschei Lang core.
+Move provider-native verification behind a runtime-owned adapter ABI with pinned
+provider schema/version, authenticated transport/proof verification, implementation
+measurement, and durable audit storage.
