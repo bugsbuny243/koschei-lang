@@ -1,8 +1,8 @@
 """Independent verifier reproducible-build verification for Koschei Lang v1.
 
 Two independently authenticated builder observations must bind the same
-VerifiedIrBuildInputV1 and produce the same exact verifier artifact digest before a
-reproducibility receipt can be sealed. This is provenance, not execution authority.
+VerifiedIrBuildInputV1, authenticated toolchain provenance, and exact verifier artifact
+before a reproducibility receipt can be sealed. This is provenance, not authority.
 """
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ import hmac
 
 from .native_sigil_mir_v1 import NativeSigilMir
 from .native_sigil_proof_pipeline_v1 import NativeSigilProofBundle
+from .toolchain_provenance_v1 import ToolchainProvenanceV1
 from .verified_ir_build_input_v1 import VerifiedIrBuildInputV1
 
 _OBS_CTX = b"koschei.verifier-builder-observation/v1\x00"
@@ -42,12 +43,12 @@ def _measure(artifact_bytes: bytes) -> str:
 
 
 def _obs_payload(*, builder_id: str, verified_input_digest: str,
-                 toolchain_digest: str, build_profile: str,
+                 toolchain_provenance_digest: str, build_profile: str,
                  artifact_digest: str) -> bytes:
     rows = (
         f"builder={builder_id}",
         f"verified_input={verified_input_digest}",
-        f"toolchain={toolchain_digest}",
+        f"toolchain={toolchain_provenance_digest}",
         f"profile={build_profile}",
         f"artifact={artifact_digest}",
         "authority=0",
@@ -59,7 +60,7 @@ def _obs_payload(*, builder_id: str, verified_input_digest: str,
 class VerifierBuilderObservationV1:
     builder_id: str
     verified_input_digest: str
-    toolchain_digest: str
+    toolchain_provenance_digest: str
     build_profile: str
     artifact_digest: str
     observation_digest: str
@@ -70,20 +71,29 @@ class VerifierBuilderObservationV1:
                              verified_input: VerifiedIrBuildInputV1,
                              mir: NativeSigilMir,
                              proof: NativeSigilProofBundle,
+                             toolchain: ToolchainProvenanceV1,
+                             toolchain_artifact_bytes: bytes,
+                             toolchain_signing_key: bytes,
                              artifact_bytes: bytes) -> None:
         key = _key(builder_key, "builder_key")
         verified_input.assert_sealed(mir=mir, proof=proof)
+        toolchain.assert_authenticated(
+            toolchain_signing_key=toolchain_signing_key,
+            toolchain_artifact_bytes=toolchain_artifact_bytes,
+        )
         if self.authority:
             raise VerifierReproducibleBuildV1Error("builder observation cannot carry ambient authority")
         if self.verified_input_digest != verified_input.build_input_digest:
             raise VerifierReproducibleBuildV1Error("builder observation verified-input mismatch")
+        if self.toolchain_provenance_digest != toolchain.provenance_digest:
+            raise VerifierReproducibleBuildV1Error("builder observation toolchain provenance mismatch")
         measured = _measure(artifact_bytes)
         if self.artifact_digest != measured:
             raise VerifierReproducibleBuildV1Error("builder observation artifact mismatch")
         expected = hmac.new(key, _obs_payload(
             builder_id=_text(self.builder_id, "builder_id"),
             verified_input_digest=self.verified_input_digest,
-            toolchain_digest=self.toolchain_digest,
+            toolchain_provenance_digest=self.toolchain_provenance_digest,
             build_profile=_text(self.build_profile, "build_profile"),
             artifact_digest=self.artifact_digest,
         ), hashlib.sha256).hexdigest()
@@ -96,16 +106,22 @@ def attest_builder_observation_v1(*, builder_id: str,
                                   verified_input: VerifiedIrBuildInputV1,
                                   mir: NativeSigilMir,
                                   proof: NativeSigilProofBundle,
+                                  toolchain: ToolchainProvenanceV1,
+                                  toolchain_artifact_bytes: bytes,
+                                  toolchain_signing_key: bytes,
                                   artifact_bytes: bytes,
-                                  toolchain_digest: str,
                                   build_profile: str) -> VerifierBuilderObservationV1:
     key = _key(builder_key, "builder_key")
     verified_input.assert_sealed(mir=mir, proof=proof)
+    toolchain.assert_authenticated(
+        toolchain_signing_key=toolchain_signing_key,
+        toolchain_artifact_bytes=toolchain_artifact_bytes,
+    )
     artifact = _measure(artifact_bytes)
     result = VerifierBuilderObservationV1(
         builder_id=_text(builder_id, "builder_id"),
         verified_input_digest=verified_input.build_input_digest,
-        toolchain_digest=toolchain_digest,
+        toolchain_provenance_digest=toolchain.provenance_digest,
         build_profile=_text(build_profile, "build_profile"),
         artifact_digest=artifact,
         observation_digest="",
@@ -113,24 +129,32 @@ def attest_builder_observation_v1(*, builder_id: str,
     object.__setattr__(result, "observation_digest", hmac.new(key, _obs_payload(
         builder_id=result.builder_id,
         verified_input_digest=result.verified_input_digest,
-        toolchain_digest=result.toolchain_digest,
+        toolchain_provenance_digest=result.toolchain_provenance_digest,
         build_profile=result.build_profile,
         artifact_digest=result.artifact_digest,
     ), hashlib.sha256).hexdigest())
-    result.assert_authenticated(builder_key=key, verified_input=verified_input, mir=mir, proof=proof, artifact_bytes=artifact_bytes)
+    result.assert_authenticated(
+        builder_key=key, verified_input=verified_input, mir=mir, proof=proof,
+        toolchain=toolchain, toolchain_artifact_bytes=toolchain_artifact_bytes,
+        toolchain_signing_key=toolchain_signing_key, artifact_bytes=artifact_bytes,
+    )
     return result
 
 
 def _repro_payload(*, verified_input_digest: str, artifact_digest: str,
                    builder_a_id: str, builder_a_observation: str,
-                   builder_b_id: str, builder_b_observation: str) -> bytes:
+                   builder_a_toolchain: str,
+                   builder_b_id: str, builder_b_observation: str,
+                   builder_b_toolchain: str) -> bytes:
     rows = (
         f"verified_input={verified_input_digest}",
         f"artifact={artifact_digest}",
         f"builder_a={builder_a_id}",
         f"builder_a_observation={builder_a_observation}",
+        f"builder_a_toolchain={builder_a_toolchain}",
         f"builder_b={builder_b_id}",
         f"builder_b_observation={builder_b_observation}",
+        f"builder_b_toolchain={builder_b_toolchain}",
         "reproducible=1",
         "authority=0",
     )
@@ -143,8 +167,10 @@ class VerifierReproducibleBuildReceiptV1:
     artifact_digest: str
     builder_a_id: str
     builder_a_observation_digest: str
+    builder_a_toolchain_provenance_digest: str
     builder_b_id: str
     builder_b_observation_digest: str
+    builder_b_toolchain_provenance_digest: str
     receipt_digest: str
     reproducible: bool = True
     authority: bool = False
@@ -154,6 +180,12 @@ class VerifierReproducibleBuildReceiptV1:
                              builder_a_key: bytes, builder_b_key: bytes,
                              builder_a: VerifierBuilderObservationV1,
                              builder_b: VerifierBuilderObservationV1,
+                             builder_a_toolchain: ToolchainProvenanceV1,
+                             builder_b_toolchain: ToolchainProvenanceV1,
+                             builder_a_toolchain_artifact_bytes: bytes,
+                             builder_b_toolchain_artifact_bytes: bytes,
+                             builder_a_toolchain_signing_key: bytes,
+                             builder_b_toolchain_signing_key: bytes,
                              verified_input: VerifiedIrBuildInputV1,
                              mir: NativeSigilMir, proof: NativeSigilProofBundle,
                              artifact_bytes: bytes) -> None:
@@ -162,8 +194,20 @@ class VerifierReproducibleBuildReceiptV1:
             raise VerifierReproducibleBuildV1Error("reproducible-build receipt must remain non-authoritative and reproducible")
         if builder_a.builder_id == builder_b.builder_id:
             raise VerifierReproducibleBuildV1Error("reproducible build requires distinct builder identities")
-        builder_a.assert_authenticated(builder_key=builder_a_key, verified_input=verified_input, mir=mir, proof=proof, artifact_bytes=artifact_bytes)
-        builder_b.assert_authenticated(builder_key=builder_b_key, verified_input=verified_input, mir=mir, proof=proof, artifact_bytes=artifact_bytes)
+        builder_a.assert_authenticated(
+            builder_key=builder_a_key, verified_input=verified_input, mir=mir, proof=proof,
+            toolchain=builder_a_toolchain,
+            toolchain_artifact_bytes=builder_a_toolchain_artifact_bytes,
+            toolchain_signing_key=builder_a_toolchain_signing_key,
+            artifact_bytes=artifact_bytes,
+        )
+        builder_b.assert_authenticated(
+            builder_key=builder_b_key, verified_input=verified_input, mir=mir, proof=proof,
+            toolchain=builder_b_toolchain,
+            toolchain_artifact_bytes=builder_b_toolchain_artifact_bytes,
+            toolchain_signing_key=builder_b_toolchain_signing_key,
+            artifact_bytes=artifact_bytes,
+        )
         if builder_a.artifact_digest != builder_b.artifact_digest:
             raise VerifierReproducibleBuildV1Error("independent builders produced different verifier artifacts")
         expected_fields = (
@@ -171,8 +215,10 @@ class VerifierReproducibleBuildReceiptV1:
             (self.artifact_digest, builder_a.artifact_digest),
             (self.builder_a_id, builder_a.builder_id),
             (self.builder_a_observation_digest, builder_a.observation_digest),
+            (self.builder_a_toolchain_provenance_digest, builder_a.toolchain_provenance_digest),
             (self.builder_b_id, builder_b.builder_id),
             (self.builder_b_observation_digest, builder_b.observation_digest),
+            (self.builder_b_toolchain_provenance_digest, builder_b.toolchain_provenance_digest),
         )
         if any(a != b for a, b in expected_fields):
             raise VerifierReproducibleBuildV1Error("reproducible-build receipt binding mismatch")
@@ -181,8 +227,10 @@ class VerifierReproducibleBuildReceiptV1:
             artifact_digest=self.artifact_digest,
             builder_a_id=self.builder_a_id,
             builder_a_observation=self.builder_a_observation_digest,
+            builder_a_toolchain=self.builder_a_toolchain_provenance_digest,
             builder_b_id=self.builder_b_id,
             builder_b_observation=self.builder_b_observation_digest,
+            builder_b_toolchain=self.builder_b_toolchain_provenance_digest,
         ), hashlib.sha256).hexdigest()
         if not hmac.compare_digest(self.receipt_digest, expected):
             raise VerifierReproducibleBuildV1Error("reproducible-build receipt authentication failed")
@@ -192,13 +240,31 @@ def seal_reproducible_build_receipt_v1(*, reproducibility_key: bytes,
                                        builder_a_key: bytes, builder_b_key: bytes,
                                        builder_a: VerifierBuilderObservationV1,
                                        builder_b: VerifierBuilderObservationV1,
+                                       builder_a_toolchain: ToolchainProvenanceV1,
+                                       builder_b_toolchain: ToolchainProvenanceV1,
+                                       builder_a_toolchain_artifact_bytes: bytes,
+                                       builder_b_toolchain_artifact_bytes: bytes,
+                                       builder_a_toolchain_signing_key: bytes,
+                                       builder_b_toolchain_signing_key: bytes,
                                        verified_input: VerifiedIrBuildInputV1,
                                        mir: NativeSigilMir, proof: NativeSigilProofBundle,
                                        artifact_bytes: bytes) -> VerifierReproducibleBuildReceiptV1:
     if builder_a.builder_id == builder_b.builder_id:
         raise VerifierReproducibleBuildV1Error("reproducible build requires distinct builder identities")
-    builder_a.assert_authenticated(builder_key=builder_a_key, verified_input=verified_input, mir=mir, proof=proof, artifact_bytes=artifact_bytes)
-    builder_b.assert_authenticated(builder_key=builder_b_key, verified_input=verified_input, mir=mir, proof=proof, artifact_bytes=artifact_bytes)
+    builder_a.assert_authenticated(
+        builder_key=builder_a_key, verified_input=verified_input, mir=mir, proof=proof,
+        toolchain=builder_a_toolchain,
+        toolchain_artifact_bytes=builder_a_toolchain_artifact_bytes,
+        toolchain_signing_key=builder_a_toolchain_signing_key,
+        artifact_bytes=artifact_bytes,
+    )
+    builder_b.assert_authenticated(
+        builder_key=builder_b_key, verified_input=verified_input, mir=mir, proof=proof,
+        toolchain=builder_b_toolchain,
+        toolchain_artifact_bytes=builder_b_toolchain_artifact_bytes,
+        toolchain_signing_key=builder_b_toolchain_signing_key,
+        artifact_bytes=artifact_bytes,
+    )
     if builder_a.artifact_digest != builder_b.artifact_digest:
         raise VerifierReproducibleBuildV1Error("independent builders produced different verifier artifacts")
     result = VerifierReproducibleBuildReceiptV1(
@@ -206,8 +272,10 @@ def seal_reproducible_build_receipt_v1(*, reproducibility_key: bytes,
         artifact_digest=builder_a.artifact_digest,
         builder_a_id=builder_a.builder_id,
         builder_a_observation_digest=builder_a.observation_digest,
+        builder_a_toolchain_provenance_digest=builder_a.toolchain_provenance_digest,
         builder_b_id=builder_b.builder_id,
         builder_b_observation_digest=builder_b.observation_digest,
+        builder_b_toolchain_provenance_digest=builder_b.toolchain_provenance_digest,
         receipt_digest="",
     )
     key = _key(reproducibility_key, "reproducibility_key")
@@ -216,18 +284,21 @@ def seal_reproducible_build_receipt_v1(*, reproducibility_key: bytes,
         artifact_digest=result.artifact_digest,
         builder_a_id=result.builder_a_id,
         builder_a_observation=result.builder_a_observation_digest,
+        builder_a_toolchain=result.builder_a_toolchain_provenance_digest,
         builder_b_id=result.builder_b_id,
         builder_b_observation=result.builder_b_observation_digest,
+        builder_b_toolchain=result.builder_b_toolchain_provenance_digest,
     ), hashlib.sha256).hexdigest())
     result.assert_authenticated(
         reproducibility_key=key,
-        builder_a_key=builder_a_key,
-        builder_b_key=builder_b_key,
-        builder_a=builder_a,
-        builder_b=builder_b,
-        verified_input=verified_input,
-        mir=mir,
-        proof=proof,
+        builder_a_key=builder_a_key, builder_b_key=builder_b_key,
+        builder_a=builder_a, builder_b=builder_b,
+        builder_a_toolchain=builder_a_toolchain, builder_b_toolchain=builder_b_toolchain,
+        builder_a_toolchain_artifact_bytes=builder_a_toolchain_artifact_bytes,
+        builder_b_toolchain_artifact_bytes=builder_b_toolchain_artifact_bytes,
+        builder_a_toolchain_signing_key=builder_a_toolchain_signing_key,
+        builder_b_toolchain_signing_key=builder_b_toolchain_signing_key,
+        verified_input=verified_input, mir=mir, proof=proof,
         artifact_bytes=artifact_bytes,
     )
     return result
