@@ -1,6 +1,6 @@
 # KOSCHEI VERIFIER BUILD PROVENANCE V1
 
-Status: IMPLEMENTED BOOTSTRAP PROTOTYPE / ARTIFACT IDENTITY AND RUNTIME ADMISSION / NOT YET REPRODUCIBLE-BUILD PROOF
+Status: IMPLEMENTED BOOTSTRAP PROTOTYPE / VERIFIED-IR BUILD-INPUT IDENTITY / NOT YET REPRODUCIBLE-BUILD PROOF
 
 ## PURPOSE
 
@@ -9,9 +9,15 @@ digest is insufficient. Koschei must bind that digest to the exact verifier arti
 that was built and the exact verifier artifact that the runtime admitted before raw
 provider responses are interpreted.
 
+The build-input identity must also not be caller-selected metadata. V1 now derives it
+from Koschei's existing sealed native semantic/proof chain rather than inventing a
+parallel IR format.
+
 V1 sanctioned chain:
 
-`build input digest`
+`NativeSigilMir`
+`-> NativeSigilProofBundle`
+`-> VerifiedIrBuildInputV1`
 `-> toolchain digest`
 `-> verifier artifact bytes`
 `-> VerifierBuildProvenanceV1`
@@ -20,6 +26,28 @@ V1 sanctioned chain:
 `-> VerifierRuntimeAdmissionV1`
 `-> ProviderNativeVerificationReceiptV1`
 `-> finality provenance`
+
+## VERIFIED IR BUILD INPUT
+
+`VerifiedIrBuildInputV1` is not a second compiler IR. It is a non-authoritative identity
+receipt derived from the existing sealed native compiler/proof world:
+
+- `NativeSigilMir.fingerprint`,
+- Universe plan digest,
+- `NativeSigilProofBundle.digest`,
+- Library proof digest,
+- proof decision,
+- authority=false.
+
+`derive_verified_ir_build_input_v1(...)` first re-verifies the native MIR/proof chain and
+then derives the deterministic `build_input_digest`.
+
+The sanctioned build API is:
+
+`attest_verifier_build_from_verified_ir_v1(...)`
+
+It does not accept a free caller-selected `build_input_digest`. The provenance object
+inherits that digest from the sealed `VerifiedIrBuildInputV1` object.
 
 ## ARTIFACT MEASUREMENT
 
@@ -39,16 +67,19 @@ Any mismatch is rejected before the provider-native verifier callback is invoked
 `VerifierBuildProvenanceV1` binds:
 
 - verifier artifact digest,
-- build-input digest,
+- verified-IR-derived build-input digest,
 - toolchain digest,
 - build profile,
 - authority=false.
 
 It is HMAC-SHA256 authenticated with a dedicated `build_provenance_key`.
 
-This V1 proves which metadata was authenticated for one exact artifact. It does NOT yet
-prove that the artifact was deterministically derived from the declared build input or
-that the toolchain itself is trustworthy.
+`assert_from_verified_ir(...)` additionally re-verifies the supplied sealed native MIR
+and proof identity and requires the provenance build-input digest to equal that exact
+verified-input digest.
+
+This V1 still does NOT prove that the artifact was deterministically derived from the
+verified IR or that the toolchain itself is trustworthy.
 
 ## RUNTIME ADMISSION
 
@@ -72,26 +103,29 @@ These roles are intentionally separate.
 
 ## PROTECTS AGAINST
 
+- caller injection of an arbitrary build-input digest on the sanctioned build path,
+- moving build provenance to a different sealed MIR/proof identity,
 - ABI manifest claiming one verifier digest while different artifact bytes are loaded,
 - replacing verifier artifact bytes after build provenance issuance,
-- changing build-input/toolchain/profile metadata without build provenance key,
+- changing toolchain/profile metadata without build provenance key,
 - changing runtime admission artifact or ABI binding without admission key,
 - executing provider-native verification through the sanctioned path before artifact admission,
 - dropping build/admission provenance from the final provider-finality envelope.
 
 ## DOES NOT PROTECT AGAINST
 
-- malicious verifier source that was intentionally built and admitted,
+- malicious verifier semantics that successfully pass the current native proof policy,
 - compromised build-provenance or runtime-admission keys,
-- a compromised builder lying about build-input/toolchain digests,
+- a compromised builder/toolchain producing malicious output for a valid verified input,
 - non-reproducible builds,
-- compromised toolchain producing malicious output,
+- compromised toolchain provenance,
 - TOCTOU if production runtime measures one artifact but executes different bytes afterward,
 - host compromise, debugger/memory attacks, or hardware faults,
 - provider-native verifier logic errors.
 
 ## ASSUMPTIONS
 
+- `NativeSigilMir` and `NativeSigilProofBundle` remain sealed and fail-closed,
 - artifact bytes measured by runtime are exactly the bytes executed,
 - artifact measurement occurs before verifier callback invocation,
 - build and runtime admission keys are protected and separated,
@@ -104,14 +138,19 @@ If runtime measures artifact A but executes artifact B, provenance becomes false
 therefore requires production loading to make measurement and execution identity the
 same trust boundary.
 
-If build provenance says source/IR X produced artifact A without independently proving
-that derivation, the receipt proves only the authenticated claim and exact artifact
-identity, not the derivation itself.
+If a valid verified IR input can still semantically describe a malicious verifier, this
+layer will faithfully bind the malicious artifact to that verified input. Verification
+of identity is not proof of benign intent.
+
+If the builder/toolchain is compromised, it can produce a malicious artifact while the
+verified input remains legitimate. V1 therefore still needs independent rebuild and
+compiler/toolchain provenance.
 
 ## NEXT
 
-1. Bind `build_input_digest` to canonical Koschei Verified IR / source-intent provenance.
-2. Add reproducible-build verification using an independent rebuild receipt.
-3. Bind toolchain digest to signed compiler/toolchain provenance.
-4. Add runtime load-handle identity so measurement and execution cannot diverge.
-5. Add revocation/admission policy for compromised verifier artifacts.
+1. Add independent reproducible-build verification: two isolated builders must produce
+   the same verifier artifact digest from the same `VerifiedIrBuildInputV1`.
+2. Bind toolchain digest to signed compiler/toolchain provenance.
+3. Add runtime load-handle identity so measurement and execution cannot diverge.
+4. Add revocation/admission policy for compromised verifier artifacts.
+5. Extend source-intent provenance if a stronger source-to-MIR commitment is needed.
