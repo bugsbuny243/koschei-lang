@@ -13,10 +13,10 @@ import hmac
 from .native_sigil_mir_v1 import NativeSigilMir
 from .native_sigil_proof_pipeline_v1 import NativeSigilProofBundle
 from .verified_ir_build_input_v1 import VerifiedIrBuildInputV1
-from .verifier_build_provenance_v1 import measure_verifier_artifact_v1
 
 _OBS_CTX = b"koschei.verifier-builder-observation/v1\x00"
 _REPRO_CTX = b"koschei.verifier-reproducible-build/v1\x00"
+_ARTIFACT_CTX = b"koschei.verifier-artifact/v1\x00"
 
 
 class VerifierReproducibleBuildV1Error(ValueError):
@@ -33,6 +33,12 @@ def _text(value: str, label: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise VerifierReproducibleBuildV1Error(f"{label} cannot be empty")
     return value.strip()
+
+
+def _measure(artifact_bytes: bytes) -> str:
+    if not isinstance(artifact_bytes, bytes) or not artifact_bytes:
+        raise VerifierReproducibleBuildV1Error("artifact_bytes must be non-empty bytes")
+    return hashlib.sha256(_ARTIFACT_CTX + artifact_bytes).hexdigest()
 
 
 def _obs_payload(*, builder_id: str, verified_input_digest: str,
@@ -71,7 +77,7 @@ class VerifierBuilderObservationV1:
             raise VerifierReproducibleBuildV1Error("builder observation cannot carry ambient authority")
         if self.verified_input_digest != verified_input.build_input_digest:
             raise VerifierReproducibleBuildV1Error("builder observation verified-input mismatch")
-        measured = measure_verifier_artifact_v1(artifact_bytes)
+        measured = _measure(artifact_bytes)
         if self.artifact_digest != measured:
             raise VerifierReproducibleBuildV1Error("builder observation artifact mismatch")
         expected = hmac.new(key, _obs_payload(
@@ -95,7 +101,7 @@ def attest_builder_observation_v1(*, builder_id: str,
                                   build_profile: str) -> VerifierBuilderObservationV1:
     key = _key(builder_key, "builder_key")
     verified_input.assert_sealed(mir=mir, proof=proof)
-    artifact = measure_verifier_artifact_v1(artifact_bytes)
+    artifact = _measure(artifact_bytes)
     result = VerifierBuilderObservationV1(
         builder_id=_text(builder_id, "builder_id"),
         verified_input_digest=verified_input.build_input_digest,
@@ -213,4 +219,15 @@ def seal_reproducible_build_receipt_v1(*, reproducibility_key: bytes,
         builder_b_id=result.builder_b_id,
         builder_b_observation=result.builder_b_observation_digest,
     ), hashlib.sha256).hexdigest())
+    result.assert_authenticated(
+        reproducibility_key=key,
+        builder_a_key=builder_a_key,
+        builder_b_key=builder_b_key,
+        builder_a=builder_a,
+        builder_b=builder_b,
+        verified_input=verified_input,
+        mir=mir,
+        proof=proof,
+        artifact_bytes=artifact_bytes,
+    )
     return result
