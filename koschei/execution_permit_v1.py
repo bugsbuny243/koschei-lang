@@ -4,6 +4,11 @@ External evidence is not authority. A permit may be minted only from an authenti
 canonical AuthorizationDecisionV1 whose outcome is allow. The permit is separately
 HMAC-authenticated, binds the exact decision/evidence/subject/operation/request/epoch,
 and must be consumed once through trusted replay state.
+
+A successful consumption emits an authenticated receipt. The receipt proves that the
+trusted bootstrap runtime accepted one exact permit consumption under one runtime key;
+it does not prove that replay state is durably replicated or that the requested side
+effect completed after consumption.
 """
 from __future__ import annotations
 
@@ -16,6 +21,7 @@ from .authorization_decision_v1 import AuthorizationDecisionV1
 from .external_adapter_contract_v1 import ExternalAdapterEvidenceV1, ExternalAdapterGrantV1
 
 _CTX = b"koschei.execution-permit/v1\x00"
+_CONSUME_CTX = b"koschei.execution-permit-consumption/v1\x00"
 _HEX = frozenset(string.hexdigits.lower())
 
 
@@ -60,6 +66,21 @@ def _payload(*, decision_digest: str, evidence_digest: str, provider_id: str,
         f"request={request_digest}", f"epoch={valid_epoch}", "single_use=1",
     )
     return _CTX + "\n".join(rows).encode("utf-8")
+
+
+def _consumption_payload(*, permit_digest: str, decision_digest: str,
+                         evidence_digest: str, operation: str,
+                         request_digest: str, consumed_epoch: int) -> bytes:
+    rows = (
+        f"permit={permit_digest}",
+        f"decision={decision_digest}",
+        f"evidence={evidence_digest}",
+        f"operation={operation}",
+        f"request={request_digest}",
+        f"epoch={consumed_epoch}",
+        "consumed=1",
+    )
+    return _CONSUME_CTX + "\n".join(rows).encode("utf-8")
 
 
 @dataclass(frozen=True, slots=True)
@@ -127,6 +148,51 @@ class ExecutionPermitV1:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class ExecutionConsumptionReceiptV1:
+    permit_digest: str
+    authorization_decision_digest: str
+    evidence_digest: str
+    operation: str
+    request_digest: str
+    consumed_epoch: int
+    receipt_digest: str
+    consumed: bool = True
+    version: int = 1
+
+    def assert_authenticated(self, *, runtime_key: bytes, permit: ExecutionPermitV1) -> None:
+        key = _key(runtime_key, "runtime_key")
+        if self.consumed is not True:
+            raise ExecutionPermitV1Error("execution consumption receipt must remain consumed")
+        permit_digest = _digest(self.permit_digest, "permit_digest")
+        decision_digest = _digest(self.authorization_decision_digest, "authorization_decision_digest")
+        evidence_digest = _digest(self.evidence_digest, "evidence_digest")
+        operation = _text(self.operation, "operation")
+        request = _digest(self.request_digest, "request_digest")
+        epoch = _epoch(self.consumed_epoch, "consumed_epoch")
+        expected_fields = (
+            (permit_digest, permit.permit_digest, "permit"),
+            (decision_digest, permit.authorization_decision_digest, "decision"),
+            (evidence_digest, permit.evidence_digest, "evidence"),
+            (operation, permit.operation, "operation"),
+            (request, permit.request_digest, "request"),
+            (epoch, permit.valid_epoch, "epoch"),
+        )
+        for actual, expected, label in expected_fields:
+            if actual != expected:
+                raise ExecutionPermitV1Error(f"execution consumption receipt {label} mismatch")
+        expected = hmac.new(key, _consumption_payload(
+            permit_digest=permit_digest,
+            decision_digest=decision_digest,
+            evidence_digest=evidence_digest,
+            operation=operation,
+            request_digest=request,
+            consumed_epoch=epoch,
+        ), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(self.receipt_digest, expected):
+            raise ExecutionPermitV1Error("execution consumption receipt authentication failed")
+
+
 def mint_execution_permit_v1(grant: ExternalAdapterGrantV1,
                              evidence: ExternalAdapterEvidenceV1,
                              decision: AuthorizationDecisionV1, *,
@@ -169,7 +235,8 @@ class ExecutionPermitLedgerV1:
     def consume(self, permit: ExecutionPermitV1, *, runtime_key: bytes,
                 decision_key: bytes, grant: ExternalAdapterGrantV1,
                 evidence: ExternalAdapterEvidenceV1, decision: AuthorizationDecisionV1,
-                current_epoch: int, request_digest: str, operation: str) -> None:
+                current_epoch: int, request_digest: str,
+                operation: str) -> ExecutionConsumptionReceiptV1:
         permit.assert_authenticated(runtime_key=runtime_key, decision_key=decision_key,
                                     grant=grant, evidence=evidence, decision=decision)
         if not permit.is_live_for(current_epoch=current_epoch,
@@ -178,3 +245,23 @@ class ExecutionPermitLedgerV1:
         if permit.permit_digest in self.consumed:
             raise ExecutionPermitV1Error("execution permit replay detected")
         self.consumed.add(permit.permit_digest)
+        receipt = ExecutionConsumptionReceiptV1(
+            permit_digest=permit.permit_digest,
+            authorization_decision_digest=permit.authorization_decision_digest,
+            evidence_digest=permit.evidence_digest,
+            operation=permit.operation,
+            request_digest=permit.request_digest,
+            consumed_epoch=permit.valid_epoch,
+            receipt_digest="",
+        )
+        mac = hmac.new(_key(runtime_key, "runtime_key"), _consumption_payload(
+            permit_digest=receipt.permit_digest,
+            decision_digest=receipt.authorization_decision_digest,
+            evidence_digest=receipt.evidence_digest,
+            operation=receipt.operation,
+            request_digest=receipt.request_digest,
+            consumed_epoch=receipt.consumed_epoch,
+        ), hashlib.sha256).hexdigest()
+        object.__setattr__(receipt, "receipt_digest", mac)
+        receipt.assert_authenticated(runtime_key=runtime_key, permit=permit)
+        return receipt
