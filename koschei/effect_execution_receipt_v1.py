@@ -1,13 +1,13 @@
 """Runtime-measured effect execution receipts for Koschei Lang v1.
 
-A permit-consumption receipt proves that one exact permit was accepted.  It does not
-prove that the requested effect completed.  This module closes only the next local
-runtime link: the sanctioned executor consumes the permit, invokes the effect itself,
-measures the returned bytes or caught Exception, and authenticates that observation
-with a dedicated effect key.
+A permit-consumption receipt proves that one exact permit was accepted. It does not
+prove that the requested effect completed. This module closes only the next local
+runtime link: the sanctioned executor validates the canonical request, validates
+receipt key material, consumes the permit, invokes the effect itself, measures the
+returned bytes or caught Exception, and authenticates that observation with a
+dedicated effect key.
 
-This is still not remote settlement/finality attestation.  A callback can return after
-an external system accepted a request but before that system reaches durable finality.
+This is still not remote settlement/finality attestation.
 """
 from __future__ import annotations
 
@@ -23,6 +23,7 @@ from .execution_permit_v1 import (
     ExecutionPermitV1,
 )
 from .external_adapter_contract_v1 import ExternalAdapterEvidenceV1, ExternalAdapterGrantV1
+from .native_sigil_mir_v1 import NativeSigilMir
 from .native_sigil_request_binding_v1 import CanonicalEffectRequest
 
 _CTX = b"koschei.effect-execution-receipt/v1\x00"
@@ -85,8 +86,11 @@ class EffectExecutionReceiptV1:
     def assert_authenticated(self, *, effect_key: bytes,
                              consumption: ExecutionConsumptionReceiptV1,
                              permit: ExecutionPermitV1,
+                             mir: NativeSigilMir,
                              request: CanonicalEffectRequest) -> None:
         key = _key(effect_key)
+        mir.assert_sealed()
+        request.assert_sealed(mir)
         if self.authority:
             raise EffectExecutionReceiptV1Error("effect receipt cannot carry ambient authority")
         if self.outcome not in _OUTCOMES:
@@ -138,13 +142,17 @@ def execute_effect_with_receipt_v1(
     grant: ExternalAdapterGrantV1,
     evidence: ExternalAdapterEvidenceV1,
     decision: AuthorizationDecisionV1,
+    mir: NativeSigilMir,
     request: CanonicalEffectRequest,
     current_epoch: int,
     effect: Callable[[CanonicalEffectRequest], bytes],
 ) -> tuple[ExecutionConsumptionReceiptV1, EffectExecutionReceiptV1, bytes | None]:
-    """Consume once, invoke the exact callback, and attest the locally observed outcome."""
+    """Validate first, consume once, invoke exact callback, attest local outcome."""
     if not callable(effect):
         raise EffectExecutionReceiptV1Error("effect must be callable")
+    effect_key = _key(effect_key)
+    mir.assert_sealed()
+    request.assert_sealed(mir)
     if permit.request_digest != request.digest or permit.operation != request.operation:
         raise EffectExecutionReceiptV1Error("canonical request is outside execution permit")
     if permit.valid_epoch != request.epoch:
@@ -183,7 +191,7 @@ def execute_effect_with_receipt_v1(
         measurement_digest=measurement,
         receipt_digest="",
     )
-    mac = hmac.new(_key(effect_key), _payload(
+    mac = hmac.new(effect_key, _payload(
         consumption_digest=receipt.consumption_receipt_digest,
         permit_digest=receipt.permit_digest,
         decision_digest=receipt.authorization_decision_digest,
@@ -195,6 +203,7 @@ def execute_effect_with_receipt_v1(
     ), hashlib.sha256).hexdigest()
     object.__setattr__(receipt, "receipt_digest", mac)
     receipt.assert_authenticated(
-        effect_key=effect_key, consumption=consumption, permit=permit, request=request,
+        effect_key=effect_key, consumption=consumption, permit=permit,
+        mir=mir, request=request,
     )
     return consumption, receipt, result_bytes
