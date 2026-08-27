@@ -1,8 +1,8 @@
 """Effect-terminal provenance envelope layered over ExecutionProofEnvelopeV1.
 
-The base execution envelope remains a proof of `permit-consumed`.  This higher layer
+The base execution envelope remains a proof of `permit-consumed`. This higher layer
 adds one authenticated EffectExecutionReceiptV1 and may therefore report the local
-runtime terminal state `effect-completed` or `effect-failed`.  It still does not prove
+runtime terminal state `effect-completed` or `effect-failed`. It still does not prove
 remote settlement/finality outside the measured callback boundary.
 """
 from __future__ import annotations
@@ -83,7 +83,8 @@ class EffectExecutionProofEnvelopeV1:
         if base.terminal_state != "permit-consumed":
             raise EffectExecutionProofEnvelopeV1Error("base envelope is not permit-consumed")
         effect_receipt.assert_authenticated(
-            effect_key=effect_key, consumption=consumption, permit=permit, request=request,
+            effect_key=effect_key, consumption=consumption, permit=permit,
+            mir=mir, request=request,
         )
         expected_fields = (
             (self.base_execution_envelope_digest, base.envelope_digest, "base envelope"),
@@ -123,7 +124,8 @@ def seal_effect_execution_proof_envelope_v1(*,
         consumption=consumption, decision_key=decision_key, runtime_key=runtime_key,
     )
     effect_receipt.assert_authenticated(
-        effect_key=effect_key, consumption=consumption, permit=permit, request=request,
+        effect_key=effect_key, consumption=consumption, permit=permit,
+        mir=mir, request=request,
     )
     result = EffectExecutionProofEnvelopeV1(
         base_execution_envelope_digest=base.envelope_digest,
