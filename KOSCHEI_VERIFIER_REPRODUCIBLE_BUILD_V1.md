@@ -1,113 +1,99 @@
 # KOSCHEI VERIFIER REPRODUCIBLE BUILD V1
 
-Status: IMPLEMENTED BOOTSTRAP PROTOTYPE / TWO-BUILDER REPRODUCIBILITY GATE / PROVIDER PATH WIRED
+Status: IMPLEMENTED BOOTSTRAP PROTOTYPE / TWO-BUILDER + SIGNED-TOOLCHAIN REPRODUCIBILITY GATE / PROVIDER PATH WIRED
 
 ## PURPOSE
 
-One authenticated builder is not enough to establish reproducible derivation. V1
-requires two distinct authenticated builder identities to bind the same
-`VerifiedIrBuildInputV1` and independently report the same exact verifier artifact
-digest before a reproducibility receipt may be sealed.
+One authenticated builder is not enough. V1 requires two distinct authenticated builder
+identities to bind the same `VerifiedIrBuildInputV1`, authenticated toolchain provenance,
+and the same exact verifier artifact digest before provider verification can proceed.
 
 Sanctioned chain:
 
 `NativeSigilMir + NativeSigilProofBundle`
 `-> VerifiedIrBuildInputV1`
+`-> ToolchainProvenanceV1`
 `-> builder A observation`
+`-> ToolchainProvenanceV1`
 `-> builder B observation`
 `-> VerifierReproducibleBuildReceiptV1`
 `-> VerifierBuildProvenanceV1`
 `-> ProviderAdapterAbiV1`
-`-> base VerifierRuntimeAdmissionV1`
+`-> VerifierRuntimeAdmissionV1`
 `-> VerifierReproducibleRuntimeAdmissionV1`
 `-> ProviderNativeVerificationReceiptV1`
 `-> provider verdict / finality provenance`
 
 ## BUILDER OBSERVATION
 
-Each `VerifierBuilderObservationV1` binds:
+Each builder observation binds:
 
 - distinct builder identity,
 - exact verified-input digest,
-- toolchain digest,
+- authenticated toolchain provenance digest,
 - build profile,
-- exact artifact digest,
+- exact verifier artifact digest,
 - authority=false.
 
-Each observation is authenticated under its own builder key.
+The sanctioned observation API does not accept a caller-selected `toolchain_digest`.
 
 ## REPRODUCIBILITY RECEIPT
 
-A receipt is issued only when:
+The receipt records the exact toolchain provenance digest used by builder A and builder B.
+The two toolchains may differ, but both builders must still produce the same verifier
+artifact digest.
 
-1. both builder observations authenticate,
-2. builder identities are different,
-3. both bind the same `VerifiedIrBuildInputV1`,
-4. both bind the same exact verifier artifact digest.
+## BUILD PROVENANCE CROSS-CHECK
 
-The receipt is authenticated under a separate `reproducibility_key` and carries no
-authority.
+The signed toolchain bound by `VerifierBuildProvenanceV1` must appear in at least one of
+the two authenticated builder observations before reproducible runtime admission is minted.
+This prevents a separate unobserved toolchain identity from being introduced only at the
+build-provenance layer.
 
 ## RUNTIME GATE
 
-`VerifierReproducibleRuntimeAdmissionV1` layers over exact-artifact runtime admission.
-Minting the gate verifies the full two-builder reproducibility receipt, verified-IR-bound
-build provenance, ABI binding, and exact runtime artifact measurement.
-
-Provider-native verification now requires this gate. The base
-`VerifierRuntimeAdmissionV1` is not sufficient by itself for the sanctioned provider
-verification path.
-
-`ProviderNativeVerificationReceiptV1` binds both:
-
-- reproducibility receipt digest,
-- reproducible runtime-admission digest.
-
-`ExternalFinalityProofEnvelopeV1` carries the same digests so finality provenance cannot
-drop the reproducibility gate after provider verification.
+Provider-native verification requires `VerifierReproducibleRuntimeAdmissionV1`; base
+runtime admission alone is insufficient. Native verification and finality provenance carry
+the reproducibility receipt/gate identities.
 
 ## PROTECTS AGAINST
 
-- one builder unilaterally declaring a reproducible verifier artifact,
+- one builder unilaterally declaring reproducibility,
 - counting one builder identity twice,
-- two builders producing different artifact bytes while claiming reproducibility,
-- rebinding the reproducibility receipt to another verified input or artifact,
-- altering the reproducibility/runtime-admission link without the gate key,
-- running the sanctioned provider-native verifier with only base runtime admission,
+- differing artifacts being admitted as reproducible,
+- arbitrary caller-selected toolchain digests on sanctioned builder/build APIs,
+- relabeling builder evidence under another signed toolchain,
+- using a build-provenance toolchain absent from both builder observations,
 - dropping reproducibility provenance from provider finality proof.
 
 ## DOES NOT PROTECT AGAINST
 
 - two colluding or identically compromised builders,
-- both builders using the same compromised toolchain and producing the same malicious artifact,
-- false toolchain identity/provenance,
-- non-independent build environments despite distinct logical builder ids,
+- intentionally signed malicious toolchains,
+- compromised toolchain signing authority,
+- two different signed toolchains sharing the same malicious defect,
+- non-independent builder environments despite distinct logical ids,
 - measure-A/execute-B runtime TOCTOU,
 - host/runtime or protected-key compromise.
 
 ## ASSUMPTIONS
 
-- builder identities correspond to independently controlled build authorities in production,
-- builder keys and reproducibility/gate keys are separately protected,
-- `VerifiedIrBuildInputV1` validation remains fail-closed,
-- artifact measurement is canonical and stable,
-- runtime executes the exact admitted bytes,
-- provider-native callers cannot bypass the reproducibility-gated API with an exposed lower primitive.
+- builder identities map to independently controlled build authorities in production,
+- toolchain signing authorities are protected,
+- signed toolchain artifact bytes are the actual bytes used by builders,
+- runtime executes the exact admitted verifier bytes,
+- lower verification primitives are not exposed as bypass paths.
 
 ## FAILURE MODE
 
-Reproducibility proves agreement, not correctness. Two compromised builders can agree on
-the same malicious artifact. If both builders share the same compromised toolchain, the
-receipt can still be reproducible while semantically unsafe.
-
-If production exposes an alternate provider-native verification path that accepts only
-`VerifierRuntimeAdmissionV1`, the gate can be bypassed even though the sanctioned Python
-prototype is wired correctly.
+Reproducibility proves agreement, not correctness. Signed provenance proves toolchain
+identity, not compiler correctness. Two compromised builders or two signed toolchains with
+the same defect can still agree on malicious output.
 
 ## NEXT
 
 1. Bind builder identities to independently attested build environments.
-2. Add signed compiler/toolchain provenance.
+2. Add epoch/revocation policy for toolchains/builders/artifacts/ABIs.
 3. Add immutable runtime load-handle identity to close measure-A/execute-B TOCTOU.
-4. Add revocation/epoch policy for builder, toolchain, artifact and adapter trust.
+4. Explore diverse-compiler/self-rebuild verification for compiler correctness evidence.
 5. Produce canonical validation receipts before merge.
