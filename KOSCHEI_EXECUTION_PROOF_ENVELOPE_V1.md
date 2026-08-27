@@ -1,6 +1,6 @@
 # KOSCHEI EXECUTION PROOF ENVELOPE V1
 
-Status: IMPLEMENTED BOOTSTRAP PROTOTYPE / NOT YET NATIVE-ENFORCED
+Status: IMPLEMENTED BOOTSTRAP PROTOTYPE / PERMIT-CONSUMED BASE ENVELOPE STABLE
 
 ## PURPOSE
 
@@ -30,21 +30,28 @@ The v1 chain is:
 
 ## TERMINAL CLAIM
 
-V1 terminates at:
+This base envelope terminates at:
 
 `terminal_state = permit-consumed`
 
 This means the trusted bootstrap execution boundary authenticated and accepted one
 exact single-use permit consumption.
 
-V1 MUST NOT claim `effect-completed`, `payload-applied`, `payment-settled`, or any
-other external side-effect completion state. A consumed permit and a completed side
-effect are different facts.
+`ExecutionProofEnvelopeV1` MUST NOT itself claim `effect-completed`, `payload-applied`,
+`payment-settled`, or any remote side-effect completion state. A consumed permit and a
+completed side effect are different facts.
+
+Effect execution is represented by the separate higher layer:
+
+`ExecutionProofEnvelopeV1(permit-consumed)`
+`-> EffectExecutionReceiptV1`
+`-> EffectExecutionProofEnvelopeV1(effect-completed | effect-failed)`
+
+Keeping the layers separate preserves the original meaning of this V1 envelope.
 
 ## CONSUMPTION RECEIPT
 
-`ExecutionPermitLedgerV1.consume(...)` now returns
-`ExecutionConsumptionReceiptV1` after:
+`ExecutionPermitLedgerV1.consume(...)` returns `ExecutionConsumptionReceiptV1` after:
 
 1. permit authentication,
 2. authorization-decision authentication,
@@ -52,126 +59,76 @@ effect are different facts.
 4. replay rejection,
 5. insertion into the bootstrap consumed-permit set.
 
-The receipt is HMAC-SHA256 authenticated with the runtime permit key and binds:
-
-- exact permit digest,
-- exact authorization-decision digest,
-- exact external-evidence digest,
-- exact operation,
-- exact canonical request digest,
-- exact consumed epoch,
-- consumed=true.
+The receipt is HMAC-SHA256 authenticated with the runtime permit key and binds the
+exact permit, decision, evidence, operation, canonical request and epoch.
 
 The receipt is not a new permission. It is evidence of accepted consumption.
 
 ## ENVELOPE SEAL
 
-The envelope binds:
+The envelope binds grant, evidence, native MIR, Universe plan, canonical request,
+native proof, request-bound proof, authority basis, authorization decision, permit,
+consumption receipt, subject scope, operation, epoch and terminal state.
 
-- grant digest,
-- evidence digest,
-- native MIR fingerprint,
-- Universe plan digest,
-- canonical request digest,
-- native proof digest,
-- request-bound proof digest,
-- canonical authority-basis digest,
-- authorization-decision digest,
-- permit digest,
-- consumption-receipt digest,
-- subject-scope digest,
-- operation,
-- epoch,
-- terminal state.
-
-Its own `envelope_digest` is deterministic SHA-256 over these links.
-
-The envelope digest is NOT an independent signature. Verification re-checks the
-underlying sealed/authenticated objects, including the decision HMAC, permit HMAC and
-consumption-receipt HMAC. The aggregate hash prevents silent relabeling of the
-verified chain after construction.
+Its own `envelope_digest` is deterministic SHA-256 over these links. This digest is NOT
+an independent signature. Verification re-checks the underlying authenticated/sealed
+objects.
 
 ## AUTHORITY RULE
 
 `ExecutionProofEnvelopeV1.authority` is always `False`.
 
-A proof envelope cannot:
-
-- mint a permit,
-- authorize a new operation,
-- widen capability scope,
-- change epoch,
-- substitute for canonical native enforcement,
-- be replayed as authority.
-
+A proof envelope cannot mint a permit, authorize a new operation, widen capability
+scope, change epoch, substitute for native enforcement, or be replayed as authority.
 It is provenance, not permission.
 
 ## PROTECTS AGAINST
 
 - replacing one grant/evidence pair with another after envelope creation,
 - replacing the canonical request or native proof world,
-- replacing the request-bound proof,
-- substituting a different authority basis,
-- substituting a different authorization decision,
-- substituting a different permit,
-- inventing or modifying a consumption receipt without the runtime key,
-- changing operation, request identity, subject scope or epoch inside the envelope,
-- relabeling `permit-consumed` as `effect-completed`,
-- presenting a deterministic envelope hash whose underlying authenticated chain does
-  not verify.
+- replacing request-bound proof, authority basis, authorization decision or permit,
+- inventing/modifying a consumption receipt without the runtime key,
+- changing operation, request identity, subject scope or epoch,
+- relabeling this base envelope from `permit-consumed` to `effect-completed`,
+- presenting an aggregate hash whose authenticated underlying chain does not verify.
 
 ## DOES NOT PROTECT AGAINST
 
-- compromise of the canonical native enforcement chain,
-- compromise of decision or runtime keys,
-- a malicious trusted issuer/runtime holding those keys,
-- rollback, fork or loss of the bootstrap consumption ledger,
-- multiple workers with non-shared replay state,
-- host compromise, debugger access, memory scraping or side channels,
-- false external evidence that was already admitted as valid,
-- failure of the real side effect after permit consumption,
-- proving that an external system actually applied the requested state transition.
+- compromise of the native enforcement chain,
+- compromise of decision/runtime keys,
+- malicious trusted issuer/runtime,
+- rollback/fork/loss of consumption state,
+- workers with non-shared replay state,
+- host compromise or side channels,
+- false external evidence admitted earlier,
+- downstream effect failure after permit consumption,
+- proof that a remote system finalized the requested transition.
 
 ## ASSUMPTIONS
 
-- native MIR, request, proof and request-bound proof validators remain fail-closed,
-- canonical authority basis is derived from the native enforcement path,
-- authorization decision and execution permit keys remain separated,
-- runtime key remains secret from observer/provider code,
-- current epoch supplied during consumption is trusted,
-- production replay state will be durable, shared and monotonic,
-- consumers do not treat the envelope itself as authority.
+- native validators remain fail-closed,
+- authority basis is derived from native enforcement,
+- decision and runtime keys remain separated,
+- current epoch is trusted,
+- production replay state is durable/shared/monotonic,
+- consumers never treat provenance envelopes as authority.
 
 ## FAILURE MODE
 
-If application code can bypass the sanctioned permit ledger and execute the effect
-directly, the envelope only proves the sanctioned path for executions that used it;
-it cannot prove bypasses did not happen.
+If code bypasses the sanctioned ledger and executes an effect directly, this envelope
+cannot prove that bypasses did not occur.
 
-If replay state rolls back or forks, more than one valid-looking consumption receipt
-may be emitted for the same permit by compromised/divergent runtimes.
+If replay state rolls back or forks, divergent runtimes may emit valid-looking
+consumption receipts for the same permit. HMAC does not replace monotonic consensus.
 
-If the runtime key is compromised, an attacker can forge permit and consumption HMAC
-material within that trust role.
+If the runtime key is compromised, permit/consumption authenticity in that trust role
+is lost.
 
-If the side effect fails after consumption, V1 intentionally stops at
-`permit-consumed`; it must not be upgraded to a completion claim by convention.
+## EFFECT COMPANION
 
-## NEXT
+`EffectExecutionReceiptV1` and `EffectExecutionProofEnvelopeV1` are now implemented as
+separate companion layers. They distinguish local `effect-completed` and
+`effect-failed` without changing this base envelope's semantics.
 
-Add an effect-execution receipt produced by the sanctioned runtime itself, not by a
-caller-supplied result digest. The runtime must:
-
-1. consume the exact permit,
-2. execute one bounded effect callback,
-3. measure a canonical effect-result representation,
-4. emit an authenticated success/failure receipt bound to the consumption receipt,
-5. extend the envelope terminal state only when that receipt verifies.
-
-That next layer is where Koschei can safely distinguish:
-
-`permit-consumed`
-from
-`effect-attempted`
-from
-`effect-completed`.
+Those states still do NOT imply remote Pi/blockchain/bank/cloud settlement or finality.
+Provider-finality attestation is the next independent evidence layer.
