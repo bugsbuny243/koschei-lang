@@ -1,0 +1,30 @@
+"""Sanctioned runtime bridge for monotonic witness verification v1.
+
+The lower raw-challenge verifier remains a bootstrap implementation primitive. Production
+runtime/API surfaces should issue `RuntimeMonotonicWitnessChallengeV1` internally and use
+this bridge so application code cannot select arbitrary challenge bytes.
+"""
+from __future__ import annotations
+from typing import Callable
+from .monotonic_witness_v1 import (
+    GenerationStateLikeV1,
+    MonotonicWitnessAbiV1,
+    MonotonicWitnessReceiptV1,
+    MonotonicWitnessVerificationResultV1,
+    WitnessConfirmedGenerationStateV1,
+    verify_monotonic_witness_response_v1,
+)
+from .runtime_monotonic_witness_challenge_v1 import RuntimeMonotonicWitnessChallengeV1
+
+
+def verify_monotonic_witness_with_runtime_challenge_v1(*,abi:MonotonicWitnessAbiV1,verifier_artifact_bytes:bytes,raw_response_bytes:bytes,expected_anchor_id:str,runtime_challenge:RuntimeMonotonicWitnessChallengeV1,current_epoch:int,verifier:Callable[[bytes,bytes],MonotonicWitnessVerificationResultV1],witness_verifier_key:bytes,witness_challenge_key:bytes)->MonotonicWitnessReceiptV1:
+    runtime_challenge.assert_live(witness_challenge_key=witness_challenge_key,current_epoch=current_epoch,expected_anchor_id=expected_anchor_id)
+    return verify_monotonic_witness_response_v1(abi=abi,verifier_artifact_bytes=verifier_artifact_bytes,raw_response_bytes=raw_response_bytes,expected_anchor_id=expected_anchor_id,challenge_bytes=runtime_challenge.challenge_bytes,current_epoch=current_epoch,verifier=verifier,witness_verifier_key=witness_verifier_key)
+
+
+def confirm_generation_state_with_runtime_witness_v1(*,local_state:GenerationStateLikeV1,witness_receipt:MonotonicWitnessReceiptV1,abi:MonotonicWitnessAbiV1,verifier_artifact_bytes:bytes,raw_response_bytes:bytes,runtime_challenge:RuntimeMonotonicWitnessChallengeV1,current_epoch:int,witness_verifier_key:bytes,witness_challenge_key:bytes)->WitnessConfirmedGenerationStateV1:
+    runtime_challenge.assert_live(witness_challenge_key=witness_challenge_key,current_epoch=current_epoch,expected_anchor_id=witness_receipt.anchor_id)
+    witness_receipt.assert_live(abi=abi,verifier_artifact_bytes=verifier_artifact_bytes,raw_response_bytes=raw_response_bytes,challenge_bytes=runtime_challenge.challenge_bytes,witness_verifier_key=witness_verifier_key,current_epoch=current_epoch)
+    result=WitnessConfirmedGenerationStateV1(local_state=local_state,witness_receipt=witness_receipt,abi=abi,verifier_artifact_bytes=verifier_artifact_bytes,raw_response_bytes=raw_response_bytes,challenge_bytes=runtime_challenge.challenge_bytes,witness_verifier_key=witness_verifier_key,current_epoch=current_epoch)
+    result.assert_current_binding(anchor_id=witness_receipt.anchor_id,generation=witness_receipt.generation,manifest_digest=witness_receipt.manifest_digest)
+    return result
