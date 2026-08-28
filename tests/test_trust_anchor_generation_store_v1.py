@@ -35,6 +35,19 @@ def test_authenticated_history_detects_database_tamper(tmp_path):
     db=sqlite3.connect(path); db.execute("UPDATE trust_anchor_generation_history SET manifest_digest=? WHERE anchor_id=?",("0"*64,"offline-root")); db.commit(); db.close()
     with SqliteTrustAnchorGenerationStoreV1(path,generation_store_key=x['store_key']) as reopened:
         with pytest.raises(TrustAnchorGenerationStoreV1Error,match="authentication failed"): reopened.highest_generation("offline-root")
+def test_authenticated_head_detects_valid_prefix_tail_deletion(tmp_path):
+    x=setup(); path=tmp_path/"trust.db"; m1=x['manifest'](1); m2=x['manifest'](2)
+    with SqliteTrustAnchorGenerationStoreV1(path,generation_store_key=x['store_key']) as store:
+        store.observe(m1,root_signing_key=x['root_key'],abi=x['abi'],current_epoch=11); store.observe(m2,root_signing_key=x['root_key'],abi=x['abi'],current_epoch=11)
+    db=sqlite3.connect(path); db.execute("DELETE FROM trust_anchor_generation_history WHERE anchor_id=? AND revision=2",("offline-root",)); db.commit(); db.close()
+    with SqliteTrustAnchorGenerationStoreV1(path,generation_store_key=x['store_key']) as reopened:
+        with pytest.raises(TrustAnchorGenerationStoreV1Error,match="tail differs from authenticated head"): reopened.highest_generation("offline-root")
+def test_missing_authenticated_head_fails_closed_when_history_remains(tmp_path):
+    x=setup(); path=tmp_path/"trust.db"; m1=x['manifest'](1)
+    with SqliteTrustAnchorGenerationStoreV1(path,generation_store_key=x['store_key']) as store: store.observe(m1,root_signing_key=x['root_key'],abi=x['abi'],current_epoch=11)
+    db=sqlite3.connect(path); db.execute("DELETE FROM trust_anchor_generation_heads WHERE anchor_id=?",("offline-root",)); db.commit(); db.close()
+    with SqliteTrustAnchorGenerationStoreV1(path,generation_store_key=x['store_key']) as reopened:
+        with pytest.raises(TrustAnchorGenerationStoreV1Error,match="authenticated head is missing"): reopened.highest_generation("offline-root")
 def test_wrong_store_key_rejects_authenticated_history(tmp_path):
     x=setup(); path=tmp_path/"trust.db"; m1=x['manifest'](1)
     with SqliteTrustAnchorGenerationStoreV1(path,generation_store_key=x['store_key']) as store: store.observe(m1,root_signing_key=x['root_key'],abi=x['abi'],current_epoch=11)
