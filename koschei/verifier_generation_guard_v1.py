@@ -1,8 +1,8 @@
-"""Current trust-generation guard for reproducible verifier receipts v1.
+"""Integrity/current-generation guards for reproducible verifier receipts v1.
 
-This compact guard authenticates the reproducibility receipt's own HMAC-bound fields and
-checks both builder trust-anchor bindings against the caller-supplied current generation
-states. It avoids replaying the whole builder proof graph at every provider verification.
+Historical integrity authenticates the receipt exactly as sealed. Current operational
+validity adds builder A/B current trust-anchor generation checks. Neither path replays the
+entire builder proof graph; the receipt is the compact authenticated product of that graph.
 """
 from __future__ import annotations
 import hashlib,hmac
@@ -15,7 +15,7 @@ def _key(v:bytes)->bytes:
     if not isinstance(v,bytes) or len(v)<32: raise VerifierGenerationGuardV1Error("reproducibility_key must contain at least 32 bytes")
     return v
 
-def assert_reproducibility_current_v1(*,receipt:VerifierReproducibleBuildReceiptV1,reproducibility_key:bytes,builder_a_generation_state:TrustAnchorGenerationStateV1,builder_b_generation_state:TrustAnchorGenerationStateV1)->None:
+def assert_reproducibility_integrity_v1(*,receipt:VerifierReproducibleBuildReceiptV1,reproducibility_key:bytes)->None:
     key=_key(reproducibility_key)
     if receipt.authority or receipt.reproducible is not True: raise VerifierGenerationGuardV1Error("reproducibility receipt must remain non-authoritative and reproducible")
     expected=hmac.new(key,_repro_payload(
@@ -30,5 +30,8 @@ def assert_reproducibility_current_v1(*,receipt:VerifierReproducibleBuildReceipt
         builder_b_generation=receipt.builder_b_trust_anchor_generation,builder_b_manifest=receipt.builder_b_trust_anchor_manifest_digest,
     ),hashlib.sha256).hexdigest()
     if not hmac.compare_digest(receipt.receipt_digest,expected): raise VerifierGenerationGuardV1Error("reproducibility receipt authentication failed")
+
+def assert_reproducibility_current_v1(*,receipt:VerifierReproducibleBuildReceiptV1,reproducibility_key:bytes,builder_a_generation_state:TrustAnchorGenerationStateV1,builder_b_generation_state:TrustAnchorGenerationStateV1)->None:
+    assert_reproducibility_integrity_v1(receipt=receipt,reproducibility_key=reproducibility_key)
     builder_a_generation_state.assert_current_binding(anchor_id=receipt.builder_a_trust_anchor_id,generation=receipt.builder_a_trust_anchor_generation,manifest_digest=receipt.builder_a_trust_anchor_manifest_digest)
     builder_b_generation_state.assert_current_binding(anchor_id=receipt.builder_b_trust_anchor_id,generation=receipt.builder_b_trust_anchor_generation,manifest_digest=receipt.builder_b_trust_anchor_manifest_digest)
