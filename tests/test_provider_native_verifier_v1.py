@@ -15,7 +15,7 @@ from koschei.provider_adapter_abi_v1 import seal_provider_adapter_abi_v1
 from koschei.provider_native_verifier_v1 import ProviderNativeVerificationResultV1,verify_provider_native_response_v1
 from koschei.remote_attestation_evidence_v1 import RemoteAttestationVerificationResultV1,verify_remote_attestation_with_abi_v1
 from koschei.toolchain_provenance_v1 import attest_toolchain_provenance_v1
-from koschei.trust_anchor_admission_v1 import seal_trust_anchor_manifest_v1,admit_attestation_verifier_from_trust_anchor_v1
+from koschei.trust_anchor_admission_v1 import TrustAnchorGenerationStateV1,seal_trust_anchor_manifest_v1,admit_attestation_verifier_from_trust_anchor_v1
 from koschei.verified_ir_build_input_v1 import derive_verified_ir_build_input_v1
 from koschei.verifier_build_provenance_v1 import attest_verifier_build_from_verified_ir_v1,measure_verifier_artifact_v1
 from koschei.verifier_reproducible_admission_v1 import admit_reproducible_verifier_artifact_v1
@@ -31,18 +31,18 @@ def effect_chain(txid=b"pi-tx-abc"):
 def toolchain(name,key_byte):
     artifact=("koschei-compiler-"+name).encode(); key=key_byte*32; return attest_toolchain_provenance_v1(toolchain_id="koschei-compiler",toolchain_version=name,toolchain_artifact_bytes=artifact,build_profile="release",toolchain_signing_key=key),artifact,key
 def env(builder,suffix,keybyte,root):
-    e=("env-"+suffix).encode(); w=("workload-"+builder).encode(); raw=("quote-"+suffix).encode(); verifier_artifact=("attestation-verifier-"+suffix).encode(); rkey=keybyte.upper()*32; ekey=keybyte*32; root_key=(suffix.encode()*32)[:32]; admission_key=(suffix.upper().encode()*32)[:32]
+    e=("env-"+suffix).encode(); w=("workload-"+builder).encode(); raw=("quote-"+suffix).encode(); verifier_artifact=("attestation-verifier-"+suffix).encode(); rkey=keybyte.upper()*32; ekey=keybyte*32; root_key=(suffix.encode()*32)[:32]; admission_key=(suffix.upper().encode()*32)[:32]; generation_state=TrustAnchorGenerationStateV1()
     attabi=seal_attestation_verifier_abi_v1(provider_id="bootstrap-test-attestor",evidence_format_id="opaque-test-quote",schema_version="v1",verifier_artifact_bytes=verifier_artifact)
-    manifest=seal_trust_anchor_manifest_v1(anchor_id="offline-root-"+suffix,abi=attabi,allowed_trust_root_ids=(root,),valid_from_epoch=70,expires_before_epoch=90,root_signing_key=root_key)
-    root_admission=admit_attestation_verifier_from_trust_anchor_v1(manifest=manifest,abi=attabi,verifier_artifact_bytes=verifier_artifact,current_epoch=71,root_signing_key=root_key,runtime_admission_key=admission_key)
-    remote=verify_remote_attestation_with_abi_v1(abi=attabi,verifier_artifact_bytes=verifier_artifact,raw_evidence_bytes=raw,current_epoch=71,verifier=lambda _:RemoteAttestationVerificationResultV1(root,e,w,71,80),remote_attestation_verifier_key=rkey,trust_anchor_manifest=manifest,trust_anchor_admission=root_admission,root_signing_key=root_key,trust_anchor_runtime_admission_key=admission_key)
+    manifest=seal_trust_anchor_manifest_v1(anchor_id="offline-root-"+suffix,generation=1,abi=attabi,allowed_trust_root_ids=(root,),valid_from_epoch=70,expires_before_epoch=90,root_signing_key=root_key)
+    root_admission=admit_attestation_verifier_from_trust_anchor_v1(manifest=manifest,abi=attabi,verifier_artifact_bytes=verifier_artifact,current_epoch=71,root_signing_key=root_key,runtime_admission_key=admission_key,generation_state=generation_state)
+    remote=verify_remote_attestation_with_abi_v1(abi=attabi,verifier_artifact_bytes=verifier_artifact,raw_evidence_bytes=raw,current_epoch=71,verifier=lambda _:RemoteAttestationVerificationResultV1(root,e,w,71,80),remote_attestation_verifier_key=rkey,trust_anchor_manifest=manifest,trust_anchor_admission=root_admission,root_signing_key=root_key,trust_anchor_runtime_admission_key=admission_key,trust_anchor_generation_state=generation_state)
     receipt=attest_builder_environment_v1(builder_id=builder,environment_id="env-"+suffix,environment_bytes=e,workload_bytes=w,attestation_authority_id="build-attestor",environment_attestation_key=ekey,remote_evidence=remote,raw_remote_evidence_bytes=raw,remote_attestation_verifier_key=rkey)
-    return receipt,e,w,ekey,remote,raw,rkey,attabi,verifier_artifact,manifest,root_admission,root_key,admission_key
+    return receipt,e,w,ekey,remote,raw,rkey,attabi,verifier_artifact,manifest,root_admission,root_key,admission_key,generation_state
 def admitted():
     mir,proof,verified_input=verifier_ir(); artifact=b"compiled-pi-verifier-artifact-v1"; bk,rak=b"b"*32,b"a"*32; akey,bkey,rkey,gate_key=b"1"*32,b"2"*32,b"3"*32,b"4"*32
     tc_a,tc_a_bytes,tc_a_key=toolchain("v1-a",b"x"); tc_b,tc_b_bytes,tc_b_key=toolchain("v1-b",b"y")
-    env_a,env_a_bytes,work_a,env_a_key,remote_a,raw_a,remote_a_key,attabi_a,attart_a,manifest_a,root_admission_a,root_key_a,root_admission_key_a=env("builder-a","a",b"m","root-a")
-    env_b,env_b_bytes,work_b,env_b_key,remote_b,raw_b,remote_b_key,attabi_b,attart_b,manifest_b,root_admission_b,root_key_b,root_admission_key_b=env("builder-b","b",b"n","root-b")
+    env_a,env_a_bytes,work_a,env_a_key,remote_a,raw_a,remote_a_key,attabi_a,attart_a,manifest_a,root_admission_a,root_key_a,root_admission_key_a,generation_state_a=env("builder-a","a",b"m","root-a")
+    env_b,env_b_bytes,work_b,env_b_key,remote_b,raw_b,remote_b_key,attabi_b,attart_b,manifest_b,root_admission_b,root_key_b,root_admission_key_b,generation_state_b=env("builder-b","b",b"n","root-b")
     provenance=attest_verifier_build_from_verified_ir_v1(verified_input=verified_input,mir=mir,proof=proof,artifact_bytes=artifact,toolchain=tc_a,toolchain_artifact_bytes=tc_a_bytes,toolchain_signing_key=tc_a_key,build_profile="release-reproducible",build_provenance_key=bk)
     abi=seal_provider_adapter_abi_v1(provider_id="pi",adapter_id="pi-payment-verifier",schema_id="pi-payment-backend",schema_version="opaque-v1",verifier_implementation_digest=measure_verifier_artifact_v1(artifact))
     obs_a=attest_builder_observation_v1(builder_id="builder-a",builder_key=akey,verified_input=verified_input,mir=mir,proof=proof,toolchain=tc_a,toolchain_artifact_bytes=tc_a_bytes,toolchain_signing_key=tc_a_key,environment=env_a,environment_bytes=env_a_bytes,workload_bytes=work_a,environment_attestation_key=env_a_key,remote_evidence=remote_a,raw_remote_evidence_bytes=raw_a,remote_attestation_verifier_key=remote_a_key,current_epoch=71,artifact_bytes=artifact,build_profile="release-reproducible")
