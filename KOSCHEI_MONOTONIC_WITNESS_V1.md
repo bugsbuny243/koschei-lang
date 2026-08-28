@@ -1,6 +1,6 @@
 # KOSCHEI MONOTONIC WITNESS V1
 
-Status: IMPLEMENTED BOOTSTRAP PROTOTYPE / PROVIDER-NEUTRAL ABI + RECEIPT + GENERATION GUARD WIRED / REAL WITNESS PROVIDER EXTERNAL
+Status: IMPLEMENTED BOOTSTRAP PROTOTYPE / PROVIDER-NEUTRAL ABI + RUNTIME-OWNED CHALLENGE + RECEIPT + GENERATION GUARD WIRED / REAL WITNESS PROVIDER EXTERNAL
 
 ## PURPOSE
 
@@ -11,7 +11,7 @@ A local store cannot prove that a newer state existed if every local record of t
 V1 therefore adds an independent witness boundary:
 
 `local trust-anchor generation state`
-`+ fresh runtime challenge`
+`+ RuntimeMonotonicWitnessChallengeV1`
 `+ raw external witness response`
 `+ admitted witness-verifier artifact`
 `-> MonotonicWitnessReceiptV1`
@@ -33,6 +33,29 @@ The provider-native receipt seals the exact builder-A and builder-B witness rece
 
 The generic Lang core does not parse TPM, cloud control-plane, transparency-log or consensus-specific response formats.
 
+## RUNTIME-OWNED CHALLENGE
+
+Production witness freshness must not depend on application-selected nonce bytes.
+
+`issue_runtime_monotonic_witness_challenge_v1(...)`:
+
+- generates 32 random bytes with Python `secrets.token_bytes`,
+- binds one anchor id,
+- binds issuance and expiry epochs,
+- authenticates the challenge receipt with a dedicated runtime witness-challenge key,
+- carries `authority=false`.
+
+The sanctioned production bridge is:
+
+`RuntimeMonotonicWitnessChallengeV1`
+`-> verify_monotonic_witness_with_runtime_challenge_v1(...)`
+`-> provider-specific witness verifier callback`
+`-> MonotonicWitnessReceiptV1`
+
+The lower `verify_monotonic_witness_response_v1(...)` raw-challenge function remains a bootstrap implementation primitive. Production APIs must not expose it as a way for untrusted application code to choose challenge bytes when snapshot-rollback resistance is required.
+
+An expired, forged or wrong-anchor runtime challenge is rejected before the provider-specific witness callback executes.
+
 ## VERIFIER RESULT
 
 A trusted provider-specific verifier derives:
@@ -50,10 +73,10 @@ The caller does not separately choose the witnessed generation or manifest in th
 
 ## FRESHNESS
 
-The runtime supplies non-empty challenge bytes. The provider-specific verifier receives both:
+The provider-specific verifier receives both:
 
 - exact raw witness response bytes,
-- expected challenge bytes.
+- exact runtime-owned expected challenge bytes.
 
 The returned result must bind the exact expected challenge. The authenticated `MonotonicWitnessReceiptV1` commits:
 
@@ -83,6 +106,8 @@ Example:
 `local restored snapshot = generation 39`
 `external witness = generation 42`
 `=> reject`
+
+`confirm_generation_state_with_runtime_witness_v1(...)` additionally requires the runtime challenge receipt itself to remain authenticated, live and anchor-scoped before constructing the witnessed state.
 
 ## PROVIDER-NATIVE PROVENANCE
 
@@ -114,10 +139,12 @@ Historical validation rechecks receipt integrity but does not require the old wi
 ## PROTECTS AGAINST
 
 - complete local generation-store rollback being accepted when an independent fresh witness remembers a newer generation,
-- replay of a stale witness response when the provider-specific verifier correctly binds a fresh challenge,
+- application-selected stale challenge bytes on the sanctioned runtime-owned challenge path,
+- replay of a stale witness response when the provider-specific verifier correctly binds the fresh runtime challenge,
 - witness verifier artifact relabeling,
 - raw witness-response rebinding,
 - challenge rebinding,
+- wrong-anchor challenge reuse,
 - generation/manifest relabeling after receipt issuance,
 - dropping witness identity from witnessed provider-native provenance,
 - asymmetric one-builder-only witness hardening on the provider-native sanctioned path.
@@ -126,8 +153,9 @@ Historical validation rechecks receipt integrity but does not require the old wi
 
 - a witness provider rolled back or compromised together with the local host,
 - malicious/buggy provider-specific witness verifier code that is nevertheless admitted,
-- compromised witness-verifier HMAC key,
-- stolen runtime challenge before provider verification when the provider protocol itself is weak,
+- compromised witness-verifier or runtime challenge key,
+- failure of the OS/runtime CSPRNG used by `secrets.token_bytes`,
+- stolen live runtime challenge before provider verification when the provider protocol itself is weak,
 - witness service equivocation unless the provider/protocol exposes a mechanism that detects it,
 - network partition or witness unavailability,
 - local host/runtime compromise after all checks,
@@ -140,8 +168,8 @@ Historical validation rechecks receipt integrity but does not require the old wi
 - the witness authority has failure/rollback independence from the local generation store,
 - the provider-specific verifier authenticates the real provider response and verifies challenge binding,
 - verifier artifact bytes measured are the bytes executed,
-- runtime challenge generation has sufficient freshness for the selected provider protocol,
-- witness-verifier and provider-native trust keys are protected and role-separated,
+- runtime challenge key and RNG are protected by the runtime trust boundary,
+- witness-verifier, challenge and provider-native trust keys are protected and role-separated,
 - current operational consumers use witness-confirmed generation states when making snapshot-rollback-resistance claims.
 
 ## FAILURE MODE
@@ -154,9 +182,9 @@ If the witness is unavailable, exact fail-closed policy denies current witnessed
 
 ## NEXT
 
-1. Define witness-provider admission/revocation policy and key-role separation.
-2. Add a runtime-owned challenge source rather than accepting application-originated challenge material in production.
-3. Add one real external witness adapter outside Lang core, such as a transparency/checkpoint service or hardware/cloud-backed monotonic primitive.
-4. Bind witness-verifier build provenance through the same Verified-IR/reproducible-build chain without recursive trust collapse.
-5. Add immutable runtime load handles to reduce measure-A/execute-B TOCTOU.
-6. Move durable execution-permit replay state to a similarly externally witnessed/monotonic boundary where required.
+1. Define witness-provider admission/revocation policy and explicit key-role equality rejection.
+2. Add one real external witness adapter outside Lang core, such as a transparency/checkpoint service or hardware/cloud-backed monotonic primitive.
+3. Bind witness-verifier build provenance through the same Verified-IR/reproducible-build chain without recursive trust collapse.
+4. Add immutable runtime load handles to reduce measure-A/execute-B TOCTOU.
+5. Move durable execution-permit replay state to a similarly externally witnessed/monotonic boundary where required.
+6. Produce canonical `ks-local-validate --profile full` evidence before merge.
