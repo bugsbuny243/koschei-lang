@@ -42,6 +42,8 @@ class RemoteAttestationVerificationResultV1:
 @dataclass(frozen=True,slots=True)
 class RemoteAttestationEvidenceV1:
     provider_id:str; trust_root_id:str; raw_evidence_digest:str; environment_digest:str; workload_digest:str; observed_epoch:int; expires_before_epoch:int; attestation_verifier_abi_digest:str; verifier_implementation_digest:str; trust_anchor_id:str; trust_anchor_generation:int; trust_anchor_manifest_digest:str; trust_anchor_runtime_admission_digest:str; evidence_digest:str; verified:bool=True; authority:bool=False; version:int=1
+    def assert_current_generation(self,*,trust_anchor_generation_state:TrustAnchorGenerationStateV1)->None:
+        trust_anchor_generation_state.assert_current_binding(anchor_id=self.trust_anchor_id,generation=self.trust_anchor_generation,manifest_digest=self.trust_anchor_manifest_digest)
     def assert_authenticated(self,*,remote_attestation_verifier_key:bytes,raw_evidence_bytes:bytes,current_epoch:int)->None:
         key=_key(remote_attestation_verifier_key); current=_epoch(current_epoch)
         if self.authority or self.verified is not True: raise RemoteAttestationEvidenceV1Error("remote attestation evidence must remain verified and non-authoritative")
@@ -68,4 +70,6 @@ def verify_remote_attestation_with_abi_v1(*,abi:AttestationVerifierAbiV1,verifie
     trust_anchor_manifest.assert_trust_root_allowed(outcome.trust_root_id)
     observed=_epoch(outcome.observed_epoch); expires=_epoch(outcome.expires_before_epoch)
     if current<observed or current>=expires: raise RemoteAttestationEvidenceV1Error("attestation verifier result is not live at current epoch")
-    return _seal(provider_id=abi.provider_id,trust_root_id=outcome.trust_root_id,raw_evidence_bytes=raw_evidence_bytes,environment_digest=_measure_env(outcome.environment_bytes),workload_digest=_measure_workload(outcome.workload_bytes),observed_epoch=observed,expires_before_epoch=expires,verifier_abi_digest=abi.abi_digest,verifier_implementation_digest=abi.verifier_implementation_digest,trust_anchor_id=trust_anchor_manifest.anchor_id,trust_anchor_generation=trust_anchor_manifest.generation,trust_anchor_manifest_digest=trust_anchor_manifest.manifest_digest,trust_anchor_admission_digest=trust_anchor_admission.admission_digest,remote_attestation_verifier_key=remote_attestation_verifier_key)
+    result=_seal(provider_id=abi.provider_id,trust_root_id=outcome.trust_root_id,raw_evidence_bytes=raw_evidence_bytes,environment_digest=_measure_env(outcome.environment_bytes),workload_digest=_measure_workload(outcome.workload_bytes),observed_epoch=observed,expires_before_epoch=expires,verifier_abi_digest=abi.abi_digest,verifier_implementation_digest=abi.verifier_implementation_digest,trust_anchor_id=trust_anchor_manifest.anchor_id,trust_anchor_generation=trust_anchor_manifest.generation,trust_anchor_manifest_digest=trust_anchor_manifest.manifest_digest,trust_anchor_admission_digest=trust_anchor_admission.admission_digest,remote_attestation_verifier_key=remote_attestation_verifier_key)
+    result.assert_current_generation(trust_anchor_generation_state=trust_anchor_generation_state)
+    return result
