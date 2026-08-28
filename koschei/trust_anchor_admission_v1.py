@@ -71,10 +71,12 @@ class TrustAnchorGenerationStateV1:
             if generation<prior_generation: raise TrustAnchorAdmissionV1Error("trust-anchor manifest generation rollback detected")
             if generation==prior_generation and manifest.manifest_digest!=prior_digest: raise TrustAnchorAdmissionV1Error("trust-anchor manifest generation equivocation detected")
         if prior is None or generation>prior[0]: self._highest[anchor]=(generation,manifest.manifest_digest)
-    def assert_current(self,manifest:TrustAnchorManifestV1)->None:
-        anchor=_text(manifest.anchor_id,"anchor_id"); generation=_generation(manifest.generation); prior=self._highest.get(anchor)
+    def assert_current_binding(self,*,anchor_id:str,generation:int,manifest_digest:str)->None:
+        anchor=_text(anchor_id,"anchor_id"); gen=_generation(generation); digest=_text(manifest_digest,"manifest_digest"); prior=self._highest.get(anchor)
         if prior is None: raise TrustAnchorAdmissionV1Error("trust-anchor generation state has not observed this anchor")
-        if generation!=prior[0] or manifest.manifest_digest!=prior[1]: raise TrustAnchorAdmissionV1Error("trust-anchor manifest is not the current observed generation")
+        if gen!=prior[0] or digest!=prior[1]: raise TrustAnchorAdmissionV1Error("trust-anchor binding is not the current observed generation")
+    def assert_current(self,manifest:TrustAnchorManifestV1)->None:
+        self.assert_current_binding(anchor_id=manifest.anchor_id,generation=manifest.generation,manifest_digest=manifest.manifest_digest)
     def highest_generation(self,anchor_id:str)->int|None:
         prior=self._highest.get(_text(anchor_id,"anchor_id")); return None if prior is None else prior[0]
 
