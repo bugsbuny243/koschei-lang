@@ -5,6 +5,13 @@ import tempfile
 
 import pytest
 
+import koschei.capability_effect_contract_v1 as capability_contract
+from koschei.capability_effect_contract_v1 import (
+    CapabilityPowerDomainError,
+    POWER_DOMAIN_COMPUTE,
+    PROCESS_EXEC,
+    require_capability_method_same_power_domain,
+)
 from koschei.canonical_materialization_handle_v1 import (
     CanonicalMaterializationEffectGateV1,
     CanonicalMaterializationHandleV1Error,
@@ -49,6 +56,10 @@ from koschei.representation_reconstruction_gate_v1 import (
     ReconstructionConsumptionLedgerV1,
     RepresentationReconstructionGateV1,
 )
+from koschei.request_capability_domain_constraint_v1 import (
+    RequestCapabilityDomainConstraintV1Error,
+    bind_request_capability_domain_v1,
+)
 from koschei.sathra_request_binding_v1 import bind_sathra_to_request
 from koschei.universe_state_machine_v1 import initial_universe_state
 
@@ -73,7 +84,7 @@ def request_for(mir, epoch, tag="42"):
         mir,
         effect_id="withdrawal:" + tag,
         subject="withdrawal",
-        operation="signer.execute",
+        operation=PROCESS_EXEC,
         request_digest=d("payload-" + tag),
         identity_digest=d("identity-" + tag),
         epoch=epoch,
@@ -270,15 +281,32 @@ def close_world(world):
     world["galaxy"].coordinator.close()
 
 
-def effect_gate(world, handle, *, request=None, proof=None, galaxy=None, purpose="execute"):
+def effect_gate(
+    world,
+    handle,
+    *,
+    request=None,
+    proof=None,
+    galaxy=None,
+    domain_constraint=None,
+    purpose="execute",
+):
     selected_request = request or world["request"]
     selected_proof = proof or world["proof"]
+    selected_domain_constraint = domain_constraint
+    if selected_domain_constraint is None:
+        selected_domain_constraint = bind_request_capability_domain_v1(
+            selected_request,
+            capability_type="ProcessCaps",
+            capability_method="run",
+        )
     return CanonicalMaterializationEffectGateV1(
         registry=world["registry"],
         handle=handle,
         request=selected_request,
         proof=selected_proof,
         bound=bind_proof_to_request(world["mir"], selected_request, selected_proof),
+        domain_constraint=selected_domain_constraint,
         continuity=world["continuity"],
         galaxy=galaxy or world["galaxy"],
         purpose=purpose,
@@ -395,5 +423,96 @@ def test_denied_native_proof_is_durably_rejected_and_burns_materialization_handl
             assert calls == []
             with pytest.raises(CanonicalMaterializationHandleV1Error, match="already consumed"):
                 effect_gate(world, handle).execute(lambda _: b"must-not-run")
+        finally:
+            close_world(world)
+
+
+def test_request_capability_domain_constraint_is_exact_request_bound_and_deny_only():
+    with tempfile.TemporaryDirectory() as directory:
+        world = build_world(directory)
+        try:
+            constraint = bind_request_capability_domain_v1(
+                world["request"],
+                capability_type="ProcessCaps",
+                capability_method="run",
+            )
+            assert constraint.deny_only is True
+            assert constraint.authority is False
+            assert constraint.canonical_effect == PROCESS_EXEC
+            assert constraint.power_domain == POWER_DOMAIN_COMPUTE
+            constraint.assert_sealed(world["request"])
+
+            other = request_for(world["mir"], 7, "99")
+            with pytest.raises(
+                RequestCapabilityDomainConstraintV1Error,
+                match="another canonical request",
+            ):
+                constraint.assert_sealed(other)
+        finally:
+            close_world(world)
+
+
+def test_capability_contract_drift_across_power_domains_fails_closed(monkeypatch):
+    monkeypatch.setattr(
+        capability_contract,
+        "CAPABILITY_METHOD_EFFECTS",
+        {"NetCaps": {"get": capability_contract.DISK_READ}},
+    )
+    with pytest.raises(CapabilityPowerDomainError, match="cross-domain"):
+        require_capability_method_same_power_domain("NetCaps", "get")
+
+
+def test_foreign_domain_constraint_rejects_before_handle_is_consumed():
+    with tempfile.TemporaryDirectory() as directory:
+        world = build_world(directory)
+        try:
+            handle, _ = world["reconstruct_gate"].reconstruct(purpose="execute")
+            other = request_for(world["mir"], 7, "99")
+            foreign_constraint = bind_request_capability_domain_v1(
+                other,
+                capability_type="ProcessCaps",
+                capability_method="run",
+            )
+            with pytest.raises(
+                RequestCapabilityDomainConstraintV1Error,
+                match="another canonical request",
+            ):
+                effect_gate(
+                    world,
+                    handle,
+                    domain_constraint=foreign_constraint,
+                )
+
+            decision, result, claim = effect_gate(world, handle).execute(lambda _: b"yes")
+            assert decision.decision == "ALLOW"
+            assert result == b"yes"
+            assert claim.state == "COMMITTED"
+        finally:
+            close_world(world)
+
+
+def test_noncanonical_request_operation_cannot_be_relabelled_as_capability_effect():
+    with tempfile.TemporaryDirectory() as directory:
+        world = build_world(directory)
+        try:
+            relabelled = seal_effect_request(
+                world["mir"],
+                effect_id="withdrawal:relabelled",
+                subject="withdrawal",
+                operation="signer.execute",
+                request_digest=d("payload-relabelled"),
+                identity_digest=d("identity-relabelled"),
+                epoch=7,
+                nonce_digest=d("nonce-relabelled"),
+            )
+            with pytest.raises(
+                RequestCapabilityDomainConstraintV1Error,
+                match="operation differs from capability effect identity",
+            ):
+                bind_request_capability_domain_v1(
+                    relabelled,
+                    capability_type="ProcessCaps",
+                    capability_method="run",
+                )
         finally:
             close_world(world)
