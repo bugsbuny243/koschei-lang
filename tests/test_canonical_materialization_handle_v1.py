@@ -8,8 +8,8 @@ import pytest
 import koschei.capability_effect_contract_v1 as capability_contract
 from koschei.capability_effect_contract_v1 import (
     CapabilityPowerDomainError,
-    POWER_DOMAIN_COMPUTE,
-    PROCESS_EXEC,
+    NET_IO,
+    POWER_DOMAIN_NETWORK,
     require_capability_method_same_power_domain,
 )
 from koschei.canonical_materialization_handle_v1 import (
@@ -17,6 +17,9 @@ from koschei.canonical_materialization_handle_v1 import (
     CanonicalMaterializationHandleV1Error,
     CanonicalMaterializationRegistryV1,
     GalaxyMaterializationContextV1,
+)
+from koschei.compiler_bound_effect_request_v1 import (
+    seal_compiler_bound_effect_request_v1,
 )
 from koschei.continuity_epoch_authority_v1 import bind_continuity_epoch_authority_v1
 from koschei.galaxy_execution_gate_v1 import GalaxyExecutionError
@@ -38,6 +41,8 @@ from koschei.library_adversary_learning_resistance_v0 import (
 from koschei.library_proof_envelope_v1 import make_receipt
 from koschei.matrix_horizon_fence_v1 import DurableMatrixHorizonFence
 from koschei.matrix_reality_v1 import admit_matrix_hara, birth_hara, birth_matrix
+from koschei.mir import require_mir
+from koschei.modules import check_graph, load_graph
 from koschei.morth_black_hole_v1 import DurableBlackHole
 from koschei.native_sigil_atomic_execution_coordinator_v1 import AtomicExecutionCoordinator
 from koschei.native_sigil_library_bridge_v1 import expand_native_sigil_mir
@@ -64,6 +69,13 @@ from koschei.sathra_request_binding_v1 import bind_sathra_to_request
 from koschei.universe_state_machine_v1 import initial_universe_state
 
 SOURCE = "ka treasury; vor withdrawal; shi evidence; thal recovery; nur visibility;"
+COMPILER_SOURCE = '''
+fn execute(net: NetCaps, url: String) -> String or Error {
+    let response = net.get(url) or return Error("network")
+    return response.text()
+}
+fn main() { println("ready") }
+'''
 AXES = ("khor", "sei", "rha", "vaal", "teyr", "esh")
 VEIL = b"v" * 32
 RECON = b"r" * 32
@@ -79,12 +91,22 @@ def d32(tag: str) -> bytes:
     return hashlib.sha3_256(tag.encode()).digest()
 
 
-def request_for(mir, epoch, tag="42"):
-    return seal_effect_request(
-        mir,
+def compiler_mir_for(directory):
+    path = Path(directory) / "authority.ks"
+    path.write_text(COMPILER_SOURCE, encoding="utf-8")
+    graph = load_graph(path)
+    check_graph(graph)
+    return require_mir(graph)
+
+
+def request_bundle_for(native_mir, compiler_mir, epoch, tag="42"):
+    return seal_compiler_bound_effect_request_v1(
+        native_mir,
+        compiler_mir,
+        module_name="authority",
+        function_name="execute",
         effect_id="withdrawal:" + tag,
         subject="withdrawal",
-        operation=PROCESS_EXEC,
         request_digest=d("payload-" + tag),
         identity_digest=d("identity-" + tag),
         epoch=epoch,
@@ -110,6 +132,7 @@ def proof_for(mir, plan, failed_obligation=None):
 
 
 def build_world(directory, *, backing=None, canonical_khar=True):
+    compiler_mir = compiler_mir_for(directory)
     mir = lower_native_sigils(parse(SOURCE))
     plan = expand_native_sigil_mir(mir)
     proof = proof_for(mir, plan)
@@ -158,7 +181,8 @@ def build_world(directory, *, backing=None, canonical_khar=True):
         mir,
         evidence_digest=d("matrix-admission"),
     )
-    request = request_for(mir, 7)
+    bundle = request_bundle_for(mir, compiler_mir, 7)
+    request = bundle.request
     bound = bind_proof_to_request(mir, request, proof)
     sathra = seal_sathra(
         AxisWitness(
@@ -255,6 +279,9 @@ def build_world(directory, *, backing=None, canonical_khar=True):
     )
     return {
         "mir": mir,
+        "compiler_mir": compiler_mir,
+        "compiler_basis": bundle.compiler_basis,
+        "domain_constraint": bundle.domain_constraint,
         "plan": plan,
         "proof": proof,
         "veyra": veyra,
@@ -293,13 +320,7 @@ def effect_gate(
 ):
     selected_request = request or world["request"]
     selected_proof = proof or world["proof"]
-    selected_domain_constraint = domain_constraint
-    if selected_domain_constraint is None:
-        selected_domain_constraint = bind_request_capability_domain_v1(
-            selected_request,
-            capability_type="ProcessCaps",
-            capability_method="run",
-        )
+    selected_domain_constraint = domain_constraint or world["domain_constraint"]
     return CanonicalMaterializationEffectGateV1(
         registry=world["registry"],
         handle=handle,
@@ -320,12 +341,16 @@ def test_opaque_handle_executes_only_through_complete_galaxy_constitution():
             handle, receipt = world["reconstruct_gate"].reconstruct(purpose="execute")
             calls = []
             decision, result, claim = effect_gate(world, handle).execute(
-                lambda item: calls.append(item.digest) or b"signed"
+                lambda item: calls.append(item.digest) or b"network-result"
             )
             assert receipt.request_binding == world["grant"].request_binding
             assert world["request"].digest not in repr(world["grant"])
+            assert world["request"].operation == NET_IO
+            assert world["compiler_basis"].capability_type == "NetCaps"
+            assert world["compiler_basis"].capability_method == "get"
+            assert world["compiler_basis"].power_domain == POWER_DOMAIN_NETWORK
             assert decision.decision == "ALLOW"
-            assert result == b"signed"
+            assert result == b"network-result"
             assert claim.state == "COMMITTED"
             assert calls == [world["request"].digest]
             with pytest.raises(CanonicalMaterializationHandleV1Error, match="already consumed"):
@@ -379,9 +404,14 @@ def test_cross_request_substitution_rejects_without_consuming_handle():
         world = build_world(directory)
         try:
             handle, _ = world["reconstruct_gate"].reconstruct(purpose="execute")
-            other = request_for(world["mir"], 7, "99")
+            other_bundle = request_bundle_for(world["mir"], world["compiler_mir"], 7, "99")
             with pytest.raises(CanonicalMaterializationHandleV1Error, match="request/Veyra mismatch"):
-                effect_gate(world, handle, request=other).execute(lambda _: b"no")
+                effect_gate(
+                    world,
+                    handle,
+                    request=other_bundle.request,
+                    domain_constraint=other_bundle.domain_constraint,
+                ).execute(lambda _: b"no")
             decision, result, claim = effect_gate(world, handle).execute(lambda _: b"original")
             assert decision.decision == "ALLOW"
             assert result == b"original"
@@ -427,22 +457,22 @@ def test_denied_native_proof_is_durably_rejected_and_burns_materialization_handl
             close_world(world)
 
 
-def test_request_capability_domain_constraint_is_exact_request_bound_and_deny_only():
+def test_request_capability_domain_constraint_is_compiler_bound_and_deny_only():
     with tempfile.TemporaryDirectory() as directory:
         world = build_world(directory)
         try:
-            constraint = bind_request_capability_domain_v1(
-                world["request"],
-                capability_type="ProcessCaps",
-                capability_method="run",
-            )
+            constraint = world["domain_constraint"]
+            basis = world["compiler_basis"]
+            assert constraint.compiler_bound is True
             assert constraint.deny_only is True
             assert constraint.authority is False
-            assert constraint.canonical_effect == PROCESS_EXEC
-            assert constraint.power_domain == POWER_DOMAIN_COMPUTE
+            assert constraint.compiler_basis == basis
+            assert constraint.canonical_effect == NET_IO
+            assert constraint.power_domain == POWER_DOMAIN_NETWORK
             constraint.assert_sealed(world["request"])
+            basis.assert_matches_mir(world["compiler_mir"])
 
-            other = request_for(world["mir"], 7, "99")
+            other = request_bundle_for(world["mir"], world["compiler_mir"], 7, "99").request
             with pytest.raises(
                 RequestCapabilityDomainConstraintV1Error,
                 match="another canonical request",
@@ -467,12 +497,7 @@ def test_foreign_domain_constraint_rejects_before_handle_is_consumed():
         world = build_world(directory)
         try:
             handle, _ = world["reconstruct_gate"].reconstruct(purpose="execute")
-            other = request_for(world["mir"], 7, "99")
-            foreign_constraint = bind_request_capability_domain_v1(
-                other,
-                capability_type="ProcessCaps",
-                capability_method="run",
-            )
+            other_bundle = request_bundle_for(world["mir"], world["compiler_mir"], 7, "99")
             with pytest.raises(
                 RequestCapabilityDomainConstraintV1Error,
                 match="another canonical request",
@@ -480,7 +505,7 @@ def test_foreign_domain_constraint_rejects_before_handle_is_consumed():
                 effect_gate(
                     world,
                     handle,
-                    domain_constraint=foreign_constraint,
+                    domain_constraint=other_bundle.domain_constraint,
                 )
 
             decision, result, claim = effect_gate(world, handle).execute(lambda _: b"yes")
@@ -491,7 +516,7 @@ def test_foreign_domain_constraint_rejects_before_handle_is_consumed():
             close_world(world)
 
 
-def test_noncanonical_request_operation_cannot_be_relabelled_as_capability_effect():
+def test_noncanonical_request_operation_cannot_be_relabelled_as_compiler_effect():
     with tempfile.TemporaryDirectory() as directory:
         world = build_world(directory)
         try:
@@ -507,12 +532,25 @@ def test_noncanonical_request_operation_cannot_be_relabelled_as_capability_effec
             )
             with pytest.raises(
                 RequestCapabilityDomainConstraintV1Error,
-                match="operation differs from capability effect identity",
+                match="operation differs from compiler capability effect identity",
             ):
                 bind_request_capability_domain_v1(
                     relabelled,
-                    capability_type="ProcessCaps",
-                    capability_method="run",
+                    compiler_basis=world["compiler_basis"],
+                )
+        finally:
+            close_world(world)
+
+
+def test_tampered_compiler_basis_cannot_issue_request_constraint():
+    with tempfile.TemporaryDirectory() as directory:
+        world = build_world(directory)
+        try:
+            forged = replace(world["compiler_basis"], capability_method="post")
+            with pytest.raises(Exception, match="basis seal mismatch|canonical effect"):
+                bind_request_capability_domain_v1(
+                    world["request"],
+                    compiler_basis=forged,
                 )
         finally:
             close_world(world)
