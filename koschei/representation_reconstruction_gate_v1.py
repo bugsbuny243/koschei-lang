@@ -9,9 +9,9 @@ authoritative ledger, and the broad runtime receives only an opaque materializat
 handle rather than the canonical MIR object itself.
 
 For execution-purpose reconstruction, the grant and resulting handle are both bound to
-one exact sealed `CanonicalEffectRequest`. The request epoch must equal the live visibility
-epoch, so neither the reconstruction capability nor the materialization capability can be
-widened to another request or another epoch.
+one exact sealed `CanonicalEffectRequest`. Materialization custody also retains the exact
+reconstruction Veyra so the later constitutional Galaxy execution context cannot silently
+substitute another living world.
 
 The Python prototype cannot prevent callers from importing lower-level helpers directly.
 Native/runtime APIs must expose this gate and keep raw MIR/reconstruction primitives in a
@@ -312,6 +312,7 @@ class RepresentationReconstructionGateV1:
         )
         handle = self.materialization_registry.mint(
             hidden_mir=hidden,
+            veyra=self.veyra,
             canonical_seal_digest=receipt.canonical_seal_digest,
             canonical_request=self.request,
             purpose=purpose,
