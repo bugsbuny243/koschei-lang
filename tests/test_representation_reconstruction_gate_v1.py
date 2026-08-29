@@ -8,6 +8,10 @@ from koschei.canonical_materialization_handle_v1 import (
     CanonicalMaterializationHandleV1,
     CanonicalMaterializationRegistryV1,
 )
+from koschei.continuity_epoch_authority_v1 import (
+    ContinuityEpochAuthorityV1Error,
+    bind_continuity_epoch_authority_v1,
+)
 from koschei.galaxy_identity_v1 import birth_veyra
 from koschei.library_adaptive_visibility_v0 import (
     VisibilityPolicyV0,
@@ -100,7 +104,7 @@ RECEIPT = b"c" * 32
 MATERIALIZE = b"m" * 32
 
 
-def world(epoch_source=None, request_tag="42"):
+def world(epoch_reader=None, request_tag="42"):
     m = mir()
     v = veyra()
     e = envelope()
@@ -115,6 +119,10 @@ def world(epoch_source=None, request_tag="42"):
         purpose="execute",
         reconstruction_key=RECON,
     )
+    continuity = bind_continuity_epoch_authority_v1(
+        continuity_id="test-continuity",
+        epoch_reader=epoch_reader or (lambda: e.visibility_epoch),
+    )
     ledger = ReconstructionConsumptionLedgerV1()
     registry = CanonicalMaterializationRegistryV1(materialization_key=MATERIALIZE)
     gate = RepresentationReconstructionGateV1(
@@ -127,7 +135,7 @@ def world(epoch_source=None, request_tag="42"):
         veil_key=VEIL,
         reconstruction_key=RECON,
         receipt_key=RECEIPT,
-        epoch_source=epoch_source or (lambda: e.visibility_epoch),
+        continuity=continuity,
         ledger=ledger,
         materialization_registry=registry,
     )
@@ -165,7 +173,7 @@ def test_trusted_gate_consumes_exact_request_grant_once_and_returns_only_handle(
 
 
 def test_grant_for_request_a_cannot_reconstruct_request_b_and_is_not_burned():
-    m, v, e, representation, grant, request_a, ledger, registry, _ = world()
+    m, v, e, representation, grant, request_a, ledger, registry, original_gate = world()
     request_b = request_for(m, e.visibility_epoch, "99")
     wrong_gate = RepresentationReconstructionGateV1(
         representation=representation,
@@ -177,7 +185,7 @@ def test_grant_for_request_a_cannot_reconstruct_request_b_and_is_not_burned():
         veil_key=VEIL,
         reconstruction_key=RECON,
         receipt_key=RECEIPT,
-        epoch_source=lambda: e.visibility_epoch,
+        continuity=original_gate.continuity,
         ledger=ledger,
         materialization_registry=registry,
     )
@@ -197,7 +205,7 @@ def test_grant_for_request_a_cannot_reconstruct_request_b_and_is_not_burned():
         veil_key=VEIL,
         reconstruction_key=RECON,
         receipt_key=RECEIPT,
-        epoch_source=lambda: e.visibility_epoch,
+        continuity=original_gate.continuity,
         ledger=ledger,
         materialization_registry=registry,
     )
@@ -216,26 +224,26 @@ def test_wrong_purpose_fails_before_consumption_and_does_not_burn_grant():
     assert isinstance(handle, CanonicalMaterializationHandleV1)
 
 
-def test_trusted_epoch_source_failure_is_fail_closed_and_does_not_consume():
+def test_continuity_read_failure_is_fail_closed_and_does_not_consume():
     calls = []
 
     def failed_epoch():
         calls.append(1)
         raise RuntimeError("continuity unavailable")
 
-    _, _, _, _, _, _, _, _, gate = world(epoch_source=failed_epoch)
+    _, _, _, _, _, _, _, _, gate = world(epoch_reader=failed_epoch)
     with pytest.raises(
-        RepresentationReconstructionGateV1Error,
-        match="trusted epoch source failed closed",
+        ContinuityEpochAuthorityV1Error,
+        match="read failed closed",
     ):
         gate.reconstruct(purpose="execute")
     assert calls == [1]
 
 
-def test_invalid_boolean_epoch_is_rejected_before_consumption():
-    _, _, _, _, _, _, _, _, gate = world(epoch_source=lambda: True)
+def test_invalid_boolean_continuity_epoch_is_rejected_before_consumption():
+    _, _, _, _, _, _, _, _, gate = world(epoch_reader=lambda: True)
     with pytest.raises(
-        RepresentationReconstructionGateV1Error,
+        ContinuityEpochAuthorityV1Error,
         match="invalid epoch",
     ):
         gate.reconstruct(purpose="execute")
@@ -243,7 +251,7 @@ def test_invalid_boolean_epoch_is_rejected_before_consumption():
 
 def test_expired_runtime_epoch_cannot_open_canonical_world():
     _, _, e, _, _, _, _, _, gate = world(
-        epoch_source=lambda: envelope().visibility_epoch + 10
+        epoch_reader=lambda: envelope().visibility_epoch + 10
     )
     assert gate.grant.expires_before_epoch == e.visibility_epoch + 1
     with pytest.raises(
