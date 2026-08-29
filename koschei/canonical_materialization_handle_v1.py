@@ -8,7 +8,8 @@ the canonical request digest itself.
 
 The sanctioned effect gate consumes the handle atomically, resolves hidden MIR only
 inside the trusted boundary, verifies the request-bound native proof, and exposes only
-the canonical request/effect result outside.
+the canonical request/effect result outside. Its liveness decision comes from the same
+`ContinuityEpochAuthorityV1` contract used by Nyr observation and reconstruction.
 
 This Python bootstrap cannot provide process isolation: arbitrary code that can inspect
 this registry object or import private helpers can still reach trusted state. Native
@@ -24,6 +25,7 @@ import secrets
 from threading import Lock
 from typing import Callable, TypeVar
 
+from .continuity_epoch_authority_v1 import ContinuityEpochAuthorityV1
 from .native_sigil_enforcement_gate_v1 import EnforcementDecision
 from .native_sigil_mir_v1 import NativeSigilMir
 from .native_sigil_proof_pipeline_v1 import NativeSigilProofBundle
@@ -322,9 +324,6 @@ class CanonicalMaterializationRegistryV1:
         return hidden
 
 
-EpochSource = Callable[[], int]
-
-
 @dataclass(frozen=True, slots=True)
 class CanonicalMaterializationEffectGateV1:
     """One-shot bridge from opaque handle to one exact request-bound native effect."""
@@ -334,7 +333,7 @@ class CanonicalMaterializationEffectGateV1:
     request: CanonicalEffectRequest
     proof: NativeSigilProofBundle
     bound: RequestBoundProof
-    epoch_source: EpochSource
+    continuity: ContinuityEpochAuthorityV1
     purpose: str = "execute"
 
     def __post_init__(self) -> None:
@@ -362,24 +361,18 @@ class CanonicalMaterializationEffectGateV1:
             raise CanonicalMaterializationHandleV1Error(
                 "request-bound proof does not bind supplied native proof"
             )
-        if not callable(self.epoch_source):
+        if not isinstance(self.continuity, ContinuityEpochAuthorityV1):
             raise CanonicalMaterializationHandleV1Error(
-                "trusted materialization epoch source must be callable"
+                "Continuity epoch authority v1 required"
             )
+        self.continuity.assert_sealed()
         _text(self.purpose, "purpose")
 
     def execute(
         self,
         effect: Callable[[CanonicalEffectRequest], _T],
     ) -> tuple[EnforcementDecision, _T | None]:
-        try:
-            current = _epoch(self.epoch_source())
-        except CanonicalMaterializationHandleV1Error:
-            raise
-        except Exception as exc:
-            raise CanonicalMaterializationHandleV1Error(
-                "trusted materialization epoch source failed closed"
-            ) from exc
+        current = self.continuity.current_epoch()
         hidden_mir = self.registry._consume_hidden_mir(
             self.handle,
             purpose=self.purpose,
