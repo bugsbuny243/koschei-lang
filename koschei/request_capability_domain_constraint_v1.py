@@ -1,27 +1,21 @@
 """Exact-request capability power-domain constraint v1.
 
-This module extracts only the useful default-deny invariant from the experimental
-six-domain prototype: authority present in one power domain does not silently
-become authority in another.
+The constraint is a deny-only bridge between one exact `CanonicalEffectRequest`
+and one capability use already derived from sealed compiler MIR. Runtime callers
+do not choose a capability type/method pair here; those facts come from
+`CompilerCapabilityEffectBasisV1`.
 
-It does NOT define grants, permits, delegation, or an ALLOW decision. Existing
+This module defines no grant, permit, delegation, or ALLOW decision. Existing
 Koschei capability semantics remain authoritative in
 `capability_effect_contract_v1`; existing Khar/Galaxy execution remains the only
-critical-effect admission path. This object can only prove that one exact
-request is paired with one already-canonical capability method whose effect
-stays inside that capability's own power domain. The request operation itself
-must be the same canonical effect identity, preventing a parallel caller-chosen
-operation taxonomy from relabeling privileged work after admission.
+critical-effect admission path.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
 
-from .capability_effect_contract_v1 import (
-    CapabilityPowerDomainError,
-    require_capability_method_same_power_domain,
-)
+from .compiler_capability_effect_basis_v1 import CompilerCapabilityEffectBasisV1
 from .native_sigil_request_binding_v1 import CanonicalEffectRequest
 
 _CTX = b"koschei.request-capability-domain-constraint/v1\x00"
@@ -40,6 +34,8 @@ def _text(value: str, label: str) -> str:
 def _digest(
     *,
     request_digest: str,
+    compiler_basis_digest: str,
+    compiler_mir_fingerprint: str,
     capability_type: str,
     capability_method: str,
     canonical_effect: str,
@@ -47,10 +43,13 @@ def _digest(
 ) -> str:
     rows = (
         f"request={request_digest}",
+        f"compiler-basis={compiler_basis_digest}",
+        f"compiler-mir={compiler_mir_fingerprint}",
         f"capability-type={capability_type}",
         f"capability-method={capability_method}",
         f"canonical-effect={canonical_effect}",
         f"power-domain={power_domain}",
+        "compiler-bound=1",
         "deny-only=1",
         "authority=0",
         "version=1",
@@ -60,14 +59,16 @@ def _digest(
 
 @dataclass(frozen=True, slots=True)
 class RequestCapabilityDomainConstraintV1:
-    """Non-authoritative exact-request proof of same-domain capability use."""
+    """Non-authoritative exact-request constraint sourced from compiler MIR."""
 
     request_digest: str
+    compiler_basis: CompilerCapabilityEffectBasisV1
     capability_type: str
     capability_method: str
     canonical_effect: str
     power_domain: str
     digest: str
+    compiler_bound: bool = True
     deny_only: bool = True
     authority: bool = False
     version: int = 1
@@ -77,42 +78,56 @@ class RequestCapabilityDomainConstraintV1:
             raise RequestCapabilityDomainConstraintV1Error(
                 "canonical effect request required"
             )
-        if self.version != 1 or self.deny_only is not True or self.authority is not False:
+        if (
+            self.version != 1
+            or self.compiler_bound is not True
+            or self.deny_only is not True
+            or self.authority is not False
+        ):
             raise RequestCapabilityDomainConstraintV1Error(
                 "request capability-domain constraint flags are invalid"
             )
+        if not isinstance(self.compiler_basis, CompilerCapabilityEffectBasisV1):
+            raise RequestCapabilityDomainConstraintV1Error(
+                "compiler capability-effect basis v1 required"
+            )
+        self.compiler_basis.assert_sealed()
         if self.request_digest != request.digest:
             raise RequestCapabilityDomainConstraintV1Error(
                 "capability-domain constraint is bound to another canonical request"
             )
 
-        capability_type = _text(self.capability_type, "capability_type")
-        capability_method = _text(self.capability_method, "capability_method")
-        try:
-            expected_effect, expected_domain = require_capability_method_same_power_domain(
-                capability_type,
-                capability_method,
-            )
-        except CapabilityPowerDomainError as error:
-            raise RequestCapabilityDomainConstraintV1Error(str(error)) from error
-
-        if self.canonical_effect != expected_effect:
+        basis = self.compiler_basis
+        if self.capability_type != basis.capability_type:
             raise RequestCapabilityDomainConstraintV1Error(
-                "capability-domain constraint canonical effect mismatch"
+                "capability-domain constraint type differs from compiler basis"
             )
-        if request.operation != expected_effect:
+        if self.capability_method != basis.capability_method:
             raise RequestCapabilityDomainConstraintV1Error(
-                "canonical request operation differs from capability effect identity"
+                "capability-domain constraint method differs from compiler basis"
             )
-        if self.power_domain != expected_domain:
+        if self.canonical_effect != basis.canonical_effect:
             raise RequestCapabilityDomainConstraintV1Error(
-                "capability-domain constraint power domain mismatch"
+                "capability-domain constraint effect differs from compiler basis"
+            )
+        if self.power_domain != basis.power_domain:
+            raise RequestCapabilityDomainConstraintV1Error(
+                "capability-domain constraint domain differs from compiler basis"
+            )
+        if request.operation != basis.canonical_effect:
+            raise RequestCapabilityDomainConstraintV1Error(
+                "canonical request operation differs from compiler capability effect identity"
             )
 
         expected_digest = _digest(
             request_digest=_text(self.request_digest, "request_digest"),
-            capability_type=capability_type,
-            capability_method=capability_method,
+            compiler_basis_digest=_text(basis.digest, "compiler_basis_digest"),
+            compiler_mir_fingerprint=_text(
+                basis.mir_fingerprint,
+                "compiler_mir_fingerprint",
+            ),
+            capability_type=_text(self.capability_type, "capability_type"),
+            capability_method=_text(self.capability_method, "capability_method"),
             canonical_effect=_text(self.canonical_effect, "canonical_effect"),
             power_domain=_text(self.power_domain, "power_domain"),
         )
@@ -125,40 +140,36 @@ class RequestCapabilityDomainConstraintV1:
 def bind_request_capability_domain_v1(
     request: CanonicalEffectRequest,
     *,
-    capability_type: str,
-    capability_method: str,
+    compiler_basis: CompilerCapabilityEffectBasisV1,
 ) -> RequestCapabilityDomainConstraintV1:
-    """Bind an exact request to one canonical same-domain capability operation.
+    """Bind an exact request to one compiler-derived same-domain capability use.
 
-    This function never grants permission. Unknown or cross-domain capability
-    relationships are rejected before a constraint object exists, and the exact
-    request must already name the canonical effect as its operation.
+    Runtime callers cannot select capability type/method here. V1 accepts only a
+    sealed compiler basis previously derived from sealed `MirGraph` evidence.
+    The resulting object can deny admission but cannot create authority or ALLOW.
     """
 
     if not isinstance(request, CanonicalEffectRequest):
         raise RequestCapabilityDomainConstraintV1Error(
             "canonical effect request required"
         )
-    capability_type_value = _text(capability_type, "capability_type")
-    capability_method_value = _text(capability_method, "capability_method")
-    try:
-        canonical_effect, power_domain = require_capability_method_same_power_domain(
-            capability_type_value,
-            capability_method_value,
-        )
-    except CapabilityPowerDomainError as error:
-        raise RequestCapabilityDomainConstraintV1Error(str(error)) from error
-    if request.operation != canonical_effect:
+    if not isinstance(compiler_basis, CompilerCapabilityEffectBasisV1):
         raise RequestCapabilityDomainConstraintV1Error(
-            "canonical request operation differs from capability effect identity"
+            "compiler capability-effect basis v1 required"
+        )
+    compiler_basis.assert_sealed()
+    if request.operation != compiler_basis.canonical_effect:
+        raise RequestCapabilityDomainConstraintV1Error(
+            "canonical request operation differs from compiler capability effect identity"
         )
 
     result = RequestCapabilityDomainConstraintV1(
         request_digest=_text(request.digest, "request_digest"),
-        capability_type=capability_type_value,
-        capability_method=capability_method_value,
-        canonical_effect=canonical_effect,
-        power_domain=power_domain,
+        compiler_basis=compiler_basis,
+        capability_type=compiler_basis.capability_type,
+        capability_method=compiler_basis.capability_method,
+        canonical_effect=compiler_basis.canonical_effect,
+        power_domain=compiler_basis.power_domain,
         digest="",
     )
     object.__setattr__(
@@ -166,6 +177,8 @@ def bind_request_capability_domain_v1(
         "digest",
         _digest(
             request_digest=result.request_digest,
+            compiler_basis_digest=compiler_basis.digest,
+            compiler_mir_fingerprint=compiler_basis.mir_fingerprint,
             capability_type=result.capability_type,
             capability_method=result.capability_method,
             canonical_effect=result.canonical_effect,
