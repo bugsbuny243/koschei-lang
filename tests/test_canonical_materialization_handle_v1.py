@@ -322,23 +322,28 @@ def test_noncanonical_khar_veyra_cannot_execute_materialized_privileged_effect()
 
 
 def test_foreign_veyra_context_rejects_before_materialization_is_consumed():
-    with tempfile.TemporaryDirectory() as directory_a, tempfile.TemporaryDirectory() as directory_b:
-        world = build_world(directory_a)
-        foreign = build_world(directory_b)
+    with tempfile.TemporaryDirectory() as directory:
+        world = build_world(directory)
         try:
             handle, _ = world["reconstruct_gate"].reconstruct(purpose="execute")
+            foreign_veyra = birth_canonical_veyra(
+                profile_digest=d("profile"),
+                genesis_digest=d("genesis"),
+                instance_digest=d("foreign-instance"),
+                birth_epoch=7,
+            )
+            foreign_galaxy = replace(world["galaxy"], veyra=foreign_veyra)
             with pytest.raises(
                 CanonicalMaterializationHandleV1Error,
                 match="request/Veyra mismatch",
             ):
-                effect_gate(world, handle, galaxy=foreign["galaxy"]).execute(lambda _: b"no")
+                effect_gate(world, handle, galaxy=foreign_galaxy).execute(lambda _: b"no")
             decision, result, claim = effect_gate(world, handle).execute(lambda _: b"yes")
             assert decision.decision == "ALLOW"
             assert result == b"yes"
             assert claim.state == "COMMITTED"
         finally:
             close_world(world)
-            close_world(foreign)
 
 
 def test_cross_request_substitution_rejects_without_consuming_handle():
