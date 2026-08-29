@@ -9,7 +9,9 @@ Koschei capability semantics remain authoritative in
 `capability_effect_contract_v1`; existing Khar/Galaxy execution remains the only
 critical-effect admission path. This object can only prove that one exact
 request is paired with one already-canonical capability method whose effect
-stays inside that capability's own power domain.
+stays inside that capability's own power domain. The request operation itself
+must be the same canonical effect identity, preventing a parallel caller-chosen
+operation taxonomy from relabeling privileged work after admission.
 """
 from __future__ import annotations
 
@@ -98,6 +100,10 @@ class RequestCapabilityDomainConstraintV1:
             raise RequestCapabilityDomainConstraintV1Error(
                 "capability-domain constraint canonical effect mismatch"
             )
+        if request.operation != expected_effect:
+            raise RequestCapabilityDomainConstraintV1Error(
+                "canonical request operation differs from capability effect identity"
+            )
         if self.power_domain != expected_domain:
             raise RequestCapabilityDomainConstraintV1Error(
                 "capability-domain constraint power domain mismatch"
@@ -125,7 +131,8 @@ def bind_request_capability_domain_v1(
     """Bind an exact request to one canonical same-domain capability operation.
 
     This function never grants permission. Unknown or cross-domain capability
-    relationships are rejected before a constraint object exists.
+    relationships are rejected before a constraint object exists, and the exact
+    request must already name the canonical effect as its operation.
     """
 
     if not isinstance(request, CanonicalEffectRequest):
@@ -141,6 +148,10 @@ def bind_request_capability_domain_v1(
         )
     except CapabilityPowerDomainError as error:
         raise RequestCapabilityDomainConstraintV1Error(str(error)) from error
+    if request.operation != canonical_effect:
+        raise RequestCapabilityDomainConstraintV1Error(
+            "canonical request operation differs from capability effect identity"
+        )
 
     result = RequestCapabilityDomainConstraintV1(
         request_digest=_text(request.digest, "request_digest"),
