@@ -18,6 +18,7 @@ from koschei.library_adversary_learning_resistance_v0 import (
     VisibilityPosture,
 )
 from koschei.native_sigil_mir_v1 import lower_native_sigils
+from koschei.native_sigil_request_binding_v1 import seal_effect_request
 from koschei.parser import parse
 from koschei.representation_boundary_v1 import (
     issue_observable_representation_v1,
@@ -99,6 +100,16 @@ def world(epoch_source=None):
         purpose="execute",
         reconstruction_key=RECON,
     )
+    request = seal_effect_request(
+        m,
+        effect_id="withdrawal:42",
+        subject="withdrawal",
+        operation="signer.execute",
+        request_digest=dhex("payload-42"),
+        identity_digest=dhex("identity-42"),
+        epoch=e.visibility_epoch,
+        nonce_digest=dhex("nonce-42"),
+    )
     ledger = ReconstructionConsumptionLedgerV1()
     registry = CanonicalMaterializationRegistryV1(materialization_key=MATERIALIZE)
     gate = RepresentationReconstructionGateV1(
@@ -107,6 +118,7 @@ def world(epoch_source=None):
         veyra=v,
         envelope=e,
         grant=grant,
+        request=request,
         veil_key=VEIL,
         reconstruction_key=RECON,
         receipt_key=RECEIPT,
@@ -114,14 +126,15 @@ def world(epoch_source=None):
         ledger=ledger,
         materialization_registry=registry,
     )
-    return m, v, e, representation, grant, ledger, registry, gate
+    return m, v, e, representation, grant, request, ledger, registry, gate
 
 
 def test_trusted_gate_consumes_reconstruction_grant_once_and_returns_only_handle():
-    m, _, e, representation, grant, _, _, gate = world()
+    m, _, e, representation, grant, request, _, _, gate = world()
 
     handle, receipt = gate.reconstruct(purpose="execute")
     assert isinstance(handle, CanonicalMaterializationHandleV1)
+    assert handle.canonical_request_digest == request.digest
     assert receipt.grant_context_digest == grant.context_digest
     assert receipt.representation_digest == representation.representation_digest
     assert receipt.consumed_epoch == e.visibility_epoch
@@ -143,7 +156,7 @@ def test_trusted_gate_consumes_reconstruction_grant_once_and_returns_only_handle
 
 
 def test_wrong_purpose_fails_before_consumption_and_does_not_burn_grant():
-    _, _, _, _, _, _, _, gate = world()
+    _, _, _, _, _, _, _, _, gate = world()
 
     with pytest.raises(
         RepresentationReconstructionGateV1Error,
@@ -162,7 +175,7 @@ def test_trusted_epoch_source_failure_is_fail_closed_and_does_not_consume():
         calls.append(1)
         raise RuntimeError("continuity unavailable")
 
-    _, _, _, _, _, _, _, gate = world(epoch_source=failed_epoch)
+    _, _, _, _, _, _, _, _, gate = world(epoch_source=failed_epoch)
     with pytest.raises(
         RepresentationReconstructionGateV1Error,
         match="trusted epoch source failed closed",
@@ -172,7 +185,7 @@ def test_trusted_epoch_source_failure_is_fail_closed_and_does_not_consume():
 
 
 def test_invalid_boolean_epoch_is_rejected_before_consumption():
-    _, _, _, _, _, _, _, gate = world(epoch_source=lambda: True)
+    _, _, _, _, _, _, _, _, gate = world(epoch_source=lambda: True)
     with pytest.raises(
         RepresentationReconstructionGateV1Error,
         match="invalid epoch",
@@ -181,16 +194,19 @@ def test_invalid_boolean_epoch_is_rejected_before_consumption():
 
 
 def test_expired_runtime_epoch_cannot_open_canonical_world():
-    _, _, e, _, _, _, _, gate = world(
+    _, _, e, _, _, _, _, _, gate = world(
         epoch_source=lambda: envelope().visibility_epoch + 10
     )
     assert gate.grant.expires_before_epoch == e.visibility_epoch + 1
-    with pytest.raises(RepresentationReconstructionGateV1Error, match="expired"):
+    with pytest.raises(
+        RepresentationReconstructionGateV1Error,
+        match="canonical request epoch differs from current reconstruction epoch|expired",
+    ):
         gate.reconstruct(purpose="execute")
 
 
 def test_consumption_receipt_tamper_is_detected():
-    _, _, _, _, _, _, _, gate = world()
+    _, _, _, _, _, _, _, _, gate = world()
     _, receipt = gate.reconstruct(purpose="execute")
     forged = replace(receipt, consumed_epoch=receipt.consumed_epoch + 1)
     with pytest.raises(
@@ -201,7 +217,7 @@ def test_consumption_receipt_tamper_is_detected():
 
 
 def test_concurrent_reconstruction_has_exactly_one_handle_success():
-    _, _, _, _, _, _, _, gate = world()
+    _, _, _, _, _, _, _, _, gate = world()
 
     def invoke():
         try:
