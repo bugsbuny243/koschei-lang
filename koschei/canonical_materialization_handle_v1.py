@@ -5,8 +5,8 @@ stays in a trusted registry and the caller receives an opaque one-shot handle bo
 exact canonical request and the reconstruction Veyra through keyed material.
 
 For privileged `CanonicalEffectRequest` execution, the sanctioned materialization gate
-no longer calls native request-bound enforcement directly. After exact handle/request/
-Veyra/Continuity checks consume the handle, execution delegates to the existing
+requires one exact-request, deny-only capability power-domain constraint before touching
+canonical materialization state. It then delegates to the existing
 `enforce_galaxy_critical_effect` constitutional path. Khar, living Aevra, current
 Matrix/Hara, 6/6 Sathra, failure-root independence, exact request proof and durable atomic
 finality therefore remain the authoritative critical-effect physics rather than being
@@ -41,6 +41,7 @@ from .native_sigil_mir_v1 import NativeSigilMir
 from .native_sigil_proof_pipeline_v1 import NativeSigilProofBundle
 from .native_sigil_request_binding_v1 import CanonicalEffectRequest, RequestBoundProof
 from .representation_boundary_v1 import seal_canonical_semantics_v1
+from .request_capability_domain_constraint_v1 import RequestCapabilityDomainConstraintV1
 from .sathra_request_binding_v1 import SathraRequestBinding
 
 _CTX = b"koschei.canonical-materialization-handle/v1\x00"
@@ -413,6 +414,7 @@ class CanonicalMaterializationEffectGateV1:
     request: CanonicalEffectRequest
     proof: NativeSigilProofBundle
     bound: RequestBoundProof
+    domain_constraint: RequestCapabilityDomainConstraintV1
     continuity: ContinuityEpochAuthorityV1
     galaxy: GalaxyMaterializationContextV1
     purpose: str = "execute"
@@ -442,6 +444,17 @@ class CanonicalMaterializationEffectGateV1:
             raise CanonicalMaterializationHandleV1Error(
                 "request-bound proof does not bind supplied native proof"
             )
+        if not isinstance(
+            self.domain_constraint,
+            RequestCapabilityDomainConstraintV1,
+        ):
+            raise CanonicalMaterializationHandleV1Error(
+                "request capability-domain constraint v1 required"
+            )
+        # This is deliberately checked before any one-shot materialization state
+        # is touched. A malformed/foreign/cross-domain constraint cannot burn a
+        # valid handle and cannot produce an ALLOW decision by itself.
+        self.domain_constraint.assert_sealed(self.request)
         if not isinstance(self.continuity, ContinuityEpochAuthorityV1):
             raise CanonicalMaterializationHandleV1Error(
                 "Continuity epoch authority v1 required"
@@ -458,6 +471,9 @@ class CanonicalMaterializationEffectGateV1:
         self,
         effect: Callable[[CanonicalEffectRequest], _T],
     ) -> tuple[EnforcementDecision, _T | None, AtomicClaim]:
+        # Re-assert immediately before the privileged transition. The object is
+        # frozen, but this also makes canonical contract drift fail closed.
+        self.domain_constraint.assert_sealed(self.request)
         current = self.continuity.current_epoch()
         hidden_mir = self.registry._consume_hidden_mir(
             self.handle,
