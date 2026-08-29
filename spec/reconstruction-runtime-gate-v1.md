@@ -22,7 +22,7 @@ observer-safe ObservableRepresentationV1
 -> validate live representation/grant/request
 -> atomically consume grant context
 -> ReconstructionConsumptionReceiptV1
--> mint CanonicalMaterializationHandleV1 for exact request digest
+-> mint CanonicalMaterializationHandleV1 with keyed opaque request binding
 -> hidden MIR remains in trusted CanonicalMaterializationRegistryV1
 ```
 
@@ -74,19 +74,20 @@ The handle contains only:
 
 - a CSPRNG-generated opaque handle id;
 - purpose;
-- sealed `CanonicalEffectRequest.digest`;
+- a materialization-key HMAC over the sealed canonical-request digest;
 - issue epoch;
 - expiry epoch;
 - reconstruction-receipt digest;
 - authenticated handle digest.
 
 The handle MUST NOT contain canonical MIR fingerprint, Universe-plan digest, canonical
-sigil/subject/domain names, canonical semantic seal digest or Veyra identity.
+sigil/subject/domain names, canonical semantic seal digest, Veyra identity or the raw
+`CanonicalEffectRequest.digest`.
 
-The request digest is intentionally opaque but stable for that exact sealed request. It
-binds the materialization capability to effect id, `vor` subject, operation, payload
-request digest, identity digest, epoch, nonce, MIR fingerprint, Universe identity and
-activation-plan identity through the existing `CanonicalEffectRequest` seal.
+The trusted registry retains the raw request digest privately and recomputes the keyed
+request binding when the handle is presented. This keeps exact-request enforcement while
+reducing direct correlation between the broad runtime handle and canonical proof/request
+surfaces.
 
 Possession of the handle is therefore not a generic `execute` authority. It is a narrow
 capability to attempt exactly one sealed request against exactly one hidden semantic world.
@@ -101,7 +102,8 @@ CanonicalMaterializationHandleV1
 + RequestBoundProof
 + NativeSigilProofBundle
 + trusted epoch source
--> verify handle/request digest equality before registry consumption
+-> recompute keyed request binding and compare before registry consumption
+-> verify request epoch is current
 -> atomically consume handle
 -> resolve hidden MIR inside trusted registry only
 -> verify CanonicalEffectRequest against hidden MIR
@@ -125,7 +127,7 @@ leaving reusable canonical access.
 - repeated reconstruction with one grant context in one authoritative ledger;
 - concurrent double-reconstruction through the same ledger;
 - broad-runtime receipt of canonical MIR from the sanctioned reconstruction API;
-- stable canonical identifiers appearing directly in the opaque handle;
+- stable canonical identifiers or the raw canonical-request digest appearing directly in the opaque handle;
 - repeated use of one materialization handle through one registry;
 - purpose substitution on the handle;
 - handle-field tampering without the materialization key;
@@ -142,6 +144,7 @@ leaving reusable canonical access.
 - a malicious trusted epoch source;
 - leaked veil/reconstruction/receipt/materialization keys;
 - malicious or buggy compiler/native proof/request-binding logic inside the trusted boundary;
+- correlation through other side channels even when the raw request digest is absent from the handle;
 - canonical leakage through logs, debugger, crash dump, tracing or other unclassified paths;
 - a trusted effect callback leaking data available through its request/effect context;
 - native/backend paths that bypass these gates.
