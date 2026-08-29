@@ -86,15 +86,16 @@ def world():
     representation = issue_observable_representation_v1(
         mir, veyra, envelope, veil_key=VEIL
     )
+    request = request_for(mir, envelope.visibility_epoch)
     grant = mint_reconstruction_grant_v1(
         mir,
         veyra,
         envelope,
+        request,
         grant_id="effect-materialization-1",
         purpose="execute",
         reconstruction_key=RECON,
     )
-    request = request_for(mir, envelope.visibility_epoch)
     registry = CanonicalMaterializationRegistryV1(materialization_key=MATERIALIZE)
     reconstruct_gate = RepresentationReconstructionGateV1(
         representation=representation,
@@ -141,9 +142,12 @@ def effect_gate(registry, handle, request, proof, mir, epoch):
 
 def test_opaque_handle_executes_exact_request_without_returning_mir():
     mir, plan, envelope, request, registry, reconstruct_gate = world()
-    handle, _ = reconstruct_gate.reconstruct(purpose="execute")
+    handle, receipt = reconstruct_gate.reconstruct(purpose="execute")
     proof = proof_for(mir, plan)
     calls = []
+
+    assert receipt.request_binding == reconstruct_gate.grant.request_binding
+    assert request.digest not in repr(reconstruct_gate.grant)
 
     decision, result = effect_gate(
         registry, handle, request, proof, mir, envelope.visibility_epoch
