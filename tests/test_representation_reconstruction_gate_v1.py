@@ -134,7 +134,7 @@ def test_trusted_gate_consumes_reconstruction_grant_once_and_returns_only_handle
 
     handle, receipt = gate.reconstruct(purpose="execute")
     assert isinstance(handle, CanonicalMaterializationHandleV1)
-    assert handle.canonical_request_digest == request.digest
+    assert handle.request_binding_digest != request.digest
     assert receipt.grant_context_digest == grant.context_digest
     assert receipt.representation_digest == representation.representation_digest
     assert receipt.consumed_epoch == e.visibility_epoch
@@ -142,6 +142,7 @@ def test_trusted_gate_consumes_reconstruction_grant_once_and_returns_only_handle
     handle.assert_authenticated(materialization_key=MATERIALIZE)
 
     visible_handle = repr(handle)
+    assert request.digest not in visible_handle
     assert m.fingerprint not in visible_handle
     assert m.universe_plan_digest not in visible_handle
     for binding in m.bindings:
