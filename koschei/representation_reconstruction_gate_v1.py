@@ -7,6 +7,10 @@ source, one exact reconstruction grant context can cross back into the canonical
 at most once per authoritative ledger, and the broad runtime receives only an opaque
 materialization handle rather than the canonical MIR object itself.
 
+For execution-purpose reconstruction, the handle is minted for one exact sealed
+`CanonicalEffectRequest`. The request epoch must equal the live visibility epoch, so the
+resulting capability cannot later be widened to another request or another epoch.
+
 The Python prototype cannot prevent callers from importing lower-level helpers directly.
 Native/runtime APIs must expose this gate and keep raw MIR/reconstruction primitives in a
 trusted compartment when representation separation is a security invariant.
@@ -26,6 +30,7 @@ from .canonical_materialization_handle_v1 import (
 from .galaxy_identity_v1 import VeyraIdentity
 from .library_adaptive_visibility_v0 import AdaptiveVisibilityEnvelopeV0
 from .native_sigil_mir_v1 import NativeSigilMir
+from .native_sigil_request_binding_v1 import CanonicalEffectRequest
 from .representation_boundary_v1 import (
     ObservableRepresentationV1,
     ReconstructionGrantV1,
@@ -203,13 +208,14 @@ class ReconstructionConsumptionLedgerV1:
 
 @dataclass(frozen=True, slots=True)
 class RepresentationReconstructionGateV1:
-    """Trusted runtime gate for one hidden/observable representation context."""
+    """Trusted runtime gate for one hidden/observable/request context."""
 
     representation: ObservableRepresentationV1
     hidden_mir: NativeSigilMir
     veyra: VeyraIdentity
     envelope: AdaptiveVisibilityEnvelopeV0
     grant: ReconstructionGrantV1
+    request: CanonicalEffectRequest
     veil_key: bytes
     reconstruction_key: bytes
     receipt_key: bytes
@@ -227,6 +233,15 @@ class RepresentationReconstructionGateV1:
         if not isinstance(self.grant, ReconstructionGrantV1):
             raise RepresentationReconstructionGateV1Error(
                 "reconstruction grant v1 required"
+            )
+        if not isinstance(self.request, CanonicalEffectRequest):
+            raise RepresentationReconstructionGateV1Error(
+                "canonical effect request required"
+            )
+        self.request.assert_sealed(self.hidden_mir)
+        if self.request.epoch != self.representation.visibility_epoch:
+            raise RepresentationReconstructionGateV1Error(
+                "canonical request epoch differs from representation epoch"
             )
         if not isinstance(self.envelope, AdaptiveVisibilityEnvelopeV0):
             raise RepresentationReconstructionGateV1Error(
@@ -257,7 +272,7 @@ class RepresentationReconstructionGateV1:
     def reconstruct(
         self, *, purpose: str
     ) -> tuple[CanonicalMaterializationHandleV1, ReconstructionConsumptionReceiptV1]:
-        """Authorize reconstruction, consume the grant, and return only an opaque handle."""
+        """Authorize reconstruction, consume grant, and mint one exact-request handle."""
 
         try:
             current_epoch = _require_epoch(self.epoch_source())
@@ -267,6 +282,11 @@ class RepresentationReconstructionGateV1:
             raise RepresentationReconstructionGateV1Error(
                 "trusted epoch source failed closed"
             ) from exc
+
+        if self.request.epoch != current_epoch:
+            raise RepresentationReconstructionGateV1Error(
+                "canonical request epoch differs from current reconstruction epoch"
+            )
 
         try:
             hidden = reconstruct_canonical_semantics_v1(
@@ -294,6 +314,7 @@ class RepresentationReconstructionGateV1:
         handle = self.materialization_registry.mint(
             hidden_mir=hidden,
             canonical_seal_digest=receipt.canonical_seal_digest,
+            canonical_request=self.request,
             purpose=purpose,
             issued_epoch=current_epoch,
             expires_before_epoch=self.grant.expires_before_epoch,
