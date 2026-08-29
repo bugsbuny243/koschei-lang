@@ -1,350 +1,239 @@
 # KOSCHEI LANG — SOURCE OF TRUTH — 2026-08-29
 
-Status: **canonical consolidation checkpoint / no new language invention**
+Status: **canonical consolidation checkpoint / exact-request reconstruction applied / no new language invention**
 
-This document exists to stop architectural drift. It consolidates the already-designed Koschei language, Universe, representation model, runtime direction, active PR deltas and next integration order. It does not replace detailed specs such as `KOSCHEI_SIGIL_LEXICON_V1.md`, `KOSCHEI_GALAXY_CONSTITUTION_V1.md`, `KOSCHEI_CORE_MANIFEST_V0.md`, or `KOSCHEI_LANGUAGE_OWNERSHIP_V0.md`; it defines how they fit together.
+This document exists to stop architectural drift. It consolidates the already-designed Koschei language, Universe, representation model, runtime direction, active PR deltas and next integration order. It does not replace `KOSCHEI_SIGIL_LEXICON_V1.md`, `KOSCHEI_GALAXY_CONSTITUTION_V1.md`, `KOSCHEI_CORE_MANIFEST_V0.md`, or `KOSCHEI_LANGUAGE_OWNERSHIP_V0.md`; it defines how they fit together.
 
 ## 1. Non-negotiable identity
 
-Koschei Lang is not a renamed Rust/Python/C/Go/JavaScript syntax.
+Koschei Lang is not renamed Rust/Python/C/Go/JavaScript syntax. Originality must live in semantic admission, authority, evidence, lifecycle, controlled knowability, representation, identity, execution admission and verified lineage.
 
-Its originality must live in:
+The native semantic roots are already designed and MUST NOT be re-invented:
 
-- semantic admission and identity;
-- capability/authority physics;
-- evidence and witnessed reality;
-- containment/recovery/lifecycle;
-- controlled knowability and representation separation;
-- execution admission;
-- time/epoch-scoped validity;
-- verified build/payload lineage where required.
+- `ka` — admitted existence / genesis; recognition does not create privilege.
+- `vor` — bounded power; authority is explicit, narrow, scoped and non-escalating.
+- `shi` — witnessed reality; claim is not proof.
+- `thal` — bounded survival; containment/recovery/rebirth cannot manufacture privilege.
+- `nur` — controlled knowability; visibility/representation remain separate from authority and canonical identity.
 
-A future implementation that turns Koschei into familiar constructs with renamed keywords violates the architecture even if the syntax looks novel.
+These are semantic roots, not cosmetic keyword aliases.
 
-## 2. Canonical native semantic roots
-
-The native semantic roots are already designed and are not to be re-invented:
-
-- `ka` — admitted existence / genesis. Recognition does not create privilege.
-- `vor` — bounded power. Authority must be explicit, narrow, scoped and non-escalating.
-- `shi` — witnessed reality. Claim is not proof; evidence must carry lineage.
-- `thal` — bounded survival. Containment, recovery and rebirth must not manufacture privilege.
-- `nur` — controlled knowability. Visibility, aliases and representations must remain separate from authority and canonical identity.
-
-These are semantic roots, not decorative keywords. The compact visible source may expand into a larger verified semantic plan.
-
-## 3. Primary law: observable world != canonical world
-
-Koschei has two intentionally different realities.
+## 2. Primary law — observable world != canonical world
 
 ### Canonical world
 
-Contains the real semantic relations required for trusted execution:
-
-- canonical identity;
-- semantic root meaning;
-- authority/capability relationships;
-- evidence lineage;
-- lifecycle state;
-- Universe/Veyra/Aevra identity;
-- execution request identity;
-- verified IR / MIR identity;
-- current epoch and continuity state.
+Contains the real trusted relations required for execution: canonical identity, semantic meaning, capability/authority graph, evidence lineage, lifecycle state, Veyra/Aevra/Matrix/Hara relations, request identity, MIR/IR identity and Continuity epoch state.
 
 ### Observable world
 
-May contain only the representation required by an observer/runtime role:
+May contain only what a role needs to observe: rotating aliases, epoch/session/customer-specific Nyr mappings, opaque handles, bounded diagnostics and visibility-limited state.
 
-- rotating aliases;
-- epoch/session/customer-specific mappings;
-- opaque handles;
-- non-faithful Nyr surfaces;
-- bounded diagnostics;
-- visibility-limited state.
+The observable surface MUST NOT be the stable one-to-one power map of the canonical world.
 
-The observable representation must not become a stable one-to-one map of the canonical world.
+This is not a claim that canonical state can never leak. Compromised trusted processes, leaked keys, debugger/crash dumps, side channels or bypass paths can still expose it. The rule is that sanctioned observer/runtime surfaces do not expose canonical reality as their default representation.
 
-This is not a claim that canonical state can never leak. A compromised trusted process, debugger, crash dump, side channel, leaked key or bypass path can still expose canonical state. The architecture requires that ordinary sanctioned runtime/observer surfaces do not expose it as the default execution representation.
+## 3. Canonical Universe vocabulary
 
-## 4. Native Universe model
+- **Khar** — constitutional laws; not a secret super-user.
+- **Aevra** — canonical program/entity identity greater than visible bytes.
+- **Veyra** — customer-specific living Galaxy geometry.
+- **Matrix** — controlled local execution reality.
+- **Hara** — one Aevra's scoped horizon inside a Matrix.
+- **Sathra** — one exact 6/6 critical concurrence event; not reusable authority.
+- **Vormir** — irreversible cost for higher-power transitions.
+- **Morth / Event Horizon / Black Hole** — terminal identity/authority/lifecycle sink semantics.
+- **Survival branch selection / Doctor Strange** — deterministic Khar-safe future selection; not sovereign AI.
+- **Skynet** — Continuity/epoch/lifecycle coordination concept; never policy sovereignty.
+- **Avengers / Infinity Stones** — independent power/failure dimensions that must not collapse to one master authority.
+- **Neo** — exceptional authorized transition/materialization role; never universal bypass.
+- **Agent Smith** — spread/persistence/correlation/representation-learning adversary model.
+- **Deus Ex Machina** — conservation/finality root concept; never hidden override credential.
 
-### Khar
+Metaphors without enforceable technical responsibility do not belong in the architecture.
 
-Khar is the canonical constitutional law set. It is not a secret super-user or master credential. No debug/recovery/emergency path may silently weaken Khar.
+## 4. Compiler reality on main
 
-### Aevra / Veyra
-
-- Aevra = canonical program/entity identity greater than visible bytes.
-- Veyra = customer-specific living Galaxy geometry in which Aevra relationships become valid.
-
-`copy(bytes) != birth(Aevra)` is a design law.
-
-### Matrix / Hara
-
-- Matrix = controlled local execution reality inside one Veyra.
-- Hara = one Aevra's scoped horizon inside that Matrix.
-
-Sharing a Matrix does not imply sharing Hara, authority, knowledge or critical reach.
-
-### Six Khar axes / 6-of-6 concurrence
-
-Critical execution currently uses six independent constitutional axes:
-
-- `khor` — locus/isolation;
-- `sei` — intent/control direction;
-- `rha` — executable reality;
-- `vaal` — effect force;
-- `teyr` — temporal epoch;
-- `esh` — continuity/living identity.
-
-For a critical Sathra event, partial concurrence is zero: `1/6` through `5/6` are not critical success.
-
-### Sathra
-
-Sathra is a one-event concurrence, not stored reusable super-authority.
-
-### Vormir
-
-Vormir is irreversible cost for higher-power transitions. Old and new critical reach must not coexist for free.
-
-### Morth / Event Horizon / Black Hole
-
-Morth is a path with no valid future. Event Horizon is the irreversible crossing. Black Hole is the terminal sink for dead identity/authority/stale lineage.
-
-### Survival branch selection
-
-Survival/alternate-future selection is deterministic Khar-bound physics, not an AI sovereign. Unsafe futures are rejected before ranking.
-
-### Bounded autonomy
-
-Automation may propose/rank within explicit bounds. It cannot rewrite Khar, create authority, synthesize missing axes or bypass finality.
-
-## 5. Metaphor map — technical meaning only
-
-These names are architectural thinking tools, not decoration:
-
-- **Matrix** -> local controlled execution reality / observable-vs-canonical separation context.
-- **Neo** -> exceptional authorized transition/materialization actor; never universal super-user.
-- **Agent Smith** -> adversarial spread, persistence, correlation and representation-learning threat model.
-- **Doctor Strange** -> deterministic safe-future / survival branch selection across bounded alternatives.
-- **Skynet** -> runtime continuity/epoch/lifecycle coordination concept; not autonomous sovereignty.
-- **Avengers / Infinity Stones** -> independent power dimensions/failure roots that must not collapse into one master authority.
-- **Deus Ex Machina** -> constitutional conservation/finality root concept; not a hidden bypass credential.
-
-If a metaphor has no enforceable technical job, do not add it to the architecture.
-
-## 6. Current compiler spine on main
-
-The current authoritative compilation path remains:
+Current authoritative compilation path:
 
 `source -> lexer -> parser -> AST -> integrity -> Typed HIR -> typestate -> affine ownership -> effect contracts -> legacy compatibility bridge -> legacy semantic checker -> sealed MIR -> reference interpreter`
 
-The language core is real and usable, but carries migration debt:
+Known migration debt:
 
-- `_parser_v09.py` is still active compatibility debt;
-- legacy semantic checking still overlaps newer Typed HIR authority;
-- capability semantics are split across several modules;
-- effect semantics have related but separate source/MIR computations;
-- MIR still has AST fallback for incomplete normalization.
+- `_parser_v09.py` remains active compatibility debt;
+- Typed HIR and legacy semantic authority overlap;
+- capability semantics are distributed across several modules;
+- source-effect and MIR-effect computations are related but separate;
+- MIR normalization still contains AST fallback.
 
-The safe consolidation target is fewer semantic authorities, not merely fewer files.
+The cleanup goal is fewer semantic authorities, not merely fewer files.
 
-## 7. Intended canonical compiler/runtime architecture
-
-The target architecture remains:
-
-`Source Layer`
-`-> Semantic Layer`
-`-> Verified Intermediate Representation`
-`-> Security / Capability Layer`
-`-> Transformation / Representation Layer`
-`-> Execution Representation`
-`-> Runtime`
-
-For native Koschei semantic roots, the more specific execution path is:
+## 5. Target canonical pipeline
 
 `ka/vor/shi/thal/nur source intent`
 `-> canonical semantic checking`
-`-> Native/Verified MIR`
+`-> Verified/Native MIR`
 `-> Library obligations`
-`-> Universe/Khar composition`
-`-> authority/evidence/lifecycle checks`
+`-> Khar / Universe composition`
+`-> authority + evidence + lifecycle admission`
 `-> canonical semantic seal`
 `-> Nur/Nyr observer projection`
-`-> exact authorized materialization`
-`-> request-bound execution`
-`-> execution evidence/finality`
-
-## 8. Current main vs active PR reality
-
-Main remains the integration baseline. The strongest new work is still distributed across open PRs and must not be described as merged production reality.
-
-### PR #260 — Six real-world power domains
-
-Purpose: Identity / Authority / Data / Compute / Network / Continuity isolation and explicit cross-domain permits.
-
-Status: useful constitutional prototype, but not yet the single active execution path. It should be integrated only where it closes a Khar/authority gap rather than remain a parallel authority system.
-
-### PR #263 — canonical/observable representation + opaque materialization
-
-Purpose: enforce `observable world != canonical world` at the sanctioned reconstruction/execution boundary.
-
-Current direction:
-
-`sealed canonical MIR`
-`-> non-faithful Nyr representation`
-`-> reconstruction grant`
-`-> trusted epoch`
-`-> single-use reconstruction consumption`
-`-> opaque materialization handle`
-`-> exact CanonicalEffectRequest + RequestBoundProof`
-`-> native ALLOW / DENY / CONTAIN`
-
-This is the current **primary core integration PR** because it directly advances the central language/runtime law.
-
-Known gap: reconstruction-grant issuance itself is still purpose-scoped and should become exact-request-bound.
-
-### PR #264 — Nyr v2 liveness/replay hardening
-
-Purpose: a correctly generated observer surface is still invalid after its live visibility epoch. Trusted epoch acquisition fails closed.
-
-This belongs directly under the `nur` representation boundary and should be integrated with #263 rather than evolve as an independent subsystem.
-
-### PR #265 — external evidence / build provenance / attestation / finality
-
-Purpose: prove external/provider evidence, verifier build identity, trust generations, rollback witnesses and finality provenance without letting external facts become native authority.
-
-Valuable Lang-core concepts inside it include:
-
-- Verified IR build identity;
-- toolchain/build provenance;
-- payload/execution lineage;
-- trust-anchor generation semantics;
-- provider-neutral attestation/witness contracts.
-
-However provider-specific/finality plumbing is not the language's central semantic identity. **Freeze feature growth here** until the core language/runtime execution pipeline is integrated. Later extract only the parts required by Lang's verified execution contract; keep external adapters non-authoritative.
-
-## 9. One execution pipeline — the required end state
-
-Koschei must converge to one answer to "how does a program execute?":
-
-`Developer Source Intent`
-`-> ka/vor/shi/thal/nur semantic roots`
-`-> canonical identity + authority + evidence + lifecycle world`
-`-> verified MIR / execution contract`
-`-> Khar / power-domain admission`
-`-> canonical semantic seal`
-`-> rotating observer-safe Nyr representation`
 `-> exact-request reconstruction capability`
+`-> single-use reconstruction`
 `-> opaque materialization handle`
 `-> trusted compartment resolution`
 `-> exact request-bound effect admission`
 `-> ALLOW / DENY / CONTAIN`
-`-> execution evidence`
-`-> payload/finality proof where required`
+`-> execution evidence / finality where required`
 
-No second parallel authority system, second semantic truth, or backend-specific reinterpretation may bypass this chain.
+No backend, adapter or recovery path may create a second semantic truth around this chain.
+
+## 6. PR #263 — current primary core integration path
+
+PR #263 owns the central `observable != canonical` execution boundary.
+
+Current implemented bootstrap chain:
+
+`sealed NativeSigilMir`
+`-> non-faithful Nyr v2 representation`
+`-> sealed CanonicalEffectRequest`
+`-> exact-request ReconstructionGrantV1`
+`-> trusted runtime epoch`
+`-> atomic single-use reconstruction consumption`
+`-> ReconstructionConsumptionReceiptV1`
+`-> opaque CanonicalMaterializationHandleV1`
+`-> exact CanonicalEffectRequest + RequestBoundProof`
+`-> native ALLOW / DENY / CONTAIN`
+
+### Exact-request reconstruction — APPLIED
+
+The previous gap is closed in this branch:
+
+- reconstruction grant issuance now requires the exact sealed `CanonicalEffectRequest`;
+- the grant does NOT expose raw `CanonicalEffectRequest.digest`;
+- an opaque HMAC request binding is scoped to request + Veyra + observer + session + visibility epoch;
+- the grant context digest binds that request binding together with canonical world/context identity;
+- request A grant cannot reconstruct request B even under the same MIR/Veyra/epoch/purpose;
+- `ReconstructionConsumptionReceiptV1` cryptographically carries the opaque request binding;
+- the materialization handle independently remains exact-request bound under its own key role;
+- raw MIR is not returned by the sanctioned reconstruction gate.
+
+This closes the old "purpose=execute is too broad" gap at reconstruction issuance.
+
+## 7. PR #264 — next integration target
+
+Purpose: Nyr v2 observer liveness/replay protection.
+
+A correctly generated Nyr surface must still fail if it is stale, future/not-yet-live, contained, or runtime epoch truth fails.
+
+This must NOT evolve as a second lifecycle authority. Its live-Nyr logic is to be absorbed into the same `nur` / Continuity truth used by #263 reconstruction and materialization.
+
+Required invariant:
+
+`same authoritative Continuity epoch -> observation liveness + reconstruction liveness + materialization liveness`
+
+No caller-selected epoch and no separate epoch oracle per boundary.
+
+## 8. PR #260 — constitutional/power-domain prototype
+
+Identity / Authority / Data / Compute / Network / Continuity isolation remains valuable, but it must enter the single exact request-bound execution gate only where it closes a Khar/authority invariant. It must not become a parallel authority system.
+
+## 9. PR #265 — feature growth frozen
+
+Valuable Lang-core concepts include Verified IR identity, toolchain/build provenance, payload lineage, trust-anchor generation and provider-neutral witness/attestation contracts.
+
+Provider/finality-specific growth is frozen until the core language/runtime pipeline converges. Later work should extract only what is required for:
+
+`Source Intent -> Verified IR -> Artifact -> Payload -> Execution`
+
+External adapters remain non-authoritative.
 
 ## 10. Immediate integration order
 
-From this checkpoint, "continue" means the following order unless a verified blocker forces a change:
+From this checkpoint, "continue" means:
 
-1. **Finish PR #263 core semantics.** Bind reconstruction grant issuance itself to the exact `CanonicalEffectRequest`. Remove remaining sanctioned raw-MIR returns.
-2. **Absorb PR #264 into the same Nur/representation lifecycle.** One trusted Continuity epoch authority must drive both observation liveness and reconstruction/materialization liveness.
-3. **Connect existing Khar/Galaxy/Matrix/Hara and relevant power-domain rules to the same exact request-bound execution gate.** Do not invent a parallel execution gate.
-4. **Consolidate capability authority.** One canonical capability contract must feed Typed HIR, affine ownership, effects, MIR and runtime.
-5. **Finish MIR normalization.** Reduce/remove semantic AST fallback so all sanctioned execution consumes the same complete checked contract.
-6. **Only then re-open #265 growth.** Extract Verified IR / provenance / attestation primitives required for `Source Intent -> Verified IR -> Artifact -> Payload -> Execution`; keep provider-specific adapters outside the semantic core.
-7. **Durable/native custody.** Move reconstruction/materialization replay state and raw canonical MIR into a native/isolated runtime boundary; Python privacy is not a final security boundary.
-8. **Observer-safe tooling.** Debugger/introspection/runtime diagnostics must classify whether they are trusted-canonical or observer-safe; no accidental faithful fallback.
-9. **Canonical validation.** Run the full repository validator and adversarial suites before marking core PRs ready/merged.
+1. **CURRENT:** absorb #264 Nyr liveness into #263 so one Continuity epoch truth drives observer/reconstruction/materialization liveness.
+2. connect existing Khar/Galaxy/Matrix/Hara and relevant power-domain admission to that same exact request-bound execution gate;
+3. consolidate one canonical capability contract across Typed HIR, affine ownership, effects, MIR and runtime;
+4. finish MIR normalization and reduce semantic AST fallback;
+5. only then extract relevant Verified IR/provenance primitives from #265;
+6. move canonical MIR/replay/materialization custody into durable/native isolation;
+7. classify debugger/introspection/runtime output as trusted-canonical or observer-safe;
+8. run canonical validation/adversarial suites before ready/merge.
 
 ## 11. Stop rules
 
-Until the above integration is complete:
+Until integration is complete:
 
-- no new programming-language syntax family unless it closes a documented semantic gap;
+- no new syntax family unless it closes a documented semantic gap;
 - no second parser/type/effect/capability authority;
-- no new security-themed module merely because a new attack can be named;
-- no new provider-specific feature inside Lang core;
-- no claim that Python private fields provide isolation;
-- no claim that rotating representation makes source "impossible to see";
+- no new security module merely because an attack can be named;
+- no new provider-specific Lang-core feature;
+- no claim that Python private fields provide physical isolation;
+- no claim that rotating representation makes source impossible to see;
 - no claim that `mergeable=true` means tests passed;
-- no merge of the core representation work without canonical validation evidence;
-- no metaphor without an enforceable technical responsibility.
+- no core merge without canonical validation evidence;
+- no metaphor without a technical job.
 
 ## 12. Security honesty
 
-### PROTECTS AGAINST — intended / partially enforced today
+### PROTECTS AGAINST — partially enforced current direction
 
 - ambient authority through explicit capability semantics;
-- stable canonical identity being identical to ordinary observer aliases;
-- some stale Nyr representation replay;
-- some cross-request/cross-context materialization substitution;
-- some repeated in-process reconstruction/materialization use;
-- evidence being treated as authority merely because it is external;
-- selected build/provenance relabeling and trust-generation rollback in prototype paths.
+- observer representation being a faithful canonical naming map on the Nyr path;
+- grant widening from one exact canonical request to another under #263;
+- raw canonical request digest exposure in reconstruction grant/materialization handle;
+- repeated/concurrent reconstruction in one process-local authoritative ledger;
+- repeated materialization handle use in one process-local registry;
+- selected stale representation replay where trusted liveness gates are used;
+- external evidence becoming authority merely because it is external.
 
 ### DOES NOT PROTECT AGAINST
 
-- full compromise of a trusted process that holds raw canonical state;
-- memory scraping, side channels, debugger/crash dump leaks;
+- full compromise of trusted process memory;
+- debugger/crash dump/side-channel leaks;
 - malicious compiler/runtime inside the trusted computing base;
-- leaked keys/capabilities;
-- process/VM rollback where state is not anchored independently;
-- native/backend bypasses not yet routed through the canonical gates;
+- leaked trust-role keys;
+- process/VM rollback where state is not independently monotonic;
+- native/backend paths that bypass sanctioned gates;
 - inference from every possible observation channel;
-- real hardware/physical independence unless external evidence proves it.
-
-### ASSUMPTIONS
-
-- canonical semantic checks fail closed;
-- Khar cannot be silently substituted;
-- capability/effect semantics converge to one contract;
-- epoch/Continuity truth is authoritative and monotonic for the relevant security domain;
-- canonical MIR is physically isolated in production, not merely conventionally private;
-- external witnesses/attestation roots are independently protected where relied upon.
+- physical independence without real external evidence.
 
 ### FAILURE MODE
 
-Koschei fails architecturally if the repository accumulates impressive security utilities while the language has multiple competing semantic/execution truths. The primary failure to avoid is **architecture fragmentation**.
+The project fails architecturally if it becomes a collection of impressive disconnected security utilities. One compiler/runtime/execution truth is mandatory.
 
-## 13. Validation state at this checkpoint
-
-Do not claim the open integration work is tested merely because tests were written or GitHub reports a PR mergeable.
+## 13. Validation checkpoint
 
 Required canonical command remains:
 
 `ks-local-validate --profile full --output /tmp/koschei-local-validation.json --evidence-dir /tmp/koschei-validation-evidence`
 
-A successful receipt is required before describing the integrated open-PR state as validated.
-
-## 14. Checkpoint
+Tests committed in open PR work are NOT described as passed until a real validation/test execution receipt exists.
 
 ### SPEC STATE
 
-Settled: native sigils `ka/vor/shi/thal/nur`; Khar/Galaxy/Aevra/Veyra; Matrix/Hara; six-axis concurrence; controlled knowability; non-faithful observer representation; capability-first authority; bounded survival/autonomy; observable != canonical law.
+Settled: `ka/vor/shi/thal/nur`, Khar, Aevra/Veyra, Matrix/Hara, Sathra, controlled knowability, rotating/non-faithful observer representation, capability-first authority, bounded survival/autonomy and observable != canonical law.
 
 ### COMPILER STATE
 
-Functional language compiler/interpreter/tooling exists on main, but semantic authority migration remains incomplete. Typed HIR and legacy semantic authority still overlap; MIR normalization is incomplete.
+Functional compiler/interpreter/tooling exists; semantic-authority migration remains incomplete.
 
 ### RUNTIME STATE
 
-Reference interpreter and extensive security/runtime prototypes exist. The new representation/materialization path is still open-PR work and Python custody is not physical isolation.
+Exact-request reconstruction + opaque materialization exists as open-PR Python bootstrap. Native/durable custody is not yet solved.
 
 ### SECURITY MODEL
 
-The strongest coherent identity is: **explicit authority + canonical identity + witnessed reality + bounded lifecycle + controlled knowability + request-bound execution**.
+`explicit authority + canonical identity + witnessed reality + bounded lifecycle + controlled knowability + exact request-bound execution`
 
 ### EXPERIMENTAL
 
-External attestation/witness providers, hardware isolation, durable global replay state, physical failure-root independence, complete observer-safe tooling and some build/finality integrations.
+Hardware isolation, durable global replay state, complete observer-safe tooling, physical failure-root independence and some external build/finality integrations.
 
 ### TESTED
 
-Main has an established test/validation system. This consolidation does not claim a fresh full-validation receipt for the current open-PR combination.
+No fresh `ks-local-validate --profile full` receipt is claimed for the current #263 branch.
 
 ### NEXT
 
-One active goal: **finish and validate the exact-request, trusted-epoch, opaque-materialization execution path, then integrate Nyr liveness and Khar/power-domain admission into that same path.**
+**Unify Nyr observation liveness and reconstruction/materialization liveness under one Continuity epoch authority.**
