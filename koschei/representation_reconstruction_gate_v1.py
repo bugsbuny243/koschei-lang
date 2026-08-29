@@ -7,9 +7,10 @@ source, one exact reconstruction grant context can cross back into the canonical
 at most once per authoritative ledger, and the broad runtime receives only an opaque
 materialization handle rather than the canonical MIR object itself.
 
-For execution-purpose reconstruction, the handle is minted for one exact sealed
-`CanonicalEffectRequest`. The request epoch must equal the live visibility epoch, so the
-resulting capability cannot later be widened to another request or another epoch.
+For execution-purpose reconstruction, the grant and resulting handle are both bound to
+one exact sealed `CanonicalEffectRequest`. The request epoch must equal the live visibility
+epoch, so neither the reconstruction capability nor the materialization capability can be
+widened to another request or another epoch.
 
 The Python prototype cannot prevent callers from importing lower-level helpers directly.
 Native/runtime APIs must expose this gate and keep raw MIR/reconstruction primitives in a
@@ -68,6 +69,7 @@ def _require_epoch(value: int) -> int:
 def _receipt_payload(
     *,
     grant_context_digest: str,
+    request_binding: str,
     representation_digest: str,
     canonical_seal_digest: str,
     purpose: str,
@@ -75,6 +77,7 @@ def _receipt_payload(
 ) -> bytes:
     rows = (
         f"grant-context={grant_context_digest}",
+        f"request-binding={request_binding}",
         f"representation={representation_digest}",
         f"canonical-seal={canonical_seal_digest}",
         f"purpose={purpose}",
@@ -88,9 +91,10 @@ def _receipt_payload(
 
 @dataclass(frozen=True, slots=True)
 class ReconstructionConsumptionReceiptV1:
-    """Trusted-side proof that one reconstruction grant context was consumed."""
+    """Trusted-side proof that one exact-request reconstruction grant was consumed."""
 
     grant_context_digest: str
+    request_binding: str
     representation_digest: str
     canonical_seal_digest: str
     purpose: str
@@ -123,6 +127,7 @@ class ReconstructionConsumptionReceiptV1:
             key,
             _receipt_payload(
                 grant_context_digest=self.grant_context_digest,
+                request_binding=self.request_binding,
                 representation_digest=self.representation_digest,
                 canonical_seal_digest=self.canonical_seal_digest,
                 purpose=self.purpose,
@@ -181,6 +186,7 @@ class ReconstructionConsumptionLedgerV1:
             self._consumed_contexts.add(context)
             receipt = ReconstructionConsumptionReceiptV1(
                 grant_context_digest=context,
+                request_binding=grant.request_binding,
                 representation_digest=representation.representation_digest,
                 canonical_seal_digest=seal.seal_digest,
                 purpose=purpose,
@@ -194,6 +200,7 @@ class ReconstructionConsumptionLedgerV1:
                     key,
                     _receipt_payload(
                         grant_context_digest=receipt.grant_context_digest,
+                        request_binding=receipt.request_binding,
                         representation_digest=receipt.representation_digest,
                         canonical_seal_digest=receipt.canonical_seal_digest,
                         purpose=receipt.purpose,
@@ -208,7 +215,7 @@ class ReconstructionConsumptionLedgerV1:
 
 @dataclass(frozen=True, slots=True)
 class RepresentationReconstructionGateV1:
-    """Trusted runtime gate for one hidden/observable/request context."""
+    """Trusted runtime gate for one hidden/observable/exact-request context."""
 
     representation: ObservableRepresentationV1
     hidden_mir: NativeSigilMir
@@ -272,7 +279,7 @@ class RepresentationReconstructionGateV1:
     def reconstruct(
         self, *, purpose: str
     ) -> tuple[CanonicalMaterializationHandleV1, ReconstructionConsumptionReceiptV1]:
-        """Authorize reconstruction, consume grant, and mint one exact-request handle."""
+        """Authorize exact-request reconstruction, consume grant, and mint one handle."""
 
         try:
             current_epoch = _require_epoch(self.epoch_source())
@@ -295,6 +302,7 @@ class RepresentationReconstructionGateV1:
                 self.veyra,
                 self.envelope,
                 self.grant,
+                self.request,
                 purpose=purpose,
                 current_epoch=current_epoch,
                 veil_key=self.veil_key,
