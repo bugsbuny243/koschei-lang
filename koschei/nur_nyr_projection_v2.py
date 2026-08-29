@@ -6,6 +6,10 @@ canonical subjects, Veyra identity, Aevra identity, authority, or a topology
 relation graph. Both the semantic-root label and subject label are projected to
 observer/session/epoch/Veyra-bound aliases.
 
+Projection integrity and runtime liveness are deliberately separate. A correctly
+generated surface from an old epoch remains authentic history but is not a current
+observer surface and cannot be replayed through sanctioned live boundaries.
+
 This does not make the canonical world unknowable in a cryptographic sense. It
 removes a direct faithful runtime projection and shortens the reuse lifetime of
 what an observer can collect. Knowledge remains non-authoritative even if other
@@ -26,6 +30,10 @@ _CTX = b"koschei.nur-nyr-projection/v2\x00"
 
 class NyrProjectionV2Error(ValueError):
     pass
+
+
+class NyrProjectionV2ReplayError(NyrProjectionV2Error):
+    """Authentic Nyr surface presented outside its live visibility epoch."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,6 +61,14 @@ def _require_veil_key(veil_key: bytes) -> bytes:
     if not isinstance(veil_key, bytes) or len(veil_key) < 32:
         raise NyrProjectionV2Error("Nyr v2 veil key must contain at least 32 bytes")
     return veil_key
+
+
+def _require_runtime_epoch(value: int) -> int:
+    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+        raise NyrProjectionV2Error(
+            "current visibility epoch must be a non-negative integer"
+        )
+    return value
 
 
 def _alias(
@@ -162,7 +178,7 @@ def require_nyr_surface_v2(
     *,
     veil_key: bytes,
 ) -> None:
-    """Verify a Nyr v2 projection against hidden canonical inputs."""
+    """Verify projection integrity against hidden canonical inputs."""
 
     expected = project_native_mir_nyr_v2(
         mir,
@@ -172,3 +188,36 @@ def require_nyr_surface_v2(
     )
     if surface != expected:
         raise NyrProjectionV2Error("Nyr v2 surface does not match living Galaxy projection")
+
+
+def require_live_nyr_surface_v2(
+    surface: NyrSurfaceV2,
+    mir: NativeSigilMir,
+    veyra: VeyraIdentity,
+    envelope: AdaptiveVisibilityEnvelopeV0,
+    *,
+    veil_key: bytes,
+    current_visibility_epoch: int,
+) -> None:
+    """Require exact projection integrity plus current-epoch liveness.
+
+    Historic authenticity is not current operational validity. A surface is live only in
+    its birth visibility epoch and expires before the next epoch.
+    """
+
+    current = _require_runtime_epoch(current_visibility_epoch)
+    require_nyr_surface_v2(surface, mir, veyra, envelope, veil_key=veil_key)
+    if surface.expires_before_epoch != surface.visibility_epoch + 1:
+        raise NyrProjectionV2Error("Nyr v2 surface carries an invalid expiry boundary")
+    if current < surface.visibility_epoch:
+        raise NyrProjectionV2ReplayError(
+            "Nyr v2 surface is not live yet for the current visibility epoch"
+        )
+    if current >= surface.expires_before_epoch:
+        raise NyrProjectionV2ReplayError(
+            "Nyr v2 surface has expired and cannot be replayed"
+        )
+    if current != surface.visibility_epoch:
+        raise NyrProjectionV2ReplayError(
+            "Nyr v2 surface is not valid for the current visibility epoch"
+        )
