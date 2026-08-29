@@ -1,10 +1,10 @@
 """Opaque canonical-materialization handles for Koschei representation separation v1.
 
 A sanctioned reconstruction must not hand `NativeSigilMir` back to the broad runtime.
-This module keeps the hidden MIR inside a trusted in-process registry and returns an
-opaque, scoped, epoch-bound handle instead. The handle is also bound to one exact sealed
-`CanonicalEffectRequest`, so an `execute` materialization cannot be widened to another
-request after reconstruction.
+This module keeps hidden MIR inside a trusted in-process registry and returns an opaque,
+scoped, epoch-bound handle. The handle is bound to one exact sealed
+`CanonicalEffectRequest`, but it exposes only a keyed opaque request binding rather than
+the canonical request digest itself.
 
 The sanctioned effect gate consumes the handle atomically, resolves hidden MIR only
 inside the trusted boundary, verifies the request-bound native proof, and exposes only
@@ -35,6 +35,7 @@ from .native_sigil_request_binding_v1 import (
 from .representation_boundary_v1 import seal_canonical_semantics_v1
 
 _CTX = b"koschei.canonical-materialization-handle/v1\x00"
+_REQUEST_CTX = b"koschei.canonical-materialization-request-binding/v1\x00"
 _T = TypeVar("_T")
 
 
@@ -64,11 +65,16 @@ def _text(value: str, label: str) -> str:
     return value.strip()
 
 
+def _request_binding(key: bytes, canonical_request_digest: str) -> str:
+    digest = _text(canonical_request_digest, "canonical_request_digest")
+    return hmac.new(key, _REQUEST_CTX + digest.encode("ascii"), hashlib.sha256).hexdigest()
+
+
 def _handle_payload(
     *,
     handle_id: str,
     purpose: str,
-    canonical_request_digest: str,
+    request_binding_digest: str,
     issued_epoch: int,
     expires_before_epoch: int,
     reconstruction_receipt_digest: str,
@@ -76,7 +82,7 @@ def _handle_payload(
     rows = (
         f"handle={handle_id}",
         f"purpose={purpose}",
-        f"canonical-request={canonical_request_digest}",
+        f"request-binding={request_binding_digest}",
         f"issued-epoch={issued_epoch}",
         f"expires-before={expires_before_epoch}",
         f"reconstruction-receipt={reconstruction_receipt_digest}",
@@ -92,13 +98,13 @@ class CanonicalMaterializationHandleV1:
     """Runtime-safe capability reference to one hidden semantic world/request pair.
 
     The handle deliberately carries no MIR fingerprint, Universe-plan digest, sigil name,
-    canonical subject, semantic-domain label, Veyra identity or canonical seal digest.
-    The canonical request is represented only by its sealed digest.
+    canonical subject, semantic-domain label, Veyra identity, canonical seal digest or raw
+    canonical-request digest.
     """
 
     handle_id: str
     purpose: str
-    canonical_request_digest: str
+    request_binding_digest: str
     issued_epoch: int
     expires_before_epoch: int
     reconstruction_receipt_digest: str
@@ -124,8 +130,8 @@ class CanonicalMaterializationHandleV1:
             _handle_payload(
                 handle_id=_text(self.handle_id, "handle_id"),
                 purpose=_text(self.purpose, "purpose"),
-                canonical_request_digest=_text(
-                    self.canonical_request_digest, "canonical_request_digest"
+                request_binding_digest=_text(
+                    self.request_binding_digest, "request_binding_digest"
                 ),
                 issued_epoch=issued,
                 expires_before_epoch=expires,
@@ -148,6 +154,7 @@ class _MaterializationEntryV1:
     canonical_seal_digest: str
     purpose: str
     canonical_request_digest: str
+    request_binding_digest: str
     issued_epoch: int
     expires_before_epoch: int
     reconstruction_receipt_digest: str
@@ -198,6 +205,7 @@ class CanonicalMaterializationRegistryV1:
         receipt_digest = _text(
             reconstruction_receipt_digest, "reconstruction_receipt_digest"
         )
+        request_binding = _request_binding(self._key, canonical_request.digest)
         with self._lock:
             while True:
                 handle_id = secrets.token_hex(32)
@@ -206,7 +214,7 @@ class CanonicalMaterializationRegistryV1:
             handle = CanonicalMaterializationHandleV1(
                 handle_id=handle_id,
                 purpose=purpose_value,
-                canonical_request_digest=canonical_request.digest,
+                request_binding_digest=request_binding,
                 issued_epoch=issued,
                 expires_before_epoch=expires,
                 reconstruction_receipt_digest=receipt_digest,
@@ -220,7 +228,7 @@ class CanonicalMaterializationRegistryV1:
                     _handle_payload(
                         handle_id=handle.handle_id,
                         purpose=handle.purpose,
-                        canonical_request_digest=handle.canonical_request_digest,
+                        request_binding_digest=handle.request_binding_digest,
                         issued_epoch=handle.issued_epoch,
                         expires_before_epoch=handle.expires_before_epoch,
                         reconstruction_receipt_digest=handle.reconstruction_receipt_digest,
@@ -233,6 +241,7 @@ class CanonicalMaterializationRegistryV1:
                 canonical_seal_digest=seal.seal_digest,
                 purpose=purpose_value,
                 canonical_request_digest=canonical_request.digest,
+                request_binding_digest=request_binding,
                 issued_epoch=issued,
                 expires_before_epoch=expires,
                 reconstruction_receipt_digest=receipt_digest,
@@ -261,7 +270,10 @@ class CanonicalMaterializationRegistryV1:
             raise CanonicalMaterializationHandleV1Error(
                 "materialization handle purpose mismatch"
             )
-        if canonical_request.digest != handle.canonical_request_digest:
+        expected_request_binding = _request_binding(self._key, canonical_request.digest)
+        if not hmac.compare_digest(
+            expected_request_binding, handle.request_binding_digest
+        ):
             raise CanonicalMaterializationHandleV1Error(
                 "materialization handle canonical request mismatch"
             )
@@ -285,7 +297,8 @@ class CanonicalMaterializationRegistryV1:
                 )
             if (
                 entry.purpose != handle.purpose
-                or entry.canonical_request_digest != handle.canonical_request_digest
+                or entry.request_binding_digest != handle.request_binding_digest
+                or entry.canonical_request_digest != canonical_request.digest
                 or entry.issued_epoch != handle.issued_epoch
                 or entry.expires_before_epoch != handle.expires_before_epoch
                 or entry.reconstruction_receipt_digest
@@ -300,10 +313,10 @@ class CanonicalMaterializationRegistryV1:
                 raise CanonicalMaterializationHandleV1Error(
                     "canonical materialization registry MIR seal mismatch"
                 )
-            # Verify the exact request against hidden MIR before consuming the entry. Once
-            # the request is proven to belong to this world, consume before proof/effect
-            # evaluation so failures cannot leave a reusable canonical capability.
             canonical_request.assert_sealed(hidden)
+            # Consume after exact request/world verification but before proof/effect
+            # evaluation. Later failure burns the capability rather than leaving reusable
+            # canonical access.
             del self._entries[handle.handle_id]
         hidden.assert_sealed()
         return hidden
@@ -341,15 +354,19 @@ class CanonicalMaterializationEffectGateV1:
             raise CanonicalMaterializationHandleV1Error(
                 "request-bound proof required"
             )
+        if self.bound.request_digest != self.request.digest:
+            raise CanonicalMaterializationHandleV1Error(
+                "request-bound proof does not bind supplied canonical request"
+            )
+        if self.bound.proof_digest != self.proof.digest:
+            raise CanonicalMaterializationHandleV1Error(
+                "request-bound proof does not bind supplied native proof"
+            )
         if not callable(self.epoch_source):
             raise CanonicalMaterializationHandleV1Error(
                 "trusted materialization epoch source must be callable"
             )
         _text(self.purpose, "purpose")
-        if self.request.digest != self.handle.canonical_request_digest:
-            raise CanonicalMaterializationHandleV1Error(
-                "materialization handle canonical request mismatch"
-            )
 
     def execute(
         self,
