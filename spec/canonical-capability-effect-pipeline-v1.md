@@ -1,14 +1,14 @@
 # Canonical Capability / Effect Pipeline V1
 
-Status: **compiler consolidation applied on the checked module-graph path / compatibility cleanup remains / validation receipt pending**
+Status: **compiler consolidation + compiler-bound privileged request bridge applied / normalized call-site MIR pending / validation receipt pending**
 
 ## Purpose
 
-Koschei must not decide authority or effect identity twice at different compiler layers.
+Koschei must not decide authority or effect identity twice at different compiler/runtime layers.
 
-Before this slice the checked module graph already produced a Typed-HIR-aware `EffectReport`, but MIR independently called the older AST-oriented `effects.infer_effects(...)` and recomputed capability effects again. Even though both paths referenced canonical capability names, two independent computations after semantic checking created two possible semantic truths.
+The checked module graph now produces one Typed-HIR-aware `EffectReport`, MIR consumes that exact checked report, and privileged request issuance can derive one exact capability call-site basis from sealed compiler MIR instead of accepting a runtime-selected capability type/method.
 
-The sanctioned compiler path is now:
+The sanctioned compiler/runtime authority chain is now:
 
 ```text
 source / AST
@@ -19,12 +19,15 @@ source / AST
    -> capability_effect_contract_v1
    -> checked EffectReport
 -> legacy compatibility semantic check
--> MIR lowering consumes the exact checked EffectReport
+-> MIR lowering consumes exact checked EffectReport
 -> sealed MIR capability-effect projection
--> backend
+-> derive one exact CompilerCapabilityEffectBasisV1 from sealed compiler MIR
+-> privileged request operation := compiler basis canonical effect
+-> compiler-bound RequestCapabilityDomainConstraintV1
+-> Khar/Galaxy constitutional admission
 ```
 
-MIR no longer re-infers its capability effects from source AST on this path.
+MIR does not re-infer its capability effects through the old `effects.infer_effects(...)` path.
 
 ## One canonical capability contract
 
@@ -37,11 +40,11 @@ MIR no longer re-infers its capability effects from source AST on this path.
 - canonical capability effect set;
 - power-domain classification used by deny-only request admission.
 
-Typed type contracts now import `CAPABILITY_TYPES` directly from this canonical module instead of routing capability sensitivity through the legacy `semantic.py` compatibility surface.
+Typed type contracts import `CAPABILITY_TYPES` directly from this canonical module instead of routing sensitivity through legacy `semantic.py` capability aliases.
 
-Affine ownership remains structural: `AffineResourceChecker` asks `TypeContractValidator.is_sensitive(...)`, and that validator now ultimately classifies direct capability types from the canonical contract.
+Affine ownership remains structural: `AffineResourceChecker` asks `TypeContractValidator.is_sensitive(...)`, and that validator classifies direct capability types from the canonical contract.
 
-Effect inference already uses `effect_for(...)` from the canonical contract.
+Effect checking uses `effect_for(...)` from the same contract.
 
 ## Checked EffectReport becomes the MIR source
 
@@ -56,11 +59,11 @@ After every module succeeds, `check_graph(...)` passes both:
 
 to MIR lowering.
 
-`mir.lower_graph(...)` now requires an effect report for every module and `mir.lower_module(...)` requires an effect report for every function. Missing report coverage fails closed with `MirIntegrityError` rather than falling back to another inference engine.
+`mir.lower_graph(...)` requires an effect report for every module and `mir.lower_module(...)` requires an effect report for every function. Missing report coverage fails closed with `MirIntegrityError`; MIR does not fall back to another inference engine.
 
 ## MIR v3 compatibility projection
 
-The full `EffectReport` contains more than MIR v3 historically exposed, including facts such as:
+The full `EffectReport` contains more than MIR v3 historically exposed, including:
 
 - authority-bearing input/output;
 - console/shared-memory/concurrency effects;
@@ -83,54 +86,120 @@ checked effects: console.write
 MIR capability effects: <empty>
 ```
 
-The broader effect model can become a first-class MIR contract in a future versioned MIR change. It must not be silently smuggled into MIR v3 with changed meaning.
+The broader effect model can become first-class MIR only through an explicit versioned MIR change.
 
 ## Imported-effect preservation
 
-Because MIR now consumes the module graph's checked reports, canonical capability effects that arrive transitively through imported calls can be preserved in the caller MIR.
+Because MIR consumes the module graph's checked reports, canonical capability effects that arrive transitively through imported calls can be preserved in the caller MIR.
 
-This closes a blind spot in the old AST-local MIR inference path, which did not own the module graph's already-resolved imported-effect truth.
+This closes the old AST-local blind spot where MIR did not own the module graph's already-resolved imported-effect truth.
+
+## CompilerCapabilityEffectBasisV1
+
+A function-level `MirFunction.effects == ("net.io",)` is not sufficient to identify one exact capability operation. Several canonical methods can share an effect, and a function may receive the effect transitively.
+
+Therefore privileged request issuance does not select a capability type/method from the effect label alone.
+
+`CompilerCapabilityEffectBasisV1` derives one exact call-site from sealed `MirGraph` + sealed Typed-HIR expression typing + the canonical capability contract.
+
+Bootstrap V1 deliberately requires:
+
+```text
+one module
++ one function
++ no local function calls
++ no imported function calls
++ exactly one direct canonical capability call
++ function MIR effect set == exactly that call's effect
+```
+
+It then records:
+
+- compiler MIR fingerprint;
+- module/function identity;
+- capability type;
+- capability method;
+- canonical effect;
+- power domain;
+- source call-site location;
+- deterministic basis digest;
+- `authority=False`.
+
+Multiple direct capability calls fail closed as ambiguous. Local/imported indirection fails closed. This is intentionally restrictive until capability call-site identity is first-class normalized MIR.
+
+## Compiler-bound privileged request issuance
+
+`seal_compiler_bound_effect_request_v1(...)` removes runtime choice of the privileged operation.
+
+The caller provides business/request evidence only. The compiler basis supplies:
+
+- capability type;
+- capability method;
+- canonical effect;
+- power domain;
+- `CanonicalEffectRequest.operation`.
+
+The flow is:
+
+```text
+sealed compiler MIR
+-> CompilerCapabilityEffectBasisV1
+-> operation := basis.canonical_effect
+-> CanonicalEffectRequest
+-> bind_request_capability_domain_v1(request, compiler_basis=basis)
+-> RequestCapabilityDomainConstraintV1
+```
+
+The old sanctioned bootstrap shape:
+
+```text
+bind_request_capability_domain_v1(
+    request,
+    capability_type="ProcessCaps",
+    capability_method="run",
+)
+```
+
+is removed. Runtime/bootstrap code no longer chooses those authority facts.
 
 ## Integrity behavior
 
-`MirGraph.assert_sealed()` no longer calls `effects.infer_effects(...)`.
+`MirGraph.assert_sealed()` does not call `effects.infer_effects(...)`.
 
-Instead it:
+It validates MIR structure/resources, rejects capability effects outside the canonical effect set, and verifies the graph fingerprint that seals program/type/function effect metadata.
 
-1. validates MIR block structure;
-2. validates deterministic resource metadata;
-3. rejects any MIR capability effect outside `CANONICAL_CAPABILITY_EFFECTS`;
-4. verifies the graph fingerprint, which already seals function call/effect metadata together with the checked source/type graph.
+`CompilerBoundEffectRequestV1.assert_sealed(...)` can re-derive its `CompilerCapabilityEffectBasisV1` from the supplied sealed compiler MIR and require exact equality before accepting the compiler-bound request bundle.
 
-Changing sealed MIR effect metadata without updating the graph seal therefore remains detectable.
-
-The structural seal is not a secret-key authenticity mechanism and does not make a malicious compiler trustworthy.
+The compiler basis and request-domain constraint use deterministic structural seals, not a secret-key compiler signature. This does not make a malicious compiler trustworthy and does not physically prevent arbitrary Python object construction inside the TCB.
 
 ## Legacy `effects.py`
 
-This slice removes the old AST effect inferencer from the sanctioned MIR lowering path. The source file may remain temporarily for compatibility or tests until repository-wide consumers are proven absent and deletion is safe.
+The old AST effect inferencer remains outside the sanctioned MIR lowering path. The file may remain temporarily for compatibility/tests until repository-wide consumers are proven absent.
 
-Do not treat its continued file presence as a second approved semantic authority.
-
-A regression test patches `koschei.effects.infer_effects` to raise if called; checked MIR construction must still succeed.
+A regression test patches `koschei.effects.infer_effects` to raise; checked MIR construction must still succeed.
 
 ## PROTECTS AGAINST
 
 - MIR independently disagreeing with the compiler's already-checked capability/effect report because of a second AST inference algorithm;
-- imported capability effects being lost merely because MIR performs only module-local AST inference;
+- imported capability effects being lost merely because MIR performs module-local AST inference;
 - Typed type sensitivity relying on a legacy capability-type alias instead of the canonical capability contract;
 - MIR silently accepting arbitrary non-canonical capability effect labels;
-- missing module/function effect reports falling back to permissive inference during sanctioned lowering.
+- missing module/function effect reports falling back to permissive inference;
+- runtime/bootstrap code selecting capability type/method independently of compiler output;
+- caller-selected privileged operation labels diverging from compiler-derived canonical effect identity;
+- ambiguous multiple capability call-sites being guessed into one privileged request;
+- local/imported effect indirection being misrepresented as exact direct call-site provenance.
 
 ## DOES NOT PROTECT AGAINST
 
-- a malicious compiler or TCB that forges the original `EffectReport`;
+- a malicious compiler or TCB that forges the original `EffectReport`, compiler basis, or dependent policy together;
+- direct Python construction/invocation of lower-level internal objects inside the trusted process;
 - a bug shared by all consumers of `capability_effect_contract_v1`;
-- lower-level/private Python APIs that construct MIR outside the sanctioned checked module-graph path;
 - host/process compromise, debugger inspection, memory scraping, crash dumps or side channels;
-- semantic gaps in the legacy compatibility checker that run after effect checking;
-- unnormalized AST fallback instructions still present inside MIR;
-- native/backend code that ignores sealed MIR effect metadata.
+- semantic gaps in the legacy compatibility checker;
+- executable AST fallback still present inside MIR;
+- native/backend code that ignores sealed MIR effect metadata or bypasses compiler-bound request issuance;
+- legitimate multi-call/transitive privileged functions, which bootstrap V1 rejects rather than models incompletely.
 
 ## ASSUMPTIONS
 
@@ -139,27 +208,34 @@ A regression test patches `koschei.effects.infer_effects` to raise if called; ch
 - `check_effect_contracts(...)` is the sole checked function-effect computation for the sanctioned compiler path;
 - imported effect reports are resolved in dependency order;
 - backends consume only sealed MIR obtained from `require_mir(...)`;
+- compiler-bound request issuance is used for privileged runtime admission;
 - `capability_effect_contract_v1` remains the canonical capability/effect source.
 
 ## FAILURE MODE
 
-The consolidation fails if another compiler/backend path recomputes capability effects independently and is allowed to override the checked report, if MIR lowering accepts missing reports and guesses, or if legacy compatibility aliases regain semantic authority instead of remaining consumers/adapters.
+The consolidation fails if another compiler/backend path recomputes and overrides capability identity, if MIR lowering accepts missing reports and guesses, if runtime code can again select capability type/method independently of compiler evidence, or if legacy compatibility aliases regain semantic authority.
 
 ## TESTED STATUS
 
 Regression tests are committed for:
 
-- existing direct and local-transitive capability effects;
+- direct, local-transitive and imported capability effects in checked MIR;
 - sealed MIR tamper detection;
-- MIR construction succeeding while legacy `koschei.effects.infer_effects` is forced to raise;
-- an imported `net.io` capability effect propagating into caller MIR through the checked `EffectReport`.
+- MIR construction while legacy `koschei.effects.infer_effects` is forced to raise;
+- exact `NetCaps.get -> net.io -> Network` compiler-basis derivation;
+- compiler basis revalidation against sealed compiler MIR;
+- multiple direct capability call-sites failing closed;
+- local-call indirection failing closed;
+- imported-call indirection failing closed;
+- compiler-bound privileged request issuance and materialization path;
+- request relabeling and foreign request-domain constraints failing closed.
 
-These tests are **written and committed, not claimed passed**. Current GitHub head has no status-check or workflow-run evidence, and no fresh `ks-local-validate --profile full` receipt has been produced in this connector-only session.
+These tests are **written and committed, not claimed passed**. No fresh `ks-local-validate --profile full` receipt is claimed for the current #263 head.
 
 ## NEXT
 
-1. inspect remaining legacy `semantic.py` capability aliases and make them compatibility consumers only;
-2. bind compiler-produced capability basis to `CanonicalEffectRequest` / `RequestCapabilityDomainConstraintV1` instead of constructing that relationship only in Python bootstrap integration code;
-3. normalize MIR further and reduce executable AST fallback;
-4. prove interpreter/native backends consume the same sealed capability/effect identity;
+1. make exact capability call-site identity first-class normalized MIR instead of deriving it by walking sealed AST fallback;
+2. make interpreter/native/backend paths consume that same normalized call-site identity;
+3. continue shrinking legacy semantic/AST compatibility authority;
+4. move compiler/runtime provenance into a stronger native trust boundary;
 5. run canonical and adversarial validation before PR #263 leaves draft.
