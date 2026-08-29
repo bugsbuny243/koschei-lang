@@ -2,10 +2,11 @@
 
 `representation_boundary_v1` defines the low-level semantic relation between hidden
 canonical MIR, observer-safe representation and reconstruction grants. This module is
-the sanctioned runtime-side consumption boundary: epoch truth comes from a trusted
-source, one exact reconstruction grant context can cross back into the canonical world
-at most once per authoritative ledger, and the broad runtime receives only an opaque
-materialization handle rather than the canonical MIR object itself.
+the sanctioned runtime-side consumption boundary: epoch truth comes from the same typed
+`ContinuityEpochAuthorityV1` used by Nyr observation and materialization, one exact
+reconstruction grant context can cross back into the canonical world at most once per
+authoritative ledger, and the broad runtime receives only an opaque materialization
+handle rather than the canonical MIR object itself.
 
 For execution-purpose reconstruction, the grant and resulting handle are both bound to
 one exact sealed `CanonicalEffectRequest`. The request epoch must equal the live visibility
@@ -22,12 +23,12 @@ from dataclasses import dataclass
 import hashlib
 import hmac
 from threading import Lock
-from typing import Callable
 
 from .canonical_materialization_handle_v1 import (
     CanonicalMaterializationHandleV1,
     CanonicalMaterializationRegistryV1,
 )
+from .continuity_epoch_authority_v1 import ContinuityEpochAuthorityV1
 from .galaxy_identity_v1 import VeyraIdentity
 from .library_adaptive_visibility_v0 import AdaptiveVisibilityEnvelopeV0
 from .native_sigil_mir_v1 import NativeSigilMir
@@ -47,9 +48,6 @@ class RepresentationReconstructionGateV1Error(ValueError):
     pass
 
 
-EpochSource = Callable[[], int]
-
-
 def _require_key(value: bytes, *, field: str) -> bytes:
     if not isinstance(value, bytes) or len(value) < 32:
         raise RepresentationReconstructionGateV1Error(
@@ -61,7 +59,7 @@ def _require_key(value: bytes, *, field: str) -> bytes:
 def _require_epoch(value: int) -> int:
     if not isinstance(value, int) or isinstance(value, bool) or value < 0:
         raise RepresentationReconstructionGateV1Error(
-            "trusted epoch source returned an invalid epoch"
+            "reconstruction receipt carries an invalid epoch"
         )
     return value
 
@@ -226,7 +224,7 @@ class RepresentationReconstructionGateV1:
     veil_key: bytes
     reconstruction_key: bytes
     receipt_key: bytes
-    epoch_source: EpochSource
+    continuity: ContinuityEpochAuthorityV1
     ledger: ReconstructionConsumptionLedgerV1
     materialization_registry: CanonicalMaterializationRegistryV1
 
@@ -261,10 +259,11 @@ class RepresentationReconstructionGateV1:
         _require_key(self.veil_key, field="representation veil key")
         _require_key(self.reconstruction_key, field="reconstruction key")
         _require_key(self.receipt_key, field="reconstruction receipt key")
-        if not callable(self.epoch_source):
+        if not isinstance(self.continuity, ContinuityEpochAuthorityV1):
             raise RepresentationReconstructionGateV1Error(
-                "trusted epoch source must be callable"
+                "Continuity epoch authority v1 required"
             )
+        self.continuity.assert_sealed()
         if not isinstance(self.ledger, ReconstructionConsumptionLedgerV1):
             raise RepresentationReconstructionGateV1Error(
                 "reconstruction consumption ledger v1 required"
@@ -281,15 +280,7 @@ class RepresentationReconstructionGateV1:
     ) -> tuple[CanonicalMaterializationHandleV1, ReconstructionConsumptionReceiptV1]:
         """Authorize exact-request reconstruction, consume grant, and mint one handle."""
 
-        try:
-            current_epoch = _require_epoch(self.epoch_source())
-        except RepresentationReconstructionGateV1Error:
-            raise
-        except Exception as exc:
-            raise RepresentationReconstructionGateV1Error(
-                "trusted epoch source failed closed"
-            ) from exc
-
+        current_epoch = self.continuity.current_epoch()
         if self.request.epoch != current_epoch:
             raise RepresentationReconstructionGateV1Error(
                 "canonical request epoch differs from current reconstruction epoch"
