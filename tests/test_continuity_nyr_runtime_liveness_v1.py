@@ -126,11 +126,7 @@ def test_one_failed_continuity_reader_fails_all_three_boundaries_closed():
                 request=world["request"],
                 proof=world["proof"],
                 bound=world["bound"],
-                domain_constraint=fixture.bind_request_capability_domain_v1(
-                    world["request"],
-                    capability_type="ProcessCaps",
-                    capability_method="run",
-                ),
+                domain_constraint=world["domain_constraint"],
                 continuity=failed,
                 galaxy=world["galaxy"],
             )
