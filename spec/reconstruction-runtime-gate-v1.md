@@ -1,148 +1,180 @@
 # Koschei Reconstruction Runtime Gate V1
 
-Status: **implemented bootstrap prototype / trusted-epoch + atomic single-use reconstruction / native enforcement pending**
+Status: **implemented bootstrap prototype / trusted-epoch + atomic single-use reconstruction + opaque materialization handle**
 
 Parent law: **OBSERVABLE WORLD != CANONICAL WORLD**
 
 ## 1. Purpose
 
 Representation separation is incomplete if an observer-safe surface can be converted back
-into canonical semantics through a reusable or caller-timed helper.
+into canonical semantics through a reusable helper or if successful reconstruction simply
+returns `NativeSigilMir` to the broad runtime.
 
-V1 therefore treats canonical re-materialization as a privileged runtime transition:
+The sanctioned V1 path is now:
 
 ```text
 observer-safe ObservableRepresentationV1
 + hidden sealed NativeSigilMir
 + exact ReconstructionGrantV1
 + trusted epoch source
-+ authoritative single-use ledger
++ authoritative reconstruction-consumption ledger
 -> validate live representation/grant
 -> atomically consume grant context
 -> ReconstructionConsumptionReceiptV1
--> canonical MIR returned to the trusted caller
+-> mint CanonicalMaterializationHandleV1
+-> hidden MIR remains in trusted CanonicalMaterializationRegistryV1
 ```
 
-The visible Nyr surface is still not inverted.  The trusted runtime already owns canonical
-MIR; this gate controls whether that hidden world may cross the boundary for this exact
-context at this exact time.
+The visible Nyr surface is not inverted. The trusted runtime already owns canonical MIR;
+this boundary controls when an exact hidden semantic world may be materialized and returns
+only an opaque capability handle to the wider execution surface.
 
 ## 2. Runtime-owned time
 
-The sanctioned gate does not accept `current_epoch` from the reconstruction caller.
+The sanctioned reconstruction gate does not accept `current_epoch` from the caller.
 `RepresentationReconstructionGateV1` calls a trusted epoch source at use time.
 
-The epoch source fails closed when it:
-
-- raises;
-- returns a negative value;
-- returns a non-integer;
-- returns a boolean.
-
-The bootstrap uses a callable boundary.  Production should bind this source to Koschei
-Continuity/lifecycle state rather than application convention.
+The epoch source fails closed when it raises, is negative, is non-integer or is boolean.
+Production should bind this source to Koschei Continuity/lifecycle state rather than
+application convention.
 
 ## 3. Single-use reconstruction identity
 
-The stable replay identity is `ReconstructionGrantV1.context_digest`.
-
-That digest already binds:
+The reconstruction replay identity is `ReconstructionGrantV1.context_digest`, which binds:
 
 - hidden canonical semantic seal;
 - Veyra identity;
-- observer;
-- session;
-- visibility epoch;
-- expiry epoch;
+- observer and session;
+- visibility epoch and expiry;
 - grant id;
 - purpose.
 
-`ReconstructionConsumptionLedgerV1` atomically check-and-records that context under a
-process lock.  Concurrent callers therefore cannot both successfully return canonical
-MIR through one authoritative ledger.
+`ReconstructionConsumptionLedgerV1` atomically check-and-records the exact context under a
+process lock. Concurrent callers therefore cannot both mint canonical materialization
+handles from one context through the same authoritative ledger.
 
-A failed purpose/key/equivalence/liveness check occurs before consumption and does not burn
-the grant.
+Failed purpose/key/equivalence/liveness checks occur before consumption and do not burn the
+grant.
 
 ## 4. Consumption receipt
 
-`ReconstructionConsumptionReceiptV1` is trusted-side provenance.  It binds:
+`ReconstructionConsumptionReceiptV1` binds:
 
 - grant-context digest;
 - observer-safe representation digest;
 - canonical semantic seal digest;
 - reconstruction purpose;
 - trusted consumed epoch;
-- `single_use=true`;
-- `authority=false`;
-- version 1.
+- single-use=true;
+- authority=false.
 
-The receipt is HMAC-authenticated under a dedicated reconstruction-receipt key.  It is
-evidence that the runtime consumed one exact reconstruction context; the receipt itself is
-not ambient authority and cannot authorize another reconstruction.
+It is HMAC-authenticated under a dedicated receipt key. It is provenance, not another
+reconstruction capability.
 
-## 5. PROTECTS AGAINST
+## 5. Opaque materialization
 
-- application-selected stale/future epoch values through the sanctioned runtime gate;
-- repeated reconstruction with the same grant context in one authoritative ledger;
-- concurrent double-reconstruction through the same in-process gate/ledger;
-- purpose substitution before consumption;
-- consumption-receipt field tampering without the receipt key;
-- treating an observer-facing representation as sufficient reconstruction authority.
+After reconstruction consumption, the sanctioned gate does **not** return canonical MIR.
+It asks `CanonicalMaterializationRegistryV1` to custody the hidden MIR and returns
+`CanonicalMaterializationHandleV1`.
 
-## 6. DOES NOT PROTECT AGAINST
+The handle contains only:
 
-- direct Python imports of the lower-level `reconstruct_canonical_semantics_v1` helper;
-- process restart when an in-memory ledger is lost;
-- forked processes or separate ledgers consuming the same grant independently;
-- rollback of future durable replay state;
-- a malicious/compromised trusted epoch source;
-- compromise of reconstruction, veil or receipt keys;
-- a trusted process already able to read hidden canonical MIR directly;
-- memory disclosure, crash dumps, tracing or side channels;
-- native/backend paths that bypass this gate.
+- a CSPRNG-generated opaque handle id;
+- purpose;
+- issue epoch;
+- expiry epoch;
+- reconstruction-receipt digest;
+- authenticated handle digest.
 
-## 7. ASSUMPTIONS
+The handle MUST NOT contain canonical MIR fingerprint, Universe-plan digest, canonical
+sigil/subject/domain names, canonical semantic seal digest or Veyra identity.
 
-- `NativeSigilMir.assert_sealed()` and Veyra sealing remain trustworthy;
-- the observer visibility envelope is allowed and authority-free;
-- reconstruction and veil keys remain separated;
-- the reconstruction receipt key is a separate trust role;
-- the runtime epoch source reflects authoritative Continuity state;
-- one production deployment designates a single authoritative reconstruction-consumption
-  state or provides equivalent distributed monotonic coordination.
+Possession of the handle is a narrow capability to ask the trusted registry for the one
+materialized semantic world. It is not ambient authority and does not itself authorize an
+arbitrary effect.
 
-## 8. FAILURE MODE
+## 6. Effect admission
 
-The current ledger is process-local.  After restart, snapshot rollback, or fork, another
-ledger can forget a prior consumption and admit the same context again.  Therefore this V1
-must not be described as globally replay-proof.
+The sanctioned effect path is:
 
-The Python package also cannot make direct lower-level helper imports physically
-impossible.  Production native/runtime APIs must expose reconstruction through this gate
-and keep raw canonical re-materialization primitives trusted-internal.
+```text
+CanonicalMaterializationHandleV1
++ trusted epoch source
++ NativeSigilProofBundle
++ PrivilegedEffectIntent
+-> atomically consume handle
+-> resolve hidden MIR inside trusted registry only
+-> native proof-bound enforcement
+-> ALLOW / DENY / CONTAIN
+-> effect callback only for ALLOW
+```
 
-## 9. Security meaning
+The external effect callback receives `PrivilegedEffectIntent`, not `NativeSigilMir`.
+The handle is removed from the registry before proof/effect evaluation begins; a DENY,
+CONTAIN or later failure therefore burns the one-shot materialization capability rather
+than leaving reusable canonical access.
 
-This slice changes the Koschei model from:
+## 7. PROTECTS AGAINST
 
-> "A visible representation expires."
+- application-selected stale/future epoch values through sanctioned reconstruction/effect gates;
+- repeated reconstruction with one grant context in one authoritative ledger;
+- concurrent double-reconstruction through the same ledger;
+- broad-runtime receipt of canonical MIR from the sanctioned reconstruction API;
+- stable canonical identifiers appearing directly in the opaque handle;
+- repeated use of one materialization handle through one registry;
+- purpose substitution on the handle;
+- handle-field tampering without the materialization key;
+- treating successful reconstruction as permission to execute arbitrary effects;
+- effect execution when native proof evaluation returns DENY or CONTAIN.
 
-into:
+## 8. DOES NOT PROTECT AGAINST
 
-> "Crossing from the visible world back into the canonical semantic world is a scoped,
-> time-checked, single-consumption runtime event."
+- direct Python imports of low-level reconstruction or registry-private helpers;
+- a process that can introspect the trusted registry's Python memory;
+- process restart/fork/rollback of in-memory reconstruction or materialization state;
+- a malicious trusted epoch source;
+- leaked veil/reconstruction/receipt/materialization keys;
+- canonical leakage through logs, debugger, crash dump, tracing or other unclassified paths;
+- a trusted callback intentionally leaking data it can derive from the effect context;
+- native/backend paths that bypass these gates.
 
-That is an execution-semantic distinction, not syntax decoration.
+## 9. ASSUMPTIONS
 
-## 10. NEXT
+- sealed `NativeSigilMir`, Veyra identity and native proof validation are trustworthy;
+- the visibility envelope is allowed and authority-free;
+- trust-role keys remain separated;
+- runtime epoch truth comes from authoritative Continuity state in production;
+- production keeps the materialization registry and raw MIR inside a non-observer-accessible compartment;
+- one deployment has authoritative replay/materialization custody or equivalent distributed monotonic coordination.
 
-1. Replace the callable epoch source with a sealed Continuity epoch authority.
-2. Move reconstruction-consumption state into durable monotonic runtime custody.
-3. Bind canonical materialization to exact effect/compute admission so reconstruction does
-   not imply permission to execute arbitrary effects.
-4. Add an opaque materialization handle so canonical MIR need not be returned as an ordinary
-   Python object across wider runtime surfaces.
-5. Route debugger/introspection/runtime surfaces through observer-safe representations by
-   default.
-6. Carry this invariant into the native backend and canonical release validation.
+## 10. FAILURE MODE
+
+The Python registries are process-local. Restart, fork or snapshot rollback can forget a
+prior grant/handle consumption. Python also cannot make `_consume_hidden_mir` physically
+private. Therefore this V1 proves semantic/API separation and one-process one-shot
+behavior, not hardware/process isolation or global replay immunity.
+
+If production code exports raw MIR, registry internals, faithful debugger views or direct
+reconstruction helpers elsewhere, the repository-wide `observable != canonical` claim is
+false even if this module is correct.
+
+## 11. Security meaning
+
+The model is now stronger than "the visible mapping rotates":
+
+> **Canonical semantics are not an ordinary runtime value. Crossing into the canonical
+> world requires a live scoped reconstruction capability, creates only an opaque one-shot
+> materialization handle, and that handle can be consumed only inside a trusted effect
+> admission boundary.**
+
+This is an execution-semantic distinction, not syntax decoration.
+
+## 12. NEXT
+
+1. Replace callable epoch sources with sealed Continuity epoch authority.
+2. Move reconstruction and handle-consumption state into durable monotonic runtime custody.
+3. Bind handle use to canonical request/effect ids, not purpose alone.
+4. Add revocation/compartment identity to materialization handles.
+5. Route debugger/introspection/runtime surfaces through observer-safe representations.
+6. Carry registry custody into native execution so raw MIR never crosses the compartment ABI.
+7. Add canonical release validation proving no sanctioned runtime API returns raw MIR.
