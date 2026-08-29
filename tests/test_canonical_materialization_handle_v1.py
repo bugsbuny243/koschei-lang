@@ -8,6 +8,7 @@ from koschei.canonical_materialization_handle_v1 import (
     CanonicalMaterializationHandleV1Error,
     CanonicalMaterializationRegistryV1,
 )
+from koschei.continuity_epoch_authority_v1 import bind_continuity_epoch_authority_v1
 from koschei.galaxy_identity_v1 import birth_veyra
 from koschei.library_adaptive_visibility_v0 import (
     VisibilityPolicyV0,
@@ -63,7 +64,7 @@ def request_for(mir, epoch, tag="42"):
     )
 
 
-def world():
+def world(backing=None):
     mir = lower_native_sigils(parse(SOURCE))
     plan = expand_native_sigil_mir(mir)
     veyra = birth_veyra(
@@ -96,6 +97,12 @@ def world():
         purpose="execute",
         reconstruction_key=RECON,
     )
+    epoch_state = backing if backing is not None else {}
+    epoch_state.setdefault("epoch", envelope.visibility_epoch)
+    continuity = bind_continuity_epoch_authority_v1(
+        continuity_id="materialization-test-continuity",
+        epoch_reader=lambda: epoch_state["epoch"],
+    )
     registry = CanonicalMaterializationRegistryV1(materialization_key=MATERIALIZE)
     reconstruct_gate = RepresentationReconstructionGateV1(
         representation=representation,
@@ -107,7 +114,7 @@ def world():
         veil_key=VEIL,
         reconstruction_key=RECON,
         receipt_key=RECEIPT,
-        epoch_source=lambda: envelope.visibility_epoch,
+        continuity=continuity,
         ledger=ReconstructionConsumptionLedgerV1(),
         materialization_registry=registry,
     )
@@ -129,19 +136,20 @@ def proof_for(mir, plan, failed_obligation=None):
     return seal_native_sigil_proof(mir, receipts)
 
 
-def effect_gate(registry, handle, request, proof, mir, epoch):
+def effect_gate(registry, handle, request, proof, mir, continuity, purpose="execute"):
     return CanonicalMaterializationEffectGateV1(
         registry=registry,
         handle=handle,
         request=request,
         proof=proof,
         bound=bind_proof_to_request(mir, request, proof),
-        epoch_source=lambda: epoch,
+        continuity=continuity,
+        purpose=purpose,
     )
 
 
 def test_opaque_handle_executes_exact_request_without_returning_mir():
-    mir, plan, envelope, request, registry, reconstruct_gate = world()
+    mir, plan, _, request, registry, reconstruct_gate = world()
     handle, receipt = reconstruct_gate.reconstruct(purpose="execute")
     proof = proof_for(mir, plan)
     calls = []
@@ -150,7 +158,7 @@ def test_opaque_handle_executes_exact_request_without_returning_mir():
     assert request.digest not in repr(reconstruct_gate.grant)
 
     decision, result = effect_gate(
-        registry, handle, request, proof, mir, envelope.visibility_epoch
+        registry, handle, request, proof, mir, reconstruct_gate.continuity
     ).execute(lambda item: calls.append(item.effect_id) or b"signed")
 
     assert decision.decision == "ALLOW"
@@ -162,12 +170,12 @@ def test_opaque_handle_executes_exact_request_without_returning_mir():
         match="already consumed or unknown",
     ):
         effect_gate(
-            registry, handle, request, proof, mir, envelope.visibility_epoch
+            registry, handle, request, proof, mir, reconstruct_gate.continuity
         ).execute(lambda _: b"should-not-run")
 
 
 def test_handle_tamper_rejects_before_effect_callback():
-    mir, plan, envelope, request, registry, reconstruct_gate = world()
+    mir, plan, _, request, registry, reconstruct_gate = world()
     handle, _ = reconstruct_gate.reconstruct(purpose="execute")
     proof = proof_for(mir, plan)
     forged = replace(handle, purpose="inspect")
@@ -177,13 +185,13 @@ def test_handle_tamper_rejects_before_effect_callback():
         CanonicalMaterializationHandleV1Error,
         match="authentication failed",
     ):
-        CanonicalMaterializationEffectGateV1(
-            registry=registry,
-            handle=forged,
-            request=request,
-            proof=proof,
-            bound=bind_proof_to_request(mir, request, proof),
-            epoch_source=lambda: envelope.visibility_epoch,
+        effect_gate(
+            registry,
+            forged,
+            request,
+            proof,
+            mir,
+            reconstruct_gate.continuity,
             purpose="inspect",
         ).execute(lambda _: calls.append(1))
     assert calls == []
@@ -207,68 +215,69 @@ def test_cross_request_substitution_rejects_without_consuming_handle():
             request=other,
             proof=proof,
             bound=other_bound,
-            epoch_source=lambda: envelope.visibility_epoch,
+            continuity=reconstruct_gate.continuity,
         ).execute(lambda _: calls.append(1))
     assert calls == []
 
     decision, result = effect_gate(
-        registry, handle, request, proof, mir, envelope.visibility_epoch
+        registry, handle, request, proof, mir, reconstruct_gate.continuity
     ).execute(lambda _: b"original")
     assert decision.decision == "ALLOW"
     assert result == b"original"
 
 
 def test_wrong_effect_gate_purpose_does_not_consume_valid_handle():
-    mir, plan, envelope, request, registry, reconstruct_gate = world()
+    mir, plan, _, request, registry, reconstruct_gate = world()
     handle, _ = reconstruct_gate.reconstruct(purpose="execute")
     proof = proof_for(mir, plan)
-    bound = bind_proof_to_request(mir, request, proof)
 
     with pytest.raises(
         CanonicalMaterializationHandleV1Error,
         match="purpose mismatch",
     ):
-        CanonicalMaterializationEffectGateV1(
-            registry=registry,
-            handle=handle,
-            request=request,
-            proof=proof,
-            bound=bound,
-            epoch_source=lambda: envelope.visibility_epoch,
+        effect_gate(
+            registry,
+            handle,
+            request,
+            proof,
+            mir,
+            reconstruct_gate.continuity,
             purpose="inspect",
         ).execute(lambda _: b"no")
 
     decision, result = effect_gate(
-        registry, handle, request, proof, mir, envelope.visibility_epoch
+        registry, handle, request, proof, mir, reconstruct_gate.continuity
     ).execute(lambda _: b"yes")
     assert decision.decision == "ALLOW"
     assert result == b"yes"
 
 
-def test_expired_handle_does_not_open_hidden_mir_or_call_effect():
-    mir, plan, _, request, registry, reconstruct_gate = world()
+def test_expired_handle_uses_same_continuity_and_does_not_call_effect():
+    backing = {}
+    mir, plan, _, request, registry, reconstruct_gate = world(backing)
     handle, _ = reconstruct_gate.reconstruct(purpose="execute")
     proof = proof_for(mir, plan)
     calls = []
+    backing["epoch"] = handle.expires_before_epoch
 
     with pytest.raises(
         CanonicalMaterializationHandleV1Error,
         match="canonical request epoch differs from current materialization epoch|expired",
     ):
         effect_gate(
-            registry, handle, request, proof, mir, handle.expires_before_epoch
+            registry, handle, request, proof, mir, reconstruct_gate.continuity
         ).execute(lambda _: calls.append(1))
     assert calls == []
 
 
 def test_denied_request_bound_proof_burns_handle_without_running_effect():
-    mir, plan, envelope, request, registry, reconstruct_gate = world()
+    mir, plan, _, request, registry, reconstruct_gate = world()
     handle, _ = reconstruct_gate.reconstruct(purpose="execute")
     denied = proof_for(mir, plan, "derive-least-authority")
     calls = []
 
     decision, result = effect_gate(
-        registry, handle, request, denied, mir, envelope.visibility_epoch
+        registry, handle, request, denied, mir, reconstruct_gate.continuity
     ).execute(lambda _: calls.append(1))
 
     assert decision.decision == "DENY"
@@ -278,5 +287,5 @@ def test_denied_request_bound_proof_burns_handle_without_running_effect():
     allowed = proof_for(mir, plan)
     with pytest.raises(CanonicalMaterializationHandleV1Error, match="already consumed"):
         effect_gate(
-            registry, handle, request, allowed, mir, envelope.visibility_epoch
+            registry, handle, request, allowed, mir, reconstruct_gate.continuity
         ).execute(lambda _: b"should-not-run")
