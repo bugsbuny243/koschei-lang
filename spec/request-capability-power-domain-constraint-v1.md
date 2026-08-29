@@ -1,6 +1,6 @@
 # Request-Bound Capability Power-Domain Constraint V1
 
-Status: **implemented bootstrap prototype / deny-only invariant / native compiler derivation pending**
+Status: **implemented bootstrap prototype / compiler-derived leaf capability basis / deny-only invariant / native enforcement pending**
 
 ## Purpose
 
@@ -9,6 +9,8 @@ Koschei already has one canonical capability/effect authority in `capability_eff
 > Authority present in one power domain must not silently become authority in another power domain.
 
 This specification extracts only that law. It does **not** import `PowerGrant`, `CrossDomainPermit`, or a second authorization system.
+
+The important hardening in this revision is that runtime/bootstrap code no longer chooses a capability type/method pair for privileged admission. That relationship is derived from already sealed compiler MIR.
 
 ## Canonical power domains
 
@@ -55,47 +57,106 @@ The function returns canonical effect/domain metadata only after those checks. I
 
 A future contract edit such as conceptually mapping `NetCaps.get` to `disk.read` must therefore fail closed as Network -> Data escalation.
 
-## Exact-request binding
+## Compiler capability basis
 
-`RequestCapabilityDomainConstraintV1` binds the deny-only result to one exact `CanonicalEffectRequest`.
+`CompilerCapabilityEffectBasisV1` is derived from sealed `MirGraph` plus its sealed Typed-HIR evidence.
 
-The constraint contains:
+V1 deliberately accepts only a narrow shape:
 
-- exact canonical request digest;
-- canonical capability type;
-- canonical capability method;
-- canonical effect identity;
-- derived power domain;
-- deterministic integrity digest;
+```text
+one sealed compiler MirGraph
+-> one unambiguous module
+-> one unambiguous function
+-> no local function calls
+-> no imported function calls
+-> exactly one direct canonical capability call-site
+-> MirFunction.effects == exactly that canonical effect
+-> same-domain canonical contract check
+-> CompilerCapabilityEffectBasisV1
+```
+
+The basis records:
+
+- compiler MIR fingerprint;
+- module/function identity;
+- exact capability type;
+- exact capability method;
+- canonical effect;
+- power domain;
+- source call-site line/column;
+- deterministic basis digest;
+- `direct_call=True`;
+- `authority=False`.
+
+This strict leaf-function rule is intentional. A broad function-level `net.io` summary does not tell us whether the privileged operation came from `NetCaps.get`, `post`, `request`, an imported function, or several call-sites. V1 refuses to guess. Explicit MIR call-site effect identities can relax this safely later.
+
+The basis is a compiler provenance fact, not permission.
+
+## Compiler-bound request issuance
+
+`seal_compiler_bound_effect_request_v1(...)` is the sanctioned bootstrap issuance path.
+
+The caller supplies business/request evidence:
+
+- effect id;
+- protected `vor` subject;
+- payload digest;
+- identity digest;
+- epoch;
+- nonce/replay digest.
+
+The caller does **not** supply:
+
+- `CanonicalEffectRequest.operation`;
+- capability type;
+- capability method;
+- power domain.
+
+Those fields come from `CompilerCapabilityEffectBasisV1`.
+
+The issuance chain is:
+
+```text
+sealed compiler MIR
+-> derive exact CompilerCapabilityEffectBasisV1
+-> operation := compiler_basis.canonical_effect
+-> seal CanonicalEffectRequest against native sigil MIR
+-> bind RequestCapabilityDomainConstraintV1 to exact request + compiler basis
+```
+
+`CompilerBoundEffectRequestV1.assert_sealed(...)` can re-derive the basis from the supplied sealed compiler MIR and require exact equality.
+
+## Exact-request constraint
+
+`RequestCapabilityDomainConstraintV1` now contains a sealed `compiler_basis` and is marked:
+
+- `compiler_bound=True`;
 - `deny_only=True`;
 - `authority=False`.
 
+`bind_request_capability_domain_v1(...)` no longer accepts `capability_type=` or `capability_method=`. It accepts only `compiler_basis=`.
+
+The constraint verifies:
+
+- exact request digest;
+- compiler basis seal;
+- capability type/method/effect/domain equal the compiler basis;
+- request operation equals the compiler-derived canonical effect;
+- deterministic constraint seal.
+
 It cannot emit ALLOW, mint authority, delegate authority, or create a cross-domain edge.
-
-The request's own `operation` field must equal the canonical effect identity derived from the capability contract. This prevents a caller from sealing `signer.execute` while separately claiming that the request should be treated as `process.exec` for domain admission.
-
-Therefore the sanctioned privileged request identity is mechanically aligned as:
-
-```text
-canonical capability type + method
--> canonical effect
--> request.operation == canonical effect
--> same-domain negative invariant
--> exact request-bound constraint
-```
 
 ## Galaxy integration
 
-`CanonicalMaterializationEffectGateV1` now requires `RequestCapabilityDomainConstraintV1`.
+`CanonicalMaterializationEffectGateV1` requires `RequestCapabilityDomainConstraintV1` and checks it before touching one-shot materialization state.
 
 Order:
 
 ```text
-exact request-bound domain constraint
--> validate deny-only flags
--> validate canonical capability/method/effect identity
--> validate same power domain
--> validate exact request binding
+compiler-derived exact capability basis
+-> compiler-bound exact request
+-> compiler-bound deny-only domain constraint
+-> validate exact request + same-domain identity
 -> shared Continuity current epoch
 -> one-shot materialization consume
 -> existing enforce_galaxy_critical_effect(...)
@@ -103,9 +164,17 @@ exact request-bound domain constraint
 -> ALLOW / DENY / CONTAIN
 ```
 
-The domain constraint is checked before one-shot materialization state is consumed. A malformed or foreign constraint therefore cannot burn an otherwise valid materialization handle.
+A malformed or foreign constraint therefore cannot burn an otherwise valid materialization handle.
 
 The constraint is re-checked immediately before the privileged transition so canonical contract drift fails closed.
+
+## Important bootstrap boundary
+
+The compiler basis and constraint use deterministic structural seals, not a secret-key compiler signature.
+
+At sanctioned issuance, `CompilerBoundEffectRequestV1.assert_sealed(...)` re-derives the basis from sealed compiler MIR. At the later materialization gate, the embedded basis self-seal and canonical capability contract are checked, but the full compiler `MirGraph` is not carried through the observer/runtime surface.
+
+Therefore this prototype does **not** claim to stop a malicious caller already able to construct arbitrary internal Python dataclasses or invoke lower-level helpers inside the TCB. That remains part of the known Python bootstrap bypass class. A native compartment / compiler-runtime ABI must eventually make compiler-issued provenance non-forgeable across the trust boundary without exposing canonical MIR broadly.
 
 ## No cross-domain permit in V1
 
@@ -115,52 +184,60 @@ If Koschei later requires a legitimate cross-domain transition, it must be desig
 
 ## PROTECTS AGAINST
 
+- runtime/bootstrap callers selecting `ProcessCaps.run`, `NetCaps.get`, or another capability pair independently of compiler output;
+- caller-selected privileged operation labels diverging from the compiler-derived canonical effect;
+- ambiguous multiple capability call-sites being guessed into one request authority;
+- local/imported call indirection being silently treated as exact call-site provenance in V1;
 - accidental capability-contract edits that map one capability domain to an effect in another domain;
 - unknown or unclassified capability/effect relationships silently passing domain admission;
 - request A's domain constraint being reused for request B;
-- caller-chosen request operation names relabeling a different canonical capability effect;
 - introducing PR #260's parallel grant/permit authority model into the sanctioned #263 execution path;
 - malformed/foreign domain constraints consuming a valid materialization handle before rejection.
 
 ## DOES NOT PROTECT AGAINST
 
-- malicious trusted compiler/runtime code that deliberately changes the canonical capability contract and all dependent policy together;
-- direct Python invocation of lower-level execution helpers that bypass `CanonicalMaterializationEffectGateV1`;
+- malicious code already inside the Python TCB directly forging internal dataclasses or invoking lower-level helpers;
+- a malicious trusted compiler/runtime changing canonical capability semantics and all dependent checks together;
 - host/process compromise, debugger access, memory scraping, crash dumps, side channels, or leaked keys;
-- native/backend paths that do not consume the same constraint;
+- native/backend paths that do not consume the same compiler-bound request provenance;
 - a privileged callback performing behavior different from the effect identity promised by a malicious TCB implementation;
+- legitimate multi-call/transitive privileged functions, which V1 intentionally rejects rather than models incompletely;
 - future legitimate cross-domain transitions, which are intentionally not implemented by this slice.
 
 ## ASSUMPTIONS
 
 - `capability_effect_contract_v1` remains the single canonical capability/effect source of truth;
+- sealed `MirGraph` and its Typed-HIR evidence are trustworthy compiler products;
 - `CanonicalEffectRequest` sealing and request-bound proof logic remain trustworthy;
 - production privileged execution enters through one sanctioned Khar/Galaxy ABI;
-- compiler/runtime generation of the capability-domain constraint is part of the trusted semantic pipeline;
+- compiler-bound request issuance is used instead of direct low-level Python constructors;
 - unknown domain classifications remain fail closed.
 
 ## FAILURE MODE
 
-The model fails if another subsystem can independently decide capability domains/effects, if a cross-domain permit system grows beside the canonical capability contract, or if privileged execution can skip the domain constraint and still reach a weaker execution path.
-
-The current Python bootstrap also cannot physically prevent callers from importing lower-level helpers. Native compartment/API enforcement remains required.
+The model fails if runtime code regains the ability to choose capability type/method independently of compiler evidence, if another subsystem can independently decide capability domains/effects, if a cross-domain permit system grows beside the canonical capability contract, or if privileged execution can skip the compiler-bound domain constraint and still reach a weaker execution path.
 
 ## TESTED STATUS
 
 Regression tests are committed for:
 
-- exact-request binding and `deny_only=True` / `authority=False`;
-- canonical Process capability -> `process.exec` -> Compute classification;
+- exact `NetCaps.get -> net.io -> Network` basis derivation from sealed compiler MIR;
+- basis revalidation against the compiler MIR fingerprint/content;
+- multiple direct capability call-sites failing closed as ambiguous;
+- local-call indirection failing closed;
+- imported-call indirection failing closed;
+- compiler-bound exact request / `deny_only=True` / `authority=False`;
 - simulated canonical-contract drift from Network capability to Data effect failing closed;
 - foreign request constraint rejection before materialization handle consumption;
-- non-canonical request operation relabeling rejection;
-- shared Continuity tests remaining on the domain-constrained Galaxy path.
+- non-canonical request-operation relabeling rejection;
+- shared Continuity tests remaining on the compiler-bound domain-constrained Galaxy path.
 
 These tests are **written and committed, not claimed passed** until a real `ks-local-validate --profile full` receipt exists for the current PR head.
 
 ## NEXT
 
-1. make Typed HIR / affine ownership / MIR expose or derive this same canonical capability basis without a parallel taxonomy;
-2. remove remaining compatibility capability authorities where safe;
-3. ensure native/backend privileged execution consumes the same request-bound negative invariant;
-4. only then consider whether any real product requirement justifies a constitutional cross-domain transition primitive.
+1. carry compiler capability call-site identity as first-class normalized MIR instead of re-walking sealed AST fallback for provenance;
+2. make the native/runtime ABI verify compiler-issued basis without relying on forgeable Python dataclass construction;
+3. remove remaining compatibility capability authorities where safe;
+4. ensure native/backend privileged execution consumes the same compiler-bound request provenance;
+5. only then consider whether any real product requirement justifies a constitutional cross-domain transition primitive.
