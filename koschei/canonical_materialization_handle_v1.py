@@ -1,20 +1,19 @@
-"""Opaque canonical-materialization handles for Koschei representation separation v1.
+"""Opaque canonical materialization and constitutional effect execution v1.
 
-A sanctioned reconstruction must not hand `NativeSigilMir` back to the broad runtime.
-This module keeps hidden MIR inside a trusted in-process registry and returns an opaque,
-scoped, epoch-bound handle. The handle is bound to one exact sealed
-`CanonicalEffectRequest`, but it exposes only a keyed opaque request binding rather than
-the canonical request digest itself.
+Sanctioned reconstruction never returns `NativeSigilMir` to the broad runtime. Hidden MIR
+stays in a trusted registry and the caller receives an opaque one-shot handle bound to the
+exact canonical request and the reconstruction Veyra through keyed material.
 
-The sanctioned effect gate consumes the handle atomically, resolves hidden MIR only
-inside the trusted boundary, verifies the request-bound native proof, and exposes only
-the canonical request/effect result outside. Its liveness decision comes from the same
-`ContinuityEpochAuthorityV1` contract used by Nyr observation and reconstruction.
+For privileged `CanonicalEffectRequest` execution, the sanctioned materialization gate
+no longer calls native request-bound enforcement directly. After exact handle/request/
+Veyra/Continuity checks consume the handle, execution delegates to the existing
+`enforce_galaxy_critical_effect` constitutional path. Khar, living Aevra, current
+Matrix/Hara, 6/6 Sathra, failure-root independence, exact request proof and durable atomic
+finality therefore remain the authoritative critical-effect physics rather than being
+reimplemented here.
 
-This Python bootstrap cannot provide process isolation: arbitrary code that can inspect
-this registry object or import private helpers can still reach trusted state. Native
-runtime compartments must make registry internals and raw MIR physically inaccessible to
-the observer/runtime surface.
+This Python bootstrap does not provide process isolation. Native runtime compartments must
+keep registry internals and raw canonical state inaccessible to observer/runtime surfaces.
 """
 from __future__ import annotations
 
@@ -26,15 +25,23 @@ from threading import Lock
 from typing import Callable, TypeVar
 
 from .continuity_epoch_authority_v1 import ContinuityEpochAuthorityV1
+from .galaxy_execution_gate_v1 import enforce_galaxy_critical_effect
+from .galaxy_identity_v1 import AevraIdentity, VeyraIdentity
+from .khar_failure_independence_v1 import FailureIndependentSathra
+from .khar_sathra_v1 import Sathra
+from .matrix_horizon_fence_v1 import DurableMatrixHorizonFence
+from .matrix_reality_v1 import HaraIdentity, MatrixAdmission, MatrixIdentity
+from .morth_black_hole_v1 import DurableBlackHole
+from .native_sigil_atomic_execution_coordinator_v1 import (
+    AtomicClaim,
+    AtomicExecutionCoordinator,
+)
 from .native_sigil_enforcement_gate_v1 import EnforcementDecision
 from .native_sigil_mir_v1 import NativeSigilMir
 from .native_sigil_proof_pipeline_v1 import NativeSigilProofBundle
-from .native_sigil_request_binding_v1 import (
-    CanonicalEffectRequest,
-    RequestBoundProof,
-    enforce_bound_effect,
-)
+from .native_sigil_request_binding_v1 import CanonicalEffectRequest, RequestBoundProof
 from .representation_boundary_v1 import seal_canonical_semantics_v1
+from .sathra_request_binding_v1 import SathraRequestBinding
 
 _CTX = b"koschei.canonical-materialization-handle/v1\x00"
 _REQUEST_CTX = b"koschei.canonical-materialization-request-binding/v1\x00"
@@ -67,9 +74,20 @@ def _text(value: str, label: str) -> str:
     return value.strip()
 
 
-def _request_binding(key: bytes, canonical_request_digest: str) -> str:
-    digest = _text(canonical_request_digest, "canonical_request_digest")
-    return hmac.new(key, _REQUEST_CTX + digest.encode("ascii"), hashlib.sha256).hexdigest()
+def _request_binding(
+    key: bytes,
+    canonical_request_digest: str,
+    veyra_digest: str,
+) -> str:
+    request_digest = _text(canonical_request_digest, "canonical_request_digest")
+    living_veyra = _text(veyra_digest, "veyra_digest")
+    payload = b"\n".join(
+        (
+            request_digest.encode("ascii"),
+            living_veyra.encode("ascii"),
+        )
+    )
+    return hmac.new(key, _REQUEST_CTX + payload, hashlib.sha256).hexdigest()
 
 
 def _handle_payload(
@@ -97,11 +115,11 @@ def _handle_payload(
 
 @dataclass(frozen=True, slots=True)
 class CanonicalMaterializationHandleV1:
-    """Runtime-safe capability reference to one hidden semantic world/request pair.
+    """Runtime-safe reference to one hidden canonical world/request pair.
 
-    The handle deliberately carries no MIR fingerprint, Universe-plan digest, sigil name,
-    canonical subject, semantic-domain label, Veyra identity, canonical seal digest or raw
-    canonical-request digest.
+    The handle contains neither raw request identity nor Veyra identity. Its keyed request
+    binding is nevertheless scoped to both, so a handle cannot be moved to another living
+    Galaxy without failing trusted-registry verification.
     """
 
     handle_id: str
@@ -154,6 +172,7 @@ class CanonicalMaterializationHandleV1:
 class _MaterializationEntryV1:
     hidden_mir: NativeSigilMir
     canonical_seal_digest: str
+    veyra_digest: str
     purpose: str
     canonical_request_digest: str
     request_binding_digest: str
@@ -163,12 +182,7 @@ class _MaterializationEntryV1:
 
 
 class CanonicalMaterializationRegistryV1:
-    """Trusted in-process custody for hidden canonical MIR.
-
-    Entries are addressed only by random opaque handles and removed before sanctioned
-    request-bound effect enforcement begins. This gives one-shot semantics inside one
-    authoritative registry, not durable/global replay resistance.
-    """
+    """Trusted process-local custody for hidden canonical MIR and Veyra binding."""
 
     def __init__(self, *, materialization_key: bytes) -> None:
         self._key = _key(materialization_key)
@@ -179,6 +193,7 @@ class CanonicalMaterializationRegistryV1:
         self,
         *,
         hidden_mir: NativeSigilMir,
+        veyra: VeyraIdentity,
         canonical_seal_digest: str,
         canonical_request: CanonicalEffectRequest,
         purpose: str,
@@ -187,6 +202,7 @@ class CanonicalMaterializationRegistryV1:
         reconstruction_receipt_digest: str,
     ) -> CanonicalMaterializationHandleV1:
         hidden_mir.assert_sealed()
+        veyra.assert_sealed()
         canonical_request.assert_sealed(hidden_mir)
         seal = seal_canonical_semantics_v1(hidden_mir)
         if seal.seal_digest != canonical_seal_digest:
@@ -207,7 +223,11 @@ class CanonicalMaterializationRegistryV1:
         receipt_digest = _text(
             reconstruction_receipt_digest, "reconstruction_receipt_digest"
         )
-        request_binding = _request_binding(self._key, canonical_request.digest)
+        request_binding = _request_binding(
+            self._key,
+            canonical_request.digest,
+            veyra.digest,
+        )
         with self._lock:
             while True:
                 handle_id = secrets.token_hex(32)
@@ -241,6 +261,7 @@ class CanonicalMaterializationRegistryV1:
             self._entries[handle_id] = _MaterializationEntryV1(
                 hidden_mir=hidden_mir,
                 canonical_seal_digest=seal.seal_digest,
+                veyra_digest=veyra.digest,
                 purpose=purpose_value,
                 canonical_request_digest=canonical_request.digest,
                 request_binding_digest=request_binding,
@@ -257,14 +278,16 @@ class CanonicalMaterializationRegistryV1:
         *,
         purpose: str,
         canonical_request: CanonicalEffectRequest,
+        veyra: VeyraIdentity,
         current_epoch: int,
     ) -> NativeSigilMir:
-        """Trusted-only primitive used by sanctioned request-bound effect gates."""
+        """Trusted-only one-shot resolution used by the constitutional effect gate."""
 
         if not isinstance(handle, CanonicalMaterializationHandleV1):
             raise CanonicalMaterializationHandleV1Error(
                 "canonical materialization handle v1 required"
             )
+        veyra.assert_sealed()
         handle.assert_authenticated(materialization_key=self._key)
         requested_purpose = _text(purpose, "purpose")
         current = _epoch(current_epoch)
@@ -272,12 +295,16 @@ class CanonicalMaterializationRegistryV1:
             raise CanonicalMaterializationHandleV1Error(
                 "materialization handle purpose mismatch"
             )
-        expected_request_binding = _request_binding(self._key, canonical_request.digest)
+        expected_request_binding = _request_binding(
+            self._key,
+            canonical_request.digest,
+            veyra.digest,
+        )
         if not hmac.compare_digest(
             expected_request_binding, handle.request_binding_digest
         ):
             raise CanonicalMaterializationHandleV1Error(
-                "materialization handle canonical request mismatch"
+                "materialization handle canonical request/Veyra mismatch"
             )
         if canonical_request.epoch != current:
             raise CanonicalMaterializationHandleV1Error(
@@ -298,7 +325,8 @@ class CanonicalMaterializationRegistryV1:
                     "canonical materialization handle already consumed or unknown"
                 )
             if (
-                entry.purpose != handle.purpose
+                entry.veyra_digest != veyra.digest
+                or entry.purpose != handle.purpose
                 or entry.request_binding_digest != handle.request_binding_digest
                 or entry.canonical_request_digest != canonical_request.digest
                 or entry.issued_epoch != handle.issued_epoch
@@ -316,17 +344,69 @@ class CanonicalMaterializationRegistryV1:
                     "canonical materialization registry MIR seal mismatch"
                 )
             canonical_request.assert_sealed(hidden)
-            # Consume after exact request/world verification but before proof/effect
-            # evaluation. Later failure burns the capability rather than leaving reusable
-            # canonical access.
+            # Crossing the trusted materialization boundary is one-shot. Once the exact
+            # request + living Veyra + current epoch are accepted, later Khar/Galaxy denial
+            # burns this handle rather than leaving a reusable canonical capability.
             del self._entries[handle.handle_id]
         hidden.assert_sealed()
         return hidden
 
 
 @dataclass(frozen=True, slots=True)
+class GalaxyMaterializationContextV1:
+    """Non-authoritative bundle of existing Galaxy constitutional inputs.
+
+    This creates no new constitutional semantics. `assert_shape` only prevents accidental
+    API misuse; `enforce_galaxy_critical_effect` remains the authority for all Khar/Galaxy
+    validation and durable finality.
+    """
+
+    black_hole: DurableBlackHole
+    matrix_horizon: DurableMatrixHorizonFence
+    coordinator: AtomicExecutionCoordinator
+    veyra: VeyraIdentity
+    aevra: AevraIdentity
+    matrix: MatrixIdentity
+    hara: HaraIdentity
+    matrix_admission: MatrixAdmission
+    sathra: Sathra
+    sathra_binding: SathraRequestBinding
+    failure_independence: FailureIndependentSathra
+    authority: bool = False
+    version: int = 1
+
+    def assert_shape(self) -> None:
+        if self.version != 1 or self.authority is not False:
+            raise CanonicalMaterializationHandleV1Error(
+                "Galaxy materialization context flags are invalid"
+            )
+        expected = (
+            (self.black_hole, DurableBlackHole, "DurableBlackHole"),
+            (self.matrix_horizon, DurableMatrixHorizonFence, "DurableMatrixHorizonFence"),
+            (self.coordinator, AtomicExecutionCoordinator, "AtomicExecutionCoordinator"),
+            (self.veyra, VeyraIdentity, "VeyraIdentity"),
+            (self.aevra, AevraIdentity, "AevraIdentity"),
+            (self.matrix, MatrixIdentity, "MatrixIdentity"),
+            (self.hara, HaraIdentity, "HaraIdentity"),
+            (self.matrix_admission, MatrixAdmission, "MatrixAdmission"),
+            (self.sathra, Sathra, "Sathra"),
+            (self.sathra_binding, SathraRequestBinding, "SathraRequestBinding"),
+            (
+                self.failure_independence,
+                FailureIndependentSathra,
+                "FailureIndependentSathra",
+            ),
+        )
+        for value, kind, label in expected:
+            if not isinstance(value, kind):
+                raise CanonicalMaterializationHandleV1Error(
+                    f"Galaxy materialization context requires {label}"
+                )
+
+
+@dataclass(frozen=True, slots=True)
 class CanonicalMaterializationEffectGateV1:
-    """One-shot bridge from opaque handle to one exact request-bound native effect."""
+    """One-shot bridge from opaque handle to the existing Galaxy critical-effect gate."""
 
     registry: CanonicalMaterializationRegistryV1
     handle: CanonicalMaterializationHandleV1
@@ -334,6 +414,7 @@ class CanonicalMaterializationEffectGateV1:
     proof: NativeSigilProofBundle
     bound: RequestBoundProof
     continuity: ContinuityEpochAuthorityV1
+    galaxy: GalaxyMaterializationContextV1
     purpose: str = "execute"
 
     def __post_init__(self) -> None:
@@ -366,23 +447,40 @@ class CanonicalMaterializationEffectGateV1:
                 "Continuity epoch authority v1 required"
             )
         self.continuity.assert_sealed()
+        if not isinstance(self.galaxy, GalaxyMaterializationContextV1):
+            raise CanonicalMaterializationHandleV1Error(
+                "Galaxy materialization context v1 required"
+            )
+        self.galaxy.assert_shape()
         _text(self.purpose, "purpose")
 
     def execute(
         self,
         effect: Callable[[CanonicalEffectRequest], _T],
-    ) -> tuple[EnforcementDecision, _T | None]:
+    ) -> tuple[EnforcementDecision, _T | None, AtomicClaim]:
         current = self.continuity.current_epoch()
         hidden_mir = self.registry._consume_hidden_mir(
             self.handle,
             purpose=self.purpose,
             canonical_request=self.request,
+            veyra=self.galaxy.veyra,
             current_epoch=current,
         )
-        return enforce_bound_effect(
-            hidden_mir,
-            self.request,
-            self.proof,
-            self.bound,
-            effect,
+        return enforce_galaxy_critical_effect(
+            black_hole=self.galaxy.black_hole,
+            matrix_horizon=self.galaxy.matrix_horizon,
+            coordinator=self.galaxy.coordinator,
+            mir=hidden_mir,
+            veyra=self.galaxy.veyra,
+            aevra=self.galaxy.aevra,
+            matrix=self.galaxy.matrix,
+            hara=self.galaxy.hara,
+            matrix_admission=self.galaxy.matrix_admission,
+            request=self.request,
+            proof=self.proof,
+            request_bound_proof=self.bound,
+            sathra=self.galaxy.sathra,
+            sathra_binding=self.galaxy.sathra_binding,
+            failure_independence=self.galaxy.failure_independence,
+            effect=effect,
         )
