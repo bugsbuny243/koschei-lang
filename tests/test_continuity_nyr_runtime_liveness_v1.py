@@ -126,6 +126,11 @@ def test_one_failed_continuity_reader_fails_all_three_boundaries_closed():
                 request=world["request"],
                 proof=world["proof"],
                 bound=world["bound"],
+                domain_constraint=fixture.bind_request_capability_domain_v1(
+                    world["request"],
+                    capability_type="ProcessCaps",
+                    capability_method="run",
+                ),
                 continuity=failed,
                 galaxy=world["galaxy"],
             )
@@ -168,3 +173,4 @@ def test_sanctioned_gate_signatures_expose_continuity_not_raw_epoch_source():
         CanonicalMaterializationEffectGateV1
     ).parameters
     assert "galaxy" in materialization_parameters
+    assert "domain_constraint" in materialization_parameters
