@@ -1,56 +1,62 @@
 # Koschei Representation Separation V1
 
-Status: **executable canonical/observable boundary with exact-request grant + single-use materialization; not yet wired into every runtime path**
+Status: **executable canonical/observable boundary with exact-request grants, shared Continuity liveness and opaque one-shot materialization; not yet repository-wide**
 
-Canonical vision revision: **25 Aug 2026 — `GÖRÜNEN DÜNYA ≠ GERÇEK DÜNYA`**
+Canonical vision: **GÖRÜNEN DÜNYA ≠ GERÇEK DÜNYA / OBSERVABLE WORLD != CANONICAL WORLD**
 
-## 1. Purpose
+## 1. Boundary
 
-Koschei's primary representation law is:
+V1 distinguishes:
 
-> **OBSERVABLE WORLD != CANONICAL WORLD**
-
-This specification turns that law into an executable contract around sealed native sigil
-MIR, Nur/Nyr v2 and trusted canonical materialization.
-
-The goal is not to claim that canonical semantics can never be recovered. The goal is to
-ensure that normal observer/runtime surfaces do not receive a faithful stable copy of the
-canonical semantic world and that crossing back into that world requires narrow,
-time-bound, exact-request-bound runtime authority.
-
-## 2. Boundary
-
-V1 now distinguishes:
-
-1. **Canonical Semantic MIR** — sealed `NativeSigilMir`; trusted compartment.
+1. **Canonical Semantic MIR** — sealed `NativeSigilMir`; trusted side.
 2. **Canonical Semantic Seal** — trusted identity of that MIR.
-3. **Observable Representation** — non-faithful Nyr v2 surface; observer side.
-4. **Exact-Request Reconstruction Grant** — scoped permission to request materialization for one sealed request.
-5. **Reconstruction Consumption Receipt** — proof one exact-request grant context was consumed.
-6. **Canonical Materialization Handle** — opaque one-shot capability for that same sealed request.
-7. **Trusted Materialization Registry** — hidden custody of canonical MIR and raw request identity.
-8. **Request-Bound Effect Gate** — consumes the handle and evaluates one exact effect without exporting MIR.
+3. **Observable Representation** — non-faithful Nyr v2 surface.
+4. **Continuity Epoch Authority** — one typed liveness truth used by observer, reconstruction and materialization gates.
+5. **Exact-Request Reconstruction Grant** — one request/context/epoch materialization capability.
+6. **Reconstruction Consumption Receipt** — authenticated evidence that one grant context was consumed.
+7. **Canonical Materialization Handle** — opaque one-shot capability for the same request.
+8. **Trusted Materialization Registry** — hidden custody of canonical MIR/raw request identity.
+9. **Request-Bound Effect Gate** — resolves canonical state inside the trusted boundary and evaluates one exact request.
 
-The observer-facing representation, reconstruction grant and materialization handle MUST
-NOT carry canonical sigil names, canonical subjects, semantic-domain labels, source
-locations, MIR fingerprints, Universe-plan digest, Veyra identity, canonical semantic seal
-digest or raw canonical-request digest.
+Observer-facing representation, reconstruction grant and materialization handle must not
+carry canonical sigil names, canonical subjects, semantic-domain labels, source locations,
+MIR fingerprint, Universe-plan digest, Veyra identity, canonical semantic seal or raw
+canonical-request digest.
 
-## 3. Representation derivation
+## 2. Representation derivation
 
 ```text
-Native source
-  -> canonical semantic checking
-  -> sealed NativeSigilMir                         [trusted]
-  -> CanonicalSemanticSealV1                      [trusted]
-  -> Nur visibility envelope
-  -> Nyr v2 non-faithful projection
-  -> ObservableRepresentationV1                   [observer]
+Native Koschei source intent
+-> canonical semantic checking
+-> sealed NativeSigilMir                 [canonical]
+-> CanonicalSemanticSealV1              [trusted]
+-> Nur visibility envelope
+-> Nyr v2 non-faithful projection       [observable]
 ```
 
-`ObservableRepresentationV1.representation_digest` is HMAC-bound to hidden canonical
-state, Veyra, observer, session, epoch and Nyr surface. The canonical seal itself is not
-embedded in the observer-facing object.
+Nyr aliases are observer/session/epoch/Veyra scoped. Projection integrity does not imply
+current liveness.
+
+## 3. One Continuity truth
+
+`ContinuityEpochAuthorityV1` is shared by sanctioned:
+
+- Nyr observation;
+- exact-request reconstruction;
+- materialization effect admission.
+
+There is no separate `epoch_source` callback on those gate constructors.
+
+If shared Continuity advances from epoch E to E+1:
+
+- an E-bound Nyr surface is stale;
+- an E-bound canonical request/reconstruction is stale;
+- an E-bound materialization handle is stale.
+
+This gives one lifecycle answer rather than three caller-selected clocks.
+
+The Python interface does not prove monotonic time. A malicious/rolled-back underlying
+reader can cause all three gates to agree on stale reality.
 
 ## 4. Exact-request reconstruction
 
@@ -58,51 +64,43 @@ embedded in the observer-facing object.
 ObservableRepresentationV1
 + hidden MIR
 + sealed CanonicalEffectRequest
-+ Veyra / observer / session / epoch
++ Veyra / observer / session / visibility epoch
 + reconstruction key
 -> opaque request binding
 -> ReconstructionGrantV1
 ```
 
-Grant issuance requires the exact `CanonicalEffectRequest`. The grant stores an opaque
-HMAC request binding rather than the raw canonical request digest. That binding is scoped
-to the current Veyra, observer, session and visibility epoch, reducing direct correlation
-across customer/session contexts.
+The raw request digest is not stored in the grant. A grant for request A cannot authorize
+request B even when all other visible context matches.
 
-The grant context digest binds the opaque request binding together with canonical semantic
-seal, Veyra, observer/session, epoch/expiry, grant id and purpose.
-
-## 5. Materialization path
+## 5. Single-use materialization
 
 ```text
-ObservableRepresentationV1
-+ hidden MIR
-+ exact-request ReconstructionGrantV1
-+ same sealed CanonicalEffectRequest
-+ trusted epoch
--> validate exact live context/request
--> consume reconstruction context once
+exact-request grant
++ shared Continuity current epoch
+-> live/equivalent reconstruction check
+-> atomic grant consumption
 -> ReconstructionConsumptionReceiptV1
--> CanonicalMaterializationHandleV1              [runtime-safe]
--> trusted registry retains hidden MIR + raw request identity
+-> opaque CanonicalMaterializationHandleV1
 ```
 
-The consumption receipt carries the opaque grant request binding as authenticated
-provenance. The handle uses a separate materialization-key request binding and contains no
-raw request digest, canonical MIR identity or naming map.
+Canonical MIR stays inside `CanonicalMaterializationRegistryV1`.
+
+The handle uses a separate keyed request binding and contains no raw canonical request
+identity. One handle may resolve the hidden world only once through one authoritative
+registry.
 
 ## 6. Request-bound execution
 
 ```text
-CanonicalMaterializationHandleV1
+opaque handle
 + same CanonicalEffectRequest
 + RequestBoundProof
 + NativeSigilProofBundle
-+ trusted epoch
--> recompute keyed materialization request binding
--> consume handle once
--> resolve hidden MIR inside trusted registry
--> verify exact request/proof/MIR binding
++ shared Continuity current epoch
+-> exact request/liveness check
+-> atomic handle consumption
+-> hidden MIR resolution inside trusted registry
 -> ALLOW / DENY / CONTAIN
 -> effect callback only for ALLOW
 ```
@@ -111,118 +109,81 @@ The callback receives the sealed request, not canonical MIR.
 
 ## 7. Required invariants
 
-### R1 — Non-faithful observation
-The observable representation MUST NOT contain a direct canonical naming map.
-
-### R2 — Context rotation
-Another Veyra/session/epoch SHOULD produce another visible mapping where Nyr rotation
-provides it.
-
-### R3 — Tamper non-promotion
-Changing visible representation MUST NOT modify or become canonical semantic state.
-
-### R4 — Reconstruction is not inversion
-Trusted reconstruction uses already-custodied hidden MIR; it does not decode Nyr back into
-source/canonical semantics.
-
-### R5 — Epoch death
-Old representation, grant, request or handle MUST NOT authorize a later epoch.
-
-### R6 — Veyra/session non-transferability
-A reconstruction grant minted in one hidden/visibility context MUST NOT transfer to
-another.
-
-### R7 — Purpose binding
-An `execute` reconstruction MUST NOT become `inspect` authority.
-
-### R8 — Exact request binding starts at grant issuance
-A grant minted for request A MUST NOT authorize request B even if MIR, Veyra, epoch and
-purpose match. The raw canonical request digest MUST NOT be exposed in the grant.
-
-### R9 — Single-use materialization
-One grant context may mint at most one handle through one authoritative ledger; one handle
-may resolve hidden MIR at most once through one authoritative registry.
-
-### R10 — Exact request binding survives materialization
-The materialization handle MUST remain keyed-bound to the same sealed
-`CanonicalEffectRequest` while keeping the raw request identity on the trusted side.
-Cross-request substitution MUST fail before hidden MIR is released to effect evaluation.
-
-### R11 — Canonical non-export
-Sanctioned reconstruction/effect APIs MUST NOT return `NativeSigilMir` to the broad runtime.
+- **R1 Non-faithful observation:** visible Nyr is not a direct canonical naming map.
+- **R2 Context rotation:** Veyra/session/epoch changes rotate visible mappings where Nyr provides rotation.
+- **R3 Tamper non-promotion:** changing visible representation cannot become canonical state.
+- **R4 Reconstruction is not inversion:** trusted runtime authorizes already-custodied hidden state; it does not decode Nyr into source.
+- **R5 One Continuity truth:** observer/reconstruction/materialization sanctioned gates use the same typed lifecycle authority contract.
+- **R6 Epoch death:** old surface/grant/request/handle cannot authorize a later epoch.
+- **R7 Veyra/session non-transferability:** reconstruction context does not transfer across living Galaxies/sessions.
+- **R8 Purpose binding:** `execute` does not become `inspect`.
+- **R9 Exact request binding:** request binding begins at reconstruction-grant issuance and survives receipt/handle/effect admission.
+- **R10 Single-use transition:** one grant context mints at most one handle per authoritative ledger; one handle resolves at most once per registry.
+- **R11 Canonical non-export:** sanctioned reconstruction/effect APIs do not return `NativeSigilMir` to broad runtime.
 
 ## 8. PROTECTS AGAINST
 
-- faithful exposure of canonical sigil/subject/domain names through this path;
-- stale visible mappings authorizing later-epoch materialization;
-- forged visible representations becoming canonical state;
+- faithful canonical naming exposure through this Nyr path;
+- replay of stale Nyr surfaces through the sanctioned observation gate;
+- independent arbitrary epoch callbacks disagreeing across liveness boundaries;
+- forged visible representation becoming canonical state;
 - cross-Veyra/session/purpose substitution;
-- widening a reconstruction grant from one canonical request to another request;
-- direct correlation through a raw canonical-request digest carried in the grant or handle;
-- repeated/concurrent reconstruction through one authoritative ledger;
-- authenticated-consumption receipt request-binding tamper;
-- repeated handle use through one authoritative registry;
-- changing effect id/subject/operation/payload/identity/epoch/nonce after grant/handle minting;
-- moving one native proof to another sealed request through the materialization gate;
-- ordinary broad-runtime receipt of canonical MIR from sanctioned APIs.
+- widening a reconstruction grant to another canonical request;
+- raw request digest exposure in grant/handle;
+- repeated/concurrent reconstruction in one process-local ledger;
+- repeated handle use in one process-local registry;
+- moving native proof to another sealed request through this gate;
+- ordinary broad-runtime receipt of canonical MIR through sanctioned APIs.
 
 ## 9. DOES NOT PROTECT AGAINST
 
-- full compromise of the trusted process/registry while canonical MIR is resident;
-- direct Python imports of low-level reconstruction/private registry helpers;
-- process restart/fork/snapshot rollback of in-memory replay/materialization state;
-- memory scraping, crash dumps, debugger/tracing or unclassified canonical-output paths;
+- compromised or rolled-back underlying Continuity state;
+- full trusted-process/registry compromise;
+- direct Python use of lower-level/private helpers;
+- process restart/fork/snapshot rollback of in-memory replay state;
+- memory scraping, debugger/tracing, crash dumps or other leakage channels;
 - leaked veil/reconstruction/receipt/materialization keys;
-- malicious compiler/native proof/request-binding code inside the trusted boundary;
-- OS/hardware compromise outside this prototype's assumptions;
-- semantic inference through correlated side channels.
+- malicious compiler/proof/request-binding logic inside the TCB;
+- OS/hardware compromise outside this prototype;
+- semantic inference through other correlated side channels.
 
 ## 10. ASSUMPTIONS
 
-- `NativeSigilMir.assert_sealed()`, Veyra, canonical request and request-bound proof logic remain trustworthy;
-- Nur visibility input is allowed and authority-free;
-- reconstruction/materialization trust-role keys remain separated and secret;
-- production epoch truth comes from authoritative Koschei Continuity state;
-- production keeps registry/raw MIR/raw request identity inside a compartment inaccessible to observer APIs;
-- production provides durable/shared monotonic replay state where multiple processes or restarts matter.
+- MIR/Veyra/request/proof seals remain trustworthy;
+- Nur visibility context is authentic, allowed and authority-free;
+- one production Continuity source backs all sanctioned liveness gates;
+- trust-role keys remain separated;
+- production keeps raw MIR/request identity in a trusted compartment;
+- durable/shared monotonic state is added where restart/fork/rollback matters.
 
 ## 11. FAILURE MODES
 
-- Python privacy is conventional, not physical; callers with trusted-process access can inspect registry internals;
-- restart/fork/rollback can forget in-memory consumption state;
-- canonical MIR leaked through logs/diagnostics/crash dumps bypasses the boundary;
-- any sanctioned runtime API that returns faithful MIR invalidates the repository-wide representation-separation claim;
-- a compromised compiler/proof boundary can produce internally consistent but malicious canonical reality.
+Shared Continuity solves internal time disagreement, not rollback. If the underlying state
+is restored to an older valid epoch, all three gates can accept that stale reality.
 
-## 12. What V1 does not claim
+Python privacy is conventional. Any sanctioned runtime/debug/backend surface that exports
+faithful canonical MIR or bypasses these gates invalidates the repository-wide
+representation-separation claim.
 
-V1 does **not** claim:
+## 12. Non-claims
 
-- source code can never be seen;
-- Koschei is unhackable;
-- Nyr encrypts all semantics;
-- all runtime execution is already ephemeral;
-- all compiler/runtime/debug paths already preserve the boundary;
-- process/hardware isolation is proven by this Python prototype.
+V1 does not claim source can never be seen, Koschei is unhackable, Nyr encrypts all
+semantics, runtime execution is already fully ephemeral, or process/hardware isolation is
+proven.
 
-## 13. Required next integration
+## 13. NEXT
 
-1. replace callable epoch sources with one sealed Continuity epoch authority;
-2. absorb PR #264 Nyr observation liveness into the same Continuity/representation lifecycle;
-3. move reconstruction/handle consumption to durable monotonic runtime custody;
-4. add compartment identity and revocation to materialization handles;
-5. make debugger/introspection/runtime rendering observer-safe by default;
-6. carry registry custody into native execution so raw MIR never crosses the compartment ABI;
-7. extend representation separation from sigil MIR to general function/closure MIR;
-8. add release validation proving sanctioned runtime APIs do not return raw MIR;
-9. add adversarial tests for correlation, replay, cross-session laundering and diagnostic leakage.
+1. Connect existing Khar/Galaxy/Matrix/Hara and relevant power-domain admission to the same exact request-bound execution path.
+2. Move reconstruction/handle consumption to durable monotonic runtime custody.
+3. Add compartment identity/revocation.
+4. Make debugger/introspection/runtime rendering observer-safe by default.
+5. Carry canonical custody into native execution.
+6. Extend representation separation from sigil MIR to general function/closure MIR.
+7. Add release validation proving sanctioned runtime APIs do not return raw MIR.
 
 ## 14. Release gate
 
-Koschei MUST NOT claim repository-wide representation separation until every executable
-surface that can reveal semantic/runtime state is classified, faithful fallback outputs are
-removed or trusted-only, Continuity drives epoch truth, canonical validation executes the
-adversarial suite, and at least one realistic external red-team exercise exists.
-
-Until then the status remains **experimental architecture with executable invariants**, not
-a universal security guarantee.
+Koschei must not claim repository-wide representation separation until every executable
+surface that can reveal semantic/runtime state is classified, faithful fallback outputs
+are removed or trusted-only, production Continuity is authoritative/rollback-aware,
+canonical adversarial validation runs, and realistic external red-team evidence exists.
