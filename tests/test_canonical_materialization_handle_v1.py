@@ -18,10 +18,13 @@ from koschei.library_adversary_learning_resistance_v0 import (
     VisibilityPosture,
 )
 from koschei.library_proof_envelope_v1 import make_receipt
-from koschei.native_sigil_enforcement_gate_v1 import PrivilegedEffectIntent
 from koschei.native_sigil_library_bridge_v1 import expand_native_sigil_mir
 from koschei.native_sigil_mir_v1 import lower_native_sigils
 from koschei.native_sigil_proof_pipeline_v1 import seal_native_sigil_proof
+from koschei.native_sigil_request_binding_v1 import (
+    bind_proof_to_request,
+    seal_effect_request,
+)
 from koschei.parser import parse
 from koschei.representation_boundary_v1 import (
     issue_observable_representation_v1,
@@ -45,6 +48,19 @@ def d32(tag: str) -> bytes:
 
 def dhex(tag: str) -> str:
     return hashlib.sha256(tag.encode()).hexdigest()
+
+
+def request_for(mir, epoch, tag="42"):
+    return seal_effect_request(
+        mir,
+        effect_id="withdrawal:" + tag,
+        subject="withdrawal",
+        operation="signer.execute",
+        request_digest=dhex("payload-" + tag),
+        identity_digest=dhex("identity-" + tag),
+        epoch=epoch,
+        nonce_digest=dhex("nonce-" + tag),
+    )
 
 
 def world():
@@ -78,6 +94,7 @@ def world():
         purpose="execute",
         reconstruction_key=RECON,
     )
+    request = request_for(mir, envelope.visibility_epoch)
     registry = CanonicalMaterializationRegistryV1(materialization_key=MATERIALIZE)
     reconstruct_gate = RepresentationReconstructionGateV1(
         representation=representation,
@@ -85,6 +102,7 @@ def world():
         veyra=veyra,
         envelope=envelope,
         grant=grant,
+        request=request,
         veil_key=VEIL,
         reconstruction_key=RECON,
         receipt_key=RECEIPT,
@@ -92,7 +110,7 @@ def world():
         ledger=ReconstructionConsumptionLedgerV1(),
         materialization_registry=registry,
     )
-    return mir, plan, envelope, registry, reconstruct_gate
+    return mir, plan, envelope, request, registry, reconstruct_gate
 
 
 def proof_for(mir, plan, failed_obligation=None):
@@ -110,27 +128,25 @@ def proof_for(mir, plan, failed_obligation=None):
     return seal_native_sigil_proof(mir, receipts)
 
 
-def intent(tag="42"):
-    return PrivilegedEffectIntent(
-        effect_id="withdrawal:" + tag,
-        subject="withdrawal",
-        operation="signer.execute",
-        request_digest="request:" + tag,
+def effect_gate(registry, handle, request, proof, mir, epoch):
+    return CanonicalMaterializationEffectGateV1(
+        registry=registry,
+        handle=handle,
+        request=request,
+        proof=proof,
+        bound=bind_proof_to_request(mir, request, proof),
+        epoch_source=lambda: epoch,
     )
 
 
-def test_opaque_handle_executes_native_effect_without_returning_mir():
-    mir, plan, envelope, registry, reconstruct_gate = world()
+def test_opaque_handle_executes_exact_request_without_returning_mir():
+    mir, plan, envelope, request, registry, reconstruct_gate = world()
     handle, _ = reconstruct_gate.reconstruct(purpose="execute")
     proof = proof_for(mir, plan)
     calls = []
 
-    decision, result = CanonicalMaterializationEffectGateV1(
-        registry=registry,
-        handle=handle,
-        proof=proof,
-        intent=intent(),
-        epoch_source=lambda: envelope.visibility_epoch,
+    decision, result = effect_gate(
+        registry, handle, request, proof, mir, envelope.visibility_epoch
     ).execute(lambda item: calls.append(item.effect_id) or b"signed")
 
     assert decision.decision == "ALLOW"
@@ -141,18 +157,15 @@ def test_opaque_handle_executes_native_effect_without_returning_mir():
         CanonicalMaterializationHandleV1Error,
         match="already consumed or unknown",
     ):
-        CanonicalMaterializationEffectGateV1(
-            registry=registry,
-            handle=handle,
-            proof=proof,
-            intent=intent("43"),
-            epoch_source=lambda: envelope.visibility_epoch,
+        effect_gate(
+            registry, handle, request, proof, mir, envelope.visibility_epoch
         ).execute(lambda _: b"should-not-run")
 
 
 def test_handle_tamper_rejects_before_effect_callback():
-    mir, plan, envelope, registry, reconstruct_gate = world()
+    mir, plan, envelope, request, registry, reconstruct_gate = world()
     handle, _ = reconstruct_gate.reconstruct(purpose="execute")
+    proof = proof_for(mir, plan)
     forged = replace(handle, purpose="inspect")
     calls = []
 
@@ -163,18 +176,49 @@ def test_handle_tamper_rejects_before_effect_callback():
         CanonicalMaterializationEffectGateV1(
             registry=registry,
             handle=forged,
-            proof=proof_for(mir, plan),
-            intent=intent(),
+            request=request,
+            proof=proof,
+            bound=bind_proof_to_request(mir, request, proof),
             epoch_source=lambda: envelope.visibility_epoch,
             purpose="inspect",
         ).execute(lambda _: calls.append(1))
     assert calls == []
 
 
-def test_wrong_effect_gate_purpose_does_not_consume_valid_handle():
-    mir, plan, envelope, registry, reconstruct_gate = world()
+def test_cross_request_substitution_rejects_without_consuming_handle():
+    mir, plan, envelope, request, registry, reconstruct_gate = world()
     handle, _ = reconstruct_gate.reconstruct(purpose="execute")
     proof = proof_for(mir, plan)
+    other = request_for(mir, envelope.visibility_epoch, "99")
+    other_bound = bind_proof_to_request(mir, other, proof)
+    calls = []
+
+    with pytest.raises(
+        CanonicalMaterializationHandleV1Error,
+        match="canonical request mismatch",
+    ):
+        CanonicalMaterializationEffectGateV1(
+            registry=registry,
+            handle=handle,
+            request=other,
+            proof=proof,
+            bound=other_bound,
+            epoch_source=lambda: envelope.visibility_epoch,
+        ).execute(lambda _: calls.append(1))
+    assert calls == []
+
+    decision, result = effect_gate(
+        registry, handle, request, proof, mir, envelope.visibility_epoch
+    ).execute(lambda _: b"original")
+    assert decision.decision == "ALLOW"
+    assert result == b"original"
+
+
+def test_wrong_effect_gate_purpose_does_not_consume_valid_handle():
+    mir, plan, envelope, request, registry, reconstruct_gate = world()
+    handle, _ = reconstruct_gate.reconstruct(purpose="execute")
+    proof = proof_for(mir, plan)
+    bound = bind_proof_to_request(mir, request, proof)
 
     with pytest.raises(
         CanonicalMaterializationHandleV1Error,
@@ -183,61 +227,52 @@ def test_wrong_effect_gate_purpose_does_not_consume_valid_handle():
         CanonicalMaterializationEffectGateV1(
             registry=registry,
             handle=handle,
+            request=request,
             proof=proof,
-            intent=intent(),
+            bound=bound,
             epoch_source=lambda: envelope.visibility_epoch,
             purpose="inspect",
         ).execute(lambda _: b"no")
 
-    decision, result = CanonicalMaterializationEffectGateV1(
-        registry=registry,
-        handle=handle,
-        proof=proof,
-        intent=intent(),
-        epoch_source=lambda: envelope.visibility_epoch,
+    decision, result = effect_gate(
+        registry, handle, request, proof, mir, envelope.visibility_epoch
     ).execute(lambda _: b"yes")
     assert decision.decision == "ALLOW"
     assert result == b"yes"
 
 
 def test_expired_handle_does_not_open_hidden_mir_or_call_effect():
-    mir, plan, envelope, registry, reconstruct_gate = world()
+    mir, plan, _, request, registry, reconstruct_gate = world()
     handle, _ = reconstruct_gate.reconstruct(purpose="execute")
+    proof = proof_for(mir, plan)
     calls = []
 
-    with pytest.raises(CanonicalMaterializationHandleV1Error, match="expired"):
-        CanonicalMaterializationEffectGateV1(
-            registry=registry,
-            handle=handle,
-            proof=proof_for(mir, plan),
-            intent=intent(),
-            epoch_source=lambda: handle.expires_before_epoch,
+    with pytest.raises(
+        CanonicalMaterializationHandleV1Error,
+        match="canonical request epoch differs from current materialization epoch|expired",
+    ):
+        effect_gate(
+            registry, handle, request, proof, mir, handle.expires_before_epoch
         ).execute(lambda _: calls.append(1))
     assert calls == []
 
 
-def test_denied_native_proof_burns_handle_without_running_effect():
-    mir, plan, envelope, registry, reconstruct_gate = world()
+def test_denied_request_bound_proof_burns_handle_without_running_effect():
+    mir, plan, envelope, request, registry, reconstruct_gate = world()
     handle, _ = reconstruct_gate.reconstruct(purpose="execute")
+    denied = proof_for(mir, plan, "derive-least-authority")
     calls = []
 
-    decision, result = CanonicalMaterializationEffectGateV1(
-        registry=registry,
-        handle=handle,
-        proof=proof_for(mir, plan, "derive-least-authority"),
-        intent=intent(),
-        epoch_source=lambda: envelope.visibility_epoch,
+    decision, result = effect_gate(
+        registry, handle, request, denied, mir, envelope.visibility_epoch
     ).execute(lambda _: calls.append(1))
 
     assert decision.decision == "DENY"
     assert result is None
     assert calls == []
 
+    allowed = proof_for(mir, plan)
     with pytest.raises(CanonicalMaterializationHandleV1Error, match="already consumed"):
-        CanonicalMaterializationEffectGateV1(
-            registry=registry,
-            handle=handle,
-            proof=proof_for(mir, plan),
-            intent=intent("again"),
-            epoch_source=lambda: envelope.visibility_epoch,
+        effect_gate(
+            registry, handle, request, allowed, mir, envelope.visibility_epoch
         ).execute(lambda _: b"should-not-run")
