@@ -28,12 +28,13 @@ V1 now distinguishes:
 4. **Reconstruction Grant** — scoped permission to request materialization.
 5. **Reconstruction Consumption Receipt** — proof one grant context was consumed.
 6. **Canonical Materialization Handle** — opaque one-shot capability for one exact sealed request.
-7. **Trusted Materialization Registry** — hidden custody of canonical MIR.
+7. **Trusted Materialization Registry** — hidden custody of canonical MIR and raw request identity.
 8. **Request-Bound Effect Gate** — consumes the handle and evaluates one exact effect without exporting MIR.
 
 The observer-facing representation and materialization handle MUST NOT carry canonical
 sigil names, canonical subjects, semantic-domain labels, source locations, MIR
-fingerprints, Universe-plan digest, Veyra identity or canonical semantic seal digest.
+fingerprints, Universe-plan digest, Veyra identity, canonical semantic seal digest or raw
+canonical-request digest.
 
 ## 3. Representation derivation
 
@@ -63,11 +64,11 @@ ObservableRepresentationV1
 -> consume reconstruction context once
 -> ReconstructionConsumptionReceiptV1
 -> CanonicalMaterializationHandleV1              [runtime-safe]
--> trusted registry retains hidden MIR
+-> trusted registry retains hidden MIR + raw request digest
 ```
 
-The handle contains a random opaque id and the sealed request digest, but no canonical MIR
-identity or naming map.
+The handle contains a random opaque id and a materialization-key HMAC of the sealed
+request digest, but no raw request digest, canonical MIR identity or naming map.
 
 ## 5. Request-bound execution
 
@@ -77,7 +78,7 @@ CanonicalMaterializationHandleV1
 + RequestBoundProof
 + NativeSigilProofBundle
 + trusted epoch
--> verify handle/request equality
+-> recompute keyed request binding
 -> consume handle once
 -> resolve hidden MIR inside trusted registry
 -> verify exact request/proof/MIR binding
@@ -118,8 +119,9 @@ One grant context may mint at most one handle through one authoritative ledger; 
 may resolve hidden MIR at most once through one authoritative registry.
 
 ### R9 — Exact request binding
-A materialization handle MUST be bound to one sealed `CanonicalEffectRequest.digest`.
-Cross-request substitution MUST fail before hidden MIR is released to effect evaluation.
+A materialization handle MUST be keyed-bound to one sealed `CanonicalEffectRequest` while
+keeping the raw canonical request digest on the trusted side. Cross-request substitution
+MUST fail before hidden MIR is released to effect evaluation.
 
 ### R10 — Canonical non-export
 Sanctioned reconstruction/effect APIs MUST NOT return `NativeSigilMir` to the broad runtime.
@@ -132,6 +134,7 @@ Sanctioned reconstruction/effect APIs MUST NOT return `NativeSigilMir` to the br
 - cross-Veyra/session/purpose substitution;
 - repeated/concurrent reconstruction through one authoritative ledger;
 - repeated handle use through one authoritative registry;
+- direct correlation through a raw canonical-request digest carried in the handle;
 - changing effect id/subject/operation/payload/identity/epoch/nonce after handle minting;
 - moving one native proof to another sealed request through the materialization gate;
 - ordinary broad-runtime receipt of canonical MIR from sanctioned APIs.
@@ -145,7 +148,7 @@ Sanctioned reconstruction/effect APIs MUST NOT return `NativeSigilMir` to the br
 - leaked veil/reconstruction/receipt/materialization keys;
 - malicious compiler/native proof/request-binding code inside the trusted boundary;
 - OS/hardware compromise outside this prototype's assumptions;
-- semantic inference through correlated side channels.
+- semantic inference through correlated side channels or leaked materialization keys.
 
 ## 9. ASSUMPTIONS
 
@@ -153,7 +156,7 @@ Sanctioned reconstruction/effect APIs MUST NOT return `NativeSigilMir` to the br
 - Nur visibility input is allowed and authority-free;
 - trust-role keys remain separated and secret;
 - production epoch truth comes from authoritative Koschei Continuity state;
-- production keeps registry/raw MIR inside a compartment inaccessible to observer APIs;
+- production keeps registry/raw MIR/raw request identity inside a compartment inaccessible to observer APIs;
 - production provides durable/shared monotonic replay state where multiple processes or restarts matter.
 
 ## 10. FAILURE MODES
