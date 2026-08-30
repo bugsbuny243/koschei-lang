@@ -86,7 +86,7 @@ def smoke(binary: Path) -> dict[str, object]:
 
     with tempfile.TemporaryDirectory(prefix="koschei-paddle-new-") as tmp:
         destination = Path(tmp) / "demo"
-        _success(binary, "ks new", ["new", "demo", "--path", str(destination)])
+        _success(binary, "ks new", ["new", str(destination), "--name", "demo"])
         if not destination.is_dir():
             raise PaddleSmokeError("ks new returned success but created no project")
         candidates = list(destination.rglob("*.ks"))
