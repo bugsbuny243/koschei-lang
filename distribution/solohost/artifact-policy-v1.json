@@ -1,0 +1,47 @@
+{
+  "schema": "koschei.solohost-artifact-policy/v1",
+  "product": "koschei-lang",
+  "channel": "pi-solohost",
+  "billing": {
+    "mode": "one_time_pi",
+    "recurring_subscription": false,
+    "price_source": "external_commercial_configuration"
+  },
+  "distribution": {
+    "public_source_distribution": false,
+    "source_checkout_allowed_in_customer_artifact": false,
+    "signed_release_manifest_required": true,
+    "immutable_version_required": true,
+    "sha256_required": true
+  },
+  "forbidden_path_names": [
+    ".git",
+    ".github",
+    "tests",
+    "fixtures",
+    "bench",
+    "benchmarks"
+  ],
+  "forbidden_suffixes": [
+    ".py",
+    ".pyi"
+  ],
+  "forbidden_file_names": [
+    "pyproject.toml",
+    "setup.py",
+    "setup.cfg"
+  ],
+  "secret_name_markers": [
+    "private_key",
+    "signing_key",
+    "api_key",
+    "access_token",
+    "client_secret",
+    "wallet_seed",
+    "mnemonic"
+  ],
+  "notes": [
+    "This policy is a Koschei internal publication gate, not an invented Pi SoloHost manifest schema.",
+    "Pi-specific publisher metadata must be added only from an observed official publisher schema."
+  ]
+}
