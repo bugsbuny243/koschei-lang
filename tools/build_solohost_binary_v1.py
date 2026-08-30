@@ -75,14 +75,20 @@ def _validate_extra_args(extra_arg: list[str]) -> None:
             )
 
 
-def _candidate_binaries(output: Path) -> list[Path]:
-    return sorted(
+def _candidate_binaries(output: Path, *, mode: str) -> list[Path]:
+    candidates = sorted(
         path.resolve()
         for path in output.rglob("*")
         if path.is_file()
         and path.name in EXECUTABLE_NAMES
         and not any(part.endswith(".build") for part in path.parts)
     )
+    if mode == "onefile":
+        # Nuitka may leave a helper executable inside `<entry>.dist/` while
+        # producing the actual onefile artifact at the output root. That helper
+        # is build machinery, not a customer distributable.
+        candidates = [path for path in candidates if path.parent == output]
+    return candidates
 
 
 def build(*, mode: str, output: Path, extra_arg: list[str]) -> tuple[Path, Path]:
@@ -114,7 +120,7 @@ def build(*, mode: str, output: Path, extra_arg: list[str]) -> tuple[Path, Path]
         detail = (result.stderr or result.stdout).strip()
         raise SoloHostBinaryBuildError(f"Nuitka build failed: {detail}")
 
-    candidates = _candidate_binaries(output)
+    candidates = _candidate_binaries(output, mode=mode)
     if len(candidates) != 1:
         rendered = ", ".join(str(path.relative_to(output)) for path in candidates) or "none"
         raise SoloHostBinaryBuildError(f"expected exactly one customer executable, found: {rendered}")
