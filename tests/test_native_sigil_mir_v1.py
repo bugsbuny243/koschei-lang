@@ -10,10 +10,10 @@ class NativeSigilMirTests(unittest.TestCase):
     def test_real_source_lowers_to_sealed_native_mir(self) -> None:
         program = parse(
             "ka treasury;\n"
-            "vor withdrawal;\n"
-            "shi evidence;\n"
-            "thal recovery;\n"
-            "nur visibility;\n"
+            "vor treasury;\n"
+            "shi treasury;\n"
+            "thal treasury;\n"
+            "nur treasury;\n"
         )
         mir = lower_native_sigils(program)
         mir.assert_sealed()
@@ -26,37 +26,38 @@ class NativeSigilMirTests(unittest.TestCase):
         self.assertFalse(mir.bindings[0].may_grant_authority)
 
     def test_lowering_is_deterministic(self) -> None:
-        source = "ka treasury;\nvor withdrawal;\nshi evidence;\n"
+        source = "ka treasury;\nvor treasury;\nshi treasury;\n"
         left = lower_native_sigils(parse(source))
         right = lower_native_sigils(parse(source))
         self.assertEqual(left.fingerprint, right.fingerprint)
         self.assertEqual(left.universe_plan_digest, right.universe_plan_digest)
 
     def test_subject_is_part_of_seal(self) -> None:
-        left = lower_native_sigils(parse("ka treasury;\nvor withdrawal;\n"))
-        right = lower_native_sigils(parse("ka treasury;\nvor signing;\n"))
+        left = lower_native_sigils(parse("ka treasury;\nvor treasury;\n"))
+        right = lower_native_sigils(parse("ka signing;\nvor signing;\n"))
         self.assertNotEqual(left.fingerprint, right.fingerprint)
 
-    def test_source_location_is_part_of_seal(self) -> None:
-        left = lower_native_sigils(parse("ka treasury;\nvor withdrawal;\n"))
-        right = lower_native_sigils(parse("\nka treasury;\nvor withdrawal;\n"))
-        self.assertNotEqual(left.fingerprint, right.fingerprint)
+    def test_source_location_is_diagnostic_only_not_part_of_semantic_seal(self) -> None:
+        left = lower_native_sigils(parse("ka treasury;\nvor treasury;\n"))
+        right = lower_native_sigils(parse("\nka treasury;\nvor treasury;\n"))
+        self.assertEqual(left.fingerprint, right.fingerprint)
+        self.assertNotEqual(left.bindings[0].source_line, right.bindings[0].source_line)
 
     def test_tamper_fails_closed(self) -> None:
-        mir = lower_native_sigils(parse("ka treasury;\nvor withdrawal;\n"))
+        mir = lower_native_sigils(parse("ka treasury;\nvor treasury;\n"))
         tampered_binding = replace(mir.bindings[1], subject="root")
         tampered = replace(mir, bindings=(mir.bindings[0], tampered_binding))
         with self.assertRaises(NativeSigilMirError):
             tampered.assert_sealed()
 
     def test_foreign_semantic_report_is_rejected(self) -> None:
-        program = parse("ka treasury;\nvor withdrawal;\n")
-        foreign = check_native_sigils(parse("ka treasury;\nvor signing;\n"))
+        program = parse("ka treasury;\nvor treasury;\n")
+        foreign = check_native_sigils(parse("ka signing;\nvor signing;\n"))
         with self.assertRaisesRegex(NativeSigilMirError, "does not match"):
             lower_native_sigils(program, foreign)
 
     def test_tampered_semantic_report_is_rejected(self) -> None:
-        program = parse("ka treasury;\nvor withdrawal;\n")
+        program = parse("ka treasury;\nvor treasury;\n")
         semantic = check_native_sigils(program)
         tampered_declaration = replace(
             semantic.declarations[1],
