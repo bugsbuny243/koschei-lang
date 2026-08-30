@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from pathlib import Path
 import shutil
 import subprocess
@@ -12,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 VERIFIER = ROOT / "tools" / "verify_solohost_artifact_v1.py"
 ASSEMBLER = ROOT / "tools" / "assemble_solohost_staging_v1.py"
 SIGNER = ROOT / "tools" / "sign_solohost_release_v1.py"
+SMOKE_SCHEMA = "koschei.solohost-binary-smoke-receipt/v1"
 
 
 class SoloHostArtifactPolicyV1Tests(unittest.TestCase):
@@ -29,7 +32,43 @@ class SoloHostArtifactPolicyV1Tests(unittest.TestCase):
             command.extend(["--public-key", str(public_key)])
         return subprocess.run(command, cwd=ROOT, check=False, capture_output=True, text=True)
 
-    def _assemble(self, binary: Path, output: Path) -> subprocess.CompletedProcess[str]:
+    def _smoke_receipt(self, binary: Path, *, native_passed: bool = True) -> Path:
+        receipt = binary.parent / "smoke-receipt.json"
+        payload = {
+            "schema": SMOKE_SCHEMA,
+            "product": "koschei-lang",
+            "channel": "pi-solohost",
+            "version": "0.10.0-test",
+            "binary": {
+                "sha256": hashlib.sha256(binary.read_bytes()).hexdigest(),
+                "size_bytes": binary.stat().st_size,
+            },
+            "checks": {
+                "version_json": True,
+                "check": True,
+                "run": True,
+                "caps": True,
+                "ks2401_supply_chain_denial": True,
+            },
+            "native_build": {
+                "required": native_passed,
+                "passed": native_passed,
+                "go_version": "go version go1.25.0 test" if native_passed else None,
+            },
+            "started_unix": 1,
+            "finished_unix": 2,
+        }
+        receipt.write_text(json.dumps(payload), encoding="utf-8")
+        return receipt
+
+    def _assemble(
+        self,
+        binary: Path,
+        output: Path,
+        *,
+        receipt: Path | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        smoke_receipt = receipt or self._smoke_receipt(binary)
         return subprocess.run(
             [
                 sys.executable,
@@ -43,7 +82,9 @@ class SoloHostArtifactPolicyV1Tests(unittest.TestCase):
                 "--platform",
                 "linux-x86_64",
                 "--source-commit",
-                "deadbeef",
+                "d" * 40,
+                "--smoke-receipt",
+                str(smoke_receipt),
             ],
             cwd=ROOT,
             check=False,
@@ -80,10 +121,36 @@ class SoloHostArtifactPolicyV1Tests(unittest.TestCase):
             publish = self._verify(artifact)
 
             self.assertEqual(assembled.returncode, 0, assembled.stdout + assembled.stderr)
+            self.assertIn("full native-build smoke receipt", assembled.stdout)
             self.assertEqual(staged.returncode, 0, staged.stdout + staged.stderr)
             self.assertIn("NOT PUBLISHABLE", staged.stdout)
             self.assertEqual(publish.returncode, 1)
             self.assertIn("unsigned staging; publication is blocked", publish.stdout)
+
+    def test_assembler_rejects_smoke_receipt_for_different_binary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            binary = root / "input-koschei"
+            binary.write_bytes(b"binary-a")
+            receipt = self._smoke_receipt(binary)
+            binary.write_bytes(b"binary-b")
+
+            result = self._assemble(binary, root / "artifact", receipt=receipt)
+
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("smoke receipt SHA-256 does not match staging binary", result.stderr)
+
+    def test_assembler_rejects_smoke_without_required_native_build(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            binary = root / "input-koschei"
+            binary.write_bytes(b"sealed-executable-placeholder")
+            receipt = self._smoke_receipt(binary, native_passed=False)
+
+            result = self._assemble(binary, root / "artifact", receipt=receipt)
+
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("requires a passing required native-build smoke", result.stderr)
 
     @unittest.skipUnless(shutil.which("openssl"), "OpenSSL is required for Ed25519 release-signing test")
     def test_signed_release_passes_with_matching_public_key(self) -> None:
