@@ -1,0 +1,49 @@
+FROM python:3.12-bookworm AS builder
+
+ARG KOSCHEI_SOURCE_COMMIT=44f5daa7b88ca7029bee6b5d7322fcd5e40c746a
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PATH=/usr/local/go/bin:${PATH}
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends build-essential patchelf curl ca-certificates \
+ && rm -rf /var/lib/apt/lists/* \
+ && curl -fsSL https://go.dev/dl/go1.24.5.linux-amd64.tar.gz -o /tmp/go.tgz \
+ && rm -rf /usr/local/go \
+ && tar -C /usr/local -xzf /tmp/go.tgz \
+ && rm /tmp/go.tgz \
+ && python -m pip install --no-cache-dir nuitka ordered-set zstandard
+
+WORKDIR /src
+COPY . .
+
+RUN set -eux; \
+    rm -rf /work && mkdir -p /work/build; \
+    python tools/build_solohost_binary_v1.py --mode onefile --output /work/build; \
+    BIN="$(find /work/build -type f -name ks -perm -111 | head -n1)"; \
+    test -n "$BIN"; \
+    python tools/smoke_solohost_binary_v1.py "$BIN" --require-native-build --receipt /work/smoke.json; \
+    VERSION="$($BIN version --json | python -c 'import json,sys; print(json.load(sys.stdin)["version"])')"; \
+    test -n "$VERSION"; \
+    python tools/assemble_solohost_staging_v1.py \
+      --binary "$BIN" \
+      --output /work/release \
+      --version "$VERSION" \
+      --platform linux-x86_64 \
+      --source-commit "$KOSCHEI_SOURCE_COMMIT" \
+      --smoke-receipt /work/smoke.json; \
+    cp /work/smoke.json /work/release/koschei-solohost-smoke-receipt.json; \
+    cp /work/build/koschei-solohost-build-receipt.json /work/release/ || true; \
+    ! find /work/release -type f \( -name '*.py' -o -name '*.pyi' -o -name '*.go' \) -print -quit | grep -q .
+
+FROM python:3.12-slim-bookworm AS runtime
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends openssl ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY --from=builder /work/release /app/release-staging
+COPY tools/sign_solohost_release_v1.py /app/tools/sign_solohost_release_v1.py
+COPY tools/serve_solohost_artifact_origin_v1.py /app/tools/serve_solohost_artifact_origin_v1.py
+EXPOSE 8081
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:' + __import__('os').environ.get('PORT','8081') + '/health', timeout=3).read()" || exit 1
+CMD ["python", "/app/tools/serve_solohost_artifact_origin_v1.py"]
