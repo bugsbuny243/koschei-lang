@@ -1,10 +1,9 @@
 """Typed semantic binding for native Koschei sigil declarations v1.
 
-This is the first bridge from real `.ks` syntax into Koschei Universe semantics.
-It intentionally does not execute anything. It validates the parsed native
-surface, binds each sigil to its canonical semantic domain/specification, and
-produces a deterministic typed declaration set that later MIR lowering can
-consume.
+This bridge turns real `.ks` sigil syntax into Koschei Universe semantics. It
+intentionally does not execute effects, but it MUST reject semantic roots that
+cannot be tied to an admitted Koschei identity. A sigil subject is therefore a
+semantic reference, not an arbitrary label.
 """
 from __future__ import annotations
 
@@ -56,11 +55,36 @@ def _declaration_digest(declaration: SigilDeclaration) -> str:
     return hashlib.sha256(_CTX + "|".join(parts).encode("utf-8")).hexdigest()
 
 
+def _require_admitted_subject_lineage(program: NativeProgram) -> None:
+    """Require every non-genesis root to target a prior `ka` admission.
+
+    `ka` establishes recognized existence with zero ambient authority. `vor`,
+    `shi`, `thal`, and `nur` may refine what can happen to that admitted subject,
+    but none of them may manufacture a subject merely by spelling a new name.
+    This is the minimum executable form of the lexicon laws
+    `identity-before-authority` and `observation/recovery/visibility cannot invent
+    identity or authority`.
+    """
+
+    admitted: set[str] = set()
+    for declaration in program.sigils:
+        if declaration.sigil == "ka":
+            admitted.add(declaration.subject)
+            continue
+        if declaration.subject not in admitted:
+            raise NativeSigilSemanticError(
+                f"{declaration.sigil} subject {declaration.subject!r} has no preceding "
+                "ka admission"
+            )
+
+
 def check_native_sigils(program: NativeProgram) -> TypedSigilProgram:
     """Bind parsed native sigils to canonical Universe semantics.
 
-    Subject names must be unique within each semantic root. The Universe kernel
-    owns sigil order/composition rules, so this checker does not duplicate them.
+    The Universe kernel owns sigil order/composition rules. This checker adds the
+    identity-lineage rule that makes subjects real semantic references: every
+    non-`ka` root must descend from an admitted subject in the same checked
+    native program.
     """
 
     if not isinstance(program, NativeProgram):
@@ -81,6 +105,8 @@ def check_native_sigils(program: NativeProgram) -> TypedSigilProgram:
         plan = compile_universe_plan(declaration.sigil for declaration in program.sigils)
     except UniverseKernelError as error:
         raise NativeSigilSemanticError(str(error)) from error
+
+    _require_admitted_subject_lineage(program)
 
     typed: list[TypedSigilDeclaration] = []
     for declaration in program.sigils:
