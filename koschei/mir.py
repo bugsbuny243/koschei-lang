@@ -1,9 +1,10 @@
 """Backend-independent MIR foundation for Koschei V5.
 
-MIR is lowered only from compiler products that already passed Typed HIR and the
-canonical effect-contract pass. It must not independently re-infer capability
-effects from AST text: doing so would create a second semantic authority after
-the compiler had already decided the effect contract.
+MIR is lowered only from compiler products that already passed Typed HIR, the
+canonical effect-contract pass, and (when present) native Koschei sigil
+semantics. It must not independently re-infer capability effects or sigil
+meaning from AST text: doing so would create a second semantic authority after
+the compiler had already decided the contracts.
 
 Executable AST fallback instructions remain temporarily while MIR normalization
 continues. Interpreter and native codegen consume this sealed graph rather than
@@ -32,11 +33,13 @@ from .mir_ir import (
     lower_function_blocks,
     validate_blocks,
 )
+from .native_sigil_mir_v1 import NativeSigilMir
+from .native_sigils_v1 import NativeProgram
 from .type_contracts import function_type, type_parameters_of
 from .type_system import TypeNode, render_type
 from .typed_hir import TypedHIRReport
 
-MIR_VERSION = 3
+MIR_VERSION = 4
 
 
 class MirIntegrityError(Exception):
@@ -85,6 +88,7 @@ class MirModule:
     imports: Mapping[str, str]
     functions: tuple[MirFunction, ...]
     typed_report: TypedHIRReport
+    native_sigils: NativeSigilMir | None = None
 
     def type_of(self, expression: Expression) -> TypeNode | None:
         for item in self.typed_report.expressions:
@@ -131,6 +135,7 @@ class MirGraph:
                         "MIR module identity does not match graph key: "
                         f"{module.key!r} != {key!r}"
                     )
+                _assert_native_sigil_contract(module)
                 for function in module.functions:
                     validate_blocks(function.blocks)
                     expected_resources = _resource_contract(
@@ -202,14 +207,103 @@ def _contract_import_target(target: str) -> str:
     return Path(target).stem
 
 
+def _semantic_value(value: Any) -> Any:
+    """Remove diagnostic source coordinates from a fingerprint payload.
+
+    Source positions are useful for tooling, but they are not semantic identity.
+    Moving the same checked program to another line must not manufacture another
+    sealed execution reality.
+    """
+
+    if isinstance(value, dict):
+        return {
+            key: _semantic_value(item)
+            for key, item in value.items()
+            if key not in {"location", "line", "column"}
+        }
+    if isinstance(value, (list, tuple)):
+        return [_semantic_value(item) for item in value]
+    return value
+
+
+def _source_sigil_identities(program: Program) -> tuple[tuple[str, str], ...]:
+    if not isinstance(program, NativeProgram):
+        return ()
+    return tuple((item.sigil, item.subject) for item in program.sigils)
+
+
+def _native_sigil_identities(report: NativeSigilMir) -> tuple[tuple[str, str], ...]:
+    return tuple((item.sigil, item.subject) for item in report.bindings)
+
+
+def _assert_native_sigil_contract(module: MirModule) -> None:
+    source_identities = _source_sigil_identities(module.program)
+    report = module.native_sigils
+    if source_identities and report is None:
+        raise ValueError(
+            f"native sigil semantics missing from canonical MIR module {module.name}"
+        )
+    if not source_identities and report is not None:
+        raise ValueError(
+            f"canonical MIR module {module.name} contains foreign native sigil semantics"
+        )
+    if report is None:
+        return
+    report.assert_sealed()
+    if _native_sigil_identities(report) != source_identities:
+        raise ValueError(
+            f"native sigil MIR does not match source semantic roots for {module.name}"
+        )
+
+
+def _native_sigil_contract(report: NativeSigilMir | None) -> dict[str, Any] | None:
+    if report is None:
+        return None
+    return {
+        "version": report.version,
+        "universe_plan_digest": report.universe_plan_digest,
+        "fingerprint": report.fingerprint,
+        "bindings": [
+            {
+                "sigil": item.sigil,
+                "subject": item.subject,
+                "semantic_domain": item.semantic_domain,
+                "may_grant_authority": item.may_grant_authority,
+                "obligations": list(item.obligations),
+            }
+            for item in report.bindings
+        ],
+    }
+
+
+def _native_sigil_output(report: NativeSigilMir | None) -> dict[str, Any] | None:
+    contract = _native_sigil_contract(report)
+    if contract is None or report is None:
+        return None
+    contract["bindings"] = [
+        {
+            "sigil": item.sigil,
+            "subject": item.subject,
+            "semantic_domain": item.semantic_domain,
+            "may_grant_authority": item.may_grant_authority,
+            "obligations": list(item.obligations),
+            "source_line": item.source_line,
+            "source_column": item.source_column,
+        }
+        for item in report.bindings
+    ]
+    return contract
+
+
 def _module_contract(module: MirModule) -> dict[str, Any]:
     return {
         "name": module.name,
-        "program": asdict(module.program),
+        "program": _semantic_value(asdict(module.program)),
         "imports": sorted(
             (alias, _contract_import_target(target))
             for alias, target in module.imports.items()
         ),
+        "native_sigils": _native_sigil_contract(module.native_sigils),
         "functions": [
             {
                 "name": function.name,
@@ -221,7 +315,9 @@ def _module_contract(module: MirModule) -> dict[str, Any]:
                 "calls": list(function.calls),
                 "effects": list(function.effects),
                 "resources": asdict(function.resources),
-                "blocks": [block_contract(block) for block in function.blocks],
+                "blocks": [
+                    _semantic_value(block_contract(block)) for block in function.blocks
+                ],
             }
             for function in module.functions
         ],
@@ -254,8 +350,6 @@ def _module_contract(module: MirModule) -> dict[str, Any]:
         "typed_expressions": [
             (
                 type(item.expression).__name__,
-                item.expression.location.line,
-                item.expression.location.column,
                 render_type(item.type),
             )
             for item in module.typed_report.expressions
@@ -313,9 +407,9 @@ def _canonical_mir_effects(summary: FunctionEffects) -> tuple[str, ...]:
     """Project the checked function report onto MIR's capability-effect ABI.
 
     `EffectReport` also carries compiler-only facts such as authority-bearing
-    signature input/output and non-capability observable effects. MIR v3's
-    `effects` field historically represents canonical capability effects, so the
-    projection keeps that ABI while taking its facts from the one checked report.
+    signature input/output and non-capability observable effects. MIR v4's
+    `effects` field represents canonical capability effects; native authority
+    roots are sealed separately in the same module contract.
     """
 
     return tuple(
@@ -327,6 +421,7 @@ def lower_module(
     module: Any,
     typed_report: TypedHIRReport,
     effect_report: EffectReport,
+    native_sigil_mir: NativeSigilMir | None = None,
     *,
     key: str | None = None,
 ) -> MirModule:
@@ -335,6 +430,25 @@ def lower_module(
         raise MirIntegrityError(
             "MIR lowering requires the exact checked effect report for every function"
         )
+
+    source_sigil_identities = _source_sigil_identities(module.program)
+    if source_sigil_identities and native_sigil_mir is None:
+        raise MirIntegrityError(
+            "MIR lowering refuses native sigil source without checked sigil semantics"
+        )
+    if not source_sigil_identities and native_sigil_mir is not None:
+        raise MirIntegrityError(
+            "MIR lowering refuses native sigil semantics for source without sigils"
+        )
+    if native_sigil_mir is not None:
+        try:
+            native_sigil_mir.assert_sealed()
+        except ValueError as error:
+            raise MirIntegrityError(f"native sigil MIR is not sealed: {error}") from error
+        if _native_sigil_identities(native_sigil_mir) != source_sigil_identities:
+            raise MirIntegrityError(
+                "MIR lowering refuses sigil semantics that do not match source roots"
+            )
 
     functions = tuple(
         MirFunction(
@@ -360,7 +474,7 @@ def lower_module(
         for declaration in module.program.declarations
         for blocks in (lower_function_blocks(declaration, typed_report),)
     )
-    return MirModule(
+    result = MirModule(
         str(module.path) if key is None else key,
         module.name,
         module.path,
@@ -368,23 +482,50 @@ def lower_module(
         MappingProxyType(dict(module.imports)),
         functions,
         typed_report,
+        native_sigil_mir,
     )
+    try:
+        _assert_native_sigil_contract(result)
+    except ValueError as error:
+        raise MirIntegrityError(str(error)) from error
+    return result
 
 
 def lower_graph(
     graph: Any,
     typed_reports: Mapping[str, TypedHIRReport],
     effect_reports: Mapping[str, EffectReport],
+    native_sigil_reports: Mapping[str, NativeSigilMir] | None = None,
 ) -> MirGraph:
     if set(effect_reports) != set(graph.modules):
         raise MirIntegrityError(
             "MIR lowering requires checked effect reports for the complete module graph"
         )
+    if set(typed_reports) != set(graph.modules):
+        raise MirIntegrityError(
+            "MIR lowering requires checked typed reports for the complete module graph"
+        )
+
+    native_reports = {} if native_sigil_reports is None else dict(native_sigil_reports)
+    expected_native_keys = {
+        key
+        for key, module in graph.modules.items()
+        if _source_sigil_identities(module.program)
+    }
+    if set(native_reports) != expected_native_keys:
+        missing = sorted(expected_native_keys - set(native_reports))
+        extra = sorted(set(native_reports) - expected_native_keys)
+        raise MirIntegrityError(
+            "MIR lowering requires the exact native sigil semantic report set "
+            f"(missing={missing}, extra={extra})"
+        )
+
     modules = {
         key: lower_module(
             module,
             typed_reports[key],
             effect_reports[key],
+            native_reports.get(key),
             key=key,
         )
         for key, module in graph.modules.items()
@@ -416,6 +557,7 @@ def to_dict(mir: MirGraph) -> dict[str, Any]:
             {
                 "name": module.name,
                 "imports": sorted(module.imports),
+                "native_sigils": _native_sigil_output(module.native_sigils),
                 "functions": [
                     {
                         "name": function.name,
