@@ -1,90 +1,63 @@
 # KOSCHEI NYR OBSERVATION BOUNDARY V1
 
-Status: **IMPLEMENTED BOOTSTRAP / SHARED CONTINUITY AUTHORITY / NOT NATIVE-ENFORCED**
+Status: IMPLEMENTED PROTOTYPE / NOT YET NATIVE-ENFORCED
 
 ## Purpose
 
-Nyr v2 is an observer-facing, non-faithful projection of sealed native Koschei MIR. Projection integrity is not current liveness. A historically authentic surface from an old epoch must not remain usable as the current observer world.
+Nyr v2 is an observer-facing, non-faithful projection of sealed native Koschei MIR. A valid projection is not automatically a live projection. Observation must therefore cross a boundary that proves both integrity and liveness before any Nyr surface is rendered.
 
-This boundary is now part of the same `nur` lifecycle as exact-request reconstruction and opaque materialization. It does **not** maintain an independent epoch callback.
+Canonical semantics and observer-visible representation remain different worlds. The observation boundary does not grant authority and does not turn visible Nyr aliases into canonical identities.
 
-## One-time truth law
+## Semantic invariant
 
-Sanctioned liveness boundaries accept `ContinuityEpochAuthorityV1`:
+For a Nyr v2 surface S produced in visibility epoch E:
 
-- `NyrObservationGateV1`
-- `RepresentationReconstructionGateV1`
-- `CanonicalMaterializationEffectGateV1`
-
-None exposes a raw `epoch_source` constructor field.
-
-The intended invariant is:
-
-`one trusted Continuity state -> observer liveness + reconstruction liveness + materialization liveness`
-
-Changing the shared underlying Continuity epoch changes all three decisions together.
-
-`ContinuityEpochAuthorityV1` is a typed bootstrap interface, not proof of monotonic hardware time. Its identity seal prevents accidental role relabeling; it does not authenticate the Python reader or prevent host rollback.
-
-## Nyr liveness invariant
-
-For Nyr surface S born in epoch E:
-
-1. S must exactly match hidden MIR, Veyra, Nur envelope and veil-key context.
-2. S is operationally live only when shared Continuity reports E.
+1. S must exactly match the hidden sealed MIR, Veyra, Nur visibility envelope and veil key context from which it was projected.
+2. S is live only while trusted runtime epoch == E.
 3. S expires before E + 1.
-4. An authentic old S at or after expiry is replay and is rejected.
-5. A future/not-yet-live S is rejected.
-6. malformed, boolean, negative or failed Continuity reads fail closed.
-7. a contained Nur envelope cannot open the observation gate.
+4. A previously valid S presented at or after its expiry is replay and must be rejected.
+5. A future S presented before its birth epoch must be rejected.
+6. Epoch-source failure or malformed epoch state fails closed.
+7. A contained Nur envelope cannot open the observation boundary.
 
-`require_nyr_surface_v2` remains integrity-only. `require_live_nyr_surface_v2` adds operational liveness.
+## Prototype boundary
 
-## Sanctioned observer path
+`koschei.nur_nyr_observation_gate_v1.NyrObservationGateV1`
 
-`NyrObservationGateV1.render(surface)`:
+The gate owns the hidden verification context and receives a trusted `epoch_source`. Its only sanctioned observer-output operation is `render(surface)`. `render` reads the live epoch, invokes `require_live_nyr_surface_v2`, and returns the non-faithful Nyr rendering only after verification succeeds.
 
-`shared Continuity current epoch`
-`-> exact Nyr projection integrity`
-`-> live visibility epoch`
-`-> observer-safe render`
-
-`project_and_render()` additionally requires the supplied Nur envelope itself to be current before projecting.
-
-The visible Nyr surface grants no authority and contains no canonical identity right.
+`require_nyr_surface_v2` remains an integrity primitive. It is not sufficient at an observation or execution boundary.
 
 ## PROTECTS AGAINST
 
-- replay of an expired but correctly generated Nyr surface through the sanctioned gate;
-- future-surface presentation;
-- surface tampering accepted merely because an epoch looks current;
-- separate arbitrary epoch callbacks drifting between observation, reconstruction and materialization;
-- malformed/failed Continuity reads failing open;
-- contained Nur state opening an observer surface.
+- Replay of a correctly generated but expired Nyr v2 surface through the sanctioned gate.
+- Presentation of a future/not-yet-live Nyr surface through the sanctioned gate.
+- Visible-surface tampering becoming accepted merely because the epoch is current.
+- Observation continuing after the trusted epoch source fails.
+- Opening an observer surface from a contained Nur visibility state.
 
 ## DOES NOT PROTECT AGAINST
 
-- a compromised or rolled-back underlying Continuity reader/state;
-- host/process compromise that can replace the Continuity object or inspect trusted memory;
-- raw `NyrSurfaceV2.render()` calls by arbitrary Python code outside the sanctioned API convention;
-- canonical leakage through logs, debugger, crash dumps, memory scraping or side channels;
-- compromised MIR/Veyra/veil-key custody;
-- native/backend paths that bypass the gate.
+- Compromise of the canonical MIR, Veyra inputs or veil key before they reach the gate.
+- A malicious or compromised trusted epoch provider that lies consistently about current epoch state.
+- Canonical semantic leakage through unrelated logs, memory disclosure, debugger access, crash dumps or other side channels.
+- Direct calls to lower-level Python bootstrap helpers by code already executing with arbitrary access to the compiler implementation.
+- Native/backend paths that fail to preserve this boundary.
 
 ## ASSUMPTIONS
 
-- production supplies one authoritative Continuity state to all sanctioned liveness gates;
-- hidden MIR and Veyra seals remain trustworthy;
-- Nur envelope is authentic, allowed and authority-free;
-- veil-key custody remains trusted;
-- native runtime preserves this observer boundary.
+- The runtime supplies current epoch state from a trusted monotonic visibility authority rather than from observer-controlled input.
+- Hidden MIR and Veyra objects retain valid seals.
+- The Nur envelope is authentic and authority-free.
+- Veil-key custody is outside observer control.
+- Production/native API surfaces will not export a bypass that is treated as authoritative observation.
 
 ## FAILURE MODE
 
-If the underlying Continuity state is maliciously rolled back, all three gates can agree on the same stale epoch. Shared truth removes internal epoch disagreement; it does not manufacture rollback resistance.
+Replay resistance collapses if runtime code consumes `NyrSurfaceV2.render()` directly, treats `require_nyr_surface_v2` as sufficient, or accepts attacker-controlled epoch state as trusted time. If veil-key or canonical-state custody fails, rotating aliases alone do not restore secrecy.
 
-Python privacy is conventional. A caller with arbitrary trusted-process access can bypass these objects. Therefore this prototype proves API/semantic convergence, not physical isolation.
+## Native enforcement requirement
 
-## NEXT
+This Python implementation is a bootstrap prototype, not proof that bypass is physically impossible. The native Koschei runtime must expose observer rendering through a gate-equivalent ABI and keep raw canonical/Nyr rendering primitives non-authoritative or unavailable outside the trusted runtime compartment.
 
-The next core integration step is to connect the existing Khar/Galaxy/Matrix/Hara and relevant power-domain admission to the same exact request-bound execution path without creating a second authority model.
+The next design step is to bind observation/execution to a time-scoped capability/token whose identity includes Veyra, projection digest, permitted operation and validity epoch. The token must narrow authority rather than create ambient permission.

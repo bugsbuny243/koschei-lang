@@ -16,6 +16,7 @@ from koschei.native_sigil_mir_v1 import lower_native_sigils
 from koschei.nur_nyr_projection_v2 import (
     NyrProjectionV2Error,
     project_native_mir_nyr_v2,
+    require_live_nyr_surface_v2,
     require_nyr_surface_v2,
 )
 from koschei.parser import parse
@@ -159,3 +160,70 @@ def test_visible_nyr_v2_tampering_does_not_become_canonical():
     )
     with pytest.raises(NyrProjectionV2Error, match="does not match"):
         require_nyr_surface_v2(forged, m, v, e, veil_key=VEIL)
+
+
+def test_live_nyr_v2_accepts_only_its_birth_epoch():
+    m = mir()
+    v = veyra("bank-a")
+    e = envelope(tick=10)
+    surface = project_native_mir_nyr_v2(m, v, e, veil_key=VEIL)
+
+    require_live_nyr_surface_v2(
+        surface,
+        m,
+        v,
+        e,
+        veil_key=VEIL,
+        current_visibility_epoch=surface.visibility_epoch,
+    )
+
+
+def test_live_nyr_v2_rejects_expired_surface_replay():
+    m = mir()
+    v = veyra("bank-a")
+    e = envelope(tick=10)
+    surface = project_native_mir_nyr_v2(m, v, e, veil_key=VEIL)
+
+    with pytest.raises(NyrProjectionV2Error, match="expired and cannot be replayed"):
+        require_live_nyr_surface_v2(
+            surface,
+            m,
+            v,
+            e,
+            veil_key=VEIL,
+            current_visibility_epoch=surface.expires_before_epoch,
+        )
+
+
+def test_live_nyr_v2_rejects_surface_before_its_epoch():
+    m = mir()
+    v = veyra("bank-a")
+    e = envelope(tick=20)
+    surface = project_native_mir_nyr_v2(m, v, e, veil_key=VEIL)
+
+    with pytest.raises(NyrProjectionV2Error, match="not valid for the current visibility epoch"):
+        require_live_nyr_surface_v2(
+            surface,
+            m,
+            v,
+            e,
+            veil_key=VEIL,
+            current_visibility_epoch=surface.visibility_epoch - 1,
+        )
+
+
+def test_live_nyr_v2_rejects_invalid_epoch_input():
+    m = mir()
+    v = veyra("bank-a")
+    e = envelope(tick=10)
+    surface = project_native_mir_nyr_v2(m, v, e, veil_key=VEIL)
+
+    with pytest.raises(NyrProjectionV2Error, match="non-negative integer"):
+        require_live_nyr_surface_v2(
+            surface,
+            m,
+            v,
+            e,
+            veil_key=VEIL,
+            current_visibility_epoch=-1,
+        )
