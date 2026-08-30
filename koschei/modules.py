@@ -283,8 +283,9 @@ def check_graph(graph: ModuleGraph) -> SemanticReport:
     assert report is not None
 
     # Attach compiler products only after every module and both lowering paths
-    # have succeeded. A failure anywhere above leaves the graph with no stale MIR.
-    graph_mir = lower_mir_graph(graph, typed_reports)
+    # have succeeded. MIR consumes these exact checked reports; it does not
+    # independently re-infer capability effects from AST source.
+    graph_mir = lower_mir_graph(graph, typed_reports, effect_reports)
     graph.mir = graph_mir
     graph.native_sigil_mir = native_mir_reports
     return report

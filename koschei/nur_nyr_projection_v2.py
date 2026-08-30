@@ -6,6 +6,10 @@ canonical subjects, Veyra identity, Aevra identity, authority, or a topology
 relation graph. Both the semantic-root label and subject label are projected to
 observer/session/epoch/Veyra-bound aliases.
 
+Projection integrity and runtime liveness are deliberately separate. A correctly
+generated surface from an old epoch remains authentic history but is not a current
+observer surface and cannot be replayed through sanctioned live boundaries.
+
 This does not make the canonical world unknowable in a cryptographic sense. It
 removes a direct faithful runtime projection and shortens the reuse lifetime of
 what an observer can collect. Knowledge remains non-authoritative even if other
@@ -26,6 +30,10 @@ _CTX = b"koschei.nur-nyr-projection/v2\x00"
 
 class NyrProjectionV2Error(ValueError):
     pass
+
+
+class NyrProjectionV2ReplayError(NyrProjectionV2Error):
+    """Authentic Nyr surface presented outside its live visibility epoch."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,6 +61,14 @@ def _require_veil_key(veil_key: bytes) -> bytes:
     if not isinstance(veil_key, bytes) or len(veil_key) < 32:
         raise NyrProjectionV2Error("Nyr v2 veil key must contain at least 32 bytes")
     return veil_key
+
+
+def _require_runtime_epoch(value: int) -> int:
+    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+        raise NyrProjectionV2Error(
+            "current visibility epoch must be a non-negative integer"
+        )
+    return value
 
 
 def _alias(

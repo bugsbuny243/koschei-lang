@@ -1,10 +1,13 @@
 """Backend-independent MIR foundation for Koschei V5.
 
-This first slice deliberately keeps the executable AST nodes while sealing them
-with the structural types produced by Typed HIR. Interpreter and native codegen
-consume this checked graph instead of accepting a freshly loaded module graph.
-Later MIR waves can replace individual AST payloads without changing the public
-pipeline contract introduced here.
+MIR is lowered only from compiler products that already passed Typed HIR and the
+canonical effect-contract pass. It must not independently re-infer capability
+effects from AST text: doing so would create a second semantic authority after
+the compiler had already decided the effect contract.
+
+Executable AST fallback instructions remain temporarily while MIR normalization
+continues. Interpreter and native codegen consume this sealed graph rather than
+a freshly loaded source graph.
 """
 
 from __future__ import annotations
@@ -17,8 +20,9 @@ from types import MappingProxyType
 from typing import Any, Mapping
 
 from .ast_nodes import Expression, FunctionDeclaration, Program, SourceLocation
+from .capability_effect_contract_v1 import CANONICAL_CAPABILITY_EFFECTS
 from .diagnostics import CATALOG, ENGLISH_CATALOG, Diagnostic
-from .effects import infer_effects
+from .effect_contracts_v1 import EffectReport, FunctionEffects
 from .mir_ir import (
     MirAstFallback,
     MirBasicBlock,
@@ -139,12 +143,16 @@ class MirGraph:
                             "resource contract mismatch for "
                             f"{module.name}.{function.name}"
                         )
-                expected_effects = infer_effects(module.program)
-                for function in module.functions:
-                    expected_calls, expected = expected_effects[function.name]
-                    if function.calls != expected_calls or function.effects != expected:
+                    unknown_effects = tuple(
+                        effect
+                        for effect in function.effects
+                        if effect not in CANONICAL_CAPABILITY_EFFECTS
+                    )
+                    if unknown_effects:
                         raise ValueError(
-                            f"effect contract mismatch for {module.name}.{function.name}"
+                            "MIR capability effect is outside canonical contract for "
+                            f"{module.name}.{function.name}: "
+                            + ", ".join(unknown_effects)
                         )
             actual = _fingerprint(self.root, self.modules)
         except (KeyError, TypeError, ValueError) as error:
@@ -301,13 +309,33 @@ def _resource_contract(
     )
 
 
+def _canonical_mir_effects(summary: FunctionEffects) -> tuple[str, ...]:
+    """Project the checked function report onto MIR's capability-effect ABI.
+
+    `EffectReport` also carries compiler-only facts such as authority-bearing
+    signature input/output and non-capability observable effects. MIR v3's
+    `effects` field historically represents canonical capability effects, so the
+    projection keeps that ABI while taking its facts from the one checked report.
+    """
+
+    return tuple(
+        effect for effect in summary.effects if effect in CANONICAL_CAPABILITY_EFFECTS
+    )
+
+
 def lower_module(
     module: Any,
     typed_report: TypedHIRReport,
+    effect_report: EffectReport,
     *,
     key: str | None = None,
 ) -> MirModule:
-    effect_contracts = infer_effects(module.program)
+    declarations = {item.name: item for item in module.program.declarations}
+    if set(effect_report) != set(declarations):
+        raise MirIntegrityError(
+            "MIR lowering requires the exact checked effect report for every function"
+        )
+
     functions = tuple(
         MirFunction(
             declaration.name,
@@ -319,11 +347,11 @@ def lower_module(
                 for parameter in declaration.parameters
             ),
             function_type(declaration, declaration.return_type),
-            effect_contracts[declaration.name][0],
-            effect_contracts[declaration.name][1],
+            effect_report[declaration.name].direct_calls,
+            _canonical_mir_effects(effect_report[declaration.name]),
             _resource_contract(
                 declaration.name,
-                effect_contracts[declaration.name][0],
+                effect_report[declaration.name].direct_calls,
                 blocks,
             ),
             declaration,
@@ -343,9 +371,22 @@ def lower_module(
     )
 
 
-def lower_graph(graph: Any, typed_reports: Mapping[str, TypedHIRReport]) -> MirGraph:
+def lower_graph(
+    graph: Any,
+    typed_reports: Mapping[str, TypedHIRReport],
+    effect_reports: Mapping[str, EffectReport],
+) -> MirGraph:
+    if set(effect_reports) != set(graph.modules):
+        raise MirIntegrityError(
+            "MIR lowering requires checked effect reports for the complete module graph"
+        )
     modules = {
-        key: lower_module(module, typed_reports[key], key=key)
+        key: lower_module(
+            module,
+            typed_reports[key],
+            effect_reports[key],
+            key=key,
+        )
         for key, module in graph.modules.items()
     }
     result = MirGraph(graph.root, MappingProxyType(modules), "")
