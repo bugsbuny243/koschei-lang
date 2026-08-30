@@ -1,8 +1,9 @@
 """Fail-closed publication gate for Koschei Pi SoloHost customer artifacts.
 
 This verifier checks the assembled customer artifact directory, validates the
-release manifest against the executable bytes, and rejects unsigned staging
-artifacts unless the caller explicitly asks for staging-only verification.
+release manifest against executable bytes, and verifies a detached Ed25519
+signature for publishable artifacts. Unsigned staging is accepted only with an
+explicit staging flag and is never reported as publishable.
 """
 from __future__ import annotations
 
@@ -10,12 +11,16 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import shutil
+import subprocess
 import sys
+import tempfile
 
 
 POLICY_PATH = Path(__file__).resolve().parents[1] / "distribution" / "solohost" / "artifact-policy-v1.json"
 REQUIRED_MANIFEST = "koschei-release-manifest.json"
 MANIFEST_SCHEMA = "koschei.solohost-release-manifest/v1"
+SIGNATURE_SCHEME = "ed25519-openssl-raw-v1"
 EXECUTABLE_CANDIDATES = {"ks", "ks.exe", "koschei", "koschei.exe"}
 
 
@@ -29,6 +34,52 @@ def _sha256(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _run_openssl(command: list[str]) -> subprocess.CompletedProcess[str]:
+    try:
+        return subprocess.run(command, check=False, capture_output=True, text=True)
+    except OSError as exc:
+        raise ArtifactPolicyError(f"cannot execute OpenSSL: {exc}") from exc
+
+
+def _public_key_id(public_key: Path) -> str:
+    if shutil.which("openssl") is None:
+        raise ArtifactPolicyError("openssl executable is required for signed release verification")
+    with tempfile.TemporaryDirectory() as tmp:
+        public_der = Path(tmp) / "public.der"
+        result = _run_openssl([
+            "openssl",
+            "pkey",
+            "-pubin",
+            "-in",
+            str(public_key),
+            "-outform",
+            "DER",
+            "-out",
+            str(public_der),
+        ])
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout).strip()
+            raise ArtifactPolicyError(f"invalid release public key: {detail}")
+        return "ed25519-sha256:" + hashlib.sha256(public_der.read_bytes()).hexdigest()
+
+
+def _verify_ed25519_signature(*, manifest_path: Path, signature_path: Path, public_key: Path) -> bool:
+    result = _run_openssl([
+        "openssl",
+        "pkeyutl",
+        "-verify",
+        "-rawin",
+        "-in",
+        str(manifest_path),
+        "-pubin",
+        "-inkey",
+        str(public_key),
+        "-sigfile",
+        str(signature_path),
+    ])
+    return result.returncode == 0
 
 
 def _load_policy() -> dict[str, object]:
@@ -64,7 +115,15 @@ def _load_manifest(root: Path, failures: list[str]) -> dict[str, object] | None:
     return value
 
 
-def _verify_manifest(root: Path, manifest: dict[str, object], failures: list[str], *, allow_unsigned_staging: bool) -> None:
+def _verify_manifest(
+    root: Path,
+    manifest: dict[str, object],
+    failures: list[str],
+    *,
+    allow_unsigned_staging: bool,
+    public_key: Path | None,
+) -> None:
+    manifest_path = root / REQUIRED_MANIFEST
     if manifest.get("schema") != MANIFEST_SCHEMA:
         failures.append("unexpected release manifest schema")
     if manifest.get("product") != "koschei-lang":
@@ -126,20 +185,45 @@ def _verify_manifest(root: Path, manifest: dict[str, object], failures: list[str
     scheme = signature.get("scheme")
     key_id = signature.get("key_id")
     signature_file = signature.get("signature_file")
-    if not all(isinstance(value, str) and value for value in (scheme, key_id, signature_file)):
-        failures.append("SIGNED manifest requires scheme, key_id and signature_file")
+    if scheme != SIGNATURE_SCHEME:
+        failures.append(f"unsupported release signature scheme: {scheme!r}")
         return
-    sig_path = root / str(signature_file)
+    if not isinstance(key_id, str) or not key_id:
+        failures.append("SIGNED manifest requires key_id")
+        return
+    if not isinstance(signature_file, str) or not signature_file:
+        failures.append("SIGNED manifest requires signature_file")
+        return
+    sig_path = root / signature_file
     if sig_path.parent.resolve() != root.resolve() or not sig_path.is_file():
         failures.append("signature_file must reference an existing top-level file")
         return
+    if public_key is None:
+        failures.append("signed publication requires --public-key for cryptographic verification")
+        return
+    public_key = public_key.resolve()
+    if not public_key.is_file():
+        failures.append(f"release public key does not exist: {public_key}")
+        return
 
-    # V1 deliberately refuses to claim cryptographic verification until one
-    # concrete public-key scheme and trust anchor are committed.
-    failures.append("SIGNED manifest present but cryptographic signature verification is not implemented; publication remains blocked")
+    actual_key_id = _public_key_id(public_key)
+    if key_id != actual_key_id:
+        failures.append("release manifest key_id does not match supplied public key")
+        return
+    if not _verify_ed25519_signature(
+        manifest_path=manifest_path,
+        signature_path=sig_path,
+        public_key=public_key,
+    ):
+        failures.append("release manifest Ed25519 signature verification failed")
 
 
-def verify_artifact(root: Path, *, allow_unsigned_staging: bool = False) -> list[str]:
+def verify_artifact(
+    root: Path,
+    *,
+    allow_unsigned_staging: bool = False,
+    public_key: Path | None = None,
+) -> list[str]:
     policy = _load_policy()
     forbidden_path_names = _as_string_set(policy, "forbidden_path_names")
     forbidden_suffixes = _as_string_set(policy, "forbidden_suffixes")
@@ -161,7 +245,13 @@ def verify_artifact(root: Path, *, allow_unsigned_staging: bool = False) -> list
 
     manifest = _load_manifest(root, failures)
     if manifest is not None:
-        _verify_manifest(root, manifest, failures, allow_unsigned_staging=allow_unsigned_staging)
+        _verify_manifest(
+            root,
+            manifest,
+            failures,
+            allow_unsigned_staging=allow_unsigned_staging,
+            public_key=public_key,
+        )
 
     for path in files:
         rel = path.relative_to(root)
@@ -189,6 +279,12 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="validate an unsigned local staging artifact without making it publishable",
     )
+    parser.add_argument(
+        "--public-key",
+        type=Path,
+        default=None,
+        help="trusted Ed25519 public key used to verify a signed publication artifact",
+    )
     return parser
 
 
@@ -196,7 +292,11 @@ def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     root = args.artifact_directory.resolve()
     try:
-        failures = verify_artifact(root, allow_unsigned_staging=args.allow_unsigned_staging)
+        failures = verify_artifact(
+            root,
+            allow_unsigned_staging=args.allow_unsigned_staging,
+            public_key=args.public_key,
+        )
     except ArtifactPolicyError as exc:
         print(f"SOLOHOST ARTIFACT POLICY ERROR: {exc}", file=sys.stderr)
         return 2
@@ -212,7 +312,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.allow_unsigned_staging:
         print("mode: unsigned staging validation only — NOT PUBLISHABLE")
     else:
-        print("mode: publication gate")
+        print("mode: signed publication gate")
     return 0
 
 
