@@ -82,4 +82,27 @@ The exact Paddle `price_id`, client-side token, webhook destination, webhook sec
 
 This repository can produce and verify the **software payload** and defines the exact fulfillment boundary. Real-money checkout is not considered live until Paddle account approval, a live product/price, a default payment link/domain, a verified `transaction.completed` webhook destination, and the independent download entitlement service are configured externally.
 
+## PROTECTS AGAINST
+
+- Accidental mixing of Paddle production artifacts with Pi/Testnet packaging.
+- Publishing source/build-secret material through the defined Paddle release gate.
+- Treating an artifact-bundled key as the sole trust anchor.
+- Silent binary replacement when the independent release key/fingerprint is used.
+
+## DOES NOT PROTECT
+
+- A compromised Paddle account, fulfillment service, build machine, host kernel, or release-signing private key.
+- Runtime custody gaps that remain inside a correctly signed Koschei binary.
+- Unsupported platforms or language features.
+
+## ASSUMPTIONS
+
+- The production binary passes the exact smoke/runtime gates before signing.
+- The authoritative release key/fingerprint is published through an independently authenticated official channel.
+- Paddle live account configuration and webhook verification are implemented outside compiler semantics.
+
+## FAILURE MODE
+
+If production/Testnet identity is mixed, required evidence is absent, independent signer trust fails, exact binary/runtime metadata differs, or forbidden source/secret material is present, publication fails closed and no Paddle production artifact is qualified for sale.
+
 See `PADDLE_FULFILLMENT_INTERFACE_V1.md`, `RELEASE_TRUST_MODEL_V1.md`, `CUSTOMER_SECURITY_DISCLOSURE_V1.md`, and `PRODUCTION_LIMITS_V1.md`.
