@@ -2,6 +2,7 @@ from dataclasses import replace
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from koschei.capability_effect_contract_v1 import ENV_READ, NET_IO
 from koschei.mir import MirIntegrityError, require_mir, to_dict
@@ -92,6 +93,53 @@ fn main() { println("cycle") }
             self.assertEqual(functions['b'].effects, ('disk.read',))
         finally:
             directory.cleanup()
+
+    def test_mir_does_not_call_legacy_ast_effect_inference(self):
+        source = '''
+fn fetch(net: NetCaps, url: String) -> String or Error {
+    let r = net.get(url) or return Error("net")
+    return r.text()
+}
+fn main() { println("safe") }
+'''
+        with patch(
+            'koschei.effects.infer_effects',
+            side_effect=AssertionError('legacy AST effect authority must not run'),
+        ):
+            directory, mir = self.mir_for(source)
+        try:
+            functions = {item.name: item for item in mir.root_module.functions}
+            self.assertEqual(functions['fetch'].effects, (NET_IO,))
+        finally:
+            directory.cleanup()
+
+    def test_imported_capability_effect_reaches_mir_from_checked_effect_report(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'risk.ks').write_text(
+                '''
+fn fetch(net: NetCaps, url: String) -> String or Error {
+    let r = net.get(url) or return Error("net")
+    return r.text()
+}
+''',
+                encoding='utf-8',
+            )
+            (root / 'main.ks').write_text(
+                '''
+import risk
+fn relay(net: NetCaps, url: String) -> String or Error {
+    return risk.fetch(net, url) or return Error("relay")
+}
+fn main() { println("safe") }
+''',
+                encoding='utf-8',
+            )
+            graph = load_graph(root / 'main.ks')
+            check_graph(graph)
+            mir = require_mir(graph)
+            functions = {item.name: item for item in mir.root_module.functions}
+            self.assertEqual(functions['relay'].effects, (NET_IO,))
 
 
 if __name__ == '__main__':

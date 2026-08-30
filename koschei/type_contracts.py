@@ -5,7 +5,8 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from .ast_nodes import SourceLocation, TypeRef
-from .semantic import CAPABILITY_TYPES, ImportedModule, SemanticError
+from .capability_effect_contract_v1 import CAPABILITY_TYPES
+from .semantic import ImportedModule, SemanticError
 from .type_system import (
     STRING,
     GenericType,
