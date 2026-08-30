@@ -20,6 +20,11 @@ ROOT = Path(__file__).resolve().parents[1]
 ENTRY = ROOT / "tools" / "solohost_binary_entry_v1.py"
 RECEIPT_SCHEMA = "koschei.solohost-binary-build-receipt/v1"
 EXECUTABLE_NAMES = {"ks", "ks.exe", "ks.bin"}
+FORBIDDEN_NUITKA_ARG_PREFIXES = (
+    "--include-data-dir",
+    "--include-data-files",
+    "--include-package-data",
+)
 
 
 class SoloHostBinaryBuildError(ValueError):
@@ -53,6 +58,23 @@ def _nuitka_version() -> str:
     return first[0] if first else "unknown"
 
 
+def _validate_extra_args(extra_arg: list[str]) -> None:
+    for value in extra_arg:
+        normalized = value.strip().lower()
+        if any(normalized.startswith(prefix) for prefix in FORBIDDEN_NUITKA_ARG_PREFIXES):
+            raise SoloHostBinaryBuildError(
+                f"Nuitka data-inclusion option is forbidden for customer builds: {value}"
+            )
+        if normalized.startswith("--output-dir") or normalized.startswith("--output-filename"):
+            raise SoloHostBinaryBuildError(
+                f"release-controlled Nuitka output option cannot be overridden: {value}"
+            )
+        if normalized.startswith("--mode"):
+            raise SoloHostBinaryBuildError(
+                f"release-controlled Nuitka mode cannot be overridden: {value}"
+            )
+
+
 def _candidate_binaries(output: Path) -> list[Path]:
     return sorted(
         path.resolve()
@@ -66,6 +88,7 @@ def _candidate_binaries(output: Path) -> list[Path]:
 def build(*, mode: str, output: Path, extra_arg: list[str]) -> tuple[Path, Path]:
     if mode not in {"standalone", "onefile"}:
         raise SoloHostBinaryBuildError("mode must be standalone or onefile")
+    _validate_extra_args(extra_arg)
     output = output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     if any(output.iterdir()):
@@ -126,6 +149,7 @@ def build(*, mode: str, output: Path, extra_arg: list[str]) -> tuple[Path, Path]
         "source_data_policy": {
             "repository_data_dirs_included": False,
             "native_datajson_go_included": False,
+            "nuitka_data_inclusion_options_forbidden": True,
         },
     }
     receipt_path = output / "koschei-solohost-build-receipt.json"
@@ -141,7 +165,7 @@ def _parser() -> argparse.ArgumentParser:
         "--nuitka-arg",
         action="append",
         default=[],
-        help="additional owner-controlled Nuitka argument; may be repeated",
+        help="additional owner-controlled Nuitka argument; data-inclusion and output overrides are rejected",
     )
     return parser
 
