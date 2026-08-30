@@ -2,26 +2,38 @@
 
 The gate proves that the compiled CLI still performs ordinary language work and
 still enforces the capability-security rejection used in the supply-chain demo.
-With --require-native-build it also proves that the packaged environment exposes
-a usable Go toolchain for `ks build`.
+It can emit a digest-bound smoke receipt for the staging assembler. A full
+SoloHost release receipt requires Go-backed `ks build` validation.
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 from pathlib import Path
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
 
 
 ROOT = Path(__file__).resolve().parents[1]
 HELLO = ROOT / "examples" / "hello.ks"
 SUPPLY_CHAIN = ROOT / "examples" / "supply_chain" / "main.ks"
+RECEIPT_SCHEMA = "koschei.solohost-binary-smoke-receipt/v1"
 
 
 class SoloHostSmokeError(ValueError):
     pass
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _run(binary: Path, args: list[str]) -> subprocess.CompletedProcess[str]:
@@ -37,21 +49,57 @@ def _run(binary: Path, args: list[str]) -> subprocess.CompletedProcess[str]:
         raise SoloHostSmokeError(f"cannot execute sealed Koschei binary: {exc}") from exc
 
 
-def _expect_success(binary: Path, label: str, args: list[str]) -> None:
+def _expect_success(binary: Path, label: str, args: list[str]) -> subprocess.CompletedProcess[str]:
     result = _run(binary, args)
     if result.returncode != 0:
         detail = (result.stderr or result.stdout).strip()
         raise SoloHostSmokeError(f"{label} failed with exit {result.returncode}: {detail}")
+    return result
 
 
-def smoke(binary: Path, *, require_native_build: bool) -> None:
+def _read_version(binary: Path) -> str:
+    result = _expect_success(binary, "ks version --json", ["version", "--json"])
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise SoloHostSmokeError(f"ks version --json returned invalid JSON: {exc}") from exc
+    if not isinstance(payload, dict) or payload.get("name") != "koschei-lang":
+        raise SoloHostSmokeError("ks version --json returned unexpected product identity")
+    version = payload.get("version")
+    if not isinstance(version, str) or not version.strip():
+        raise SoloHostSmokeError("ks version --json returned an empty version")
+    return version.strip()
+
+
+def _go_version() -> str:
+    go_binary = shutil.which("go")
+    if go_binary is None:
+        raise SoloHostSmokeError("full SoloHost smoke requires Go in the release/container environment")
+    try:
+        result = subprocess.run(
+            [go_binary, "version"],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError as exc:
+        raise SoloHostSmokeError(f"cannot execute Go toolchain: {exc}") from exc
+    if result.returncode != 0 or not result.stdout.strip():
+        detail = (result.stderr or result.stdout).strip()
+        raise SoloHostSmokeError(f"cannot read Go toolchain identity: {detail}")
+    return result.stdout.strip()
+
+
+def smoke(binary: Path, *, require_native_build: bool) -> dict[str, object]:
     binary = binary.resolve()
     if not binary.is_file():
         raise SoloHostSmokeError(f"sealed binary does not exist: {binary}")
     if not HELLO.is_file() or not SUPPLY_CHAIN.is_file():
         raise SoloHostSmokeError("repository smoke fixtures are missing")
 
-    _expect_success(binary, "ks version", ["version"])
+    started = int(time.time())
+    version = _read_version(binary)
     _expect_success(binary, "ks check", ["check", str(HELLO)])
     _expect_success(binary, "ks run", ["run", str(HELLO)])
     _expect_success(binary, "ks caps", ["caps", str(HELLO)])
@@ -65,9 +113,10 @@ def smoke(binary: Path, *, require_native_build: bool) -> None:
             "supply-chain attack was rejected, but expected KS2401 capability denial was not preserved"
         )
 
+    native_passed = False
+    go_identity: str | None = None
     if require_native_build:
-        if shutil.which("go") is None:
-            raise SoloHostSmokeError("--require-native-build requires Go in the release/container environment")
+        go_identity = _go_version()
         with tempfile.TemporaryDirectory(prefix="koschei-solohost-smoke-") as tmp:
             target = Path(tmp) / ("hello.exe" if sys.platform == "win32" else "hello")
             _expect_success(binary, "ks build", ["build", str(HELLO), "-o", str(target)])
@@ -86,6 +135,32 @@ def smoke(binary: Path, *, require_native_build: bool) -> None:
             if native.returncode != 0:
                 detail = (native.stderr or native.stdout).strip()
                 raise SoloHostSmokeError(f"native artifact failed with exit {native.returncode}: {detail}")
+            native_passed = True
+
+    return {
+        "schema": RECEIPT_SCHEMA,
+        "product": "koschei-lang",
+        "channel": "pi-solohost",
+        "version": version,
+        "binary": {
+            "sha256": _sha256(binary),
+            "size_bytes": binary.stat().st_size,
+        },
+        "checks": {
+            "version_json": True,
+            "check": True,
+            "run": True,
+            "caps": True,
+            "ks2401_supply_chain_denial": True,
+        },
+        "native_build": {
+            "required": require_native_build,
+            "passed": native_passed,
+            "go_version": go_identity,
+        },
+        "started_unix": started,
+        "finished_unix": int(time.time()),
+    }
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -96,22 +171,37 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="also require Go-backed `ks build` and execute the resulting native program",
     )
+    parser.add_argument(
+        "--receipt",
+        type=Path,
+        default=None,
+        help="write a digest-bound JSON smoke receipt for the staging assembler",
+    )
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
-        smoke(args.binary, require_native_build=args.require_native_build)
-    except SoloHostSmokeError as exc:
+        receipt = smoke(args.binary, require_native_build=args.require_native_build)
+        if args.receipt is not None:
+            receipt_path = args.receipt.resolve()
+            if receipt_path.exists():
+                raise SoloHostSmokeError(f"smoke receipt already exists: {receipt_path}")
+            receipt_path.parent.mkdir(parents=True, exist_ok=True)
+            receipt_path.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    except (OSError, SoloHostSmokeError) as exc:
         print(f"SOLOHOST BINARY SMOKE ERROR: {exc}", file=sys.stderr)
         return 1
     print("KOSCHEI SOLOHOST BINARY SMOKE: PASS")
+    print(f"version: {receipt['version']}")
     print("checks: version, check, run, caps, KS2401 capability denial")
     if args.require_native_build:
         print("native build: PASS")
     else:
         print("native build: NOT REQUIRED IN THIS RUN")
+    if args.receipt is not None:
+        print(f"receipt: {args.receipt.resolve()}")
     return 0
 
 
