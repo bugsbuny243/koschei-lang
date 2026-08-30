@@ -1,0 +1,13 @@
+{
+  "schema": "koschei.runtime-requirements/v1",
+  "product": "koschei-lang",
+  "platform": "linux-x86_64",
+  "architecture": "x86_64",
+  "os": "linux",
+  "libc": "glibc",
+  "minimum_libc_version": "MUST_BE_MEASURED_FROM_RELEASE_BINARY",
+  "dynamic_dependencies": [
+    "MUST_BE_MEASURED_FROM_RELEASE_BINARY"
+  ],
+  "status": "TEMPLATE_NOT_PUBLISHABLE"
+}
