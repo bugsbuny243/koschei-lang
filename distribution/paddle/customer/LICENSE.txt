@@ -1,0 +1,26 @@
+KOSCHEI LANG COMMERCIAL BINARY LICENSE NOTICE v1
+
+Copyright (c) 2026 Onur Sel. All rights reserved.
+
+A customer who lawfully acquires this Koschei Lang binary through an authorized
+Paddle checkout receives a non-exclusive, non-transferable license to install
+and use the purchased binary and included documentation for the customer's own
+internal software development, subject to the commercial terms presented at
+purchase.
+
+Unless separate written terms expressly allow it, the customer may not:
+- redistribute, resell, sublicense, or publicly mirror the Koschei binary;
+- publish proprietary Koschei compiler/runtime implementation materials;
+- remove or falsify release-signature, copyright, or license notices;
+- use an entitlement obtained by another customer or legal entity.
+
+Rights to updates, support, refunds, additional seats/entities, and future major
+versions are only those stated in the purchase terms. Nothing in this notice
+limits rights that cannot legally be limited under applicable law.
+
+The software is pre-1.0 and provided with the security scope and known limits
+disclosed at purchase. No statement in the package creates a guarantee that the
+software is invulnerable or that every attack is prevented.
+
+Earlier Koschei revisions that were separately released under another license
+remain governed by the license applicable to those specific revisions.
