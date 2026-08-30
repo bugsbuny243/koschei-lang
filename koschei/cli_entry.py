@@ -51,6 +51,26 @@ from .runtime_budget import (
 )
 
 
+def _configure_utf8_stdio() -> None:
+    """Keep public CLI diagnostics usable when the inherited locale is ASCII.
+
+    Koschei emits Unicode diagnostics and capability descriptions. Some
+    deployment shells still expose strict ASCII stdout/stderr streams; allowing
+    those streams to raise ``UnicodeEncodeError`` turns a successful compiler
+    decision into a packaging/runtime crash. Reconfigure only streams that
+    support Python's text-stream API and leave redirected/custom streams alone.
+    """
+
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if not callable(reconfigure):
+            continue
+        try:
+            reconfigure(encoding="utf-8", errors="backslashreplace")
+        except (AttributeError, ValueError):
+            continue
+
+
 def _budget_argument(parser, value: str) -> int:
     try:
         return parser(value)
@@ -197,13 +217,57 @@ def _compile_mir_go(go_source: str, target: Path, locale: str) -> int:
 
 
 def native_build_mode(mir) -> str:
-    """Return the deterministic backend selected for a checked native build."""
+    """Select only native backends that do not embed ambient host effect APIs.
 
-    return "mir_go_v1" if inspect_mir_go_support(mir).supported else "ast_go_compat_v1"
+    ``ast_go_compat_v1`` currently embeds filesystem, environment and network
+    effect implementations in the generated process. Capability checking still
+    constrains language-level access, but this is not physical runtime custody.
+    Until those effects cross a separately confined broker boundary, the public
+    CLI must fail closed instead of silently falling back to that backend.
+    """
+
+    return (
+        "mir_go_v1"
+        if inspect_mir_go_support(mir).supported
+        else "blocked_ambient_ast_go_v1"
+    )
+
+
+def _native_custody_message(locale: str, reasons: tuple[str, ...] = ()) -> str:
+    detail = "; ".join(reasons[:3])
+    if locale == "tr":
+        message = (
+            "KS4004: Native derleme fail-closed durduruldu: gerekli eski AST-Go "
+            "backend'i dosya/ağ/ortam host API'lerini aynı execution process içine "
+            "gömüyor. Ayrı capability broker + OS confinement tamamlanana kadar "
+            "bu yol production native çıktı üretemez. 'ks run' kullanın."
+        )
+    else:
+        message = (
+            "KS4004: Native build failed closed: the required legacy AST-Go backend "
+            "embeds filesystem/network/environment host APIs in the execution "
+            "process. It cannot produce production native output until a separate "
+            "capability broker plus OS confinement exists. Use 'ks run'."
+        )
+    return f"{message} Backend reason: {detail}" if detail else message
+
+
+def _emit_go_from_sealed_mir(args: argparse.Namespace) -> int:
+    """Expose only the custody-safe strict MIR-Go source through public ``ks``."""
+
+    graph = _cli.open_graph(args.source)
+    check_graph(graph)
+    mir = require_mir(graph)
+    support = inspect_mir_go_support(mir)
+    if not support.supported:
+        print(_native_custody_message(args.lang, support.reasons), file=sys.stderr)
+        return 1
+    print(generate_go_mir_native(mir), end="")
+    return 0
 
 
 def _build_with_public_lock(args: argparse.Namespace) -> int:
-    """Verify the lock before native build work and optionally attest the artifact."""
+    """Verify the lock and permit only the custody-safe strict MIR-Go backend."""
 
     original = _cli.command_build
 
@@ -229,11 +293,13 @@ def _build_with_public_lock(args: argparse.Namespace) -> int:
         graph = _cli.open_graph(path)
         check_graph(graph)
         mir = require_mir(graph)
+        support = inspect_mir_go_support(mir)
+        if not support.supported:
+            print(_native_custody_message(locale, support.reasons), file=sys.stderr)
+            return 1
+
         target = (Path(output) if output else source.with_suffix("")).resolve()
-        if native_build_mode(mir) == "mir_go_v1":
-            result = _compile_mir_go(generate_go_mir_native(mir), target, locale)
-        else:
-            result = original(path, output, locale)
+        result = _compile_mir_go(generate_go_mir_native(mir), target, locale)
         if result != 0 or manifest_path is None:
             return result
         if verified_lock is None:
@@ -275,6 +341,7 @@ def _build_with_public_lock(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    _configure_utf8_stdio()
     arguments = sys.argv[1:] if argv is None else argv
     args = build_parser().parse_args(arguments)
     if args.command == "lsp":
@@ -301,6 +368,8 @@ def main(argv: list[str] | None = None) -> int:
         return command_release_proof(args)
     if args.command == "run":
         return _run_with_public_budget(args)
+    if args.command == "emit-go":
+        return _emit_go_from_sealed_mir(args)
     if args.command == "build":
         return _build_with_public_lock(args)
     return _cli.main(arguments)
