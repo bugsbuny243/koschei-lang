@@ -33,6 +33,25 @@ SECURITY BOUNDARY
   required capability is unavailable to the checked code path. Current pre-1.0
   releases do not claim complete physical runtime isolation from the host.
 
+PROTECTS AGAINST
+  Covered unauthorized effects that are absent from the checked capability
+  scope, and undetected production-binary replacement when the package is
+  verified with the independently published release key/fingerprint.
+
+DOES NOT PROTECT
+  Host/kernel compromise, malicious build/signing infrastructure, arbitrary
+  native/foreign escape paths, every software vulnerability, or complete host
+  isolation. Full physical runtime custody is not claimed complete.
+
+ASSUMPTIONS
+  You verify the artifact before use, satisfy RUNTIME-REQUIREMENTS.json, and do
+  not treat unverified native/foreign code as capability-safe Koschei code.
+
+FAILURE MODE
+  Unsupported strict-native execution must fail closed rather than silently use
+  the legacy ambient-authority compatibility backend. Signature/hash/runtime
+  verification failure means the package must not be trusted or executed.
+
 NATIVE BUILDS
   `ks build` may require a compatible Go toolchain. Unsupported strict-native
   programs must fail closed rather than silently use an ambient-authority
