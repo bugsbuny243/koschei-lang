@@ -51,6 +51,29 @@ from .runtime_budget import (
 )
 
 
+def _configure_utf8_stdio() -> None:
+    """Keep public CLI diagnostics usable when the inherited locale is ASCII.
+
+    Koschei emits Unicode diagnostics and capability descriptions.  Some
+    deployment shells still expose strict ASCII stdout/stderr streams; allowing
+    those streams to raise ``UnicodeEncodeError`` turns a successful compiler
+    decision into a packaging/runtime crash.  Reconfigure only streams that
+    support Python's text-stream API and leave redirected/custom streams alone.
+    """
+
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if not callable(reconfigure):
+            continue
+        try:
+            reconfigure(encoding="utf-8", errors="backslashreplace")
+        except (AttributeError, ValueError):
+            # Closed/replaced streams may reject reconfiguration.  The CLI must
+            # not mutate process locale state or fail merely because a host
+            # stream does not support this optional hardening step.
+            continue
+
+
 def _budget_argument(parser, value: str) -> int:
     try:
         return parser(value)
@@ -275,6 +298,7 @@ def _build_with_public_lock(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    _configure_utf8_stdio()
     arguments = sys.argv[1:] if argv is None else argv
     args = build_parser().parse_args(arguments)
     if args.command == "lsp":
