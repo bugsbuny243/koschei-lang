@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Koschei Lang — Commercial Developer Release</title>
+  <script src="https://cdn.paddle.com/paddle/v2/paddle.js"></script>
+  <style>
+    body{font-family:Inter,system-ui,sans-serif;max-width:920px;margin:0 auto;padding:48px 20px;line-height:1.55;color:#111;background:#fff}
+    h1{font-size:48px;line-height:1.05;margin:12px 0 18px}.kicker{font-weight:800;text-transform:uppercase;letter-spacing:.08em}
+    .card{border:1px solid #ddd;border-radius:16px;padding:24px;margin:22px 0}.cta{padding:14px 22px;border:0;border-radius:10px;background:#111;color:#fff;font-weight:800;cursor:pointer}
+    .cta:disabled{opacity:.45;cursor:not-allowed}code{background:#f3f3f3;padding:2px 6px;border-radius:5px}.muted{color:#555}
+  </style>
+</head>
+<body>
+  <div class="kicker">Koschei Lang · Paddle production channel</div>
+  <h1>Make authority explicit before code gets the chance to use it.</h1>
+  <p>Koschei Lang is a pre-1.0 proprietary developer language/toolchain focused on capability-first authority. For covered language paths, code that requests disk, network, environment, or process effects without the required capability is rejected by the compiler.</p>
+
+  <button id="buy" class="cta" disabled>Buy with Paddle</button>
+  <p id="checkout-state" class="muted">Checkout is disabled until the live Paddle client token and price ID are injected by deployment configuration.</p>
+
+  <div class="card">
+    <h2>What you receive</h2>
+    <ul>
+      <li>Source-free Koschei Lang command-line executable for the purchased platform.</li>
+      <li>Signed production manifest binding the exact executable SHA-256 and size.</li>
+      <li>Measured platform/libc/dynamic dependency requirements.</li>
+      <li>Independent release-key/fingerprint verification instructions.</li>
+      <li><code>ks new</code>, <code>ks check</code>, <code>ks run</code>, <code>ks caps</code>, formatter and LSP command surface.</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2>Security boundary</h2>
+    <p><strong>PROTECTS AGAINST:</strong> covered unauthorized effects that are absent from the checked capability scope, plus tampering of a production download when the independent release key is used.</p>
+    <p><strong>DOES NOT PROTECT:</strong> host/kernel compromise, malicious build/signing infrastructure, arbitrary foreign/native escape paths, or every software vulnerability. Full physical runtime custody is not claimed complete.</p>
+    <p><strong>ASSUMPTIONS:</strong> the purchased artifact is verified against the independently published key/fingerprint and the documented runtime requirements are satisfied.</p>
+    <p><strong>FAILURE MODE:</strong> unsupported strict native execution fails closed rather than silently using the legacy ambient-authority backend.</p>
+  </div>
+
+  <div class="card">
+    <h2>Current limits</h2>
+    <p>Pre-1.0. Native <code>ks build</code> currently requires a compatible Go toolchain for supported strict MIR-Go programs. Stdlib and platform coverage are incomplete. Exact platform support and runtime dependencies are stated on the purchase/download page.</p>
+  </div>
+
+<script>
+  // Public deployment configuration only. Never place Paddle API keys,
+  // webhook secrets, download secrets, or Koschei release private keys here.
+  const KOSCHEI_PADDLE = Object.freeze({
+    clientToken: "__PADDLE_LIVE_CLIENT_TOKEN__",
+    priceId: "__PADDLE_LIVE_PRICE_ID__"
+  });
+
+  const configured =
+    KOSCHEI_PADDLE.clientToken.startsWith("live_") &&
+    KOSCHEI_PADDLE.priceId.startsWith("pri_");
+
+  if (configured) {
+    Paddle.Initialize({ token: KOSCHEI_PADDLE.clientToken });
+    const buy = document.getElementById("buy");
+    buy.disabled = false;
+    document.getElementById("checkout-state").textContent = "Secure checkout is provided by Paddle.";
+    buy.addEventListener("click", () => {
+      Paddle.Checkout.open({
+        items: [{ priceId: KOSCHEI_PADDLE.priceId, quantity: 1 }],
+        customData: {
+          product: "koschei-lang",
+          release_channel: "paddle-production"
+        },
+        settings: { displayMode: "overlay", theme: "light" }
+      });
+    });
+  }
+</script>
+</body>
+</html>
