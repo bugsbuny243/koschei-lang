@@ -1,9 +1,9 @@
 """Fail-closed publication gate for Koschei Pi SoloHost customer artifacts.
 
 This verifier checks the assembled customer artifact directory, validates the
-release manifest against executable bytes, and verifies a detached Ed25519
-signature for publishable artifacts. Unsigned staging is accepted only with an
-explicit staging flag and is never reported as publishable.
+release manifest against executable bytes and release evidence, and verifies a
+detached Ed25519 signature for publishable artifacts. Unsigned staging is
+accepted only with an explicit staging flag and is never reported as publishable.
 """
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -20,8 +21,11 @@ import tempfile
 POLICY_PATH = Path(__file__).resolve().parents[1] / "distribution" / "solohost" / "artifact-policy-v1.json"
 REQUIRED_MANIFEST = "koschei-release-manifest.json"
 MANIFEST_SCHEMA = "koschei.solohost-release-manifest/v1"
+SMOKE_SCHEMA = "koschei.solohost-binary-smoke-receipt/v1"
 SIGNATURE_SCHEME = "ed25519-openssl-raw-v1"
 EXECUTABLE_CANDIDATES = {"ks", "ks.exe", "koschei", "koschei.exe"}
+SOURCE_COMMIT_RE = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
+SHA256_RE = re.compile(r"[0-9a-f]{64}\Z")
 
 
 class ArtifactPolicyError(ValueError):
@@ -115,6 +119,27 @@ def _load_manifest(root: Path, failures: list[str]) -> dict[str, object] | None:
     return value
 
 
+def _verify_release_evidence(manifest: dict[str, object], failures: list[str]) -> None:
+    source_commit = manifest.get("source_commit")
+    if not isinstance(source_commit, str) or not SOURCE_COMMIT_RE.fullmatch(source_commit):
+        failures.append("release manifest source_commit must be a full 40- or 64-character lowercase hexadecimal commit id")
+
+    evidence = manifest.get("release_evidence")
+    if not isinstance(evidence, dict):
+        failures.append("release manifest release_evidence section is missing")
+        return
+    if evidence.get("smoke_receipt_schema") != SMOKE_SCHEMA:
+        failures.append("release evidence smoke receipt schema is invalid")
+    smoke_digest = evidence.get("smoke_receipt_sha256")
+    if not isinstance(smoke_digest, str) or not SHA256_RE.fullmatch(smoke_digest):
+        failures.append("release evidence smoke_receipt_sha256 must be lowercase SHA-256 hex")
+    if evidence.get("native_build_passed") is not True:
+        failures.append("release evidence must attest a passing required native build smoke")
+    go_version = evidence.get("go_version")
+    if not isinstance(go_version, str) or not go_version.strip():
+        failures.append("release evidence must record the Go toolchain identity")
+
+
 def _verify_manifest(
     root: Path,
     manifest: dict[str, object],
@@ -137,6 +162,7 @@ def _verify_manifest(
     platform = manifest.get("platform")
     if not isinstance(platform, str) or not platform.strip():
         failures.append("release manifest platform must be non-empty")
+    _verify_release_evidence(manifest, failures)
 
     commercial = manifest.get("commercial")
     if not isinstance(commercial, dict):
