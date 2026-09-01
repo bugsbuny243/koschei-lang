@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from koschei.capability_effect_contract_v1 import NET_IO
 from koschei.diagnostics import lookup as lookup_diagnostic
 from koschei.effect_contracts_v1 import infer_effect_contracts
 from koschei.formatter import format_source
@@ -172,6 +173,31 @@ fn main() {
             self.assertEqual(report["leaf"].effects, ("console.write",))
             self.assertEqual(report["middle"].effects, ("console.write",))
             self.assertEqual(report["middle"].direct_calls, ("leaf",))
+
+    def test_effect_report_retains_exact_checked_capability_callsite(self) -> None:
+        source = """
+fn fetch(net: NetCaps, url: String) -> String or Error {
+    let response = net.get(url) or return Error("network")
+    return response.text()
+}
+
+fn main() {}
+"""
+        with tempfile.TemporaryDirectory(prefix="koschei-effects-capsite-") as directory:
+            path = Path(directory) / "main.ks"
+            path.write_text(source, encoding="utf-8")
+            graph = load_graph(path)
+            module = graph.root_module
+            imports = imported_modules(graph, module)
+            typed = check_typed_hir(module.program, imports)
+            report = infer_effect_contracts(module.program, imports, typed)
+            facts = report["fetch"].direct_capability_calls
+            self.assertEqual(len(facts), 1)
+            self.assertEqual(facts[0].capability_type, "NetCaps")
+            self.assertEqual(facts[0].capability_method, "get")
+            self.assertEqual(facts[0].canonical_effect, NET_IO)
+            self.assertGreaterEqual(facts[0].source_line, 1)
+            self.assertGreaterEqual(facts[0].source_column, 1)
 
     def test_effect_diagnostic_is_explainable(self) -> None:
         self.assertIsNotNone(lookup_diagnostic("KS3940", "tr"))
