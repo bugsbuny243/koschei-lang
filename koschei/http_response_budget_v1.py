@@ -30,15 +30,31 @@ def read_bounded_response_body_v1(
 ) -> bytes:
     """Read one response body without ever accepting silent truncation.
 
-    `limit + 1` is read only as an over-limit sentinel. Exactly-at-limit bodies
-    are accepted; any additional byte fails closed.
+    At most `limit + 1` bytes are accumulated. Reads may legally return fewer
+    bytes than requested before EOF, so the sentinel budget is consumed in a
+    loop rather than trusting one host-language `read()` call to fill it.
+    Exactly-at-limit bodies are accepted; any additional byte fails closed.
     """
 
     if not isinstance(limit, int) or isinstance(limit, bool) or limit < 0:
         raise ValueError("HTTP response byte budget must be a non-negative integer")
-    payload = stream.read(limit + 1)
-    if not isinstance(payload, (bytes, bytearray)):
-        raise TypeError("HTTP response body reader must return bytes")
-    if len(payload) > limit:
-        raise HttpResponseBudgetV1Error(limit=limit)
-    return bytes(payload)
+
+    remaining = limit + 1
+    chunks: list[bytes] = []
+    total = 0
+    while remaining > 0:
+        chunk = stream.read(remaining)
+        if not isinstance(chunk, (bytes, bytearray)):
+            raise TypeError("HTTP response body reader must return bytes")
+        if not chunk:
+            break
+        piece = bytes(chunk)
+        chunks.append(piece)
+        total += len(piece)
+        if total > limit:
+            raise HttpResponseBudgetV1Error(limit=limit)
+        remaining -= len(piece)
+        if remaining < 0:
+            raise HttpResponseBudgetV1Error(limit=limit)
+
+    return b"".join(chunks)
