@@ -158,6 +158,12 @@ def _run_with_public_budget(args: argparse.Namespace) -> int:
         _cli.command_run = original
 
 
+def _go_source_uses_http_runtime(go_source: str) -> bool:
+    """Return whether a generated package contains the compat HTTP runtime."""
+
+    return '"net/http"' in go_source or "ksNetGet(" in go_source
+
+
 def _compile_mir_go(go_source: str, target: Path, locale: str) -> int:
     go_binary = shutil.which("go")
     if go_binary is None:
@@ -174,9 +180,10 @@ def _compile_mir_go(go_source: str, target: Path, locale: str) -> int:
     with tempfile.TemporaryDirectory(prefix="koschei-mir-build-") as workspace:
         directory = Path(workspace)
         (directory / "main.go").write_text(go_source, encoding="utf-8")
-        (directory / "http_transport_v1.go").write_text(
-            native_http_transport_guard_go_v1(), encoding="utf-8"
-        )
+        if _go_source_uses_http_runtime(go_source):
+            (directory / "http_transport_v1.go").write_text(
+                native_http_transport_guard_go_v1(), encoding="utf-8"
+            )
         (directory / "go.mod").write_text(
             "module koscheiprogram\n\ngo 1.21\n", encoding="utf-8"
         )
