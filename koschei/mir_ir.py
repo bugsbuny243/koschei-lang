@@ -6,12 +6,17 @@ blocks. Lexical local bindings are resolved to stable function-unique MIR names
 during lowering, so backends do not need to rediscover source-language scope.
 Language constructs that still need semantic design are represented by an
 explicit `MirAstFallback` node instead of being silently erased or misrepresented.
+
+Capability identity is different: the canonical effect pass has already decided
+that semantic fact from Typed HIR. Lowering therefore carries the checked fact
+into MIR even when the executable expression itself still uses AST fallback.
+Downstream authority code must not rediscover that identity from fallback AST.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import TypeAlias
+from dataclasses import dataclass, fields, is_dataclass
+from typing import Any, TypeAlias
 
 from .ast_nodes import (
     AssignmentExpression,
@@ -36,6 +41,8 @@ from .ast_nodes import (
     UnaryExpression,
     WhileStatement,
 )
+from .capability_effect_contract_v1 import effect_for
+from .effect_contracts_v1 import CapabilityCallSiteFactV1, FunctionEffects
 from .type_system import BOOL, GenericType, TypeNode, UnknownType, render_type
 
 
@@ -139,16 +146,23 @@ class MirCall:
     arguments: tuple[int, ...]
     type: TypeNode
     location: SourceLocation
+    capability_call: CapabilityCallSiteFactV1 | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class MirAstFallback:
-    """An explicit migration boundary for a construct not normalized yet."""
+    """An explicit migration boundary for a construct not normalized yet.
+
+    `capability_calls` is checked semantic metadata, not executable fallback
+    behavior. It lets sealed MIR retain exact capability provenance while the
+    language construct itself awaits full executable MIR normalization.
+    """
 
     target: int | None
     node_kind: str
     type: TypeNode
     location: SourceLocation
+    capability_calls: tuple[CapabilityCallSiteFactV1, ...] = ()
 
 
 MirInstruction: TypeAlias = (
@@ -207,10 +221,58 @@ class _MutableBlock:
     terminator: MirTerminator | None = None
 
 
+def _walk_ast(value: Any):
+    if is_dataclass(value):
+        yield value
+        for field in fields(value):
+            yield from _walk_ast(getattr(value, field.name))
+    elif isinstance(value, (tuple, list)):
+        for item in value:
+            yield from _walk_ast(item)
+    elif isinstance(value, dict):
+        for item in value.values():
+            yield from _walk_ast(item)
+
+
+def _validate_capability_fact(fact: CapabilityCallSiteFactV1) -> None:
+    if not isinstance(fact, CapabilityCallSiteFactV1):
+        raise ValueError("MIR capability call-site fact has invalid type")
+    if (
+        not fact.capability_type.strip()
+        or not fact.capability_method.strip()
+        or not fact.canonical_effect.strip()
+    ):
+        raise ValueError("MIR capability call-site fact contains an empty identity")
+    expected = effect_for(fact.capability_type, fact.capability_method)
+    if expected is None or expected != fact.canonical_effect:
+        raise ValueError(
+            "MIR capability call-site fact differs from canonical capability contract"
+        )
+    if (
+        not isinstance(fact.source_line, int)
+        or isinstance(fact.source_line, bool)
+        or fact.source_line < 1
+        or not isinstance(fact.source_column, int)
+        or isinstance(fact.source_column, bool)
+        or fact.source_column < 1
+    ):
+        raise ValueError("MIR capability call-site location is invalid")
+
+
 class _FunctionLowerer:
-    def __init__(self, declaration: FunctionDeclaration, typed_report) -> None:
+    def __init__(
+        self,
+        declaration: FunctionDeclaration,
+        typed_report,
+        effect_summary: FunctionEffects | None = None,
+    ) -> None:
         self.declaration = declaration
         self.typed_report = typed_report
+        self.effect_summary = effect_summary
+        self.checked_capability_calls = (
+            () if effect_summary is None else effect_summary.direct_capability_calls
+        )
+        self.emitted_capability_calls: set[CapabilityCallSiteFactV1] = set()
         self.blocks: dict[int, _MutableBlock] = {0: _MutableBlock(0, [])}
         self.current = 0
         self.next_block = 1
@@ -239,6 +301,15 @@ class _FunctionLowerer:
             for block in sorted(self.blocks.values(), key=lambda item: item.id)
         )
         validate_blocks(frozen)
+        if self.effect_summary is not None:
+            expected = set(self.checked_capability_calls)
+            if self.emitted_capability_calls != expected:
+                missing = expected - self.emitted_capability_calls
+                extra = self.emitted_capability_calls - expected
+                raise ValueError(
+                    "MIR lowering lost checked capability call-site identity: "
+                    f"missing={len(missing)} extra={len(extra)}"
+                )
         return frozen
 
     def _type_of(self, expression: Expression) -> TypeNode:
@@ -289,6 +360,40 @@ class _FunctionLowerer:
         if block.terminator is not None:
             raise ValueError(f"MIR block {block.id} already has a terminator")
         block.terminator = terminator
+
+    def _fact_for_call(
+        self, expression: CallExpression
+    ) -> CapabilityCallSiteFactV1 | None:
+        matches = tuple(
+            fact
+            for fact in self.checked_capability_calls
+            if fact.source_line == expression.location.line
+            and fact.source_column == expression.location.column
+        )
+        if len(matches) > 1:
+            raise ValueError("checked capability call-site location is ambiguous")
+        if not matches:
+            return None
+        fact = matches[0]
+        _validate_capability_fact(fact)
+        self.emitted_capability_calls.add(fact)
+        return fact
+
+    def _facts_within(self, value: Any) -> tuple[CapabilityCallSiteFactV1, ...]:
+        call_locations = {
+            (node.location.line, node.location.column)
+            for node in _walk_ast(value)
+            if isinstance(node, CallExpression)
+        }
+        facts = tuple(
+            fact
+            for fact in self.checked_capability_calls
+            if (fact.source_line, fact.source_column) in call_locations
+        )
+        for fact in facts:
+            _validate_capability_fact(fact)
+            self.emitted_capability_calls.add(fact)
+        return facts
 
     def _lower_block(self, block: Block, *, scoped: bool = True) -> None:
         if scoped:
@@ -343,6 +448,7 @@ class _FunctionLowerer:
                         type(statement).__name__,
                         UnknownType(),
                         statement.location,
+                        self._facts_within(statement),
                     )
                 )
             return
@@ -364,6 +470,7 @@ class _FunctionLowerer:
                 type(statement).__name__,
                 UnknownType(),
                 statement.location,
+                self._facts_within(statement),
             )
         )
 
@@ -521,13 +628,21 @@ class _FunctionLowerer:
             )
             return target
         if isinstance(expression, CallExpression):
+            capability_call = self._fact_for_call(expression)
             callee = self._lower_expression(expression.callee)
             arguments = tuple(
                 self._lower_expression(argument) for argument in expression.arguments
             )
             target = self._new_value()
             self._emit(
-                MirCall(target, callee, arguments, result_type, expression.location)
+                MirCall(
+                    target,
+                    callee,
+                    arguments,
+                    result_type,
+                    expression.location,
+                    capability_call,
+                )
             )
             return target
         if isinstance(expression, AssignmentExpression):
@@ -552,6 +667,7 @@ class _FunctionLowerer:
                 type(expression).__name__,
                 result_type,
                 expression.location,
+                self._facts_within(expression),
             )
         )
         return target
@@ -564,8 +680,12 @@ def _list_item_type(type_node: TypeNode) -> TypeNode | None:
     return None
 
 
-def lower_function_blocks(declaration, typed_report) -> tuple[MirBasicBlock, ...]:
-    return _FunctionLowerer(declaration, typed_report).lower()
+def lower_function_blocks(
+    declaration,
+    typed_report,
+    effect_summary: FunctionEffects | None = None,
+) -> tuple[MirBasicBlock, ...]:
+    return _FunctionLowerer(declaration, typed_report, effect_summary).lower()
 
 
 def instruction_kind(instruction: MirInstruction) -> str:
@@ -578,6 +698,20 @@ def terminator_kind(terminator: MirTerminator) -> str:
     return name.removeprefix("Mir").lower()
 
 
+def _contract_value(value: object) -> object:
+    if isinstance(value, CapabilityCallSiteFactV1):
+        return {
+            "capability_type": value.capability_type,
+            "capability_method": value.capability_method,
+            "canonical_effect": value.canonical_effect,
+            "source_line": value.source_line,
+            "source_column": value.source_column,
+        }
+    if isinstance(value, tuple):
+        return [_contract_value(item) for item in value]
+    return value
+
+
 def instruction_contract(instruction: MirInstruction) -> dict[str, object]:
     payload: dict[str, object] = {
         "kind": instruction_kind(instruction),
@@ -587,7 +721,7 @@ def instruction_contract(instruction: MirInstruction) -> dict[str, object]:
     for field in instruction.__dataclass_fields__:
         if field in {"location", "type"}:
             continue
-        payload[field] = getattr(instruction, field)
+        payload[field] = _contract_value(getattr(instruction, field))
     payload["type"] = render_type(instruction.type)
     return payload
 
@@ -619,6 +753,11 @@ def validate_blocks(blocks: tuple[MirBasicBlock, ...]) -> None:
     uses: set[int] = set()
     for block in blocks:
         for instruction in block.instructions:
+            if isinstance(instruction, MirCall) and instruction.capability_call is not None:
+                _validate_capability_fact(instruction.capability_call)
+            if isinstance(instruction, MirAstFallback):
+                for fact in instruction.capability_calls:
+                    _validate_capability_fact(fact)
             target = getattr(instruction, "target", None)
             if target is not None:
                 if target in definitions:
