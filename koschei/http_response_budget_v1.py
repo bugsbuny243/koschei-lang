@@ -1,7 +1,8 @@
-"""Backend-independent HTTP response body budget for Koschei Library v1.
+"""Backend-independent HTTP response transport guards for Koschei Library v1.
 
-The numeric limit is a semantic contract, not an interpreter tuning knob. Native
-code generation must import this same constant when emitting its bounded reader.
+The numeric byte limit and content-encoding policy are semantic contracts, not
+interpreter tuning knobs. Native code generation must consume the same constants
+when emitting its HTTP runtime.
 """
 from __future__ import annotations
 
@@ -9,6 +10,7 @@ from typing import BinaryIO
 
 HTTP_RESPONSE_MAX_BYTES_V1 = 1_048_576
 HTTP_RESPONSE_BUDGET_ERROR_V1 = "KSNET_RESPONSE_BUDGET"
+HTTP_CONTENT_ENCODING_ERROR_V1 = "KSNET_CONTENT_ENCODING"
 
 
 class HttpResponseBudgetV1Error(ValueError):
@@ -21,6 +23,36 @@ class HttpResponseBudgetV1Error(ValueError):
         super().__init__(
             f"{self.code}: HTTP response body exceeds {limit} byte budget"
         )
+
+
+class HttpContentEncodingV1Error(ValueError):
+    """Raised when HTTP body representation is not canonical v1 identity."""
+
+    code = HTTP_CONTENT_ENCODING_ERROR_V1
+
+    def __init__(self, encoding: str) -> None:
+        self.encoding = encoding
+        super().__init__(
+            f"{self.code}: unsupported HTTP content encoding: {encoding}"
+        )
+
+
+def validate_http_content_encoding_v1(value: str | None) -> None:
+    """Accept only the identity HTTP body representation for Library v1.
+
+    Missing/empty Content-Encoding is HTTP identity semantics. Explicit
+    `identity` is accepted case-insensitively. Any other coding fails closed so
+    interpreter/native byte budgets cannot silently observe different bodies.
+    """
+
+    if value is None:
+        return
+    if not isinstance(value, str):
+        raise TypeError("HTTP content encoding must be text or None")
+    normalized = value.strip().lower()
+    if normalized in {"", "identity"}:
+        return
+    raise HttpContentEncodingV1Error(value.strip())
 
 
 def read_bounded_response_body_v1(
