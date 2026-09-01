@@ -10,6 +10,8 @@ from koschei.compiler_capability_effect_basis_v1 import (
     derive_compiler_capability_effect_basis_v1,
 )
 from koschei.mir import require_mir
+from koschei.mir_capability_callsite_v1 import derive_mir_capability_callsites_v1
+from koschei.mir_ir import MirAstFallback
 from koschei.modules import check_graph, load_graph
 
 
@@ -43,8 +45,51 @@ fn main() { println("ready") }
         assert basis.capability_method == "get"
         assert basis.canonical_effect == NET_IO
         assert basis.power_domain == POWER_DOMAIN_NETWORK
+        assert basis.normalized_mir is True
+        assert basis.compatibility_fallback is False
         assert basis.authority is False
         basis.assert_matches_mir(mir)
+    finally:
+        directory.cleanup()
+
+
+def test_or_return_keeps_capability_identity_as_first_class_sealed_mir_fact():
+    directory, mir = compiler_mir(
+        '''
+fn execute(net: NetCaps, url: String) -> String or Error {
+    let response = net.get(url) or return Error("network")
+    return response.text()
+}
+fn main() { println("ready") }
+'''
+    )
+    try:
+        module = mir.root_module
+        function = next(item for item in module.functions if item.name == "execute")
+        fallbacks = [
+            instruction
+            for block in function.blocks
+            for instruction in block.instructions
+            if isinstance(instruction, MirAstFallback)
+        ]
+        assert any(
+            fact.capability_type == "NetCaps"
+            and fact.capability_method == "get"
+            and fact.canonical_effect == NET_IO
+            for fallback in fallbacks
+            for fact in fallback.capability_calls
+        )
+
+        sites = derive_mir_capability_callsites_v1(
+            mir,
+            module_name="authority",
+            function_name="execute",
+        )
+        assert len(sites) == 1
+        assert sites[0].normalized_mir is True
+        assert sites[0].capability_type == "NetCaps"
+        assert sites[0].capability_method == "get"
+        assert sites[0].canonical_effect == NET_IO
     finally:
         directory.cleanup()
 
@@ -63,7 +108,7 @@ fn main() { println("ready") }
     try:
         with pytest.raises(
             CompilerCapabilityEffectBasisV1Error,
-            match="exactly one direct capability call",
+            match="exactly one normalized MIR capability call",
         ):
             derive_compiler_capability_effect_basis_v1(
                 mir,
@@ -128,7 +173,7 @@ fn main() { println("ready") }
         mir = require_mir(graph)
         with pytest.raises(
             CompilerCapabilityEffectBasisV1Error,
-            match="leaf function without imported calls",
+            match="exactly one normalized MIR capability call",
         ):
             derive_compiler_capability_effect_basis_v1(
                 mir,
