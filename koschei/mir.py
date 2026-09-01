@@ -358,7 +358,13 @@ def lower_module(
             blocks,
         )
         for declaration in module.program.declarations
-        for blocks in (lower_function_blocks(declaration, typed_report),)
+        for blocks in (
+            lower_function_blocks(
+                declaration,
+                typed_report,
+                effect_report[declaration.name],
+            ),
+        )
     )
     return MirModule(
         str(module.path) if key is None else key,
