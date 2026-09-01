@@ -14,7 +14,13 @@ HTTP_CONTENT_ENCODING_ERROR_V1 = "KSNET_CONTENT_ENCODING"
 
 
 class HttpResponseBudgetV1Error(ValueError):
-    """Raised when one response exceeds the canonical v1 body budget."""
+    """Base fail-closed response-transport guard used by current interpreter ABI.
+
+    V1 originally exposed this class only for the byte budget. The interpreter
+    already converts it into a Koschei `KsError`, so representation-policy
+    failures subclass it until the runtime grows a dedicated common transport
+    guard base. Each subclass retains its own stable machine identity.
+    """
 
     code = HTTP_RESPONSE_BUDGET_ERROR_V1
 
@@ -25,15 +31,16 @@ class HttpResponseBudgetV1Error(ValueError):
         )
 
 
-class HttpContentEncodingV1Error(ValueError):
+class HttpContentEncodingV1Error(HttpResponseBudgetV1Error):
     """Raised when HTTP body representation is not canonical v1 identity."""
 
     code = HTTP_CONTENT_ENCODING_ERROR_V1
 
     def __init__(self, encoding: str) -> None:
         self.encoding = encoding
-        super().__init__(
-            f"{self.code}: unsupported HTTP content encoding: {encoding}"
+        ValueError.__init__(
+            self,
+            f"{self.code}: unsupported HTTP content encoding: {encoding}",
         )
 
 
