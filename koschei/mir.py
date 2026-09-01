@@ -27,6 +27,7 @@ from .mir_ir import (
     MirAstFallback,
     MirBasicBlock,
     MirBranch,
+    MirCall,
     MirJump,
     block_contract,
     lower_function_blocks,
@@ -36,7 +37,7 @@ from .type_contracts import function_type, type_parameters_of
 from .type_system import TypeNode, render_type
 from .typed_hir import TypedHIRReport
 
-MIR_VERSION = 3
+MIR_VERSION = 4
 
 
 class MirIntegrityError(Exception):
@@ -125,6 +126,10 @@ class MirGraph:
 
     def assert_sealed(self) -> None:
         try:
+            if self.version != MIR_VERSION:
+                raise ValueError(
+                    f"MIR version mismatch: {self.version} != {MIR_VERSION}"
+                )
             for key, module in self.modules.items():
                 if module.key != key:
                     raise ValueError(
@@ -154,6 +159,26 @@ class MirGraph:
                             f"{module.name}.{function.name}: "
                             + ", ".join(unknown_effects)
                         )
+                    for block in function.blocks:
+                        for instruction in block.instructions:
+                            if isinstance(instruction, MirCall):
+                                facts = (
+                                    ()
+                                    if instruction.capability_call is None
+                                    else (instruction.capability_call,)
+                                )
+                            elif isinstance(instruction, MirAstFallback):
+                                facts = instruction.capability_calls
+                            else:
+                                facts = ()
+                            for fact in facts:
+                                if fact.canonical_effect not in function.effects:
+                                    raise ValueError(
+                                        "MIR capability call-site effect is not sealed "
+                                        "into the function effect set for "
+                                        f"{module.name}.{function.name}: "
+                                        f"{fact.canonical_effect}"
+                                    )
             actual = _fingerprint(self.root, self.modules)
         except (KeyError, TypeError, ValueError) as error:
             raise MirIntegrityError(
@@ -313,9 +338,9 @@ def _canonical_mir_effects(summary: FunctionEffects) -> tuple[str, ...]:
     """Project the checked function report onto MIR's capability-effect ABI.
 
     `EffectReport` also carries compiler-only facts such as authority-bearing
-    signature input/output and non-capability observable effects. MIR v3's
-    `effects` field historically represents canonical capability effects, so the
-    projection keeps that ABI while taking its facts from the one checked report.
+    signature input/output and non-capability observable effects. MIR v4's
+    `effects` field represents canonical capability effects while taking its
+    facts from the one checked report.
     """
 
     return tuple(
