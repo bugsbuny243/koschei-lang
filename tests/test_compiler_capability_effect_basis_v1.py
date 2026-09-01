@@ -9,7 +9,7 @@ from koschei.compiler_capability_effect_basis_v1 import (
     CompilerCapabilityEffectBasisV1Error,
     derive_compiler_capability_effect_basis_v1,
 )
-from koschei.mir import require_mir
+from koschei.mir import MirIntegrityError, require_mir
 from koschei.mir_capability_callsite_v1 import derive_mir_capability_callsites_v1
 from koschei.mir_ir import MirAstFallback
 from koschei.modules import check_graph, load_graph
@@ -90,6 +90,33 @@ fn main() { println("ready") }
         assert sites[0].capability_type == "NetCaps"
         assert sites[0].capability_method == "get"
         assert sites[0].canonical_effect == NET_IO
+    finally:
+        directory.cleanup()
+
+
+def test_callsite_effect_cannot_drift_from_sealed_function_effect_set():
+    directory, mir = compiler_mir(
+        '''
+fn execute(net: NetCaps, url: String) -> String or Error {
+    let response = net.get(url) or return Error("network")
+    return response.text()
+}
+fn main() { println("ready") }
+'''
+    )
+    try:
+        module = mir.root_module
+        functions = tuple(
+            replace(function, effects=()) if function.name == "execute" else function
+            for function in module.functions
+        )
+        forged_module = replace(module, functions=functions)
+        forged_modules = dict(mir.modules)
+        forged_modules[mir.root] = forged_module
+        forged = replace(mir, modules=forged_modules)
+
+        with pytest.raises(MirIntegrityError, match="call-site effect"):
+            forged.assert_sealed()
     finally:
         directory.cleanup()
 
