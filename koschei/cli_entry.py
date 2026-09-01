@@ -35,6 +35,7 @@ from .mir import require_mir
 from .mir_go_native import generate_go_mir_native, inspect_mir_go_support
 from .module_lock import load_module_lock, verify_module_lock
 from .modules import check_graph
+from .native_http_transport_v1 import native_http_transport_guard_go_v1
 from .release_proof_cli import add_release_proof_parser, command_release_proof
 from .reproducibility_cli import (
     add_build_compare_parser,
@@ -173,6 +174,9 @@ def _compile_mir_go(go_source: str, target: Path, locale: str) -> int:
     with tempfile.TemporaryDirectory(prefix="koschei-mir-build-") as workspace:
         directory = Path(workspace)
         (directory / "main.go").write_text(go_source, encoding="utf-8")
+        (directory / "http_transport_v1.go").write_text(
+            native_http_transport_guard_go_v1(), encoding="utf-8"
+        )
         (directory / "go.mod").write_text(
             "module koscheiprogram\n\ngo 1.21\n", encoding="utf-8"
         )
@@ -233,7 +237,7 @@ def _build_with_public_lock(args: argparse.Namespace) -> int:
         if native_build_mode(mir) == "mir_go_v1":
             result = _compile_mir_go(generate_go_mir_native(mir), target, locale)
         else:
-            result = original(path, output, locale)
+            result = _compile_mir_go(_cli.generate_go_mir(mir), target, locale)
         if result != 0 or manifest_path is None:
             return result
         if verified_lock is None:
