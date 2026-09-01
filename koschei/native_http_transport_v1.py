@@ -1,23 +1,16 @@
 """Audited Go transport companion for Koschei Library HTTP v1.
 
-`ks build` compiles a temporary Go package rather than a single mandatory file.
-This companion therefore constrains the host HTTP transport without duplicating
-or rewriting the large generated runtime source. It is intentionally small so
-transport representation policy can be reviewed independently.
+`ks build` compiles a temporary Go package rather than a single mandatory file,
+while `ks emit-go` exposes one buildable Go source file. This module therefore
+owns one transport-policy body and renders it either as a package companion or
+as an import-free fragment for generated source that already imports fmt/http/strings.
 """
 from __future__ import annotations
 
 from .http_response_budget_v1 import HTTP_CONTENT_ENCODING_ERROR_V1
 
 
-_NATIVE_HTTP_TRANSPORT_TEMPLATE_V1 = r'''package main
-
-import (
-    "fmt"
-    "net/http"
-    "strings"
-)
-
+_NATIVE_HTTP_TRANSPORT_FRAGMENT_TEMPLATE_V1 = r'''
 type ksIdentityTransportV1 struct {
     base http.RoundTripper
 }
@@ -58,11 +51,29 @@ func init() {
 }
 '''
 
+_NATIVE_HTTP_TRANSPORT_FILE_HEADER_V1 = r'''package main
 
-def native_http_transport_guard_go_v1() -> str:
-    """Return deterministic Go source for the identity-only transport guard."""
+import (
+    "fmt"
+    "net/http"
+    "strings"
+)
+'''
 
-    return _NATIVE_HTTP_TRANSPORT_TEMPLATE_V1.replace(
+
+def native_http_transport_guard_fragment_go_v1() -> str:
+    """Return the import-free identity-transport fragment for generated Go."""
+
+    return _NATIVE_HTTP_TRANSPORT_FRAGMENT_TEMPLATE_V1.replace(
         "__KOSCHEI_HTTP_CONTENT_ENCODING_ERROR_V1__",
         HTTP_CONTENT_ENCODING_ERROR_V1,
+    )
+
+
+def native_http_transport_guard_go_v1() -> str:
+    """Return a standalone Go companion file for package-based native builds."""
+
+    return (
+        _NATIVE_HTTP_TRANSPORT_FILE_HEADER_V1
+        + native_http_transport_guard_fragment_go_v1()
     )
