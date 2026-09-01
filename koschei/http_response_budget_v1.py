@@ -55,21 +55,45 @@ def validate_http_content_encoding_v1(value: str | None) -> None:
     raise HttpContentEncodingV1Error(value.strip())
 
 
+def _stream_content_encoding_v1(stream: BinaryIO) -> str | None:
+    """Extract Content-Encoding when `stream` is an HTTP response object.
+
+    Plain binary streams used by tests do not carry HTTP headers and therefore
+    represent already-canonical identity bytes. A response object with a headers
+    surface must provide a mapping-like `get` method; malformed host integration
+    fails closed instead of silently skipping the transport guard.
+    """
+
+    headers = getattr(stream, "headers", None)
+    if headers is None:
+        return None
+    getter = getattr(headers, "get", None)
+    if not callable(getter):
+        raise TypeError("HTTP response headers must provide get(name)")
+    value = getter("Content-Encoding")
+    if value is not None and not isinstance(value, str):
+        raise TypeError("HTTP Content-Encoding header must be text or None")
+    return value
+
+
 def read_bounded_response_body_v1(
     stream: BinaryIO,
     *,
     limit: int = HTTP_RESPONSE_MAX_BYTES_V1,
 ) -> bytes:
-    """Read one response body without ever accepting silent truncation.
+    """Read one canonical identity response without silent truncation.
 
-    At most `limit + 1` bytes are accumulated. Reads may legally return fewer
-    bytes than requested before EOF, so the sentinel budget is consumed in a
-    loop rather than trusting one host-language `read()` call to fill it.
-    Exactly-at-limit bodies are accepted; any additional byte fails closed.
+    HTTP response objects are rejected before body materialization when they
+    advertise a non-identity Content-Encoding. At most `limit + 1` identity
+    bytes are then accumulated. Reads may legally return fewer bytes than
+    requested before EOF, so the sentinel budget is consumed in a loop rather
+    than trusting one host-language `read()` call to fill it.
     """
 
     if not isinstance(limit, int) or isinstance(limit, bool) or limit < 0:
         raise ValueError("HTTP response byte budget must be a non-negative integer")
+
+    validate_http_content_encoding_v1(_stream_content_encoding_v1(stream))
 
     remaining = limit + 1
     chunks: list[bytes] = []
