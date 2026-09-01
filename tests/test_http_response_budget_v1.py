@@ -36,6 +36,32 @@ def test_response_budget_does_not_overread_more_than_limit_sentinel():
     assert stream.requested == 18
 
 
+def test_response_budget_rejects_over_limit_across_short_reads():
+    class ShortReadStream:
+        def __init__(self, payload: bytes, chunk_size: int = 3) -> None:
+            self.payload = payload
+            self.chunk_size = chunk_size
+            self.offset = 0
+            self.requests: list[int] = []
+
+        def read(self, size: int) -> bytes:
+            self.requests.append(size)
+            if self.offset >= len(self.payload):
+                return b""
+            count = min(size, self.chunk_size, len(self.payload) - self.offset)
+            chunk = self.payload[self.offset : self.offset + count]
+            self.offset += count
+            return chunk
+
+    stream = ShortReadStream(b"x" * 18)
+    with pytest.raises(HttpResponseBudgetV1Error) as caught:
+        read_bounded_response_body_v1(stream, limit=17)
+
+    assert caught.value.code == HTTP_RESPONSE_BUDGET_ERROR_V1
+    assert len(stream.requests) > 1
+    assert stream.requests[0] == 18
+
+
 def test_response_budget_rejects_invalid_budget_values():
     with pytest.raises(ValueError):
         read_bounded_response_body_v1(BytesIO(b""), limit=-1)
