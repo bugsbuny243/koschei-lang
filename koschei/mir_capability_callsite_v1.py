@@ -1,27 +1,26 @@
 """Normalized MIR capability call-site facts v1.
 
 Privileged capability provenance must not be reconstructed by walking source AST
-once the compiler has already produced sealed MIR. This module derives exact
-canonical capability call-sites only from normalized MIR value/instruction
-relations (`MirLoad`/producer -> `MirMember` -> `MirCall`).
+once the compiler has already produced sealed MIR. The canonical effect pass
+resolves capability type + method + effect from Typed HIR; MIR lowering carries
+that checked fact on the instruction which represents the call or, while an
+expression is still executable through compatibility fallback, on the explicit
+`MirAstFallback` container.
 
 The derived fact is non-authoritative. It is deterministically bound to the
 sealed MirGraph fingerprint and can only be used as evidence for later
-request/domain binding. Unknown, imported, local-function and non-capability
-calls simply do not become capability call-site facts.
+request/domain binding. Executable fallback may still exist, but capability
+identity itself is no longer rediscovered from that AST payload.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
 
-from .capability_effect_contract_v1 import (
-    effect_for,
-    require_capability_method_same_power_domain,
-)
+from .capability_effect_contract_v1 import require_capability_method_same_power_domain
+from .effect_contracts_v1 import CapabilityCallSiteFactV1
 from .mir import MirGraph, MirIntegrityError
-from .mir_ir import MirCall, MirMember
-from .type_system import NamedType
+from .mir_ir import MirAstFallback, MirCall
 
 _CTX = b"koschei.mir-capability-callsite/v1\x00"
 
@@ -42,7 +41,7 @@ def _digest(
     module_name: str,
     function_name: str,
     block_id: int,
-    call_target: int,
+    call_target: int | None,
     capability_type: str,
     capability_method: str,
     canonical_effect: str,
@@ -55,7 +54,7 @@ def _digest(
         f"module={module_name}",
         f"function={function_name}",
         f"block={block_id}",
-        f"call-target={call_target}",
+        f"call-target={'none' if call_target is None else call_target}",
         f"capability-type={capability_type}",
         f"capability-method={capability_method}",
         f"canonical-effect={canonical_effect}",
@@ -70,13 +69,13 @@ def _digest(
 
 @dataclass(frozen=True, slots=True)
 class MirCapabilityCallSiteV1:
-    """One exact canonical capability call proven from normalized sealed MIR."""
+    """One exact canonical capability identity carried by sealed MIR."""
 
     mir_fingerprint: str
     module_name: str
     function_name: str
     block_id: int
-    call_target: int
+    call_target: int | None
     capability_type: str
     capability_method: str
     canonical_effect: str
@@ -97,9 +96,17 @@ class MirCapabilityCallSiteV1:
             raise MirCapabilityCallSiteV1Error(
                 "MIR capability call-site flags are invalid"
             )
-        if not isinstance(self.block_id, int) or isinstance(self.block_id, bool) or self.block_id < 0:
+        if (
+            not isinstance(self.block_id, int)
+            or isinstance(self.block_id, bool)
+            or self.block_id < 0
+        ):
             raise MirCapabilityCallSiteV1Error("MIR capability block id is invalid")
-        if not isinstance(self.call_target, int) or isinstance(self.call_target, bool) or self.call_target < 0:
+        if self.call_target is not None and (
+            not isinstance(self.call_target, int)
+            or isinstance(self.call_target, bool)
+            or self.call_target < 0
+        ):
             raise MirCapabilityCallSiteV1Error("MIR capability call target is invalid")
         if (
             not isinstance(self.source_line, int)
@@ -193,13 +200,65 @@ def _select_function(
     return module, functions[0]
 
 
+def _site_from_fact(
+    *,
+    mir: MirGraph,
+    module_name: str,
+    function_name: str,
+    block_id: int,
+    call_target: int | None,
+    fact: CapabilityCallSiteFactV1,
+) -> MirCapabilityCallSiteV1:
+    expected_effect, power_domain = require_capability_method_same_power_domain(
+        fact.capability_type,
+        fact.capability_method,
+    )
+    if fact.canonical_effect != expected_effect:
+        raise MirCapabilityCallSiteV1Error(
+            "sealed MIR capability fact disagrees with canonical effect contract"
+        )
+    site = MirCapabilityCallSiteV1(
+        mir_fingerprint=mir.fingerprint,
+        module_name=module_name,
+        function_name=function_name,
+        block_id=block_id,
+        call_target=call_target,
+        capability_type=fact.capability_type,
+        capability_method=fact.capability_method,
+        canonical_effect=fact.canonical_effect,
+        power_domain=power_domain,
+        source_line=fact.source_line,
+        source_column=fact.source_column,
+        digest="",
+    )
+    object.__setattr__(
+        site,
+        "digest",
+        _digest(
+            mir_fingerprint=site.mir_fingerprint,
+            module_name=site.module_name,
+            function_name=site.function_name,
+            block_id=site.block_id,
+            call_target=site.call_target,
+            capability_type=site.capability_type,
+            capability_method=site.capability_method,
+            canonical_effect=site.canonical_effect,
+            power_domain=site.power_domain,
+            source_line=site.source_line,
+            source_column=site.source_column,
+        ),
+    )
+    site.assert_sealed()
+    return site
+
+
 def derive_mir_capability_callsites_v1(
     mir: MirGraph,
     *,
     module_name: str,
     function_name: str,
 ) -> tuple[MirCapabilityCallSiteV1, ...]:
-    """Derive direct canonical capability calls only from normalized MIR values."""
+    """Read exact direct capability identities only from sealed MIR metadata."""
 
     module, function = _select_function(
         mir,
@@ -207,71 +266,46 @@ def derive_mir_capability_callsites_v1(
         function_name=function_name,
     )
 
-    definitions: dict[int, object] = {}
-    instruction_blocks: dict[int, int] = {}
-    calls: list[MirCall] = []
+    result: list[MirCapabilityCallSiteV1] = []
     for block in function.blocks:
         for instruction in block.instructions:
-            target = getattr(instruction, "target", None)
-            if isinstance(target, int):
-                definitions[target] = instruction
-                instruction_blocks[target] = block.id
             if isinstance(instruction, MirCall):
-                calls.append(instruction)
+                if instruction.capability_call is None:
+                    continue
+                result.append(
+                    _site_from_fact(
+                        mir=mir,
+                        module_name=module.name,
+                        function_name=function.name,
+                        block_id=block.id,
+                        call_target=instruction.target,
+                        fact=instruction.capability_call,
+                    )
+                )
+                continue
+            if isinstance(instruction, MirAstFallback):
+                for fact in instruction.capability_calls:
+                    result.append(
+                        _site_from_fact(
+                            mir=mir,
+                            module_name=module.name,
+                            function_name=function.name,
+                            block_id=block.id,
+                            call_target=instruction.target,
+                            fact=fact,
+                        )
+                    )
 
-    result: list[MirCapabilityCallSiteV1] = []
-    for call in calls:
-        callee = definitions.get(call.callee)
-        if not isinstance(callee, MirMember):
-            continue
-        receiver = definitions.get(callee.object)
-        receiver_type = getattr(receiver, "type", None)
-        capability_type = (
-            receiver_type.name if isinstance(receiver_type, NamedType) else ""
-        )
-        canonical_effect = effect_for(capability_type, callee.member)
-        if canonical_effect is None:
-            continue
-        expected_effect, power_domain = require_capability_method_same_power_domain(
-            capability_type,
-            callee.member,
-        )
-        if canonical_effect != expected_effect:
-            raise MirCapabilityCallSiteV1Error(
-                "normalized MIR capability call disagrees with canonical effect contract"
-            )
-        site = MirCapabilityCallSiteV1(
-            mir_fingerprint=mir.fingerprint,
-            module_name=module.name,
-            function_name=function.name,
-            block_id=instruction_blocks[call.target],
-            call_target=call.target,
-            capability_type=capability_type,
-            capability_method=callee.member,
-            canonical_effect=canonical_effect,
-            power_domain=power_domain,
-            source_line=call.location.line,
-            source_column=call.location.column,
-            digest="",
-        )
-        object.__setattr__(
-            site,
-            "digest",
-            _digest(
-                mir_fingerprint=site.mir_fingerprint,
-                module_name=site.module_name,
-                function_name=site.function_name,
-                block_id=site.block_id,
-                call_target=site.call_target,
-                capability_type=site.capability_type,
-                capability_method=site.capability_method,
-                canonical_effect=site.canonical_effect,
-                power_domain=site.power_domain,
-                source_line=site.source_line,
-                source_column=site.source_column,
+    return tuple(
+        sorted(
+            result,
+            key=lambda site: (
+                site.source_line,
+                site.source_column,
+                site.block_id,
+                -1 if site.call_target is None else site.call_target,
+                site.capability_type,
+                site.capability_method,
             ),
         )
-        site.assert_sealed()
-        result.append(site)
-
-    return tuple(result)
+    )
