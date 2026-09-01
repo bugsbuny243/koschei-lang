@@ -35,7 +35,10 @@ from .mir import require_mir
 from .mir_go_native import generate_go_mir_native, inspect_mir_go_support
 from .module_lock import load_module_lock, verify_module_lock
 from .modules import check_graph
-from .native_http_transport_v1 import native_http_transport_guard_go_v1
+from .native_http_transport_v1 import (
+    native_http_transport_guard_fragment_go_v1,
+    native_http_transport_guard_go_v1,
+)
 from .release_proof_cli import add_release_proof_parser, command_release_proof
 from .reproducibility_cli import (
     add_build_compare_parser,
@@ -162,6 +165,34 @@ def _go_source_uses_http_runtime(go_source: str) -> bool:
     """Return whether a generated package contains the compat HTTP runtime."""
 
     return '"net/http"' in go_source or "ksNetGet(" in go_source
+
+
+def _render_emitted_go_with_transport_v1(go_source: str) -> str:
+    """Keep single-file `emit-go` output under the same HTTP transport policy."""
+
+    if not _go_source_uses_http_runtime(go_source):
+        return go_source
+    separator = "" if go_source.endswith("\n") else "\n"
+    return go_source + separator + native_http_transport_guard_fragment_go_v1()
+
+
+def _emit_go_with_transport(args: argparse.Namespace) -> int:
+    """Reuse CLI diagnostics while sealing HTTP transport into emitted Go text."""
+
+    original = _cli.command_emit_go
+
+    def command(path: str) -> int:
+        graph = _cli.open_graph(path)
+        check_graph(graph)
+        go_source = _cli.generate_go_mir(require_mir(graph))
+        print(_render_emitted_go_with_transport_v1(go_source), end="")
+        return 0
+
+    _cli.command_emit_go = command
+    try:
+        return _cli.main(["--lang", args.lang, "emit-go", args.source])
+    finally:
+        _cli.command_emit_go = original
 
 
 def _compile_mir_go(go_source: str, target: Path, locale: str) -> int:
@@ -312,6 +343,8 @@ def main(argv: list[str] | None = None) -> int:
         return command_release_proof(args)
     if args.command == "run":
         return _run_with_public_budget(args)
+    if args.command == "emit-go":
+        return _emit_go_with_transport(args)
     if args.command == "build":
         return _build_with_public_lock(args)
     return _cli.main(arguments)
