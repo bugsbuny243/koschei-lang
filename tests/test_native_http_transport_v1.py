@@ -5,11 +5,15 @@ from types import SimpleNamespace
 
 from koschei import cli_entry
 from koschei.http_response_budget_v1 import HTTP_CONTENT_ENCODING_ERROR_V1
-from koschei.native_http_transport_v1 import native_http_transport_guard_go_v1
+from koschei.native_http_transport_v1 import (
+    native_http_transport_guard_fragment_go_v1,
+    native_http_transport_guard_go_v1,
+)
 
 
 def test_native_transport_guard_source_is_identity_only_and_fail_closed():
     source = native_http_transport_guard_go_v1()
+    fragment = native_http_transport_guard_fragment_go_v1()
 
     assert 'clone.Header.Set("Accept-Encoding", "identity")' in source
     assert "bounded.DisableCompression = true" in source
@@ -17,6 +21,8 @@ def test_native_transport_guard_source_is_identity_only_and_fail_closed():
     assert "response.Uncompressed" in source
     assert HTTP_CONTENT_ENCODING_ERROR_V1 in source
     assert "__KOSCHEI_HTTP_CONTENT_ENCODING_ERROR_V1__" not in source
+    assert fragment in source
+    assert not fragment.lstrip().startswith("package main")
 
 
 def test_http_runtime_detection_does_not_widen_pure_native_packages():
@@ -27,6 +33,22 @@ def test_http_runtime_detection_does_not_widen_pure_native_packages():
         )
         is True
     )
+
+
+def test_emit_go_appends_transport_fragment_only_for_http_runtime():
+    pure = 'package main\n\nfunc main() {}\n'
+    http_source = (
+        'package main\n\nimport (\n\t"fmt"\n\t"net/http"\n\t"strings"\n)\n\n'
+        'var _ = http.MethodGet\n\nfunc main() {}\n'
+    )
+
+    assert cli_entry._render_emitted_go_with_transport_v1(pure) == pure
+
+    rendered = cli_entry._render_emitted_go_with_transport_v1(http_source)
+    assert rendered.startswith(http_source)
+    assert rendered.count("package main") == 1
+    assert native_http_transport_guard_fragment_go_v1() in rendered
+    assert HTTP_CONTENT_ENCODING_ERROR_V1 in rendered
 
 
 def test_public_native_compile_writes_transport_guard_only_for_http_package(
