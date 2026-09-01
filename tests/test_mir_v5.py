@@ -31,7 +31,7 @@ class MirLoweringTests(unittest.TestCase):
         mir = require_mir(graph)
 
         self.assertIsInstance(mir, MirGraph)
-        self.assertEqual(mir.version, 3)
+        self.assertEqual(mir.version, 4)
         self.assertRegex(mir.fingerprint, r"^[0-9a-f]{64}$")
         self.assertEqual(mir.root_module.name, "hello")
         mir.assert_sealed()
@@ -122,6 +122,17 @@ class MirIntegrityTests(unittest.TestCase):
         forged_modules = dict(mir.modules)
         forged_modules[mir.root] = replace(root, name="tampered")
         forged = replace(mir, modules=forged_modules)
+
+        with self.assertRaises(MirIntegrityError) as caught:
+            forged.assert_sealed()
+
+        self.assertEqual(caught.exception.code, "KS5002")
+
+    def test_old_mir_version_is_rejected_before_backend(self) -> None:
+        graph = load_graph(EXAMPLES / "hello.ks")
+        check_graph(graph)
+        mir = require_mir(graph)
+        forged = replace(mir, version=3)
 
         with self.assertRaises(MirIntegrityError) as caught:
             forged.assert_sealed()
@@ -224,7 +235,7 @@ class MirCliTests(unittest.TestCase):
 
         self.assertEqual(code, 0, error)
         payload = json.loads(output)
-        self.assertEqual(payload["version"], 3)
+        self.assertEqual(payload["version"], 4)
         self.assertEqual(payload["root"], "hello")
         self.assertRegex(payload["fingerprint"], r"^[0-9a-f]{64}$")
 
@@ -235,7 +246,7 @@ class MirCliTests(unittest.TestCase):
 
         self.assertEqual(code, 0, error)
         payload = json.loads(output)
-        self.assertEqual(payload["mir_version"], 3)
+        self.assertEqual(payload["mir_version"], 4)
         self.assertRegex(payload["mir_fingerprint"], r"^[0-9a-f]{64}$")
 
     def test_explain_knows_mir_integrity_diagnostic(self) -> None:
