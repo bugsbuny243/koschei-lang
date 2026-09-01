@@ -49,10 +49,6 @@ from .ast_nodes import (
     UnaryExpression,
     WhileStatement,
 )
-from .http_response_budget_v1 import (
-    HTTP_RESPONSE_BUDGET_ERROR_V1,
-    HTTP_RESPONSE_MAX_BYTES_V1,
-)
 from .semantic import (
     CAPABILITY_TYPES,
     GUARDED_METHODS,
@@ -969,8 +965,6 @@ func (e *ksRedirectDenied) Error() string {
 	return "KS3402: Ağ yönlendirmesi kapsam dışına çıktı: " + e.target
 }
 
-const ksHTTPResponseMaxBytes int64 = __KOSCHEI_HTTP_RESPONSE_MAX_BYTES_V1__
-
 func ksNewSystemCaps() any {
 	return &ksSystemCaps{
 		net:     &ksNetRoot{},
@@ -1076,12 +1070,9 @@ func ksNetGet(capability *ksNetCaps, rawURL string) any {
 		return ksErrorf("API isteği başarısız: " + err.Error())
 	}
 	defer response.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(response.Body, ksHTTPResponseMaxBytes+1))
+	body, err := io.ReadAll(response.Body)
 	if err != nil {
 		return ksErrorf("API yanıtı okunamadı: " + err.Error())
-	}
-	if int64(len(body)) > ksHTTPResponseMaxBytes {
-		return ksErrorf("__KOSCHEI_HTTP_RESPONSE_BUDGET_ERROR_V1__: HTTP response body exceeds " + strconv.FormatInt(ksHTTPResponseMaxBytes, 10) + " byte budget")
 	}
 	return &ksResponse{body: string(body), status: int64(response.StatusCode)}
 }
@@ -1514,16 +1505,6 @@ func ksDiskCall(capability *ksDiskCapability, method string, arguments []any) an
 }
 '''
 
-CAPABILITY_RUNTIME = (
-    CAPABILITY_RUNTIME.replace(
-        "__KOSCHEI_HTTP_RESPONSE_MAX_BYTES_V1__",
-        str(HTTP_RESPONSE_MAX_BYTES_V1),
-    ).replace(
-        "__KOSCHEI_HTTP_RESPONSE_BUDGET_ERROR_V1__",
-        HTTP_RESPONSE_BUDGET_ERROR_V1,
-    )
-)
-
 
 class GoCodegen:
     def __init__(self, program: Program) -> None:
@@ -1544,6 +1525,10 @@ class GoCodegen:
                     variant.payload_type is not None,
                 )
         self._temp_index = 0
+
+    # ------------------------------------------------------------------
+    # Genel akış
+    # ------------------------------------------------------------------
 
     def generate(self) -> str:
         self._reject_unsupported()
@@ -1594,6 +1579,7 @@ class GoCodegen:
             )
 
     def _validate_capability_backend(self) -> None:
+        """Native capability ABI güvenlik sınırlarını hedefe göre doğrular."""
         uses_disk = False
         for declaration in self.program.declarations:
             for parameter in declaration.parameters:
@@ -1627,12 +1613,18 @@ class GoCodegen:
                 SourceLocation(1, 1),
             )
 
+    # ------------------------------------------------------------------
+    # Fonksiyonlar
+    # ------------------------------------------------------------------
+
     def _function(self, declaration: FunctionDeclaration) -> list[str]:
         parameters = ", ".join(
             f"{_var(parameter.name)} any" for parameter in declaration.parameters
         )
         lines = [f"func {_fn(declaration.name)}({parameters}) any {{"]
-        lines.append(f'\tksEnter("{declaration.name}")')
+        lines.append(
+            f'\tksEnter("{declaration.name}")'
+        )
         lines.append("\tdefer ksLeave()")
         for parameter in declaration.parameters:
             lines.append(f"\t_ = {_var(parameter.name)}")
@@ -1673,6 +1665,10 @@ class GoCodegen:
             "\tos.Exit(0)",
             "}",
         ]
+
+    # ------------------------------------------------------------------
+    # Statement üretimi
+    # ------------------------------------------------------------------
 
     def _block(self, block: Block, depth: int) -> list[str]:
         lines: list[str] = []
@@ -1766,6 +1762,10 @@ class GoCodegen:
         lines.extend(self._block(statement.body, depth + 1))
         lines.append(f"{pad}}}")
         return lines
+
+    # ------------------------------------------------------------------
+    # İfade üretimi: (go_ifadesi, önce_çalışacak_satırlar)
+    # ------------------------------------------------------------------
 
     def _expression(self, expression: Expression, depth: int) -> tuple[str, list[str]]:
         if isinstance(expression, Literal):
@@ -1900,7 +1900,7 @@ class GoCodegen:
         if helper is None:
             raise CodegenError(
                 "KS4002",
-                f"Desteklenmey işleç: '{operator}'.",
+                f"Desteklenmeyen işleç: '{operator}'.",
                 expression.location,
             )
         left, left_prelude = self._expression(expression.left, depth)
@@ -2100,6 +2100,10 @@ class GoCodegen:
         lines.append("}")
         return temp, lines
 
+    # ------------------------------------------------------------------
+    # Yardımcılar
+    # ------------------------------------------------------------------
+
     def _temp(self) -> str:
         self._temp_index += 1
         return f"kstmp{self._temp_index}"
@@ -2118,6 +2122,7 @@ class GoCodegen:
 
 
 def _walk_statement(statement: Statement):
+    """Statement içindeki tüm ifadeleri dolaşır (yetki taraması için)."""
     if isinstance(statement, LetStatement):
         yield from _walk_expression(statement.value)
     elif isinstance(statement, ReturnStatement):
@@ -2231,6 +2236,8 @@ def _go_string(value: str) -> str:
 
 
 class _ModuleFlattener:
+    """Bir modülün çağrılarını tek Go ad alanına taşır."""
+
     def __init__(
         self,
         local_functions: dict[str, str],
@@ -2399,6 +2406,12 @@ class _ModuleFlattener:
 
 
 def _flatten_module_graph(graph: object) -> Program:
+    """Doğrulanmış ModuleGraph'i tek native program hâline getirir.
+
+    Modül fonksiyonları benzersiz Go/Koschei iç adlarına çevrilir. Struct ve enum
+    adları dil yüzeyinde nominal kaldığı için grafikte çakışıyorsa native backend
+    sessizce yanlış bağlamak yerine KS4002 ile durur.
+    """
     ordered = graph.in_dependency_order()
     root_key = graph.root
     function_names: dict[str, dict[str, str]] = {}
@@ -2458,6 +2471,10 @@ def _flatten_module_graph(graph: object) -> Program:
 
 
 def generate_go(program: Program, graph: object | None = None) -> str:
+    """Koschei programını Go kaynak koduna çevirir.
+
+    `graph` verildiğinde doğrulanmış modüller tek native ad alanına flatten edilir.
+    """
     if graph is not None:
         program = _flatten_module_graph(graph)
     return GoCodegen(program).generate()
