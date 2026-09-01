@@ -2,15 +2,48 @@
 
 `ks build` compiles a temporary Go package rather than a single mandatory file,
 while `ks emit-go` exposes one buildable Go source file. This module therefore
-owns one transport-policy body and renders it either as a package companion or
-as an import-free fragment for generated source that already imports fmt/http/strings.
+owns the native HTTP representation and body-budget policy and renders it either
+as a package companion or as an import-free fragment for generated source that
+already imports fmt/io/http/strings.
 """
 from __future__ import annotations
 
-from .http_response_budget_v1 import HTTP_CONTENT_ENCODING_ERROR_V1
+from .http_response_budget_v1 import (
+    HTTP_CONTENT_ENCODING_ERROR_V1,
+    HTTP_RESPONSE_BUDGET_ERROR_V1,
+    HTTP_RESPONSE_MAX_BYTES_V1,
+)
 
 
 _NATIVE_HTTP_TRANSPORT_FRAGMENT_TEMPLATE_V1 = r'''
+const ksHTTPResponseMaxBytesGuardV1 int64 = __KOSCHEI_HTTP_RESPONSE_MAX_BYTES_V1__
+
+type ksBoundedResponseBodyV1 struct {
+    body io.ReadCloser
+    read int64
+}
+
+func (body *ksBoundedResponseBodyV1) Read(buffer []byte) (int, error) {
+    remaining := ksHTTPResponseMaxBytesGuardV1 + 1 - body.read
+    if remaining <= 0 {
+        return 0, fmt.Errorf("__KOSCHEI_HTTP_RESPONSE_BUDGET_ERROR_V1__: HTTP response body exceeds %d byte budget", ksHTTPResponseMaxBytesGuardV1)
+    }
+    if int64(len(buffer)) > remaining {
+        buffer = buffer[:int(remaining)]
+    }
+
+    count, err := body.body.Read(buffer)
+    body.read += int64(count)
+    if body.read > ksHTTPResponseMaxBytesGuardV1 {
+        return count, fmt.Errorf("__KOSCHEI_HTTP_RESPONSE_BUDGET_ERROR_V1__: HTTP response body exceeds %d byte budget", ksHTTPResponseMaxBytesGuardV1)
+    }
+    return count, err
+}
+
+func (body *ksBoundedResponseBodyV1) Close() error {
+    return body.body.Close()
+}
+
 type ksIdentityTransportV1 struct {
     base http.RoundTripper
 }
@@ -37,6 +70,11 @@ func (transport ksIdentityTransportV1) RoundTrip(request *http.Request) (*http.R
         response.Body.Close()
         return nil, fmt.Errorf("__KOSCHEI_HTTP_CONTENT_ENCODING_ERROR_V1__: transparent HTTP decompression is forbidden")
     }
+    if response.ContentLength > ksHTTPResponseMaxBytesGuardV1 {
+        response.Body.Close()
+        return nil, fmt.Errorf("__KOSCHEI_HTTP_RESPONSE_BUDGET_ERROR_V1__: HTTP response body exceeds %d byte budget", ksHTTPResponseMaxBytesGuardV1)
+    }
+    response.Body = &ksBoundedResponseBodyV1{body: response.Body}
     return response, nil
 }
 
@@ -55,6 +93,7 @@ _NATIVE_HTTP_TRANSPORT_FILE_HEADER_V1 = r'''package main
 
 import (
     "fmt"
+    "io"
     "net/http"
     "strings"
 )
@@ -62,11 +101,21 @@ import (
 
 
 def native_http_transport_guard_fragment_go_v1() -> str:
-    """Return the import-free identity-transport fragment for generated Go."""
+    """Return the import-free native HTTP guard fragment for generated Go."""
 
-    return _NATIVE_HTTP_TRANSPORT_FRAGMENT_TEMPLATE_V1.replace(
-        "__KOSCHEI_HTTP_CONTENT_ENCODING_ERROR_V1__",
-        HTTP_CONTENT_ENCODING_ERROR_V1,
+    return (
+        _NATIVE_HTTP_TRANSPORT_FRAGMENT_TEMPLATE_V1.replace(
+            "__KOSCHEI_HTTP_CONTENT_ENCODING_ERROR_V1__",
+            HTTP_CONTENT_ENCODING_ERROR_V1,
+        )
+        .replace(
+            "__KOSCHEI_HTTP_RESPONSE_BUDGET_ERROR_V1__",
+            HTTP_RESPONSE_BUDGET_ERROR_V1,
+        )
+        .replace(
+            "__KOSCHEI_HTTP_RESPONSE_MAX_BYTES_V1__",
+            str(HTTP_RESPONSE_MAX_BYTES_V1),
+        )
     )
 
 
