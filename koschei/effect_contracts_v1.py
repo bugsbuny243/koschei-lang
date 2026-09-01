@@ -14,11 +14,17 @@ from __future__ import annotations
 from dataclasses import dataclass, fields, is_dataclass
 from typing import Any
 
-from .ast_nodes import CallExpression, FunctionDeclaration, Identifier, MemberExpression, Program
+from .ast_nodes import (
+    CallExpression,
+    FunctionDeclaration,
+    Identifier,
+    MemberExpression,
+    Program,
+)
 from .capability_effect_contract_v1 import effect_for
 from .semantic import ImportedModule, SemanticError
 from .type_contracts import TypeContractValidator, function_type
-from .type_system import NamedType, TypeNode, render_type
+from .type_system import NamedType, TypeNode
 from .typed_hir import TypedHIRReport
 
 _CONSOLE_BUILTINS = {"print", "println"}
@@ -77,11 +83,23 @@ _PURE_VALUE_METHODS = {
 
 
 @dataclass(frozen=True, slots=True)
+class CapabilityCallSiteFactV1:
+    """Canonical direct capability call decided by the checked Typed-HIR pass."""
+
+    capability_type: str
+    capability_method: str
+    canonical_effect: str
+    source_line: int
+    source_column: int
+
+
+@dataclass(frozen=True, slots=True)
 class FunctionEffects:
     direct_calls: tuple[str, ...]
     imported_calls: tuple[str, ...]
     direct_effects: tuple[str, ...]
     effects: tuple[str, ...]
+    direct_capability_calls: tuple[CapabilityCallSiteFactV1, ...] = ()
 
 
 EffectReport = dict[str, FunctionEffects]
@@ -102,7 +120,11 @@ def _walk(value: Any):
 
 
 def _base_name(type_node: TypeNode) -> str | None:
-    return type_node.name if isinstance(type_node, NamedType) else getattr(type_node, "name", None)
+    return (
+        type_node.name
+        if isinstance(type_node, NamedType)
+        else getattr(type_node, "name", None)
+    )
 
 
 def _signature_effects(
@@ -133,6 +155,7 @@ def infer_effect_contracts(
     local_names = {function.name for function in program.declarations}
 
     direct_effects: dict[str, set[str]] = {}
+    direct_capability_calls: dict[str, tuple[CapabilityCallSiteFactV1, ...]] = {}
     local_calls: dict[str, set[str]] = {}
     imported_calls: dict[str, set[tuple[str, str]]] = {}
 
@@ -140,6 +163,7 @@ def infer_effect_contracts(
         effects = _signature_effects(function, contracts)
         calls: set[str] = set()
         foreign_calls: set[tuple[str, str]] = set()
+        capability_calls: list[CapabilityCallSiteFactV1] = []
 
         for node in _walk(function.body):
             if not isinstance(node, CallExpression):
@@ -161,7 +185,9 @@ def infer_effect_contracts(
                     effects.add("concurrency.task")
                     continue
                 if name == "parallel_map":
-                    if len(node.arguments) >= 2 and isinstance(node.arguments[1], Identifier):
+                    if len(node.arguments) >= 2 and isinstance(
+                        node.arguments[1], Identifier
+                    ):
                         worker = node.arguments[1].name
                         if worker in local_names:
                             calls.add(worker)
@@ -175,7 +201,11 @@ def infer_effect_contracts(
                 # Enum constructors are TYPE tokens in source but lowered into
                 # identifier calls in the AST. The Typed HIR report already
                 # validated those; known enum variants are pure constructors.
-                if any(variant.name == name for enum in program.enums for variant in enum.variants):
+                if any(
+                    variant.name == name
+                    for enum in program.enums
+                    for variant in enum.variants
+                ):
                     continue
                 effects.add(f"unknown.call:{name}")
                 continue
@@ -191,6 +221,15 @@ def infer_effect_contracts(
                 effect = effect_for(type_name or "", callee.member)
                 if effect is not None:
                     effects.add(effect)
+                    capability_calls.append(
+                        CapabilityCallSiteFactV1(
+                            capability_type=type_name or "",
+                            capability_method=callee.member,
+                            canonical_effect=effect,
+                            source_line=node.location.line,
+                            source_column=node.location.column,
+                        )
+                    )
                     continue
 
                 # List.filter executes a callback. V1 refuses to guess about a
@@ -206,6 +245,18 @@ def infer_effect_contracts(
             effects.add("unknown.indirect-call")
 
         direct_effects[function.name] = effects
+        direct_capability_calls[function.name] = tuple(
+            sorted(
+                capability_calls,
+                key=lambda item: (
+                    item.source_line,
+                    item.source_column,
+                    item.capability_type,
+                    item.capability_method,
+                    item.canonical_effect,
+                ),
+            )
+        )
         local_calls[function.name] = calls
         imported_calls[function.name] = foreign_calls
 
@@ -218,7 +269,9 @@ def infer_effect_contracts(
             report = imported_effects.get(alias)
             summary = None if report is None else report.get(imported_name)
             if summary is None:
-                resolved[function_name].add(f"unknown.import:{alias}.{imported_name}")
+                resolved[function_name].add(
+                    f"unknown.import:{alias}.{imported_name}"
+                )
             else:
                 resolved[function_name].update(summary.effects)
 
@@ -243,6 +296,7 @@ def infer_effect_contracts(
             imported_calls=foreign,
             direct_effects=tuple(sorted(direct_effects[function.name])),
             effects=tuple(sorted(resolved[function.name])),
+            direct_capability_calls=direct_capability_calls[function.name],
         )
 
     return report
