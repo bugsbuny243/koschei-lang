@@ -25,6 +25,9 @@ type ksIdentityTransportV1 struct {
 func (transport ksIdentityTransportV1) RoundTrip(request *http.Request) (*http.Response, error) {
     clone := request.Clone(request.Context())
     clone.Header = request.Header.Clone()
+    if clone.Header == nil {
+        clone.Header = make(http.Header)
+    }
     clone.Header.Set("Accept-Encoding", "identity")
 
     response, err := transport.base.RoundTrip(clone)
