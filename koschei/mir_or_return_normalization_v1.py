@@ -1,13 +1,14 @@
 """Normalized MIR lowering for Koschei `or return` semantics v1.
 
-This module deliberately extends the existing MIR lowerer without introducing a
-second source semantic authority.  `OrReturnExpression` is lowered into one
-fallible value, one explicit success predicate, and CFG success/failure paths.
-The inner expression is therefore emitted exactly once.
+This module extends the existing MIR lowerer without introducing a second source
+semantic authority. `OrReturnExpression` is lowered into one fallible value, one
+explicit success predicate, and CFG success/failure paths. The inner expression
+is therefore emitted exactly once.
 
-Runtime execution of these instructions is a separate convergence step.  Until
-the MIR execution boundary consumes them directly, this module is a compiler
-normalization prototype and must not be described as end-to-end runtime proof.
+The public checked runtime now consumes these MIR v4 instructions directly via
+MirExecutorV1. Native/backend convergence is still incomplete, so this module
+must not be described as proof that every backend consumes identical fallible
+control-flow semantics yet.
 """
 from __future__ import annotations
 
@@ -48,7 +49,7 @@ class _OrReturnFunctionLowerer(_FunctionLowerer):
         if not isinstance(expression, OrReturnExpression):
             return super()._lower_expression(expression)
 
-        # Evaluate the effectful/fallible expression exactly once.  In
+        # Evaluate the effectful/fallible expression exactly once. In
         # particular, a nested capability call becomes the ordinary normalized
         # MirMember -> MirCall chain before control flow is split.
         fallible = super()._lower_expression(expression.value)
@@ -69,7 +70,7 @@ class _OrReturnFunctionLowerer(_FunctionLowerer):
         self._terminate(MirBranch(success, success_block, failure_block))
 
         # Failure preserves the original value, unless source explicitly asks
-        # for a replacement.  Replacement evaluation is failure-only.
+        # for a replacement. Replacement evaluation is failure-only.
         self.current = failure_block
         failure_value = (
             fallible
