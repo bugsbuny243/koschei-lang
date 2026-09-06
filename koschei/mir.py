@@ -194,6 +194,9 @@ class MirGraph:
 
 
 def _contract_import_target(target: str) -> str:
+    # Authenticated object graph keys are already semantic identities and must
+    # never be reinterpreted through host filesystem path rules. Legacy path
+    # graphs retain their historical module-stem fingerprint contract.
     if target.startswith("koschei-object:"):
         return target
     return Path(target).stem
@@ -280,6 +283,8 @@ def _resource_contract(
     calls: tuple[str, ...],
     blocks: tuple[MirBasicBlock, ...],
 ) -> MirResources:
+    """Derive a path-independent static cost shape from sealed MIR blocks."""
+
     ast_fallbacks = sum(
         1
         for block in blocks
@@ -305,6 +310,14 @@ def _resource_contract(
 
 
 def _canonical_mir_effects(summary: FunctionEffects) -> tuple[str, ...]:
+    """Project the checked function report onto MIR's capability-effect ABI.
+
+    `EffectReport` also carries compiler-only facts such as authority-bearing
+    signature input/output and non-capability observable effects. MIR v4's
+    `effects` field remains the canonical capability-effect ABI while taking its
+    facts from the single checked compiler report.
+    """
+
     return tuple(
         effect for effect in summary.effects if effect in CANONICAL_CAPABILITY_EFFECTS
     )
@@ -417,7 +430,9 @@ def to_dict(mir: MirGraph) -> dict[str, Any]:
                         "calls": list(function.calls),
                         "effects": list(function.effects),
                         "resources": asdict(function.resources),
-                        "blocks": [block_contract(block) for block in function.blocks],
+                        "blocks": [
+                            block_contract(block) for block in function.blocks
+                        ],
                         "basic_blocks": function.resources.basic_blocks,
                         "instructions": function.resources.instructions,
                         "ast_fallbacks": function.resources.ast_fallbacks,
