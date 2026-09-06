@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .ast_nodes import SourceLocation
-from .interpreter import KsError, KsUnit, KoscheiRuntimeError, SystemCaps, _contains_capability
+from .interpreter import KsError, KsUnit, KoscheiRuntimeError, SystemCaps
 from .mir import MIR_VERSION, MirGraph, MirIntegrityError
 from .mir_ir import (
     MirAstFallback,
@@ -312,7 +312,7 @@ class MirExecutorV1:
             return
         if isinstance(instruction, MirList):
             items = [values[item] for item in instruction.items]
-            if any(_contains_capability(item) for item in items):
+            if any(self.primitives.contains_capability(item) for item in items):
                 raise MirExecutionError(
                     "KS3401",
                     "Capability taşıyan değer MIR List içine konamaz.",
