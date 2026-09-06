@@ -29,14 +29,14 @@ from .mir_ir import (
     MirBranch,
     MirJump,
     block_contract,
-    lower_function_blocks,
     validate_blocks,
 )
+from .mir_or_return_normalization_v1 import lower_function_blocks_v1
 from .type_contracts import function_type, type_parameters_of
 from .type_system import TypeNode, render_type
 from .typed_hir import TypedHIRReport
 
-MIR_VERSION = 3
+MIR_VERSION = 4
 
 
 class MirIntegrityError(Exception):
@@ -194,9 +194,6 @@ class MirGraph:
 
 
 def _contract_import_target(target: str) -> str:
-    # Authenticated object graph keys are already semantic identities and must
-    # never be reinterpreted through host filesystem path rules. Legacy path
-    # graphs retain their historical module-stem fingerprint contract.
     if target.startswith("koschei-object:"):
         return target
     return Path(target).stem
@@ -283,8 +280,6 @@ def _resource_contract(
     calls: tuple[str, ...],
     blocks: tuple[MirBasicBlock, ...],
 ) -> MirResources:
-    """Derive a path-independent static cost shape from sealed MIR blocks."""
-
     ast_fallbacks = sum(
         1
         for block in blocks
@@ -310,14 +305,6 @@ def _resource_contract(
 
 
 def _canonical_mir_effects(summary: FunctionEffects) -> tuple[str, ...]:
-    """Project the checked function report onto MIR's capability-effect ABI.
-
-    `EffectReport` also carries compiler-only facts such as authority-bearing
-    signature input/output and non-capability observable effects. MIR v3's
-    `effects` field historically represents canonical capability effects, so the
-    projection keeps that ABI while taking its facts from the one checked report.
-    """
-
     return tuple(
         effect for effect in summary.effects if effect in CANONICAL_CAPABILITY_EFFECTS
     )
@@ -358,7 +345,7 @@ def lower_module(
             blocks,
         )
         for declaration in module.program.declarations
-        for blocks in (lower_function_blocks(declaration, typed_report),)
+        for blocks in (lower_function_blocks_v1(declaration, typed_report),)
     )
     return MirModule(
         str(module.path) if key is None else key,
@@ -430,9 +417,7 @@ def to_dict(mir: MirGraph) -> dict[str, Any]:
                         "calls": list(function.calls),
                         "effects": list(function.effects),
                         "resources": asdict(function.resources),
-                        "blocks": [
-                            block_contract(block) for block in function.blocks
-                        ],
+                        "blocks": [block_contract(block) for block in function.blocks],
                         "basic_blocks": function.resources.basic_blocks,
                         "instructions": function.resources.instructions,
                         "ast_fallbacks": function.resources.ast_fallbacks,
