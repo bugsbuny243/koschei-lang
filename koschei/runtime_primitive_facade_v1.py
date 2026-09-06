@@ -15,6 +15,7 @@ from .interpreter import (
     KoscheiRuntimeError,
     ModuleFunction,
     _contains_capability,
+    ks_to_string,
 )
 
 
@@ -89,3 +90,6 @@ class RuntimePrimitiveFacadeV1:
 
     def contains_capability(self, value: Any) -> bool:
         return _contains_capability(value)
+
+    def to_string(self, value: Any) -> str:
+        return ks_to_string(value)
