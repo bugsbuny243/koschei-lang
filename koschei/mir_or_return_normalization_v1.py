@@ -1,20 +1,24 @@
-"""Normalized MIR lowering for Koschei `or return` semantics v1.
+"""Normalized MIR lowering extensions for Koschei v4.
 
 This module extends the existing MIR lowerer without introducing a second source
-semantic authority. `OrReturnExpression` is lowered into one fallible value, one
-explicit success predicate, and CFG success/failure paths. The inner expression
-is therefore emitted exactly once.
+semantic authority. It currently normalizes `or return` control flow and
+interpolated strings while preserving single evaluation and existing typed-HIR
+facts.
 
-The public checked runtime now consumes these MIR v4 instructions directly via
+The public checked runtime consumes these MIR v4 instructions directly via
 MirExecutorV1. Native/backend convergence is still incomplete, so this module
-must not be described as proof that every backend consumes identical fallible
-control-flow semantics yet.
+must not be described as proof that every backend consumes identical semantics.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .ast_nodes import Expression, OrReturnExpression, SourceLocation
+from .ast_nodes import (
+    Expression,
+    InterpolatedString,
+    OrReturnExpression,
+    SourceLocation,
+)
 from .mir_ir import (
     MirBranch,
     MirJump,
@@ -44,8 +48,31 @@ class MirFalliblePayload:
     location: SourceLocation
 
 
+@dataclass(frozen=True, slots=True)
+class MirInterpolate:
+    """Join canonical string projections of already-evaluated MIR values."""
+
+    target: int
+    items: tuple[int, ...]
+    type: TypeNode
+    location: SourceLocation
+
+
 class _OrReturnFunctionLowerer(_FunctionLowerer):
     def _lower_expression(self, expression: Expression) -> int:
+        if isinstance(expression, InterpolatedString):
+            items = tuple(self._lower_expression(part) for part in expression.parts)
+            target = self._new_value()
+            self._emit(
+                MirInterpolate(
+                    target,
+                    items,
+                    self._type_of(expression),
+                    expression.location,
+                )
+            )
+            return target
+
         if not isinstance(expression, OrReturnExpression):
             return super()._lower_expression(expression)
 
@@ -97,6 +124,6 @@ class _OrReturnFunctionLowerer(_FunctionLowerer):
 
 
 def lower_function_blocks_v1(declaration, typed_report):
-    """Lower one checked function with normalized `or return` CFG semantics."""
+    """Lower one checked function with Koschei MIR v4 extension semantics."""
 
     return _OrReturnFunctionLowerer(declaration, typed_report).lower()
