@@ -5,11 +5,13 @@ import tempfile
 
 import pytest
 
+from koschei import interpreter
 from koschei.interpreter import KsError, KsUnit
 from koschei.mir import MirGraph, _fingerprint, _resource_contract, require_mir
 from koschei.mir_executor_v1 import MirExecutionError, MirExecutorV1, execute_mir_v1
 from koschei.mir_ir import MirAstFallback, MirBasicBlock, MirReturn
 from koschei.modules import check_graph, load_graph
+from koschei.runtime_boot_v1 import run_checked_mir
 from koschei.type_system import VOID
 
 
@@ -37,6 +39,19 @@ fn main() {
         result = execute_mir_v1(mir)
         assert result is KsUnit
         assert capsys.readouterr().out == "5\n"
+    finally:
+        directory.cleanup()
+
+
+def test_public_checked_runtime_does_not_call_legacy_ast_run_mir(monkeypatch, capsys):
+    directory, mir = _compiler_mir('fn main() { println("mir-only") }')
+    try:
+        def forbidden(*args, **kwargs):
+            raise AssertionError("legacy AST-backed run_mir must not be called")
+
+        monkeypatch.setattr(interpreter, "run_mir", forbidden)
+        assert run_checked_mir(mir, []) == 0
+        assert capsys.readouterr().out == "mir-only\n"
     finally:
         directory.cleanup()
 
