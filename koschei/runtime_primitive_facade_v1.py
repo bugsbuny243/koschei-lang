@@ -1,7 +1,7 @@
 """Narrow runtime primitive ABI for sealed MIR execution.
 
 The MIR executor may reuse existing runtime value/capability implementations, but
-it must not acquire the reference interpreter's AST execution authority.  This
+it must not acquire the reference interpreter's AST execution authority. This
 facade exposes only primitive value operations needed by normalized MIR and
 rejects source-language callable objects explicitly.
 """
@@ -14,6 +14,7 @@ from .interpreter import (
     Interpreter,
     KoscheiRuntimeError,
     ModuleFunction,
+    _contains_capability,
 )
 
 
@@ -38,7 +39,7 @@ class RuntimePrimitiveFacadeV1:
         structs,
     ) -> None:
         # Interpreter is retained only as an implementation container for the
-        # already-defined runtime value/capability primitive semantics.  No AST
+        # already-defined runtime value/capability primitive semantics. No AST
         # execute/evaluate/call entrypoint is exposed through this facade.
         self._runtime = Interpreter(
             program,
@@ -85,3 +86,6 @@ class RuntimePrimitiveFacadeV1:
 
     def runtime_type_name(self, value: Any) -> str:
         return self._runtime._runtime_type_name(value)
+
+    def contains_capability(self, value: Any) -> bool:
+        return _contains_capability(value)
