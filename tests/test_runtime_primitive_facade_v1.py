@@ -8,7 +8,10 @@ from koschei.interpreter import _BoundMember
 from koschei.mir import require_mir
 from koschei.mir_executor_v1 import MirExecutorV1
 from koschei.modules import check_graph, load_graph
-from koschei.runtime_primitive_facade_v1 import RuntimePrimitiveFacadeError
+from koschei.runtime_primitive_facade_v1 import (
+    RuntimePrimitiveFacadeError,
+    _PrimitiveMemberRefV1,
+)
 
 
 def _executor(source: str):
@@ -81,6 +84,25 @@ def test_primitive_facade_rejects_raw_interpreter_bound_member():
         with pytest.raises(RuntimePrimitiveFacadeError, match="allowlist dışı callee"):
             executor.primitives.invoke_primitive(
                 raw,
+                [],
+                SourceLocation(1, 1),
+            )
+    finally:
+        directory.cleanup()
+
+
+def test_facade_owned_member_ref_is_revalidated_before_invoke():
+    directory, executor = _executor('fn main() {}')
+    try:
+        forged = _PrimitiveMemberRefV1(
+            _BoundMember(object(), "__class__", SourceLocation(1, 1))
+        )
+        with pytest.raises(
+            RuntimePrimitiveFacadeError,
+            match="allowlist doğrulamasını geçemedi",
+        ):
+            executor.primitives.invoke_primitive(
+                forged,
                 [],
                 SourceLocation(1, 1),
             )
