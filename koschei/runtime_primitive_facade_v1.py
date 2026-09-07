@@ -12,10 +12,20 @@ from typing import Any
 from .ast_nodes import FunctionDeclaration, Program, SourceLocation
 from .container_runtime_v1 import MapBuilderV1, StructBuilderV1
 from .interpreter import (
+    DiskCaps,
+    DiskReadCaps,
+    DiskRoot,
+    EnvCaps,
+    EnvRoot,
     Interpreter,
     KsError,
     KoscheiRuntimeError,
     ModuleFunction,
+    NetCaps,
+    NetRoot,
+    ProcessCaps,
+    ProcessRoot,
+    Response,
     _BoundMember,
     _EnumConstructor,
     _contains_capability,
@@ -47,6 +57,23 @@ class RuntimePrimitiveFacadeV1:
     __slots__ = ("_runtime",)
 
     _BUILTIN_CALLS = frozenset({"print", "println", "Error"})
+    _STRING_MEMBERS = frozenset(
+        {"length", "to_int", "to_float", "contains", "trim", "split", "join"}
+    )
+    _LIST_MEMBERS = frozenset({"length", "get", "push", "contains", "sort", "filter"})
+    _MAP_MEMBERS = frozenset({"get", "set", "keys", "contains"})
+    _TYPED_MEMBER_ALLOWLIST = {
+        NetRoot: frozenset({"allow"}),
+        DiskRoot: frozenset({"allow", "allow_read_only"}),
+        EnvRoot: frozenset({"allow"}),
+        ProcessRoot: frozenset({"allow"}),
+        NetCaps: frozenset({"get", "post", "put", "delete", "request"}),
+        DiskCaps: frozenset({"read", "read_file", "write", "write_file", "list", "delete"}),
+        DiskReadCaps: frozenset({"read", "read_file", "write", "write_file", "list", "delete"}),
+        EnvCaps: frozenset({"get"}),
+        ProcessCaps: frozenset({"run", "spawn"}),
+        Response: frozenset({"text", "status"}),
+    }
 
     def __init__(
         self,
@@ -81,6 +108,21 @@ class RuntimePrimitiveFacadeV1:
             )
         return _PrimitiveConstructorRefV1(raw)
 
+    @classmethod
+    def _member_allowed(cls, member: _BoundMember) -> bool:
+        receiver = member.receiver
+        name = member.name
+        if isinstance(receiver, str):
+            return name in cls._STRING_MEMBERS
+        if isinstance(receiver, list):
+            return name in cls._LIST_MEMBERS
+        if isinstance(receiver, dict):
+            return name in cls._MAP_MEMBERS
+        for receiver_type, members in cls._TYPED_MEMBER_ALLOWLIST.items():
+            if isinstance(receiver, receiver_type):
+                return name in members
+        return False
+
     def member(self, receiver: Any, name: str, location: SourceLocation) -> Any:
         result = self._runtime._member(receiver, name, location)
         if isinstance(result, (FunctionDeclaration, ModuleFunction)):
@@ -90,6 +132,12 @@ class RuntimePrimitiveFacadeV1:
                 location,
             )
         if isinstance(result, _BoundMember):
+            if not self._member_allowed(result):
+                raise RuntimePrimitiveFacadeError(
+                    "KS5002",
+                    f"MIR primitive member allowlist dışı: {type(result.receiver).__name__}.{result.name}.",
+                    location,
+                )
             return _PrimitiveMemberRefV1(result)
         if callable(result):
             raise RuntimePrimitiveFacadeError(
@@ -116,7 +164,13 @@ class RuntimePrimitiveFacadeV1:
         if isinstance(callee, _PrimitiveConstructorRefV1):
             return self._runtime._invoke(callee.raw, arguments, location)
         if isinstance(callee, _PrimitiveMemberRefV1):
-            return self._runtime._invoke(callee.raw, arguments, location)
+            if not self._member_allowed(callee.raw):
+                raise RuntimePrimitiveFacadeError(
+                    "KS5002",
+                    "MIR primitive member ref allowlist doğrulamasını geçemedi.",
+                    location,
+                )
+            return self._runtime._invoke_member(callee.raw, arguments)
         raise RuntimePrimitiveFacadeError(
             "KS5002",
             f"MIR primitive invoke allowlist dışı callee: {type(callee).__name__}.",
