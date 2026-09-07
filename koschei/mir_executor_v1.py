@@ -22,29 +22,11 @@ from .mir_container_staging_v1 import (
     MirStructSet,
 )
 from .mir_ir import (
-    MirAstFallback,
-    MirBinary,
-    MirBind,
-    MirBranch,
-    MirCall,
-    MirConst,
-    MirIterHasNext,
-    MirIterInit,
-    MirIterNext,
-    MirJump,
-    MirList,
-    MirLoad,
-    MirMember,
-    MirReturn,
-    MirStore,
-    MirUnary,
-    MirUnreachable,
+    MirAstFallback, MirBinary, MirBind, MirBranch, MirCall, MirConst,
+    MirIterHasNext, MirIterInit, MirIterNext, MirJump, MirList, MirLoad,
+    MirMember, MirReturn, MirStore, MirUnary, MirUnreachable,
 )
-from .mir_or_return_normalization_v1 import (
-    MirFallibleIsSuccess,
-    MirFalliblePayload,
-    MirInterpolate,
-)
+from .mir_or_return_normalization_v1 import MirFallibleIsSuccess, MirFalliblePayload, MirInterpolate
 from .runtime_primitive_facade_v1 import RuntimePrimitiveFacadeV1
 from .semantic import INT_MAX, INT_MIN
 from .type_system import alternatives, render_type
@@ -83,20 +65,14 @@ class MirExecutorV1:
             raise MirIntegrityError("sealed MirGraph required for MIR execution")
         mir.assert_sealed()
         if mir.version != MIR_VERSION or mir.version != 4:
-            raise MirIntegrityError(
-                f"MIR executor v1 requires sealed MIR v4, got v{mir.version}"
-            )
+            raise MirIntegrityError(f"MIR executor v1 requires sealed MIR v4, got v{mir.version}")
         self.mir = mir
         self.argv = list(argv or [])
         root = mir.root_module
         self.primitives = RuntimePrimitiveFacadeV1(
-            root.program,
-            self.argv,
-            namespaces=mir.namespaces(),
-            imports=dict(root.imports),
-            enums=mir.enums(),
-            module_imports=mir.module_imports(),
-            structs=mir.structs(),
+            root.program, self.argv,
+            namespaces=mir.namespaces(), imports=dict(root.imports), enums=mir.enums(),
+            module_imports=mir.module_imports(), structs=mir.structs(),
         )
         self.depth = 0
 
@@ -104,9 +80,7 @@ class MirExecutorV1:
         root = self.mir.root_module
         main = next((item for item in root.functions if item.name == "main"), None)
         if main is None:
-            raise MirExecutionError(
-                "KS3101", "'main' fonksiyonu MIR içinde bulunamadı.", SourceLocation(1, 1)
-            )
+            raise MirExecutionError("KS3101", "'main' fonksiyonu MIR içinde bulunamadı.", SourceLocation(1, 1))
         if len(main.parameters) == 0:
             arguments: list[Any] = []
         elif len(main.parameters) == 1 and _runtime_names(main.parameters[0].type) == ("SystemCaps",):
@@ -123,31 +97,19 @@ class MirExecutorV1:
         module = self.mir.module_of(module_key)
         function = next((item for item in module.functions if item.name == function_name), None)
         if function is None:
-            raise MirExecutionError(
-                "KS3101", f"MIR fonksiyonu bulunamadı: {module.name}.{function_name}", SourceLocation(1, 1)
-            )
+            raise MirExecutionError("KS3101", f"MIR fonksiyonu bulunamadı: {module.name}.{function_name}", SourceLocation(1, 1))
         return module, function
 
     def _call(self, module_key: str, function_name: str, arguments: list[Any]) -> Any:
         module, function = self._module_function(module_key, function_name)
         if len(arguments) != len(function.parameters):
-            raise MirExecutionError(
-                "KS3101",
-                f"'{function.name}' için {len(function.parameters)} argüman bekleniyor, {len(arguments)} verildi.",
-                function.declaration.location,
-            )
+            raise MirExecutionError("KS3101", f"'{function.name}' için {len(function.parameters)} argüman bekleniyor, {len(arguments)} verildi.", function.declaration.location)
         for parameter, value in zip(function.parameters, arguments):
             expected = _runtime_names(parameter.type)
             if not self.primitives.matches_type(value, expected):
-                raise MirExecutionError(
-                    "KS3401",
-                    f"'{function.name}' MIR çağrısında '{parameter.name}: {' or '.join(expected)}' sözleşmesi ihlal edildi.",
-                    function.declaration.location,
-                )
+                raise MirExecutionError("KS3401", f"'{function.name}' MIR çağrısında '{parameter.name}: {' or '.join(expected)}' sözleşmesi ihlal edildi.", function.declaration.location)
         if self.depth >= self.MAX_CALL_DEPTH:
-            raise MirExecutionError(
-                "KS3105", f"Çağrı derinliği sınırı aşıldı ({self.MAX_CALL_DEPTH}).", function.declaration.location
-            )
+            raise MirExecutionError("KS3105", f"Çağrı derinliği sınırı aşıldı ({self.MAX_CALL_DEPTH}).", function.declaration.location)
 
         bindings = {parameter.name: [value, False] for parameter, value in zip(function.parameters, arguments)}
         values: dict[int, Any] = {}
@@ -158,9 +120,7 @@ class MirExecutorV1:
             while True:
                 block = blocks.get(block_id)
                 if block is None:
-                    raise MirExecutionError(
-                        "KS5002", f"MIR bilinmeyen bloğa geçti: {block_id}", function.declaration.location
-                    )
+                    raise MirExecutionError("KS5002", f"MIR bilinmeyen bloğa geçti: {block_id}", function.declaration.location)
                 for instruction in block.instructions:
                     self._execute_instruction(module.key, instruction, values, bindings)
                 terminator = block.terminator
@@ -170,11 +130,7 @@ class MirExecutorV1:
                         return result
                     expected_return = _runtime_names(function.return_type)
                     if not self.primitives.matches_type(result, expected_return):
-                        raise MirExecutionError(
-                            "KS3401",
-                            f"'{function.name}' MIR dönüş sözleşmesi {' or '.join(expected_return)} beklerken {self.primitives.runtime_type_name(result)} döndürdü.",
-                            function.declaration.location,
-                        )
+                        raise MirExecutionError("KS3401", f"'{function.name}' MIR dönüş sözleşmesi {' or '.join(expected_return)} beklerken {self.primitives.runtime_type_name(result)} döndürdü.", function.declaration.location)
                     return result
                 if isinstance(terminator, MirJump):
                     block_id = terminator.target
@@ -186,9 +142,7 @@ class MirExecutorV1:
                     block_id = terminator.then_block if bool(condition) else terminator.else_block
                     continue
                 if isinstance(terminator, MirUnreachable):
-                    raise MirExecutionError(
-                        "KS5002", f"MIR unreachable bloğa ulaştı: {terminator.reason}", function.declaration.location
-                    )
+                    raise MirExecutionError("KS5002", f"MIR unreachable bloğa ulaştı: {terminator.reason}", function.declaration.location)
                 raise MirExecutionError("KS5002", "Bilinmeyen MIR terminator.", function.declaration.location)
         finally:
             self.depth -= 1
@@ -211,9 +165,7 @@ class MirExecutorV1:
 
     def _execute_instruction(self, module_key: str, instruction, values: dict[int, Any], bindings: dict[str, list[Any]]) -> None:
         if isinstance(instruction, MirAstFallback):
-            raise MirExecutionError(
-                "KS5002", f"MIR executor AST fallback çalıştırmaz: {instruction.node_kind}", instruction.location
-            )
+            raise MirExecutionError("KS5002", f"MIR executor AST fallback çalıştırmaz: {instruction.node_kind}", instruction.location)
         if isinstance(instruction, MirConst):
             value = instruction.value
             if type(value) is int and not INT_MIN <= value <= INT_MAX:
@@ -267,26 +219,20 @@ class MirExecutorV1:
             values[instruction.target] = self.primitives.map_builder()
             return
         if isinstance(instruction, MirMapInsert):
-            self.primitives.map_insert(
-                values[instruction.container],
-                values[instruction.key],
-                values[instruction.value],
-                instruction.location,
-            )
+            key, value = instruction.arguments
+            self.primitives.map_insert(values[instruction.object], values[key], values[value], instruction.location)
             return
         if isinstance(instruction, MirMapFinish):
-            values[instruction.target] = self.primitives.map_finish(values[instruction.container], instruction.location)
+            values[instruction.target] = self.primitives.map_finish(values[instruction.source], instruction.location)
             return
         if isinstance(instruction, MirStructNew):
             values[instruction.target] = self.primitives.struct_builder(instruction.type_name, instruction.location)
             return
         if isinstance(instruction, MirStructSet):
-            self.primitives.struct_set(
-                values[instruction.container], instruction.field, values[instruction.value], instruction.location
-            )
+            self.primitives.struct_set(values[instruction.object], instruction.field, values[instruction.source], instruction.location)
             return
         if isinstance(instruction, MirStructFinish):
-            values[instruction.target] = self.primitives.struct_finish(values[instruction.container], instruction.location)
+            values[instruction.target] = self.primitives.struct_finish(values[instruction.source], instruction.location)
             return
         if isinstance(instruction, MirIterInit):
             iterable = values[instruction.iterable]
@@ -315,10 +261,7 @@ class MirExecutorV1:
         if isinstance(instruction, MirCall):
             callee = values[instruction.callee]
             arguments = [values[item] for item in instruction.arguments]
-            if isinstance(callee, _MirFunctionRef):
-                result = self._call(callee.module_key, callee.function_name, arguments)
-            else:
-                result = self.primitives.invoke_primitive(callee, arguments, instruction.location)
+            result = self._call(callee.module_key, callee.function_name, arguments) if isinstance(callee, _MirFunctionRef) else self.primitives.invoke_primitive(callee, arguments, instruction.location)
             values[instruction.target] = result
             return
         if isinstance(instruction, MirFallibleIsSuccess):
@@ -328,14 +271,10 @@ class MirExecutorV1:
         if isinstance(instruction, MirFalliblePayload):
             success, payload = self.primitives.unwrap_fallible(values[instruction.source])
             if not success:
-                raise MirExecutionError(
-                    "KS5002", "MirFalliblePayload yalnızca kanıtlanmış success yolunda çalışabilir.", instruction.location
-                )
+                raise MirExecutionError("KS5002", "MirFalliblePayload yalnızca kanıtlanmış success yolunda çalışabilir.", instruction.location)
             values[instruction.target] = payload
             return
-        raise MirExecutionError(
-            "KS5002", f"Desteklenmeyen MIR instruction: {type(instruction).__name__}", instruction.location
-        )
+        raise MirExecutionError("KS5002", f"Desteklenmeyen MIR instruction: {type(instruction).__name__}", instruction.location)
 
     def _binary(self, instruction: MirBinary, values: dict[int, Any]) -> Any:
         left = values[instruction.left]
@@ -360,26 +299,16 @@ class MirExecutorV1:
             if not INT_MIN <= result <= INT_MAX:
                 return KsError(f"KS3501: Int taşması: '{op}'")
             return result
-        if op == "+":
-            return left + right
-        if op == "-":
-            return left - right
-        if op == "*":
-            return left * right
-        if op == "/":
-            return KsError("Sıfıra bölme") if right == 0 else left / right
-        if op == "==":
-            return left == right
-        if op == "!=":
-            return left != right
-        if op == "<":
-            return left < right
-        if op == "<=":
-            return left <= right
-        if op == ">":
-            return left > right
-        if op == ">=":
-            return left >= right
+        if op == "+": return left + right
+        if op == "-": return left - right
+        if op == "*": return left * right
+        if op == "/": return KsError("Sıfıra bölme") if right == 0 else left / right
+        if op == "==": return left == right
+        if op == "!=": return left != right
+        if op == "<": return left < right
+        if op == "<=": return left <= right
+        if op == ">": return left > right
+        if op == ">=": return left >= right
         raise MirExecutionError("KS5002", f"Bilinmeyen MIR binary operator: {op}", instruction.location)
 
 
