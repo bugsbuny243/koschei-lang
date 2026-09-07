@@ -10,8 +10,10 @@ from __future__ import annotations
 from typing import Any
 
 from .ast_nodes import FunctionDeclaration, Program, SourceLocation
+from .container_runtime_v1 import MapBuilderV1, StructBuilderV1
 from .interpreter import (
     Interpreter,
+    KsError,
     KoscheiRuntimeError,
     ModuleFunction,
     _contains_capability,
@@ -39,9 +41,6 @@ class RuntimePrimitiveFacadeV1:
         module_imports,
         structs,
     ) -> None:
-        # Interpreter is retained only as an implementation container for the
-        # already-defined runtime value/capability primitive semantics. No AST
-        # execute/evaluate/call entrypoint is exposed through this facade.
         self._runtime = Interpreter(
             program,
             argv,
@@ -78,6 +77,75 @@ class RuntimePrimitiveFacadeV1:
                 location,
             )
         return self._runtime._invoke(callee, arguments, location)
+
+    def is_runtime_error(self, value: Any) -> bool:
+        return isinstance(value, KsError)
+
+    def map_builder(self) -> MapBuilderV1:
+        return MapBuilderV1.empty()
+
+    def map_insert(
+        self,
+        builder: MapBuilderV1,
+        key: Any,
+        value: Any,
+        location: SourceLocation,
+    ) -> None:
+        if not isinstance(builder, MapBuilderV1):
+            raise RuntimePrimitiveFacadeError(
+                "KS5002", "Geçersiz MIR Map builder.", location
+            )
+        builder.insert(
+            key,
+            value,
+            contains_capability=self.contains_capability,
+            runtime_type_name=self.runtime_type_name,
+            location=location,
+        )
+
+    def map_finish(self, builder: MapBuilderV1, location: SourceLocation) -> dict[str, Any]:
+        if not isinstance(builder, MapBuilderV1):
+            raise RuntimePrimitiveFacadeError(
+                "KS5002", "Geçersiz MIR Map builder.", location
+            )
+        return builder.finish()
+
+    def struct_builder(self, type_name: str, location: SourceLocation) -> StructBuilderV1:
+        declaration = self._runtime.structs.get(type_name)
+        if declaration is None:
+            raise RuntimePrimitiveFacadeError(
+                "KS3101",
+                f"MIR Struct declaration bulunamadı: '{type_name}'.",
+                location,
+            )
+        return StructBuilderV1.empty(declaration)
+
+    def struct_set(
+        self,
+        builder: StructBuilderV1,
+        field: str,
+        value: Any,
+        location: SourceLocation,
+    ) -> None:
+        if not isinstance(builder, StructBuilderV1):
+            raise RuntimePrimitiveFacadeError(
+                "KS5002", "Geçersiz MIR Struct builder.", location
+            )
+        builder.set_field(
+            field,
+            value,
+            contains_capability=self.contains_capability,
+            matches_type=self.matches_type,
+            runtime_type_name=self.runtime_type_name,
+            location=location,
+        )
+
+    def struct_finish(self, builder: StructBuilderV1, location: SourceLocation):
+        if not isinstance(builder, StructBuilderV1):
+            raise RuntimePrimitiveFacadeError(
+                "KS5002", "Geçersiz MIR Struct builder.", location
+            )
+        return builder.finish()
 
     def unwrap_fallible(self, value: Any) -> tuple[bool, Any]:
         return self._runtime._unwrap_fallible(value)
