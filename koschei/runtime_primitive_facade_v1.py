@@ -1,12 +1,12 @@
 """Narrow runtime primitive ABI for sealed MIR execution.
 
 The MIR executor may reuse existing runtime value/capability implementations, but
-it must not acquire the reference interpreter's AST execution authority. This
-facade exposes only primitive value operations needed by normalized MIR and
-rejects source-language callable objects explicitly.
+it must not acquire the reference interpreter's AST execution authority or carry
+raw interpreter callable objects across the MIR/runtime boundary.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 from .ast_nodes import FunctionDeclaration, Program, SourceLocation
@@ -16,6 +16,8 @@ from .interpreter import (
     KsError,
     KoscheiRuntimeError,
     ModuleFunction,
+    _BoundMember,
+    _EnumConstructor,
     _contains_capability,
     ks_to_string,
 )
@@ -25,10 +27,26 @@ class RuntimePrimitiveFacadeError(KoscheiRuntimeError):
     pass
 
 
+@dataclass(frozen=True, slots=True)
+class _PrimitiveMemberRefV1:
+    """Facade-owned opaque reference to one already-authorized primitive member."""
+
+    raw: _BoundMember
+
+
+@dataclass(frozen=True, slots=True)
+class _PrimitiveConstructorRefV1:
+    """Facade-owned opaque reference to one canonical enum/Option/Result constructor."""
+
+    raw: _EnumConstructor
+
+
 class RuntimePrimitiveFacadeV1:
     """AST-opaque primitive surface consumed by ``MirExecutorV1``."""
 
     __slots__ = ("_runtime",)
+
+    _BUILTIN_CALLS = frozenset({"print", "println", "Error"})
 
     def __init__(
         self,
@@ -52,7 +70,16 @@ class RuntimePrimitiveFacadeV1:
         )
 
     def constructor(self, name: str):
-        return self._runtime.constructors.get(name)
+        raw = self._runtime.constructors.get(name)
+        if raw is None:
+            return None
+        if not isinstance(raw, _EnumConstructor):
+            raise RuntimePrimitiveFacadeError(
+                "KS5002",
+                f"MIR primitive constructor allowlist dışı: '{name}'.",
+                SourceLocation(1, 1),
+            )
+        return _PrimitiveConstructorRefV1(raw)
 
     def member(self, receiver: Any, name: str, location: SourceLocation) -> Any:
         result = self._runtime._member(receiver, name, location)
@@ -60,6 +87,14 @@ class RuntimePrimitiveFacadeV1:
             raise RuntimePrimitiveFacadeError(
                 "KS5002",
                 "Runtime primitive facade source AST callable üretemez.",
+                location,
+            )
+        if isinstance(result, _BoundMember):
+            return _PrimitiveMemberRefV1(result)
+        if callable(result):
+            raise RuntimePrimitiveFacadeError(
+                "KS5002",
+                "Runtime primitive facade raw host callable dışarı çıkaramaz.",
                 location,
             )
         return result
@@ -76,7 +111,17 @@ class RuntimePrimitiveFacadeV1:
                 "MIR primitive invoke source AST fonksiyonu çalıştıramaz.",
                 location,
             )
-        return self._runtime._invoke(callee, arguments, location)
+        if isinstance(callee, str) and callee in self._BUILTIN_CALLS:
+            return self._runtime._invoke(callee, arguments, location)
+        if isinstance(callee, _PrimitiveConstructorRefV1):
+            return self._runtime._invoke(callee.raw, arguments, location)
+        if isinstance(callee, _PrimitiveMemberRefV1):
+            return self._runtime._invoke(callee.raw, arguments, location)
+        raise RuntimePrimitiveFacadeError(
+            "KS5002",
+            f"MIR primitive invoke allowlist dışı callee: {type(callee).__name__}.",
+            location,
+        )
 
     def is_runtime_error(self, value: Any) -> bool:
         return isinstance(value, KsError)
