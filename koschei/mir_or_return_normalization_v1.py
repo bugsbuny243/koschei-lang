@@ -4,10 +4,12 @@ This module extends the existing MIR lowerer without introducing a second source
 semantic authority. It normalizes `or return`, short-circuit boolean control
 flow, interpolated strings, and staged fail-fast Map/Struct construction while
 preserving single evaluation and existing typed-HIR facts.
+
+Stabilized extension instruction class identity lives only in
+``mir_extension_instructions_v4``; this lowering module consumes and re-exports
+those classes for compatibility but does not redefine them.
 """
 from __future__ import annotations
-
-from dataclasses import dataclass
 
 from .ast_nodes import (
     BinaryExpression,
@@ -18,7 +20,10 @@ from .ast_nodes import (
     SourceLocation,
     StructLiteral,
 )
-from .mir_container_staging_v1 import (
+from .mir_extension_instructions_v4 import (
+    MirFallibleIsSuccess,
+    MirFalliblePayload,
+    MirInterpolate,
     MirIsRuntimeError,
     MirMapFinish,
     MirMapInsert,
@@ -29,30 +34,6 @@ from .mir_container_staging_v1 import (
 )
 from .mir_ir import MirBind, MirBranch, MirJump, MirLoad, MirReturn, MirStore, _FunctionLowerer
 from .type_system import BOOL, TypeNode
-
-
-@dataclass(frozen=True, slots=True)
-class MirFallibleIsSuccess:
-    target: int
-    source: int
-    type: TypeNode
-    location: SourceLocation
-
-
-@dataclass(frozen=True, slots=True)
-class MirFalliblePayload:
-    target: int
-    source: int
-    type: TypeNode
-    location: SourceLocation
-
-
-@dataclass(frozen=True, slots=True)
-class MirInterpolate:
-    target: int
-    items: tuple[int, ...]
-    type: TypeNode
-    location: SourceLocation
 
 
 class _OrReturnFunctionLowerer(_FunctionLowerer):
@@ -211,3 +192,11 @@ class _OrReturnFunctionLowerer(_FunctionLowerer):
 
 def lower_function_blocks_v1(declaration, typed_report):
     return _OrReturnFunctionLowerer(declaration, typed_report).lower()
+
+
+__all__ = [
+    "MirFallibleIsSuccess",
+    "MirFalliblePayload",
+    "MirInterpolate",
+    "lower_function_blocks_v1",
+]
