@@ -15,11 +15,12 @@ from koschei.ast_nodes import (
 from koschei.mir_extension_instructions_v4 import (
     MirFallibleIsSuccess,
     MirFalliblePayload,
+    MirIsRuntimeError,
     MirUnit,
 )
 from koschei.mir_ir import MirAstFallback, MirBind, MirBranch, MirConst, MirReturn
 from koschei.mir_or_return_normalization_v1 import lower_function_blocks_v1
-from koschei.type_system import BOOL, GenericType, INT
+from koschei.type_system import BOOL, ERROR, GenericType, INT, union_type
 
 
 def _loc(column: int = 1) -> SourceLocation:
@@ -35,7 +36,7 @@ def _typed_report(*pairs):
     )
 
 
-def _lower(handler: Block, *handler_pairs):
+def _lower(handler: Block, *handler_pairs, expression_type=INT):
     location = _loc()
     fallible = Literal("fallible-sentinel", _loc(2))
     expression = OrBlockExpression(fallible, handler, location)
@@ -49,7 +50,7 @@ def _lower(handler: Block, *handler_pairs):
     report = _typed_report(
         (fallible, GenericType("Option", (INT,))),
         *handler_pairs,
-        (expression, INT),
+        (expression, expression_type),
     )
     return lower_function_blocks_v1(declaration, report)
 
@@ -109,7 +110,7 @@ def test_or_block_empty_handler_uses_canonical_unit_not_host_sentinel():
     assert sum(isinstance(item, MirUnit) for item in instructions) == 1
 
 
-def test_or_block_if_tail_stays_one_explicit_migration_fallback():
+def test_or_block_if_tail_is_explicit_value_cfg_without_ast_fallback():
     condition = Literal(True, _loc(8))
     then_value = Literal(7, _loc(12))
     else_value = Literal(9, _loc(18))
@@ -127,10 +128,41 @@ def test_or_block_if_tail_stays_one_explicit_migration_fallback():
     )
     instructions = [item for block in blocks for item in block.instructions]
 
-    fallbacks = [item for item in instructions if isinstance(item, MirAstFallback)]
-    assert len(fallbacks) == 1
-    assert fallbacks[0].node_kind == "OrBlockExpression"
-    assert not any(isinstance(item, MirConst) and item.value in {7, 9} for item in instructions)
+    assert not any(isinstance(item, MirAstFallback) for item in instructions)
+    assert any(isinstance(item, MirIsRuntimeError) for item in instructions)
+    assert sum(isinstance(block.terminator, MirBranch) for block in blocks) >= 3
+    assert any(isinstance(item, MirConst) and item.value == 7 for item in instructions)
+    assert any(isinstance(item, MirConst) and item.value == 9 for item in instructions)
+
+
+def test_or_block_if_error_condition_has_explicit_error_result_path():
+    condition = Literal("error-sentinel", _loc(8))
+    then_value = Literal(7, _loc(12))
+    else_value = Literal(9, _loc(18))
+    tail_if = IfStatement(
+        condition,
+        Block((ExpressionStatement(then_value, then_value.location),)),
+        Block((ExpressionStatement(else_value, else_value.location),)),
+        _loc(8),
+    )
+    blocks = _lower(
+        Block((tail_if,)),
+        (condition, union_type(BOOL, ERROR)),
+        (then_value, INT),
+        (else_value, INT),
+        expression_type=union_type(INT, ERROR),
+    )
+    instructions = [item for block in blocks for item in block.instructions]
+
+    assert not any(isinstance(item, MirAstFallback) for item in instructions)
+    assert any(isinstance(item, MirIsRuntimeError) for item in instructions)
+    error_result_binds = [
+        item
+        for block in blocks
+        for item in block.instructions
+        if isinstance(item, MirBind) and item.source == 2
+    ]
+    assert error_result_binds or sum(isinstance(item, MirBind) for item in instructions) >= 4
 
 
 def test_or_block_loop_tail_remains_explicit_migration_fallback():
