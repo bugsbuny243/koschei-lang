@@ -9,6 +9,7 @@ from koschei.mir_extension_instructions_v4 import (
     MirInterpolate,
     MirIsRuntimeError,
     MirMapInsert,
+    MirUnit,
 )
 from koschei.mir_instruction_registry_v4 import (
     MIR_V4_EXTENSION_INSTRUCTION_TYPES as RegistryExtensionTypes,
@@ -19,7 +20,7 @@ from koschei.mir_or_return_normalization_v1 import (
     MirFallibleIsSuccess as CompatMirFallibleIsSuccess,
     MirInterpolate as CompatMirInterpolate,
 )
-from koschei.type_system import BOOL, STRING
+from koschei.type_system import BOOL, STRING, VOID
 
 
 def test_compatibility_modules_reexport_exact_canonical_class_objects():
@@ -33,6 +34,7 @@ def test_extension_instruction_authority_has_no_duplicate_class_names():
     names = [item.__name__ for item in MIR_V4_EXTENSION_INSTRUCTION_TYPES]
     assert len(names) == len(set(names))
     assert set(names) == {
+        "MirUnit",
         "MirFallibleIsSuccess",
         "MirFalliblePayload",
         "MirInterpolate",
@@ -52,6 +54,18 @@ def test_v4_registry_reuses_extension_authority_instead_of_copying_it():
     assert is_mir_v4_extension_instruction(
         MirInterpolate(3, (1, 2), STRING, location)
     )
+    assert is_mir_v4_extension_instruction(MirUnit(4, VOID, location))
+
+
+def test_unit_instruction_contract_is_canonical_and_host_opaque():
+    location = SourceLocation(5, 6)
+    assert instruction_contract(MirUnit(8, VOID, location)) == {
+        "kind": "unit",
+        "line": 5,
+        "column": 6,
+        "target": 8,
+        "type": "Void",
+    }
 
 
 def test_extension_instruction_contract_uses_existing_canonical_serializer():
