@@ -1,9 +1,10 @@
 """Normalized MIR lowering extensions for Koschei v4.
 
 This module extends the existing MIR lowerer without introducing a second source
-semantic authority. It normalizes `or return`, `or else`, short-circuit boolean
-control flow, interpolated strings, and staged fail-fast Map/Struct construction
-while preserving single evaluation and existing typed-HIR facts.
+semantic authority. It normalizes `or return`, `or else`, supported `or { ... }`
+value blocks, short-circuit boolean control flow, interpolated strings, and
+staged fail-fast Map/Struct construction while preserving single evaluation and
+existing typed-HIR facts.
 
 Stabilized extension instruction class identity lives only in
 ``mir_extension_instructions_v4``; this lowering module consumes and re-exports
@@ -13,13 +14,21 @@ from __future__ import annotations
 
 from .ast_nodes import (
     BinaryExpression,
+    Block,
     Expression,
+    ExpressionStatement,
+    ForStatement,
+    IfStatement,
     InterpolatedString,
+    LetStatement,
     MapLiteral,
+    OrBlockExpression,
     OrElseExpression,
     OrReturnExpression,
+    ReturnStatement,
     SourceLocation,
     StructLiteral,
+    WhileStatement,
 )
 from .mir_extension_instructions_v4 import (
     MirFallibleIsSuccess,
@@ -32,9 +41,19 @@ from .mir_extension_instructions_v4 import (
     MirStructFinish,
     MirStructNew,
     MirStructSet,
+    MirUnit,
 )
-from .mir_ir import MirBind, MirBranch, MirJump, MirLoad, MirReturn, MirStore, _FunctionLowerer
-from .type_system import BOOL, TypeNode
+from .mir_ir import (
+    MirBind,
+    MirBranch,
+    MirJump,
+    MirLoad,
+    MirReturn,
+    MirStore,
+    MirUnreachable,
+    _FunctionLowerer,
+)
+from .type_system import BOOL, VOID, TypeNode
 
 
 class _OrReturnFunctionLowerer(_FunctionLowerer):
@@ -45,6 +64,11 @@ class _OrReturnFunctionLowerer(_FunctionLowerer):
             if name not in self.used_binding_names:
                 self.used_binding_names.add(name)
                 return name
+
+    def _emit_unit(self, location: SourceLocation) -> int:
+        target = self._new_value()
+        self._emit(MirUnit(target, VOID, location))
+        return target
 
     def _store_error_or_continue(
         self,
@@ -184,6 +208,164 @@ class _OrReturnFunctionLowerer(_FunctionLowerer):
         self._emit(MirLoad(target, result_name, result_type, expression.location))
         return target
 
+    def _supports_value_block(self, block: Block) -> bool:
+        if not block.statements:
+            return True
+        tail = block.statements[-1]
+        if isinstance(tail, (ExpressionStatement, LetStatement, ReturnStatement)):
+            return True
+        if isinstance(tail, IfStatement):
+            if not self._supports_value_block(tail.then_block):
+                return False
+            if isinstance(tail.else_branch, Block):
+                return self._supports_value_block(tail.else_branch)
+            if isinstance(tail.else_branch, IfStatement):
+                return self._supports_value_if(tail.else_branch)
+            return True
+        if isinstance(tail, (WhileStatement, ForStatement)):
+            return False
+        return False
+
+    def _supports_value_if(self, statement: IfStatement) -> bool:
+        if not self._supports_value_block(statement.then_block):
+            return False
+        if isinstance(statement.else_branch, Block):
+            return self._supports_value_block(statement.else_branch)
+        if isinstance(statement.else_branch, IfStatement):
+            return self._supports_value_if(statement.else_branch)
+        return True
+
+    def _lower_value_block(
+        self,
+        block: Block,
+        result_type: TypeNode,
+        empty_location: SourceLocation,
+    ) -> int | None:
+        """Lower one expression-valued block and return its normal-exit SSA value.
+
+        Only the final executed statement determines the source block value. Prefix
+        statements therefore use ordinary statement lowering; the tail uses the
+        value-aware rules below. A function return has no normal block value.
+        """
+
+        self.scopes.append({})
+        try:
+            if not block.statements:
+                return self._emit_unit(empty_location)
+
+            for statement in block.statements[:-1]:
+                if self.blocks[self.current].terminator is not None:
+                    return None
+                self._lower_statement(statement)
+            if self.blocks[self.current].terminator is not None:
+                return None
+
+            tail = block.statements[-1]
+            if isinstance(tail, ExpressionStatement):
+                return self._lower_expression(tail.expression)
+            if isinstance(tail, LetStatement):
+                self._lower_statement(tail)
+                return self._emit_unit(tail.location)
+            if isinstance(tail, ReturnStatement):
+                self._lower_statement(tail)
+                return None
+            if isinstance(tail, IfStatement):
+                return self._lower_value_if(tail, result_type)
+            raise ValueError(
+                "expression-valued MIR block tail is not normalized: "
+                f"{type(tail).__name__}"
+            )
+        finally:
+            self.scopes.pop()
+
+    def _lower_value_if(self, statement: IfStatement, result_type: TypeNode) -> int | None:
+        condition = self._lower_expression(statement.condition)
+        then_block = self._new_block()
+        else_block = self._new_block()
+        join_block = self._new_block()
+        self._terminate(MirBranch(condition, then_block, else_block))
+        result_name = self._new_internal_binding_name("value_if_result")
+
+        self.current = then_block
+        then_value = self._lower_value_block(
+            statement.then_block,
+            result_type,
+            statement.location,
+        )
+        then_reaches = (
+            then_value is not None and self.blocks[self.current].terminator is None
+        )
+        if then_reaches:
+            self._emit(MirBind(result_name, then_value, False, result_type, statement.location))
+            self._terminate(MirJump(join_block))
+
+        self.current = else_block
+        if isinstance(statement.else_branch, Block):
+            else_value = self._lower_value_block(
+                statement.else_branch,
+                result_type,
+                statement.location,
+            )
+        elif isinstance(statement.else_branch, IfStatement):
+            else_value = self._lower_value_if(statement.else_branch, result_type)
+        else:
+            else_value = self._emit_unit(statement.location)
+        else_reaches = (
+            else_value is not None and self.blocks[self.current].terminator is None
+        )
+        if else_reaches:
+            self._emit(MirBind(result_name, else_value, False, result_type, statement.location))
+            self._terminate(MirJump(join_block))
+
+        self.current = join_block
+        if not then_reaches and not else_reaches:
+            self._terminate(MirUnreachable("value-if has no normal exit"))
+            return None
+        target = self._new_value()
+        self._emit(MirLoad(target, result_name, result_type, statement.location))
+        return target
+
+    def _lower_or_block(self, expression: OrBlockExpression) -> int:
+        fallible = self._lower_expression(expression.value)
+        success = self._new_value()
+        self._emit(MirFallibleIsSuccess(success, fallible, BOOL, expression.location))
+        success_block = self._new_block()
+        failure_block = self._new_block()
+        join_block = self._new_block()
+        self._terminate(MirBranch(success, success_block, failure_block))
+
+        result_name = self._new_internal_binding_name("or_block_result")
+        result_type = self._type_of(expression)
+
+        self.current = success_block
+        payload = self._new_value()
+        self._emit(MirFalliblePayload(payload, fallible, result_type, expression.location))
+        self._emit(MirBind(result_name, payload, False, result_type, expression.location))
+        self._terminate(MirJump(join_block))
+
+        self.current = failure_block
+        handler_value = self._lower_value_block(
+            expression.handler,
+            result_type,
+            expression.location,
+        )
+        if handler_value is not None and self.blocks[self.current].terminator is None:
+            self._emit(
+                MirBind(
+                    result_name,
+                    handler_value,
+                    False,
+                    result_type,
+                    expression.location,
+                )
+            )
+            self._terminate(MirJump(join_block))
+
+        self.current = join_block
+        target = self._new_value()
+        self._emit(MirLoad(target, result_name, result_type, expression.location))
+        return target
+
     def _lower_expression(self, expression: Expression) -> int:
         if isinstance(expression, MapLiteral):
             return self._lower_map_literal(expression)
@@ -198,6 +380,10 @@ class _OrReturnFunctionLowerer(_FunctionLowerer):
             return target
         if isinstance(expression, OrElseExpression):
             return self._lower_or_else(expression)
+        if isinstance(expression, OrBlockExpression):
+            if self._supports_value_block(expression.handler):
+                return self._lower_or_block(expression)
+            return super()._lower_expression(expression)
         if not isinstance(expression, OrReturnExpression):
             return super()._lower_expression(expression)
 
