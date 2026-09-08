@@ -1,7 +1,7 @@
 from pathlib import Path
 import tempfile
 
-from koschei.interpreter import run
+from koschei.interpreter import run_mir
 from koschei.mir import require_mir
 from koschei.mir_executor_v1 import execute_mir_v1
 from koschei.mir_extension_instructions_v4 import MirIsRuntimeError
@@ -15,7 +15,7 @@ def _compiler_mir(source: str):
     path.write_text(source, encoding="utf-8")
     graph = load_graph(path)
     check_graph(graph)
-    return directory, path, require_mir(graph)
+    return directory, require_mir(graph)
 
 
 def _instructions(function):
@@ -34,11 +34,11 @@ fn main() {
     println("after-if")
 }
 '''
-    directory, path, mir = _compiler_mir(source)
+    directory, mir = _compiler_mir(source)
     try:
         # Reference/source semantics: the If statement itself yields the error,
         # but main continues because the statement result is discarded.
-        run(path)
+        assert run_mir(mir, []) == 0
         assert capsys.readouterr().out == "after-if\n"
 
         main = next(item for item in mir.root_module.functions if item.name == "main")
@@ -64,9 +64,9 @@ fn main() {
     println("after-while")
 }
 '''
-    directory, path, mir = _compiler_mir(source)
+    directory, mir = _compiler_mir(source)
     try:
-        run(path)
+        assert run_mir(mir, []) == 0
         assert capsys.readouterr().out == "after-while\n"
 
         main = next(item for item in mir.root_module.functions if item.name == "main")
