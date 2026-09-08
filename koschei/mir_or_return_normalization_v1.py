@@ -283,27 +283,79 @@ class _OrReturnFunctionLowerer(_FunctionLowerer):
         self._emit(MirLoad(target, result_name, result_type, expression.location))
         return target
 
-    @staticmethod
-    def _supports_value_block(block: Block) -> bool:
-        """Admit only value blocks whose control-flow law is already proven here.
+    @classmethod
+    def _supports_value_if(cls, statement: IfStatement) -> bool:
+        if not cls._supports_value_block(statement.then_block):
+            return False
+        if isinstance(statement.else_branch, Block):
+            return cls._supports_value_block(statement.else_branch)
+        if isinstance(statement.else_branch, IfStatement):
+            return cls._supports_value_if(statement.else_branch)
+        return True
 
-        Direct expression/let sequencing and unconditional function return match
-        the source runtime exactly. Nested if/while/for stay as AST migration
-        boundaries until their error-valued statement-result semantics are
-        normalized explicitly.
-        """
+    @classmethod
+    def _supports_value_block(cls, block: Block) -> bool:
+        """Admit only block-value control flow proven equivalent to source semantics."""
 
         for statement in block.statements:
             if isinstance(statement, ReturnStatement):
                 return True
-            if not isinstance(statement, (ExpressionStatement, LetStatement)):
-                return False
+            if isinstance(statement, (ExpressionStatement, LetStatement)):
+                continue
+            if isinstance(statement, IfStatement) and cls._supports_value_if(statement):
+                continue
+            return False
         return True
+
+    def _lower_value_if(self, statement: IfStatement, result_type: TypeNode) -> int | None:
+        """Lower one expression-valued if with explicit Error/then/else results."""
+
+        condition = self._lower_expression(statement.condition)
+        is_error = self._new_value()
+        self._emit(MirIsRuntimeError(is_error, condition, BOOL, statement.location))
+
+        error_block = self._new_block()
+        decision_block = self._new_block()
+        then_block = self._new_block()
+        else_block = self._new_block()
+        join_block = self._new_block()
+        result_name = self._new_internal_binding_name("value_if_result")
+        self._terminate(MirBranch(is_error, error_block, decision_block))
+
+        self.current = error_block
+        self._emit(MirBind(result_name, condition, False, result_type, statement.location))
+        self._terminate(MirJump(join_block))
+
+        self.current = decision_block
+        self._terminate(MirBranch(condition, then_block, else_block))
+
+        self.current = then_block
+        then_value = self._lower_value_block(statement.then_block, statement.location)
+        if then_value is not None and self.blocks[self.current].terminator is None:
+            self._emit(MirBind(result_name, then_value, False, result_type, statement.location))
+            self._terminate(MirJump(join_block))
+
+        self.current = else_block
+        if isinstance(statement.else_branch, Block):
+            else_value = self._lower_value_block(statement.else_branch, statement.location)
+        elif isinstance(statement.else_branch, IfStatement):
+            else_value = self._lower_value_if(statement.else_branch, result_type)
+        else:
+            else_value = self._emit_unit(statement.location)
+        if else_value is not None and self.blocks[self.current].terminator is None:
+            self._emit(MirBind(result_name, else_value, False, result_type, statement.location))
+            self._terminate(MirJump(join_block))
+
+        self.current = join_block
+        target = self._new_value()
+        self._emit(MirLoad(target, result_name, result_type, statement.location))
+        return target
 
     def _lower_value_block(
         self,
         block: Block,
         empty_location: SourceLocation,
+        result_type: TypeNode | None = None,
     ) -> int | None:
         """Lower a proven expression-valued block and return normal-exit SSA value."""
 
@@ -328,6 +380,10 @@ class _OrReturnFunctionLowerer(_FunctionLowerer):
             if isinstance(tail, ReturnStatement):
                 self._lower_statement(tail)
                 return None
+            if isinstance(tail, IfStatement):
+                if result_type is None:
+                    raise ValueError("value-position if requires canonical result type")
+                return self._lower_value_if(tail, result_type)
             raise ValueError(
                 "proven value-block admission drifted after validation: "
                 f"{type(tail).__name__}"
@@ -357,6 +413,7 @@ class _OrReturnFunctionLowerer(_FunctionLowerer):
         handler_value = self._lower_value_block(
             expression.handler,
             expression.location,
+            result_type,
         )
         if handler_value is not None and self.blocks[self.current].terminator is None:
             self._emit(
