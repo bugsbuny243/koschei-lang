@@ -44,10 +44,10 @@ from .type_system import (
 )
 
 
-def _recorded_expression_type(checker, expression):
+def _recorded_expression_type(checked_facts, expression):
     """Read an already-checked Typed-HIR expression fact by object identity."""
 
-    for item in reversed(checker.expressions):
+    for item in reversed(checked_facts.expressions):
         if item.expression is expression:
             return item.type
     return UNKNOWN
@@ -59,12 +59,12 @@ def _error_result_type(type_node):
     return ERROR if any(option == ERROR for option in alternatives(type_node)) else None
 
 
-def _checked_statement_normal_type(checker, statement):
+def _checked_statement_normal_type(checked_facts, statement):
     """Project normal-exit statement value from already-checked Typed-HIR facts.
 
     ``None`` means the statement has no normal continuation (an explicit
-    function return). This function never calls ``checker.infer`` and therefore
-    cannot become a second expression-type authority.
+    function return). This function never calls ``infer`` and therefore cannot
+    become a second expression-type authority.
     """
 
     if isinstance(statement, LetStatement):
@@ -72,65 +72,59 @@ def _checked_statement_normal_type(checker, statement):
     if isinstance(statement, ReturnStatement):
         return None
     if isinstance(statement, ExpressionStatement):
-        return _recorded_expression_type(checker, statement.expression)
+        return _recorded_expression_type(checked_facts, statement.expression)
     if isinstance(statement, IfStatement):
         normal_types = []
         condition_error = _error_result_type(
-            _recorded_expression_type(checker, statement.condition)
+            _recorded_expression_type(checked_facts, statement.condition)
         )
         if condition_error is not None:
             normal_types.append(condition_error)
-        then_type = _checked_block_normal_type(checker, statement.then_block)
+        then_type = checked_block_normal_type(checked_facts, statement.then_block)
         if then_type is not None:
             normal_types.append(then_type)
         if isinstance(statement.else_branch, Block):
-            else_type = _checked_block_normal_type(checker, statement.else_branch)
+            else_type = checked_block_normal_type(checked_facts, statement.else_branch)
         elif isinstance(statement.else_branch, IfStatement):
-            else_type = _checked_statement_normal_type(checker, statement.else_branch)
+            else_type = _checked_statement_normal_type(checked_facts, statement.else_branch)
         else:
             else_type = VOID
         if else_type is not None:
             normal_types.append(else_type)
         return union_type(*normal_types) if normal_types else None
     if isinstance(statement, WhileStatement):
-        # Zero iterations are a possible normal exit. An error-valued condition
-        # or body result is also the loop statement result in source semantics.
         normal_types = [VOID]
         condition_error = _error_result_type(
-            _recorded_expression_type(checker, statement.condition)
+            _recorded_expression_type(checked_facts, statement.condition)
         )
         if condition_error is not None:
             normal_types.append(condition_error)
-        body_type = _checked_block_normal_type(checker, statement.body)
+        body_type = checked_block_normal_type(checked_facts, statement.body)
         if body_type is not None:
             normal_types.append(body_type)
         return union_type(*normal_types)
     if isinstance(statement, ForStatement):
-        # The iterable itself may be an Error value; otherwise zero iterations
-        # still yields Unit and executed iterations contribute the body result.
         normal_types = [VOID]
         iterable_error = _error_result_type(
-            _recorded_expression_type(checker, statement.iterable)
+            _recorded_expression_type(checked_facts, statement.iterable)
         )
         if iterable_error is not None:
             normal_types.append(iterable_error)
-        body_type = _checked_block_normal_type(checker, statement.body)
+        body_type = checked_block_normal_type(checked_facts, statement.body)
         if body_type is not None:
             normal_types.append(body_type)
         return union_type(*normal_types)
     return UNKNOWN
 
 
-def _checked_block_normal_type(checker, block: Block):
-    """Project the value of one already-checked block on normal control-flow exit."""
+def checked_block_normal_type(checked_facts, block: Block):
+    """Canonical normal-exit value type projected only from checked HIR facts."""
 
     normal_type = VOID
     can_continue = True
     for statement in block.statements:
-        statement_type = _checked_statement_normal_type(checker, statement)
+        statement_type = _checked_statement_normal_type(checked_facts, statement)
         if not can_continue:
-            # The checker still validates unreachable source for diagnostics, but
-            # unreachable statements cannot redefine the runtime block value.
             continue
         if statement_type is None:
             can_continue = False
@@ -248,7 +242,7 @@ def infer_expression(checker, expression):
     if isinstance(expression, OrBlockExpression):
         narrowed = success_type(checker.infer(expression.value))
         checker.check_block(expression.handler)
-        handler_type = _checked_block_normal_type(checker, expression.handler)
+        handler_type = checked_block_normal_type(checker, expression.handler)
         result_type = (
             narrowed
             if handler_type is None
