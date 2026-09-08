@@ -126,8 +126,6 @@ class MirExecutorV1:
                 terminator = block.terminator
                 if isinstance(terminator, MirReturn):
                     result = KsUnit if terminator.value is None else values[terminator.value]
-                    if isinstance(result, KsError):
-                        return result
                     expected_return = _runtime_names(function.return_type)
                     if not self.primitives.matches_type(result, expected_return):
                         raise MirExecutionError("KS3401", f"'{function.name}' MIR dönüş sözleşmesi {' or '.join(expected_return)} beklerken {self.primitives.runtime_type_name(result)} döndürdü.", function.declaration.location)
