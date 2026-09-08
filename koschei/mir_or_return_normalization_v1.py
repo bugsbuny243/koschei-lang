@@ -17,6 +17,7 @@ from .ast_nodes import (
     Block,
     Expression,
     ExpressionStatement,
+    IfStatement,
     InterpolatedString,
     LetStatement,
     MapLiteral,
@@ -26,6 +27,7 @@ from .ast_nodes import (
     ReturnStatement,
     SourceLocation,
     StructLiteral,
+    WhileStatement,
 )
 from .mir_extension_instructions_v4 import (
     MirFallibleIsSuccess,
@@ -86,6 +88,73 @@ class _OrReturnFunctionLowerer(_FunctionLowerer):
         self._terminate(MirJump(final_join))
 
         self.current = continue_block
+
+    def _lower_if(self, statement: IfStatement) -> None:
+        """Preserve source statement-result error semantics without runtime guessing."""
+
+        condition = self._lower_expression(statement.condition)
+        is_error = self._new_value()
+        self._emit(MirIsRuntimeError(is_error, condition, BOOL, statement.location))
+        error_block = self._new_block()
+        decision_block = self._new_block()
+        then_block = self._new_block()
+        else_block = self._new_block()
+        join_block = self._new_block()
+        self._terminate(MirBranch(is_error, error_block, decision_block))
+
+        self.current = error_block
+        self._terminate(MirJump(join_block))
+
+        self.current = decision_block
+        self._terminate(MirBranch(condition, then_block, else_block))
+
+        self.current = then_block
+        self._lower_block(statement.then_block)
+        if self.blocks[self.current].terminator is None:
+            self._terminate(MirJump(join_block))
+
+        self.current = else_block
+        if isinstance(statement.else_branch, Block):
+            self._lower_block(statement.else_branch)
+        elif isinstance(statement.else_branch, IfStatement):
+            self._lower_if(statement.else_branch)
+        if self.blocks[self.current].terminator is None:
+            self._terminate(MirJump(join_block))
+
+        self.current = join_block
+
+    def _lower_while(self, statement: WhileStatement) -> None:
+        """Treat an error-valued condition as loop statement completion, not return."""
+
+        condition_block = self._new_block()
+        error_block = self._new_block()
+        decision_block = self._new_block()
+        body_block = self._new_block()
+        exit_block = self._new_block()
+        self._terminate(MirJump(condition_block))
+
+        self.current = condition_block
+        condition = self._lower_expression(statement.condition)
+        is_error = self._new_value()
+        self._emit(MirIsRuntimeError(is_error, condition, BOOL, statement.location))
+        self._terminate(MirBranch(is_error, error_block, decision_block))
+
+        self.current = error_block
+        self._terminate(MirJump(exit_block))
+
+        self.current = decision_block
+        self._terminate(MirBranch(condition, body_block, exit_block))
+
+        self.current = body_block
+        self.loop_targets.append((exit_block, condition_block))
+        try:
+            self._lower_block(statement.body)
+        finally:
+            self.loop_targets.pop()
+        if self.blocks[self.current].terminator is None:
+            self._terminate(MirJump(condition_block))
+
+        self.current = exit_block
 
     def _lower_map_literal(self, expression: MapLiteral) -> int:
         result_type = self._type_of(expression)
@@ -158,19 +227,29 @@ class _OrReturnFunctionLowerer(_FunctionLowerer):
         result_name = self._new_internal_binding_name("shortcircuit")
         result_type = self._type_of(expression)
         self._emit(MirBind(result_name, left, True, result_type, expression.location))
+
+        is_error = self._new_value()
+        self._emit(MirIsRuntimeError(is_error, left, BOOL, expression.location))
+        decision_block = self._new_block()
         rhs_block = self._new_block()
         skip_block = self._new_block()
         join_block = self._new_block()
+        self._terminate(MirBranch(is_error, join_block, decision_block))
+
+        self.current = decision_block
         if expression.operator == "&&":
             self._terminate(MirBranch(left, rhs_block, skip_block))
         else:
             self._terminate(MirBranch(left, skip_block, rhs_block))
+
         self.current = rhs_block
         right = self._lower_expression(expression.right)
         self._emit(MirStore(result_name, right, result_type, expression.location))
         self._terminate(MirJump(join_block))
+
         self.current = skip_block
         self._terminate(MirJump(join_block))
+
         self.current = join_block
         target = self._new_value()
         self._emit(MirLoad(target, result_name, result_type, expression.location))
