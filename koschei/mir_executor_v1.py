@@ -137,7 +137,11 @@ class MirExecutorV1:
                 if isinstance(terminator, MirBranch):
                     condition = values[terminator.condition]
                     if isinstance(condition, KsError):
-                        return condition
+                        raise MirExecutionError(
+                            "KS5002",
+                            "MIR branch koşulu runtime Error değeri üretti; statement-result error continuation henüz canonical MIR içinde normalize edilmedi.",
+                            function.declaration.location,
+                        )
                     block_id = terminator.then_block if bool(condition) else terminator.else_block
                     continue
                 if isinstance(terminator, MirUnreachable):
