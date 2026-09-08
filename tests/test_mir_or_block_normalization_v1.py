@@ -155,14 +155,16 @@ def test_or_block_if_error_condition_has_explicit_error_result_path():
     instructions = [item for block in blocks for item in block.instructions]
 
     assert not any(isinstance(item, MirAstFallback) for item in instructions)
-    assert any(isinstance(item, MirIsRuntimeError) for item in instructions)
-    error_result_binds = [
+    condition_const = next(
         item
-        for block in blocks
-        for item in block.instructions
-        if isinstance(item, MirBind) and item.source == 2
-    ]
-    assert error_result_binds or sum(isinstance(item, MirBind) for item in instructions) >= 4
+        for item in instructions
+        if isinstance(item, MirConst) and item.value == "error-sentinel"
+    )
+    assert any(isinstance(item, MirIsRuntimeError) for item in instructions)
+    assert any(
+        isinstance(item, MirBind) and item.source == condition_const.target
+        for item in instructions
+    )
 
 
 def test_or_block_loop_tail_remains_explicit_migration_fallback():
