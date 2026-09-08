@@ -14,6 +14,15 @@ from .type_system import TypeNode
 
 
 @dataclass(frozen=True, slots=True)
+class MirUnit:
+    """Canonical Koschei Unit/Void runtime value; never a host-language sentinel."""
+
+    target: int
+    type: TypeNode
+    location: SourceLocation
+
+
+@dataclass(frozen=True, slots=True)
 class MirFallibleIsSuccess:
     target: int
     source: int
@@ -98,6 +107,7 @@ class MirStructFinish:
 
 
 MIR_V4_EXTENSION_INSTRUCTION_TYPES = (
+    MirUnit,
     MirFallibleIsSuccess,
     MirFalliblePayload,
     MirInterpolate,
