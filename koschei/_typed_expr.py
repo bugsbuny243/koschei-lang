@@ -29,6 +29,7 @@ from .ast_nodes import (
 )
 from .type_system import (
     BOOL,
+    ERROR,
     FLOAT,
     INT,
     STRING,
@@ -36,6 +37,7 @@ from .type_system import (
     VOID,
     NamedType,
     UnknownType,
+    alternatives,
     generic,
     success_type,
     union_type,
@@ -49,6 +51,12 @@ def _recorded_expression_type(checker, expression):
         if item.expression is expression:
             return item.type
     return UNKNOWN
+
+
+def _error_result_type(type_node):
+    """Project the canonical Error alternative without re-running inference."""
+
+    return ERROR if any(option == ERROR for option in alternatives(type_node)) else None
 
 
 def _checked_statement_normal_type(checker, statement):
@@ -67,6 +75,11 @@ def _checked_statement_normal_type(checker, statement):
         return _recorded_expression_type(checker, statement.expression)
     if isinstance(statement, IfStatement):
         normal_types = []
+        condition_error = _error_result_type(
+            _recorded_expression_type(checker, statement.condition)
+        )
+        if condition_error is not None:
+            normal_types.append(condition_error)
         then_type = _checked_block_normal_type(checker, statement.then_block)
         if then_type is not None:
             normal_types.append(then_type)
@@ -79,11 +92,32 @@ def _checked_statement_normal_type(checker, statement):
         if else_type is not None:
             normal_types.append(else_type)
         return union_type(*normal_types) if normal_types else None
-    if isinstance(statement, (ForStatement, WhileStatement)):
-        # Zero iterations are always a possible normal exit in the checked type
-        # model; executed iterations contribute the body's last normal value.
+    if isinstance(statement, WhileStatement):
+        # Zero iterations are a possible normal exit. An error-valued condition
+        # or body result is also the loop statement result in source semantics.
+        normal_types = [VOID]
+        condition_error = _error_result_type(
+            _recorded_expression_type(checker, statement.condition)
+        )
+        if condition_error is not None:
+            normal_types.append(condition_error)
         body_type = _checked_block_normal_type(checker, statement.body)
-        return VOID if body_type is None else union_type(VOID, body_type)
+        if body_type is not None:
+            normal_types.append(body_type)
+        return union_type(*normal_types)
+    if isinstance(statement, ForStatement):
+        # The iterable itself may be an Error value; otherwise zero iterations
+        # still yields Unit and executed iterations contribute the body result.
+        normal_types = [VOID]
+        iterable_error = _error_result_type(
+            _recorded_expression_type(checker, statement.iterable)
+        )
+        if iterable_error is not None:
+            normal_types.append(iterable_error)
+        body_type = _checked_block_normal_type(checker, statement.body)
+        if body_type is not None:
+            normal_types.append(body_type)
+        return union_type(*normal_types)
     return UNKNOWN
 
 
