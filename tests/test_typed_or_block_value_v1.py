@@ -76,3 +76,30 @@ def test_or_block_tail_if_unions_only_normal_branch_values():
     report = lower_typed_hir(program)
 
     assert _expression_type(report, expression) == "Int or String"
+
+
+def test_or_block_value_if_includes_error_valued_condition_in_result_type():
+    location = _loc()
+    fallible = Identifier("value", _loc(2))
+    condition = Identifier("condition", _loc(8))
+    tail_if = IfStatement(
+        condition,
+        Block((ExpressionStatement(Literal("fallback", _loc(12)), _loc(12)),)),
+        Block((ExpressionStatement(Literal(9, _loc(18)), _loc(18)),)),
+        _loc(8),
+    )
+    expression = OrBlockExpression(fallible, Block((tail_if,)), location)
+    function = FunctionDeclaration(
+        "choose",
+        (
+            Parameter("value", TypeRef(("Option<Int>",), location), location),
+            Parameter("condition", TypeRef(("Bool", "Error"), location), location),
+        ),
+        TypeRef(("Int", "String", "Error"), location),
+        Block((ReturnStatement(expression, location),)),
+        location,
+    )
+
+    report = lower_typed_hir(Program((function,)))
+
+    assert _expression_type(report, expression) == "Error or Int or String"
