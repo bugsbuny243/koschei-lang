@@ -6,171 +6,155 @@ Scope: Koschei Lang only
 
 ## Constitutional rule
 
-A fact that is already normalized into Verified MIR must not be re-derived from
-AST/source as a second semantic authority. `MirAstFallback` is therefore a
-migration boundary, not an execution permission. The public checked runtime
-fails closed if such a boundary reaches `MirExecutorV1`.
+A fact normalized into Verified MIR must not be re-derived from AST/source as a
+second semantic authority. `MirAstFallback` is a migration boundary, not an
+execution permission. The public checked runtime fails closed if such a boundary
+reaches `MirExecutorV1`.
 
 ## Current explicit MIR coverage
 
-The current v4 lowering explicitly normalizes:
+The v4 path explicitly normalizes:
 
-- literals and identifiers;
-- unary and ordinary binary expressions;
+- literals, identifiers, unary and ordinary binary expressions;
 - short-circuit `&&` / `||` as CFG;
-- Lists when their typed result is `List<T>`;
+- Lists when Typed HIR proves `List<T>`;
 - member lookup and calls;
 - identifier assignment;
 - interpolated strings;
 - `or return`;
-- `or else` as explicit success/failure CFG with failure-only fallback evaluation;
-- Map literals with fail-fast staged construction;
-- Struct literals with fail-fast staged construction;
+- `or else` with failure-only fallback evaluation;
+- a proven safe subset of `or { ... }` value handlers;
+- Map/Struct literals with staged fail-fast construction;
 - let / expression / return statements;
-- if / while;
-- List-backed for loops;
+- ordinary if / while / List-for structural CFG;
 - break / continue.
 
-## Recently closed fallback boundary
+The phrase “structural CFG” does not claim complete statement-result convergence:
+error-valued branch conditions remain a known semantic debt described below.
+
+## Recently closed or reduced fallback boundaries
 
 ### `OrElseExpression` — normalized
 
-Current shape:
-
 `evaluate fallible once -> success test -> success payload / failure fallback -> join`
 
-Both exclusive branches define the same compiler-internal result binding and the
-join reads that binding. No eager fallback evaluation and no `MirAstFallback`
-are required for this construct.
+No eager fallback evaluation and no `MirAstFallback` are required.
 
-Validation tests are committed but no PASS claim is made until tests actually run.
+### `OrBlockExpression` — partially normalized
+
+The following handler forms now lower without AST fallback:
+
+- empty block -> canonical `MirUnit`;
+- expression-statement sequence -> final expression value;
+- tail `let` -> canonical `MirUnit`;
+- direct unconditional `return` -> function `MirReturn` with unreachable tail
+  source not lowered.
+
+Typed HIR now includes the handler's already-checked normal-exit value type in the
+`OrBlockExpression` result type. It does not re-infer handler expressions.
+
+Control-flow handlers (`if`, `while`, `for`) remain one whole
+`MirAstFallback` boundary. They are not partially lowered before fallback.
+
+## P0 semantic debt — branch/loop error-valued statement results
+
+Current source semantics and generic MIR branch execution are not yet equivalent
+when a condition evaluates to `KsError`.
+
+Source `IfStatement` returns that error as the statement result; its enclosing
+block may continue to later statements. Current `MirExecutorV1` treats a
+`KsError` encountered at `MirBranch` as a function-level return. That is too
+strong and cannot be used as canonical statement semantics.
+
+This affects the confidence level of existing structural CFG for:
+
+- ordinary `if`;
+- `while`;
+- short-circuit expressions when a branch predicate can itself become a runtime
+  error value;
+- future expression-valued control-flow blocks.
+
+Target law:
+
+**RUNTIME ERROR VALUE != FUNCTION RETURN**
+
+Lowering must encode an explicit error-value continuation appropriate to the
+source construct. Runtime must not infer it from Python object shape.
 
 ## Remaining concrete expression fallback boundaries
 
-### P0 — `OrBlockExpression`
+### P0 — control-flow `OrBlockExpression`
 
-Why it matters:
-
-- the handler is a full Block, not a single value;
-- handler effects must occur only on failure;
-- block-local bindings and early return semantics must remain exact;
-- source semantics gives the handler block a value, while the current MIR
-  statement lowerer discards ordinary statement results;
-- naive `_lower_block()` reuse would therefore silently change semantics.
-
-Prerequisite is now specified in:
-
-`KOSCHEI_MIR_BLOCK_VALUE_SEMANTICS_V1.md`
-
-Required normalization shape after that prerequisite is implemented:
-
-`evaluate fallible once -> success test -> success payload / failure value-block CFG -> join`
-
-The failure handler must use canonical value-producing block lowering. No AST
-handler execution or “last MIR instruction” guessing is permitted.
+Prerequisite: resolve branch/loop statement-result error routing, then extend the
+value-block lowering specified in `KOSCHEI_MIR_BLOCK_VALUE_SEMANTICS_V1.md`.
 
 ### P0 — `MatchExpression`
 
-Why it matters:
-
-- variant selection is control flow;
-- payload extraction is conditional;
-- arm-local binding identity must be canonical;
-- only the selected arm may evaluate;
-- capability-bearing values must not gain authority from Python object shape or
-  runtime-selected dispatch.
-
-Canonical semantics are now specified in:
-
-`KOSCHEI_MIR_MATCH_SEMANTICS_V1.md`
-
-The proposed normalized facts are `MirVariantIs` and `MirVariantPayload`, but
-these are NOT implemented yet. They must bind compiler-resolved canonical variant
-identity and remain representation facts, not runtime authority.
-
-Do not add Match-specific runtime authority before compiler-resolved variant
-identity and exhaustiveness facts are available.
-
-## Conditional / edge fallback boundaries
+Variant selection, payload extraction, arm-local identity and exhaustiveness must
+come from compiler-resolved canonical facts. `KOSCHEI_MIR_MATCH_SEMANTICS_V1.md`
+defines the target. Proposed `MirVariantIs` / `MirVariantPayload` facts remain
+unimplemented.
 
 ### P1 — `ListLiteral` without normalized `List<T>` type
 
-The base lowerer emits a fallback if Typed HIR does not expose a single
-`List<T>` item type. This should normally be rejected or normalized earlier.
-The MIR layer must not guess an element type.
-
-Target law: **typed fact missing -> fail closed**, not AST fallback execution.
+Typed fact missing -> fail closed. MIR must not guess an item type.
 
 ### P1 — assignment target other than `Identifier`
 
-Current explicit lowering supports assignment only when the checked target is an
-Identifier. Any other assignment shape reaches expression fallback.
-
-Target law: unsupported assignment targets must either gain a dedicated
-canonical semantic rule or be rejected before executable MIR. Runtime object
-shape must not decide assignment authority.
+Unsupported target shape must gain a canonical semantic rule or be rejected
+before executable MIR. Host object shape is not assignment authority.
 
 ### P2 — non-List `ForStatement`
 
-The current statement lowerer emits `MirAstFallback` when the iterable type is
-not normalized as `List<T>`. Since current source runtime only supports List
-iteration, this is primarily a compiler convergence issue.
+Current source runtime only supports List iteration. Invalid checked semantics
+should eventually fail before MIR rather than leave an executable migration node.
 
-Target law: if checked semantics says the loop is invalid, MIR lowering should
-fail closed rather than preserve an executable AST migration node.
+### P2 — future unknown AST nodes
 
-### P2 — future unknown AST node classes
-
-The generic fallback branches remain a forward-compatibility migration guard.
-Adding a new AST node must not silently grant execution support. New constructs
-require explicit MIR semantics or compiler rejection.
+New AST constructs do not inherit execution support. They require explicit MIR
+semantics or compiler rejection.
 
 ## Security classification
 
 ### PROTECTS AGAINST
 
-- identifying where sealed MIR can still contain source-shaped migration facts;
-- accidental assumption that all syntax already has canonical executable MIR;
-- prioritizing control-flow/effect-sensitive fallback removal before cosmetic
-  normalization work.
+- hiding where source-shaped migration boundaries remain;
+- claiming full MIR convergence from structural CFG alone;
+- partially lowering an OrBlock control-flow handler and then falling back;
+- treating canonical Unit as a Python compiler object;
+- prioritizing effect/control-flow-sensitive gaps before cosmetic work.
 
 ### DOES NOT PROTECT AGAINST
 
-- compromise of the Python TCB;
-- bugs in already-normalized MIR instructions;
-- forged/tampered MIR by itself; sealing and the v4 instruction registry remain
-  separate required checks;
-- leakage of source or AST held elsewhere in the bootstrap compiler process.
+- Python TCB compromise;
+- bugs in normalized instructions;
+- forged/tampered MIR without sealing/registry checks;
+- the known branch-error semantic debt itself;
+- source/AST leakage elsewhere in the bootstrap compiler.
 
 ### ASSUMPTIONS
 
-- Typed HIR remains the checked source of type facts;
-- `MirExecutorV1` continues to reject `MirAstFallback`;
-- public checked execution continues to pass MIR sealing and the exact v4
-  instruction registry gate before execution;
+- Typed HIR is the checked type authority;
+- `MirExecutorV1` rejects `MirAstFallback`;
+- public checked execution passes MIR sealing and exact v4 registry validation;
 - compiler-known privileged operation identity remains authoritative.
 
 ### FAILURE MODE
 
-- a future backend starts executing `MirAstFallback`;
-- a new AST construct is treated as executable because its Python object shape
-  resembles an existing construct;
-- fallible/match lowering evaluates a skipped branch eagerly;
-- runtime reconstructs missing type/variant/authority facts from AST or Python
-  values rather than failing closed.
+- a backend begins executing `MirAstFallback`;
+- a runtime error value is upgraded into function return without source semantics;
+- new syntax is treated as executable by Python-class resemblance;
+- runtime reconstructs missing authority/type/variant facts from AST or host values.
 
 ## Next implementation order
 
-1. implement canonical value-producing block lowering from
-   `KOSCHEI_MIR_BLOCK_VALUE_SEMANTICS_V1.md`;
-2. normalize `OrBlockExpression` on top of that primitive;
-3. expose compiler-resolved canonical variant identity/exhaustiveness facts;
-4. implement Match only after those facts satisfy
-   `KOSCHEI_MIR_MATCH_SEMANTICS_V1.md`;
-5. convert invalid List/non-List-for/non-Identifier-assignment fallback cases to
-   compiler fail-closed where they are semantically invalid;
-6. integrate exact v4 registry membership into sealing/fingerprint validation so
-   public runtime is not the only complete-registry consumer;
-7. only then consider removing generic `MirAstFallback` production entirely.
+1. pin and fix `MirBranch` error-valued statement semantics;
+2. extend safe value-block CFG to `if`, then loops only after their result law is proven;
+3. finish `OrBlockExpression` fallback removal;
+4. expose compiler-resolved Match variant/exhaustiveness facts;
+5. implement Match explicit CFG;
+6. convert invalid List/for/assignment migration cases to compiler fail-closed;
+7. integrate exact v4 registry membership into sealing/fingerprint validation;
+8. only then consider removing generic `MirAstFallback` production entirely.
 
-No new syntax is required for this work.
+No new syntax is required.
