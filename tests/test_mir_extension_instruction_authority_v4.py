@@ -10,6 +10,10 @@ from koschei.mir_extension_instructions_v4 import (
     MirIsRuntimeError,
     MirMapInsert,
 )
+from koschei.mir_instruction_registry_v4 import (
+    MIR_V4_EXTENSION_INSTRUCTION_TYPES as RegistryExtensionTypes,
+    is_mir_v4_extension_instruction,
+)
 from koschei.mir_ir import instruction_contract, validate_blocks, MirBasicBlock, MirReturn
 from koschei.mir_or_return_normalization_v1 import (
     MirFallibleIsSuccess as CompatMirFallibleIsSuccess,
@@ -40,6 +44,14 @@ def test_extension_instruction_authority_has_no_duplicate_class_names():
         "MirStructSet",
         "MirStructFinish",
     }
+
+
+def test_v4_registry_reuses_extension_authority_instead_of_copying_it():
+    assert RegistryExtensionTypes is MIR_V4_EXTENSION_INSTRUCTION_TYPES
+    location = SourceLocation(2, 4)
+    assert is_mir_v4_extension_instruction(
+        MirInterpolate(3, (1, 2), STRING, location)
+    )
 
 
 def test_extension_instruction_contract_uses_existing_canonical_serializer():
