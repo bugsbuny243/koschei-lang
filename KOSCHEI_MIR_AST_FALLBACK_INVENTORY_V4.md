@@ -54,14 +54,20 @@ Why it matters:
 - the handler is a full Block, not a single value;
 - handler effects must occur only on failure;
 - block-local bindings and early return semantics must remain exact;
-- naive AST reuse would reopen source execution authority inside sealed MIR.
+- source semantics gives the handler block a value, while the current MIR
+  statement lowerer discards ordinary statement results;
+- naive `_lower_block()` reuse would therefore silently change semantics.
 
-Required normalization shape:
+Prerequisite is now specified in:
 
-`evaluate fallible once -> success test -> success payload / failure CFG block -> join`
+`KOSCHEI_MIR_BLOCK_VALUE_SEMANTICS_V1.md`
 
-The failure block must be lowered with normal MIR lexical-scope and terminator
-rules. No AST handler execution is permitted.
+Required normalization shape after that prerequisite is implemented:
+
+`evaluate fallible once -> success test -> success payload / failure value-block CFG -> join`
+
+The failure handler must use canonical value-producing block lowering. No AST
+handler execution or “last MIR instruction” guessing is permitted.
 
 ### P0 — `MatchExpression`
 
@@ -74,16 +80,16 @@ Why it matters:
 - capability-bearing values must not gain authority from Python object shape or
   runtime-selected dispatch.
 
-Required work before implementation:
+Canonical semantics are now specified in:
 
-1. define canonical enum/Option/Result variant-test MIR fact;
-2. define payload extraction with proof that the selected variant matches;
-3. define exhaustive/non-exhaustive failure semantics from the checked compiler
-   report rather than runtime guessing;
-4. lower each arm to explicit CFG;
-5. preserve arm-local lexical binding identity.
+`KOSCHEI_MIR_MATCH_SEMANTICS_V1.md`
 
-Do not add Match-specific runtime authority before these semantics are fixed.
+The proposed normalized facts are `MirVariantIs` and `MirVariantPayload`, but
+these are NOT implemented yet. They must bind compiler-resolved canonical variant
+identity and remain representation facts, not runtime authority.
+
+Do not add Match-specific runtime authority before compiler-resolved variant
+identity and exhaustiveness facts are available.
 
 ## Conditional / edge fallback boundaries
 
@@ -155,12 +161,16 @@ require explicit MIR semantics or compiler rejection.
 
 ## Next implementation order
 
-1. normalize `OrBlockExpression` with explicit failure-handler CFG;
-2. specify Match variant-test/payload semantics before adding instructions;
-3. convert invalid List/non-List-for/non-Identifier-assignment fallback cases to
+1. implement canonical value-producing block lowering from
+   `KOSCHEI_MIR_BLOCK_VALUE_SEMANTICS_V1.md`;
+2. normalize `OrBlockExpression` on top of that primitive;
+3. expose compiler-resolved canonical variant identity/exhaustiveness facts;
+4. implement Match only after those facts satisfy
+   `KOSCHEI_MIR_MATCH_SEMANTICS_V1.md`;
+5. convert invalid List/non-List-for/non-Identifier-assignment fallback cases to
    compiler fail-closed where they are semantically invalid;
-4. integrate exact v4 registry membership into sealing/fingerprint validation so
+6. integrate exact v4 registry membership into sealing/fingerprint validation so
    public runtime is not the only complete-registry consumer;
-5. only then consider removing generic `MirAstFallback` production entirely.
+7. only then consider removing generic `MirAstFallback` production entirely.
 
 No new syntax is required for this work.
