@@ -330,14 +330,22 @@ class _OrReturnFunctionLowerer(_FunctionLowerer):
         self._terminate(MirBranch(condition, then_block, else_block))
 
         self.current = then_block
-        then_value = self._lower_value_block(statement.then_block, statement.location)
+        then_value = self._lower_value_block(
+            statement.then_block,
+            statement.location,
+            result_type,
+        )
         if then_value is not None and self.blocks[self.current].terminator is None:
             self._emit(MirBind(result_name, then_value, False, result_type, statement.location))
             self._terminate(MirJump(join_block))
 
         self.current = else_block
         if isinstance(statement.else_branch, Block):
-            else_value = self._lower_value_block(statement.else_branch, statement.location)
+            else_value = self._lower_value_block(
+                statement.else_branch,
+                statement.location,
+                result_type,
+            )
         elif isinstance(statement.else_branch, IfStatement):
             else_value = self._lower_value_if(statement.else_branch, result_type)
         else:
