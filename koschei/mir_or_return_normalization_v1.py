@@ -1,10 +1,10 @@
 """Normalized MIR lowering extensions for Koschei v4.
 
 This module extends the existing MIR lowerer without introducing a second source
-semantic authority. It normalizes `or return`, `or else`, supported `or { ... }`
-value blocks, short-circuit boolean control flow, interpolated strings, and
-staged fail-fast Map/Struct construction while preserving single evaluation and
-existing typed-HIR facts.
+semantic authority. It normalizes `or return`, `or else`, a proven subset of
+`or { ... }` value blocks, short-circuit boolean control flow, interpolated
+strings, and staged fail-fast Map/Struct construction while preserving single
+evaluation and existing typed-HIR facts.
 
 Stabilized extension instruction class identity lives only in
 ``mir_extension_instructions_v4``; this lowering module consumes and re-exports
@@ -17,8 +17,6 @@ from .ast_nodes import (
     Block,
     Expression,
     ExpressionStatement,
-    ForStatement,
-    IfStatement,
     InterpolatedString,
     LetStatement,
     MapLiteral,
@@ -28,7 +26,6 @@ from .ast_nodes import (
     ReturnStatement,
     SourceLocation,
     StructLiteral,
-    WhileStatement,
 )
 from .mir_extension_instructions_v4 import (
     MirFallibleIsSuccess,
@@ -50,7 +47,6 @@ from .mir_ir import (
     MirLoad,
     MirReturn,
     MirStore,
-    MirUnreachable,
     _FunctionLowerer,
 )
 from .type_system import BOOL, VOID, TypeNode
@@ -208,45 +204,29 @@ class _OrReturnFunctionLowerer(_FunctionLowerer):
         self._emit(MirLoad(target, result_name, result_type, expression.location))
         return target
 
-    def _supports_value_block(self, block: Block) -> bool:
-        if not block.statements:
-            return True
-        tail = block.statements[-1]
-        if isinstance(tail, (ExpressionStatement, LetStatement, ReturnStatement)):
-            return True
-        if isinstance(tail, IfStatement):
-            if not self._supports_value_block(tail.then_block):
-                return False
-            if isinstance(tail.else_branch, Block):
-                return self._supports_value_block(tail.else_branch)
-            if isinstance(tail.else_branch, IfStatement):
-                return self._supports_value_if(tail.else_branch)
-            return True
-        if isinstance(tail, (WhileStatement, ForStatement)):
-            return False
-        return False
+    @staticmethod
+    def _supports_value_block(block: Block) -> bool:
+        """Admit only value blocks whose control-flow law is already proven here.
 
-    def _supports_value_if(self, statement: IfStatement) -> bool:
-        if not self._supports_value_block(statement.then_block):
-            return False
-        if isinstance(statement.else_branch, Block):
-            return self._supports_value_block(statement.else_branch)
-        if isinstance(statement.else_branch, IfStatement):
-            return self._supports_value_if(statement.else_branch)
+        Direct expression/let sequencing and unconditional function return match
+        the source runtime exactly. Nested if/while/for stay as AST migration
+        boundaries until their error-valued statement-result semantics are
+        normalized explicitly.
+        """
+
+        for statement in block.statements:
+            if isinstance(statement, ReturnStatement):
+                return True
+            if not isinstance(statement, (ExpressionStatement, LetStatement)):
+                return False
         return True
 
     def _lower_value_block(
         self,
         block: Block,
-        result_type: TypeNode,
         empty_location: SourceLocation,
     ) -> int | None:
-        """Lower one expression-valued block and return its normal-exit SSA value.
-
-        Only the final executed statement determines the source block value. Prefix
-        statements therefore use ordinary statement lowering; the tail uses the
-        value-aware rules below. A function return has no normal block value.
-        """
+        """Lower a proven expression-valued block and return normal-exit SSA value."""
 
         self.scopes.append({})
         try:
@@ -269,61 +249,12 @@ class _OrReturnFunctionLowerer(_FunctionLowerer):
             if isinstance(tail, ReturnStatement):
                 self._lower_statement(tail)
                 return None
-            if isinstance(tail, IfStatement):
-                return self._lower_value_if(tail, result_type)
             raise ValueError(
-                "expression-valued MIR block tail is not normalized: "
+                "proven value-block admission drifted after validation: "
                 f"{type(tail).__name__}"
             )
         finally:
             self.scopes.pop()
-
-    def _lower_value_if(self, statement: IfStatement, result_type: TypeNode) -> int | None:
-        condition = self._lower_expression(statement.condition)
-        then_block = self._new_block()
-        else_block = self._new_block()
-        join_block = self._new_block()
-        self._terminate(MirBranch(condition, then_block, else_block))
-        result_name = self._new_internal_binding_name("value_if_result")
-
-        self.current = then_block
-        then_value = self._lower_value_block(
-            statement.then_block,
-            result_type,
-            statement.location,
-        )
-        then_reaches = (
-            then_value is not None and self.blocks[self.current].terminator is None
-        )
-        if then_reaches:
-            self._emit(MirBind(result_name, then_value, False, result_type, statement.location))
-            self._terminate(MirJump(join_block))
-
-        self.current = else_block
-        if isinstance(statement.else_branch, Block):
-            else_value = self._lower_value_block(
-                statement.else_branch,
-                result_type,
-                statement.location,
-            )
-        elif isinstance(statement.else_branch, IfStatement):
-            else_value = self._lower_value_if(statement.else_branch, result_type)
-        else:
-            else_value = self._emit_unit(statement.location)
-        else_reaches = (
-            else_value is not None and self.blocks[self.current].terminator is None
-        )
-        if else_reaches:
-            self._emit(MirBind(result_name, else_value, False, result_type, statement.location))
-            self._terminate(MirJump(join_block))
-
-        self.current = join_block
-        if not then_reaches and not else_reaches:
-            self._terminate(MirUnreachable("value-if has no normal exit"))
-            return None
-        target = self._new_value()
-        self._emit(MirLoad(target, result_name, result_type, statement.location))
-        return target
 
     def _lower_or_block(self, expression: OrBlockExpression) -> int:
         fallible = self._lower_expression(expression.value)
@@ -346,7 +277,6 @@ class _OrReturnFunctionLowerer(_FunctionLowerer):
         self.current = failure_block
         handler_value = self._lower_value_block(
             expression.handler,
-            result_type,
             expression.location,
         )
         if handler_value is not None and self.blocks[self.current].terminator is None:
