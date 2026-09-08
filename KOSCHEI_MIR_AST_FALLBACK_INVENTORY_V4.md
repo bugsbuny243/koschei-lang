@@ -23,6 +23,7 @@ The current v4 lowering explicitly normalizes:
 - identifier assignment;
 - interpolated strings;
 - `or return`;
+- `or else` as explicit success/failure CFG with failure-only fallback evaluation;
 - Map literals with fail-fast staged construction;
 - Struct literals with fail-fast staged construction;
 - let / expression / return statements;
@@ -30,21 +31,21 @@ The current v4 lowering explicitly normalizes:
 - List-backed for loops;
 - break / continue.
 
-## Remaining concrete expression fallback boundaries
+## Recently closed fallback boundary
 
-### P0 — `OrElseExpression`
+### `OrElseExpression` — normalized
 
-Why it matters:
-
-- it is fallible control flow;
-- fallback evaluation must occur only on the failure path;
-- eager lowering could execute effects that source semantics would skip;
-- it must reuse the same fallible-success law as `or return` without creating a
-  second Result/Option authority.
-
-Required normalization shape:
+Current shape:
 
 `evaluate fallible once -> success test -> success payload / failure fallback -> join`
+
+Both exclusive branches define the same compiler-internal result binding and the
+join reads that binding. No eager fallback evaluation and no `MirAstFallback`
+are required for this construct.
+
+Validation tests are committed but no PASS claim is made until tests actually run.
+
+## Remaining concrete expression fallback boundaries
 
 ### P0 — `OrBlockExpression`
 
@@ -154,11 +155,12 @@ require explicit MIR semantics or compiler rejection.
 
 ## Next implementation order
 
-1. normalize `OrElseExpression` using the existing fallible-success primitives;
-2. normalize `OrBlockExpression` with explicit failure-handler CFG;
-3. specify Match variant-test/payload semantics before adding instructions;
-4. convert invalid List/non-List-for/non-Identifier-assignment fallback cases to
+1. normalize `OrBlockExpression` with explicit failure-handler CFG;
+2. specify Match variant-test/payload semantics before adding instructions;
+3. convert invalid List/non-List-for/non-Identifier-assignment fallback cases to
    compiler fail-closed where they are semantically invalid;
+4. integrate exact v4 registry membership into sealing/fingerprint validation so
+   public runtime is not the only complete-registry consumer;
 5. only then consider removing generic `MirAstFallback` production entirely.
 
 No new syntax is required for this work.
