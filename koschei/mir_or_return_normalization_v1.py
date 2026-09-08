@@ -1,9 +1,9 @@
 """Normalized MIR lowering extensions for Koschei v4.
 
 This module extends the existing MIR lowerer without introducing a second source
-semantic authority. It normalizes `or return`, short-circuit boolean control
-flow, interpolated strings, and staged fail-fast Map/Struct construction while
-preserving single evaluation and existing typed-HIR facts.
+semantic authority. It normalizes `or return`, `or else`, short-circuit boolean
+control flow, interpolated strings, and staged fail-fast Map/Struct construction
+while preserving single evaluation and existing typed-HIR facts.
 
 Stabilized extension instruction class identity lives only in
 ``mir_extension_instructions_v4``; this lowering module consumes and re-exports
@@ -16,6 +16,7 @@ from .ast_nodes import (
     Expression,
     InterpolatedString,
     MapLiteral,
+    OrElseExpression,
     OrReturnExpression,
     SourceLocation,
     StructLiteral,
@@ -155,6 +156,34 @@ class _OrReturnFunctionLowerer(_FunctionLowerer):
         self._emit(MirLoad(target, result_name, result_type, expression.location))
         return target
 
+    def _lower_or_else(self, expression: OrElseExpression) -> int:
+        fallible = self._lower_expression(expression.value)
+        success = self._new_value()
+        self._emit(MirFallibleIsSuccess(success, fallible, BOOL, expression.location))
+        success_block = self._new_block()
+        failure_block = self._new_block()
+        join_block = self._new_block()
+        self._terminate(MirBranch(success, success_block, failure_block))
+
+        result_name = self._new_internal_binding_name("or_else_result")
+        result_type = self._type_of(expression)
+
+        self.current = success_block
+        payload = self._new_value()
+        self._emit(MirFalliblePayload(payload, fallible, result_type, expression.location))
+        self._emit(MirBind(result_name, payload, False, result_type, expression.location))
+        self._terminate(MirJump(join_block))
+
+        self.current = failure_block
+        fallback = self._lower_expression(expression.fallback)
+        self._emit(MirBind(result_name, fallback, False, result_type, expression.location))
+        self._terminate(MirJump(join_block))
+
+        self.current = join_block
+        target = self._new_value()
+        self._emit(MirLoad(target, result_name, result_type, expression.location))
+        return target
+
     def _lower_expression(self, expression: Expression) -> int:
         if isinstance(expression, MapLiteral):
             return self._lower_map_literal(expression)
@@ -167,6 +196,8 @@ class _OrReturnFunctionLowerer(_FunctionLowerer):
             target = self._new_value()
             self._emit(MirInterpolate(target, items, self._type_of(expression), expression.location))
             return target
+        if isinstance(expression, OrElseExpression):
+            return self._lower_or_else(expression)
         if not isinstance(expression, OrReturnExpression):
             return super()._lower_expression(expression)
 
