@@ -36,8 +36,6 @@ fn main() {
 '''
     directory, mir = _compiler_mir(source)
     try:
-        # Reference/source semantics: the If statement itself yields the error,
-        # but main continues because the statement result is discarded.
         assert run_mir(mir, []) == 0
         assert capsys.readouterr().out == "after-if\n"
 
@@ -80,5 +78,33 @@ fn main() {
 
         execute_mir_v1(mir)
         assert capsys.readouterr().out == "after-while\n"
+    finally:
+        directory.cleanup()
+
+
+def test_while_body_error_terminates_loop_statement_and_continues_enclosing_block(capsys):
+    source = '''
+fn body_error() -> Error {
+    println("body-once")
+    return Error("body-error")
+}
+fn main() {
+    while true {
+        body_error()
+    }
+    println("after-while")
+}
+'''
+    directory, mir = _compiler_mir(source)
+    try:
+        assert run_mir(mir, []) == 0
+        assert capsys.readouterr().out == "body-once\nafter-while\n"
+
+        main = next(item for item in mir.root_module.functions if item.name == "main")
+        instructions = _instructions(main)
+        assert sum(isinstance(item, MirIsRuntimeError) for item in instructions) >= 2
+
+        execute_mir_v1(mir)
+        assert capsys.readouterr().out == "body-once\nafter-while\n"
     finally:
         directory.cleanup()
