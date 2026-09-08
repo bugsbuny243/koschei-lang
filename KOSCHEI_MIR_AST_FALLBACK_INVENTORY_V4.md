@@ -16,21 +16,19 @@ reaches `MirExecutorV1`.
 The v4 path explicitly normalizes:
 
 - literals, identifiers, unary and ordinary binary expressions;
-- short-circuit `&&` / `||` as CFG;
+- short-circuit `&&` / `||` with explicit Error routing;
 - Lists when Typed HIR proves `List<T>`;
 - member lookup and calls;
 - identifier assignment;
 - interpolated strings;
 - `or return`;
 - `or else` with failure-only fallback evaluation;
-- a proven safe subset of `or { ... }` value handlers;
 - Map/Struct literals with staged fail-fast construction;
 - let / expression / return statements;
-- ordinary if / while / List-for structural CFG;
-- break / continue.
-
-The phrase “structural CFG” does not claim complete statement-result convergence:
-error-valued branch conditions remain a known semantic debt described below.
+- statement-context `if` / `while` condition Error continuation;
+- a value-producing `or { ... }` subset including value-position `if` / nested
+  `else if` with explicit Error-result path;
+- break / continue on the already-normalized loop path.
 
 ## Recently closed or reduced fallback boundaries
 
@@ -40,53 +38,45 @@ error-valued branch conditions remain a known semantic debt described below.
 
 No eager fallback evaluation and no `MirAstFallback` are required.
 
-### `OrBlockExpression` — partially normalized
+### `OrBlockExpression` — value-if normalized
 
-The following handler forms now lower without AST fallback:
+The following handler forms lower without AST fallback:
 
 - empty block -> canonical `MirUnit`;
-- expression-statement sequence -> final expression value;
-- tail `let` -> canonical `MirUnit`;
-- direct unconditional `return` -> function `MirReturn` with unreachable tail
-  source not lowered.
+- expression/let sequence -> final normal value / Unit;
+- direct unconditional `return` -> function `MirReturn`;
+- tail `if` / nested `else if` when all participating blocks stay inside the
+  currently proven value-block subset;
+- Error-valued `if` condition -> explicit handler result, not function return.
 
-Typed HIR now includes the handler's already-checked normal-exit value type in the
-`OrBlockExpression` result type. It does not re-infer handler expressions.
+Typed HIR and MIR now share one canonical normal-exit block type projection from
+already-checked HIR expression facts. MIR does not re-run type inference.
 
-Control-flow handlers (`if`, `while`, `for`) remain one whole
-`MirAstFallback` boundary. They are not partially lowered before fallback.
+## Remaining P0 semantic debt
 
-## P0 semantic debt — branch/loop error-valued statement results
+### P0 — loop statement value continuity
 
-Current source semantics and generic MIR branch execution are not yet equivalent
-when a condition evaluates to `KsError`.
+Source `while` / `for` statements have a result. Zero iterations yield Unit;
+executed iterations expose the last body value; an Error-valued body result
+terminates the loop statement while the enclosing block may continue.
 
-Source `IfStatement` returns that error as the statement result; its enclosing
-block may continue to later statements. Current `MirExecutorV1` treats a
-`KsError` encountered at `MirBranch` as a function-level return. That is too
-strong and cannot be used as canonical statement semantics.
+Current statement-only loop lowering still needs explicit body-result binding.
+Therefore value-position `while` / `for` inside `or { ... }` remain one whole
+migration boundary.
 
-This affects the confidence level of existing structural CFG for:
+Permanent law:
 
-- ordinary `if`;
-- `while`;
-- short-circuit expressions when a branch predicate can itself become a runtime
-  error value;
-- future expression-valued control-flow blocks.
+**LOOP CONTROL FLOW != LOOP STATEMENT VALUE**
 
-Target law:
+The shared `checked_block_normal_type(...)` projection is now available for this
+next step; MIR must consume that checked fact rather than inventing a second type
+projection.
 
-**RUNTIME ERROR VALUE != FUNCTION RETURN**
+### P0 — `for` iterable Error continuation
 
-Lowering must encode an explicit error-value continuation appropriate to the
-source construct. Runtime must not infer it from Python object shape.
-
-## Remaining concrete expression fallback boundaries
-
-### P0 — control-flow `OrBlockExpression`
-
-Prerequisite: resolve branch/loop statement-result error routing, then extend the
-value-block lowering specified in `KOSCHEI_MIR_BLOCK_VALUE_SEMANTICS_V1.md`.
+If the checked type system admits an Error-valued iterable path, it must be routed
+explicitly before iterator construction. Runtime object shape must not decide
+whether the value is iterable or an Error continuation.
 
 ### P0 — `MatchExpression`
 
@@ -94,6 +84,8 @@ Variant selection, payload extraction, arm-local identity and exhaustiveness mus
 come from compiler-resolved canonical facts. `KOSCHEI_MIR_MATCH_SEMANTICS_V1.md`
 defines the target. Proposed `MirVariantIs` / `MirVariantPayload` facts remain
 unimplemented.
+
+## Conditional / edge fallback boundaries
 
 ### P1 — `ListLiteral` without normalized `List<T>` type
 
@@ -119,42 +111,45 @@ semantics or compiler rejection.
 ### PROTECTS AGAINST
 
 - hiding where source-shaped migration boundaries remain;
-- claiming full MIR convergence from structural CFG alone;
-- partially lowering an OrBlock control-flow handler and then falling back;
-- treating canonical Unit as a Python compiler object;
-- prioritizing effect/control-flow-sensitive gaps before cosmetic work.
+- treating AST and normalized MIR as co-equal execution authorities;
+- implicit function return from Error-valued branch predicates;
+- runtime inference of value-if result identity;
+- re-running type inference for block-result semantics.
 
 ### DOES NOT PROTECT AGAINST
 
 - Python TCB compromise;
 - bugs in normalized instructions;
 - forged/tampered MIR without sealing/registry checks;
-- the known branch-error semantic debt itself;
+- unresolved loop-body result continuity;
+- unresolved Match identity/exhaustiveness;
 - source/AST leakage elsewhere in the bootstrap compiler.
 
 ### ASSUMPTIONS
 
-- Typed HIR is the checked type authority;
+- Typed HIR remains the checked type authority;
 - `MirExecutorV1` rejects `MirAstFallback`;
 - public checked execution passes MIR sealing and exact v4 registry validation;
 - compiler-known privileged operation identity remains authoritative.
 
 ### FAILURE MODE
 
+- loop body Error is silently treated as an ordinary iteration result;
+- a value-block join is reachable without the selected path binding a value;
 - a backend begins executing `MirAstFallback`;
-- a runtime error value is upgraded into function return without source semantics;
-- new syntax is treated as executable by Python-class resemblance;
-- runtime reconstructs missing authority/type/variant facts from AST or host values.
+- runtime reconstructs variant/type/authority facts from host objects.
 
 ## Next implementation order
 
-1. pin and fix `MirBranch` error-valued statement semantics;
-2. extend safe value-block CFG to `if`, then loops only after their result law is proven;
-3. finish `OrBlockExpression` fallback removal;
-4. expose compiler-resolved Match variant/exhaustiveness facts;
-5. implement Match explicit CFG;
-6. convert invalid List/for/assignment migration cases to compiler fail-closed;
+1. bind loop body normal-exit value using `checked_block_normal_type(...)`;
+2. make body Error terminate the loop statement and continue the enclosing block;
+3. normalize value-position `while` / `for` and close remaining OrBlock loop
+   fallback;
+4. make `for` iterable Error continuation explicit where the checked type permits;
+5. expose compiler-resolved Match variant/exhaustiveness facts;
+6. implement Match explicit CFG;
 7. integrate exact v4 registry membership into sealing/fingerprint validation;
-8. only then consider removing generic `MirAstFallback` production entirely.
+8. convert semantically-invalid fallback production to compiler fail-closed;
+9. run canonical full validation before merge.
 
-No new syntax is required.
+No new source syntax is required.
