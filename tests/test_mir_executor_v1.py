@@ -6,7 +6,7 @@ import tempfile
 import pytest
 
 from koschei import interpreter
-from koschei.interpreter import KsError, KsUnit
+from koschei.interpreter import Interpreter, KsError, KsUnit
 from koschei.mir import MirGraph, _fingerprint, _resource_contract, require_mir
 from koschei.mir_executor_v1 import MirExecutionError, MirExecutorV1, execute_mir_v1
 from koschei.mir_ir import MirAstFallback, MirBasicBlock, MirReturn
@@ -79,6 +79,28 @@ fn main() {}
         assert failure.message == "wrapped"
         unwrap = next(item for item in mir.root_module.functions if item.name == "unwrap")
         assert unwrap.resources.ast_fallbacks == 0
+    finally:
+        directory.cleanup()
+
+
+def test_branch_runtime_error_does_not_become_implicit_function_return():
+    directory, mir = _compiler_mir(
+        '''
+fn main() -> Int {
+    if (1 / 0) == 0 { 1 }
+    return 7
+}
+'''
+    )
+    try:
+        # Current source semantics makes the Error the if-statement result, then
+        # the enclosing block continues to the explicit return.
+        assert Interpreter(mir.root_module.program).execute_main() == 7
+
+        # MIR has not yet normalized that statement-result error continuation.
+        # Fail closed instead of silently upgrading the Error into a function return.
+        with pytest.raises(MirExecutionError, match="statement-result error continuation"):
+            execute_mir_v1(mir)
     finally:
         directory.cleanup()
 
