@@ -23,6 +23,7 @@ from .mir_extension_instructions_v4 import (
     MirStructFinish,
     MirStructNew,
     MirStructSet,
+    MirUnit,
 )
 from .mir_ir import (
     MirAstFallback,
@@ -44,6 +45,7 @@ from .mir_ir import (
 
 MirInstructionV4: TypeAlias = (
     MirCoreInstruction
+    | MirUnit
     | MirFallibleIsSuccess
     | MirFalliblePayload
     | MirInterpolate
