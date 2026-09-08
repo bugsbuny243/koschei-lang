@@ -3,6 +3,7 @@ import tempfile
 
 from koschei.mir import require_mir
 from koschei.mir_executor_v1 import execute_mir_v1
+from koschei.mir_extension_instructions_v4 import MirIsRuntimeError
 from koschei.mir_ir import MirBinary, MirBranch, MirCall
 from koschei.modules import check_graph, load_graph
 
@@ -40,7 +41,10 @@ fn main() {
             isinstance(item, MirBinary) and item.operator in {"&&", "||"}
             for item in instructions
         )
-        assert sum(isinstance(block.terminator, MirBranch) for block in main.blocks) == 2
+        # Each short-circuit expression has one explicit runtime-error gate and
+        # one ordinary Bool decision branch. Runtime does not infer continuation.
+        assert sum(isinstance(item, MirIsRuntimeError) for item in instructions) == 2
+        assert sum(isinstance(block.terminator, MirBranch) for block in main.blocks) == 4
         # The two rhs() call sites still exist in MIR, but each is isolated in a
         # branch that is unreachable for the constant LHS used by this test.
         assert sum(isinstance(item, MirCall) for item in instructions) >= 4
