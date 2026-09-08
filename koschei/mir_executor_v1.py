@@ -21,6 +21,7 @@ from .mir_container_staging_v1 import (
     MirStructNew,
     MirStructSet,
 )
+from .mir_extension_instructions_v4 import MirUnit
 from .mir_ir import (
     MirAstFallback, MirBinary, MirBind, MirBranch, MirCall, MirConst,
     MirIterHasNext, MirIterInit, MirIterNext, MirJump, MirList, MirLoad,
@@ -164,6 +165,9 @@ class MirExecutorV1:
     def _execute_instruction(self, module_key: str, instruction, values: dict[int, Any], bindings: dict[str, list[Any]]) -> None:
         if isinstance(instruction, MirAstFallback):
             raise MirExecutionError("KS5002", f"MIR executor AST fallback çalıştırmaz: {instruction.node_kind}", instruction.location)
+        if isinstance(instruction, MirUnit):
+            values[instruction.target] = KsUnit
+            return
         if isinstance(instruction, MirConst):
             value = instruction.value
             if type(value) is int and not INT_MIN <= value <= INT_MAX:
