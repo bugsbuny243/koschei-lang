@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import TypeAlias
 
 from .mir_extension_instructions_v4 import (
+    MIR_V4_EXTENSION_INSTRUCTION_TYPES,
     MirFallibleIsSuccess,
     MirFalliblePayload,
     MirInterpolate,
@@ -37,20 +38,6 @@ MirInstructionV4: TypeAlias = (
     | MirStructNew
     | MirStructSet
     | MirStructFinish
-)
-
-
-MIR_V4_EXTENSION_INSTRUCTION_TYPES = (
-    MirFallibleIsSuccess,
-    MirFalliblePayload,
-    MirInterpolate,
-    MirIsRuntimeError,
-    MirMapNew,
-    MirMapInsert,
-    MirMapFinish,
-    MirStructNew,
-    MirStructSet,
-    MirStructFinish,
 )
 
 
