@@ -99,5 +99,22 @@ def require_mir_v4_instruction(value: object) -> None:
         )
 
 
+def require_mir_v4_graph_registry(mir_graph: object) -> None:
+    """Require every instruction in a graph to belong to the exact v4 registry.
+
+    This is representation validation only; it does not replace MIR sealing,
+    SSA/control-flow validation, capability checks, or execution policy.
+    """
+
+    modules = getattr(mir_graph, "modules", None)
+    if modules is None or not hasattr(modules, "values"):
+        raise ValueError("MIR v4 registry validation requires a module graph")
+    for module in modules.values():
+        for function in getattr(module, "functions", ()):
+            for block in getattr(function, "blocks", ()):
+                for instruction in getattr(block, "instructions", ()):
+                    require_mir_v4_instruction(instruction)
+
+
 def is_mir_v4_extension_instruction(value: object) -> bool:
     return type(value) in MIR_V4_EXTENSION_INSTRUCTION_TYPES
