@@ -109,7 +109,7 @@ def test_or_block_empty_handler_uses_canonical_unit_not_host_sentinel():
     assert sum(isinstance(item, MirUnit) for item in instructions) == 1
 
 
-def test_or_block_tail_if_is_explicit_cfg_without_ast_fallback():
+def test_or_block_if_tail_stays_one_explicit_migration_fallback():
     condition = Literal(True, _loc(8))
     then_value = Literal(7, _loc(12))
     else_value = Literal(9, _loc(18))
@@ -127,10 +127,10 @@ def test_or_block_tail_if_is_explicit_cfg_without_ast_fallback():
     )
     instructions = [item for block in blocks for item in block.instructions]
 
-    assert not any(isinstance(item, MirAstFallback) for item in instructions)
-    assert sum(isinstance(block.terminator, MirBranch) for block in blocks) >= 2
-    assert any(isinstance(item, MirConst) and item.value == 7 for item in instructions)
-    assert any(isinstance(item, MirConst) and item.value == 9 for item in instructions)
+    fallbacks = [item for item in instructions if isinstance(item, MirAstFallback)]
+    assert len(fallbacks) == 1
+    assert fallbacks[0].node_kind == "OrBlockExpression"
+    assert not any(isinstance(item, MirConst) and item.value in {7, 9} for item in instructions)
 
 
 def test_or_block_loop_tail_remains_explicit_migration_fallback():
@@ -151,3 +151,4 @@ def test_or_block_loop_tail_remains_explicit_migration_fallback():
     fallbacks = [item for item in instructions if isinstance(item, MirAstFallback)]
     assert len(fallbacks) == 1
     assert fallbacks[0].node_kind == "OrBlockExpression"
+    assert not any(isinstance(item, MirConst) and item.value == 7 for item in instructions)
