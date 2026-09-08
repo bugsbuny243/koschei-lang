@@ -6,9 +6,14 @@ from ._typed_ops import binary_type, method_type
 from .ast_nodes import (
     AssignmentExpression,
     BinaryExpression,
+    Block,
     CallExpression,
+    ExpressionStatement,
+    ForStatement,
     Identifier,
+    IfStatement,
     InterpolatedString,
+    LetStatement,
     ListLiteral,
     Literal,
     MapLiteral,
@@ -17,8 +22,10 @@ from .ast_nodes import (
     OrBlockExpression,
     OrElseExpression,
     OrReturnExpression,
+    ReturnStatement,
     StructLiteral,
     UnaryExpression,
+    WhileStatement,
 )
 from .type_system import (
     BOOL,
@@ -26,12 +33,76 @@ from .type_system import (
     INT,
     STRING,
     UNKNOWN,
+    VOID,
     NamedType,
     UnknownType,
     generic,
     success_type,
     union_type,
 )
+
+
+def _recorded_expression_type(checker, expression):
+    """Read an already-checked Typed-HIR expression fact by object identity."""
+
+    for item in reversed(checker.expressions):
+        if item.expression is expression:
+            return item.type
+    return UNKNOWN
+
+
+def _checked_statement_normal_type(checker, statement):
+    """Project normal-exit statement value from already-checked Typed-HIR facts.
+
+    ``None`` means the statement has no normal continuation (an explicit
+    function return). This function never calls ``checker.infer`` and therefore
+    cannot become a second expression-type authority.
+    """
+
+    if isinstance(statement, LetStatement):
+        return VOID
+    if isinstance(statement, ReturnStatement):
+        return None
+    if isinstance(statement, ExpressionStatement):
+        return _recorded_expression_type(checker, statement.expression)
+    if isinstance(statement, IfStatement):
+        normal_types = []
+        then_type = _checked_block_normal_type(checker, statement.then_block)
+        if then_type is not None:
+            normal_types.append(then_type)
+        if isinstance(statement.else_branch, Block):
+            else_type = _checked_block_normal_type(checker, statement.else_branch)
+        elif isinstance(statement.else_branch, IfStatement):
+            else_type = _checked_statement_normal_type(checker, statement.else_branch)
+        else:
+            else_type = VOID
+        if else_type is not None:
+            normal_types.append(else_type)
+        return union_type(*normal_types) if normal_types else None
+    if isinstance(statement, (ForStatement, WhileStatement)):
+        # Zero iterations are always a possible normal exit in the checked type
+        # model; executed iterations contribute the body's last normal value.
+        body_type = _checked_block_normal_type(checker, statement.body)
+        return VOID if body_type is None else union_type(VOID, body_type)
+    return UNKNOWN
+
+
+def _checked_block_normal_type(checker, block: Block):
+    """Project the value of one already-checked block on normal control-flow exit."""
+
+    normal_type = VOID
+    can_continue = True
+    for statement in block.statements:
+        statement_type = _checked_statement_normal_type(checker, statement)
+        if not can_continue:
+            # The checker still validates unreachable source for diagnostics, but
+            # unreachable statements cannot redefine the runtime block value.
+            continue
+        if statement_type is None:
+            can_continue = False
+        else:
+            normal_type = statement_type
+    return normal_type if can_continue else None
 
 
 def infer_expression(checker, expression):
@@ -143,7 +214,13 @@ def infer_expression(checker, expression):
     if isinstance(expression, OrBlockExpression):
         narrowed = success_type(checker.infer(expression.value))
         checker.check_block(expression.handler)
-        return checker.record(expression, narrowed)
+        handler_type = _checked_block_normal_type(checker, expression.handler)
+        result_type = (
+            narrowed
+            if handler_type is None
+            else union_type(narrowed, handler_type)
+        )
+        return checker.record(expression, result_type)
 
     if isinstance(expression, MatchExpression):
         value_type = checker.infer(expression.value)
