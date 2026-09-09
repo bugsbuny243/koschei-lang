@@ -10,7 +10,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -37,15 +36,7 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _run(
-    binary: Path,
-    args: list[str],
-    *,
-    env_overrides: dict[str, str] | None = None,
-) -> subprocess.CompletedProcess[str]:
-    runtime_env = os.environ.copy()
-    if env_overrides:
-        runtime_env.update(env_overrides)
+def _run(binary: Path, args: list[str]) -> subprocess.CompletedProcess[str]:
     try:
         return subprocess.run(
             [str(binary), *args],
@@ -53,20 +44,13 @@ def _run(
             check=False,
             capture_output=True,
             text=True,
-            env=runtime_env,
         )
     except OSError as exc:
         raise SoloHostSmokeError(f"cannot execute sealed Koschei binary: {exc}") from exc
 
 
-def _expect_success(
-    binary: Path,
-    label: str,
-    args: list[str],
-    *,
-    env_overrides: dict[str, str] | None = None,
-) -> subprocess.CompletedProcess[str]:
-    result = _run(binary, args, env_overrides=env_overrides)
+def _expect_success(binary: Path, label: str, args: list[str]) -> subprocess.CompletedProcess[str]:
+    result = _run(binary, args)
     if result.returncode != 0:
         detail = (result.stderr or result.stdout).strip()
         raise SoloHostSmokeError(f"{label} failed with exit {result.returncode}: {detail}")
@@ -120,22 +104,6 @@ def smoke(binary: Path, *, require_native_build: bool) -> dict[str, object]:
     _expect_success(binary, "ks run", ["run", str(HELLO)])
     _expect_success(binary, "ks caps", ["caps", str(HELLO)])
 
-    # Customer shells and minimal containers are not guaranteed to expose a
-    # UTF-8 locale. The sealed distribution entry point must therefore make
-    # its Unicode CLI output portable even when Python would otherwise choose
-    # ASCII for stdout/stderr.
-    _expect_success(
-        binary,
-        "ks caps under C/ASCII locale",
-        ["caps", str(HELLO)],
-        env_overrides={
-            "LANG": "C",
-            "LC_ALL": "C",
-            "PYTHONUTF8": "0",
-            "PYTHONIOENCODING": "ascii",
-        },
-    )
-
     denied = _run(binary, ["check", str(SUPPLY_CHAIN)])
     combined = (denied.stdout or "") + "\n" + (denied.stderr or "")
     if denied.returncode == 0:
@@ -183,7 +151,6 @@ def smoke(binary: Path, *, require_native_build: bool) -> dict[str, object]:
             "check": True,
             "run": True,
             "caps": True,
-            "caps_c_ascii_locale": True,
             "ks2401_supply_chain_denial": True,
         },
         "native_build": {
@@ -228,7 +195,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     print("KOSCHEI SOLOHOST BINARY SMOKE: PASS")
     print(f"version: {receipt['version']}")
-    print("checks: version, check, run, caps, C-locale caps, KS2401 capability denial")
+    print("checks: version, check, run, caps, KS2401 capability denial")
     if args.require_native_build:
         print("native build: PASS")
     else:

@@ -2,7 +2,9 @@
 
 This process is not a customer application. It signs a pre-smoked staging release
 at container startup, archives it, and serves the package only to callers holding
-the shared artifact-origin bearer token. The signing key never enters the ZIP.
+the shared artifact-origin bearer token. Neither the signing private key nor the
+release public trust anchor is copied into the ZIP. The manifest carries only the
+signer key id; the authoritative public key must be published independently.
 """
 from __future__ import annotations
 
@@ -55,11 +57,14 @@ def prepare() -> None:
             ["python", str(ROOT / "tools" / "sign_solohost_release_v1.py"), str(release), "--private-key", str(key)],
             check=True,
         )
-        public = release / "koschei-release-public.pem"
-        subprocess.run(
-            ["openssl", "pkey", "-in", str(key), "-pubout", "-out", str(public)],
-            check=True,
-        )
+
+    # Deliberately do NOT derive/copy koschei-release-public.pem into ``release``.
+    # A key learned only from the same ZIP cannot authenticate that ZIP. The
+    # production owner public key/fingerprint belongs on an independent official
+    # trust channel and is supplied separately to the publication verifier.
+    bundled_public_key = release / "koschei-release-public.pem"
+    if bundled_public_key.exists():
+        bundled_public_key.unlink()
 
     notice = release / "TESTNET-NOTICE.txt"
     notice.write_text(
@@ -82,6 +87,7 @@ def prepare() -> None:
         "sha256": sha256(PACKAGE),
         "size_bytes": PACKAGE.stat().st_size,
         "key_id": (manifest.get("signature") or {}).get("key_id"),
+        "trust_anchor": "OUT_OF_BAND_REQUIRED",
     }
     METADATA.write_text(json.dumps(metadata, separators=(",", ":")) + "\n", encoding="utf-8")
 

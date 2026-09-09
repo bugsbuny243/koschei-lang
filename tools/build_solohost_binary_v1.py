@@ -75,40 +75,13 @@ def _validate_extra_args(extra_arg: list[str]) -> None:
             )
 
 
-def _candidate_binaries(output: Path, *, mode: str) -> list[Path]:
-    candidates = sorted(
+def _candidate_binaries(output: Path) -> list[Path]:
+    return sorted(
         path.resolve()
         for path in output.rglob("*")
         if path.is_file()
         and path.name in EXECUTABLE_NAMES
         and not any(part.endswith(".build") for part in path.parts)
-    )
-    if mode == "onefile":
-        # Nuitka may leave a helper executable inside `<entry>.dist/` while
-        # producing the actual onefile artifact at the output root. That helper
-        # is build machinery, not a customer distributable.
-        candidates = [path for path in candidates if path.parent == output]
-    return candidates
-
-
-def _leaked_source_files(*, output: Path, binary: Path, mode: str) -> list[Path]:
-    source_suffixes = {".py", ".pyi", ".go"}
-    if mode == "onefile":
-        # A onefile release distributes only top-level output files selected by
-        # the release assembler. Nuitka's nested `.build`, `.dist`, and
-        # `.onefile-build` directories are compiler workspace and are never
-        # copied to the customer artifact.
-        return sorted(
-            path.relative_to(output)
-            for path in output.iterdir()
-            if path.is_file() and path.suffix.lower() in source_suffixes
-        )
-
-    customer_root = binary.parent
-    return sorted(
-        path.relative_to(customer_root)
-        for path in customer_root.rglob("*")
-        if path.is_file() and path.suffix.lower() in source_suffixes
     )
 
 
@@ -141,13 +114,19 @@ def build(*, mode: str, output: Path, extra_arg: list[str]) -> tuple[Path, Path]
         detail = (result.stderr or result.stdout).strip()
         raise SoloHostBinaryBuildError(f"Nuitka build failed: {detail}")
 
-    candidates = _candidate_binaries(output, mode=mode)
+    candidates = _candidate_binaries(output)
     if len(candidates) != 1:
         rendered = ", ".join(str(path.relative_to(output)) for path in candidates) or "none"
         raise SoloHostBinaryBuildError(f"expected exactly one customer executable, found: {rendered}")
     binary = candidates[0]
 
-    leaked = _leaked_source_files(output=output, binary=binary, mode=mode)
+    # Fail closed if the distributable tree itself contains obvious private source.
+    customer_root = binary.parent if mode == "standalone" else output
+    leaked = sorted(
+        path.relative_to(customer_root)
+        for path in customer_root.rglob("*")
+        if path.is_file() and path.suffix.lower() in {".py", ".pyi", ".go"}
+    )
     if leaked:
         preview = ", ".join(str(path) for path in leaked[:10])
         raise SoloHostBinaryBuildError(f"compiled customer output leaks source files: {preview}")
