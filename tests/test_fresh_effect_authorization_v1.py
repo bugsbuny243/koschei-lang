@@ -6,10 +6,10 @@ import pytest
 from koschei.authorization_decision_v1 import issue_authorization_decision_v1
 from koschei.authorization_state_ledger_v1 import AuthorizationStateLedgerV1
 from koschei.authorization_transition_v1 import (
+    AuthorizationTransitionV1Error,
     ConstraintSetV1,
     DelegationLinkV1,
     IntentCommitmentV1,
-    AuthorizationTransitionV1Error,
     issue_authorization_state_v1,
     transition_authorization_state_v1,
 )
@@ -243,7 +243,7 @@ def test_stale_delegation_check_fails_before_effect_or_consumption():
         authorization=(intent, stale_chain, state, authorization_ledger),
     )
 
-    with pytest.raises(AuthorizationTransitionV1Error, match="not fresh"):
+    with pytest.raises(AuthorizationTransitionV1Error, match="stale for execution epoch"):
         execute_effect_with_fresh_authorization_v1(**kwargs)
     assert permit_ledger.consumed == set()
     assert calls == []
