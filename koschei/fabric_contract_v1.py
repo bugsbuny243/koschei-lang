@@ -65,6 +65,14 @@ def fabric_component_v1() -> FabricComponentV1:
                 frontend="planned",
                 telemetry="planned",
             ),
+            FabricCapabilityV1(
+                id="web5-identity-data-profile",
+                domain="web5",
+                status="planned",
+                backend="planned",
+                frontend="planned",
+                telemetry="planned",
+            ),
         ),
     )
 
