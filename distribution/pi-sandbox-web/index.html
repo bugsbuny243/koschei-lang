@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>Koschei Lang · Pi Sandbox</title>
+  <link rel="stylesheet" href="./styles.css">
+  <script src="https://sdk.minepi.com/pi-sdk.js"></script>
+</head>
+<body>
+  <main class="shell">
+    <section class="card" aria-labelledby="title">
+      <div class="eyebrow">KOSCHEI LANG · PI TESTNET</div>
+      <h1 id="title">Secure local development</h1>
+      <p class="lead">
+        This page is the development-only Pi sandbox bridge for Koschei Lang.
+        The compiler remains local and Pi-specific code stays outside language semantics.
+      </p>
+
+      <div class="status-grid" aria-live="polite">
+        <div><span>SDK</span><strong id="sdk-status">loading</strong></div>
+        <div><span>Mode</span><strong>sandbox</strong></div>
+        <div><span>Network</span><strong>Pi Testnet</strong></div>
+      </div>
+
+      <button id="signin" type="button" disabled>Continue with Pi</button>
+
+      <div id="result" class="result" hidden>
+        <div class="result-title">Pi sandbox session</div>
+        <dl>
+          <div><dt>Username</dt><dd id="username">—</dd></div>
+          <div><dt>UID</dt><dd id="uid">—</dd></div>
+        </dl>
+        <p class="notice">
+          Sandbox display only. Production authorization will verify the access token
+          server-side against Pi Platform API before any entitlement is issued.
+        </p>
+      </div>
+
+      <pre id="error" class="error" hidden></pre>
+    </section>
+  </main>
+  <script src="./app.js"></script>
+</body>
+</html>

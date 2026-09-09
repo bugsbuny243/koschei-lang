@@ -1,8 +1,8 @@
 # Koschei Lang on Pi SoloHost
 
-Status: **distribution scaffold — not yet a public artifact**
+Status: **sealed-release pipeline in progress — not yet a public SoloHost artifact**
 
-This directory defines the Pi Desktop / SoloHost distribution boundary for Koschei Lang. It must remain outside language semantics and must not turn Pi-specific code into a dependency of the compiler core.
+This directory defines the Pi Desktop / SoloHost distribution boundary for Koschei Lang. It remains outside language semantics and must not turn Pi-specific code into a dependency of the compiler core.
 
 ## Commercial model
 
@@ -10,13 +10,11 @@ The initial product model is a **one-time Pi purchase**. There is no monthly sub
 
 See `commercial/PI_SOLOHOST_ONE_TIME_LICENSE_V1.md`.
 
-## Why there is no public Dockerfile yet
+## Distribution rule
 
-The current bootstrap compiler is packaged as Python. A naive Dockerfile such as `COPY koschei /app/koschei` would place proprietary compiler source directly in a customer-installable image.
+The current bootstrap compiler is packaged as Python. A naive container that copies the repository would expose proprietary compiler/runtime source. The public SoloHost package therefore consumes a **sealed customer executable**, never a source checkout.
 
-That is not an acceptable SoloHost release boundary.
-
-The public SoloHost image must be assembled from a **sealed release artifact**, not from a source checkout.
+The separate Go `native/datajson` source is a build/repository asset and is not included as customer data. The current `ks build` implementation invokes a Go toolchain available on the executing system. Therefore a full SoloHost development environment must provide a compatible Go toolchain as a third-party runtime/build dependency without copying Koschei Go source into the customer artifact.
 
 ## Intended release chain
 
@@ -24,17 +22,47 @@ The public SoloHost image must be assembled from a **sealed release artifact**, 
 private koschei-lang repository
         |
         v
-owner-controlled release build
+owner-controlled Nuitka bootstrap build
         |
-        +--> tests / local validation / evidence
+        +--> narrow canonical CLI entry
+        +--> no repository data-dir inclusion
+        +--> source-leak scan
         |
-        +--> source-free executable artifact
+        v
+functional/security smoke gate
         |
-        +--> checksums + signed release manifest
+        +--> version / check / run / caps
+        +--> KS2401 supply-chain denial
+        +--> required native build with Go
+        +--> binary SHA-256-bound smoke receipt
+        |
+        v
+source-free executable
+        |
+        v
+SoloHost staging assembler
+        |
+        +--> verifies same binary bytes were smoked
+        +--> verifies binary-reported version
+        +--> records full source commit
+        +--> executable SHA-256
+        +--> smoke receipt SHA-256
+        +--> one-time-Pi commercial marker
+        |
+        v
+owner-held Ed25519 release signature
+        |
+        +--> detached signature
+        +--> public-key-derived key id
+        |
+        v
+fail-closed publication verification
         |
         v
 SoloHost container/package
         |
+        +--> sealed Koschei executable
+        +--> compatible Go toolchain for `ks build`
         +--> Pi identity/payment entitlement adapter
         |
         v
@@ -48,59 +76,193 @@ A publishable artifact MUST:
 - contain a runnable Koschei CLI/toolchain entrypoint;
 - contain no private Git metadata;
 - contain no `koschei/*.py` compiler source;
+- contain no Python bytecode or Koschei `.go` source;
 - contain no internal test tree;
 - contain no owner credentials, payment secrets, wallet private keys, signing private keys, or CI secrets;
 - contain no private build-only contracts unless explicitly designated customer-facing;
-- carry an immutable version identifier;
-- carry a digest that can be checked before publication;
-- be capable of being signed by the owner-controlled release process;
+- carry an immutable version identifier that matches the smoked binary's own version;
+- bind the executable bytes to SHA-256 release metadata;
+- bind the release to a full Git source commit id;
+- bind the release to a full native-build smoke receipt digest;
+- carry a detached owner-controlled Ed25519 signature;
+- pass signature verification against an explicitly trusted public key;
 - keep Pi identity/payment integration outside Koschei language semantics;
 - preserve local-first execution for supported operations.
 
 ## SoloHost beta assumptions
 
-Pi currently describes SoloHost as an open, permissionless self-hosted application framework with structural package checks. Because the beta format can change, this repository does **not** invent a Pi manifest schema.
+Pi currently describes SoloHost as an open, permissionless self-hosted application framework with structural package checks. Because the beta package format can change, this repository does **not** invent a Pi publisher manifest schema.
 
-When the publisher UI/exported package schema is available, its exact manifest will be added under this directory without changing the compiler core.
+When the publisher UI/exported package schema is observed, its exact manifest will be added under this directory without changing the compiler core.
+
+## Release procedure
+
+### 1. Build standalone first
+
+Nuitka is bootstrap deployment tooling only; it is not a Koschei language dependency. The builder refuses release-controlled output/mode overrides and refuses Nuitka data-inclusion switches that could copy repository source/data into the customer distribution.
+
+```bash
+python tools/build_solohost_binary_v1.py \
+  --mode standalone \
+  --output /secure/build/koschei-standalone
+```
+
+Nuitka's recommended workflow is to prove standalone mode before onefile because missing dependency/data problems are easier to diagnose there.
+
+### 2. Smoke the standalone executable
+
+First prove the compiled CLI still behaves like Koschei:
+
+```bash
+python tools/smoke_solohost_binary_v1.py \
+  /secure/build/koschei-standalone/<dist>/ks
+```
+
+For a SoloHost release candidate, native build is mandatory and the smoke receipt must be retained. The release/container environment must expose `go`:
+
+```bash
+python tools/smoke_solohost_binary_v1.py \
+  /secure/build/koschei-standalone/<dist>/ks \
+  --require-native-build \
+  --receipt /secure/evidence/koschei-standalone-smoke.json
+```
+
+The smoke gate requires:
+
+- `ks version --json` succeeds and reports `koschei-lang` plus a non-empty version;
+- `ks check examples/hello.ks` succeeds;
+- `ks run examples/hello.ks` succeeds;
+- `ks caps examples/hello.ks` succeeds;
+- the supply-chain attack example still fails with `KS2401`;
+- `ks build` produces an executable and that executable runs successfully;
+- the receipt records the exact tested binary SHA-256 and size plus Go toolchain identity.
+
+### 3. Build onefile customer executable
+
+Only after standalone passes:
+
+```bash
+python tools/build_solohost_binary_v1.py \
+  --mode onefile \
+  --output /secure/build/koschei-onefile
+```
+
+Run the full smoke gate again against the exact onefile binary that will be staged:
+
+```bash
+python tools/smoke_solohost_binary_v1.py \
+  /secure/build/koschei-onefile/ks \
+  --require-native-build \
+  --receipt /secure/evidence/koschei-onefile-smoke.json
+```
+
+Ordinary compiled binaries are not claimed to be impossible to reverse engineer. Stronger commercial IP-hardening remains a separate release decision. The V1 boundary is: no raw proprietary Python/Go source in the customer package, digest-bound release bytes, owner signature, and functional/security parity.
+
+### 4. Assemble unsigned staging from proven bytes
+
+The assembler refuses untested/different bytes, a mismatched release version, an incomplete smoke receipt, or a short/unrecorded source commit.
+
+```bash
+python tools/assemble_solohost_staging_v1.py \
+  --binary /secure/build/koschei-onefile/ks \
+  --smoke-receipt /secure/evidence/koschei-onefile-smoke.json \
+  --output /secure/release/koschei-solohost \
+  --version 0.10.0 \
+  --platform linux-x86_64 \
+  --source-commit <full-commit-sha>
+```
+
+The assembler creates:
+
+```text
+koschei-solohost/
+  ks
+  koschei-release-manifest.json
+```
+
+The manifest binds the exact executable SHA-256/size, full source commit, smoke receipt digest, binary-reported version evidence, Go toolchain identity, and the one-time Pi commercial mode. It is deliberately marked `UNSIGNED-STAGING`.
+
+Validate staging only:
+
+```bash
+python tools/verify_solohost_artifact_v1.py \
+  /secure/release/koschei-solohost \
+  --allow-unsigned-staging
+```
+
+This may pass structural/digest/evidence checks but is explicitly **NOT PUBLISHABLE**.
+
+### 5. Sign with the owner-held release key
+
+Generate/store the production private key outside the repository. Never copy it into the artifact or SoloHost package.
+
+```bash
+python tools/sign_solohost_release_v1.py \
+  /secure/release/koschei-solohost \
+  --private-key /secure/keys/koschei-solohost-ed25519.pem
+```
+
+The signer writes `koschei-release-manifest.sig` and records a public-key-derived `key_id` in the exact manifest bytes that are signed.
+
+### 6. Run the publication gate
+
+```bash
+python tools/verify_solohost_artifact_v1.py \
+  /secure/release/koschei-solohost \
+  --public-key /secure/keys/koschei-solohost-ed25519.pub.pem
+```
+
+Publication verification checks:
+
+- source/private-repository leak policy;
+- product/channel/version metadata;
+- full source commit identity;
+- required smoke evidence and Go toolchain identity;
+- one-time Pi billing marker;
+- executable SHA-256 and byte size;
+- signature scheme;
+- public-key-derived key id;
+- detached Ed25519 signature over the exact manifest bytes.
+
+A failing gate means the artifact is not publishable.
 
 ## Build stages
 
-### Stage A — current
+### Stage A — complete
 
-- lock the one-time Pi commercial decision;
-- lock the source-free publication boundary;
-- add a machine-checkable artifact leak gate;
-- keep work on the existing Pi integration branch.
+- one-time Pi commercial decision locked;
+- source-free publication boundary locked;
+- machine-checkable source/private-material leak gate added.
 
-### Stage B — sealed binary
+### Stage B — implementation complete, release-environment proof pending
 
-- produce a customer executable without shipping the private Python source tree;
-- generate SHA-256 digests and release metadata;
-- sign the release manifest;
-- prove CLI smoke tests against the sealed artifact.
+- narrow customer binary entry implemented;
+- controlled Nuitka standalone/onefile builder implemented;
+- Nuitka data-inclusion escape paths blocked;
+- Python/Python-bytecode/Go source-leak policy implemented;
+- functional/security smoke gate implemented;
+- required Go-backed native build smoke implemented;
+- binary SHA-256-bound smoke receipt implemented;
+- staging assembler requires exact smoke evidence and full source commit;
+- executable SHA-256 binding implemented;
+- Ed25519 detached signing implemented;
+- trusted-public-key verification implemented.
 
-### Stage C — SoloHost package
+The remaining Stage B proof is to execute the full build + smoke chain in the owner-controlled release environment and retain the resulting build/smoke receipts and artifact digests.
 
-- wrap only the sealed artifact in the SoloHost container/package;
-- expose the minimum local port/UI required by the SoloHost package contract;
+### Stage C — next after Stage B proof
+
+- wrap **only the verified sealed artifact** in the exact observed SoloHost beta package format;
+- include a compatible third-party Go toolchain for full `ks build` support;
+- expose only the local service/port required by the observed SoloHost contract;
 - run as a non-root user where the platform permits it;
 - mount only explicit user workspace/storage paths;
 - deny unrelated host filesystem access by default.
 
-### Stage D — Pi purchase activation
+### Stage D — after packaging
 
 - authenticate the purchaser through the sanctioned Pi identity boundary;
 - verify completed Pi payment outside the compiler core;
-- issue a durable entitlement for the purchased artifact;
+- issue a durable one-time purchase entitlement for the purchased artifact;
 - unlock/download the signed artifact;
 - never place Pi wallet/private-key custody in Koschei.
-
-## Publication gate
-
-Before any image/package is submitted to SoloHost, run:
-
-```bash
-python tools/verify_solohost_artifact_v1.py <artifact-directory>
-```
-
-A failing gate means the artifact is not publishable.
