@@ -68,9 +68,6 @@ def _configure_utf8_stdio() -> None:
         try:
             reconfigure(encoding="utf-8", errors="backslashreplace")
         except (AttributeError, ValueError):
-            # Closed/replaced streams may reject reconfiguration. The CLI must
-            # not mutate process locale state or fail merely because a host
-            # stream does not support this optional hardening step.
             continue
 
 

@@ -80,14 +80,44 @@ A publishable artifact MUST:
 - contain no internal test tree;
 - contain no owner credentials, payment secrets, wallet private keys, signing private keys, or CI secrets;
 - contain no private build-only contracts unless explicitly designated customer-facing;
-- carry an immutable version identifier that matches the smoked binary's own version;
-- bind the executable bytes to SHA-256 release metadata;
-- bind the release to a full Git source commit id;
-- bind the release to a full native-build smoke receipt digest;
-- carry a detached owner-controlled Ed25519 signature;
-- pass signature verification against an explicitly trusted public key;
+- carry an immutable version identifier;
+- carry a digest that can be checked before publication;
+- carry an Ed25519 signature whose signer is anchored outside the artifact;
 - keep Pi identity/payment integration outside Koschei language semantics;
 - preserve local-first execution for supported operations.
+
+## Release trust anchor
+
+A detached signature does not establish authenticity by itself. If a release ZIP contains
+its manifest, signature, and public key, an attacker who can replace the whole ZIP can
+replace all three. Therefore an artifact-bundled public key is **transport metadata, not
+the production trust anchor**.
+
+Before public sale, the owner release public key (or its `ed25519-sha256:` key id) must be
+pinned through an independent official channel controlled separately from the artifact
+bytes, for example the official Koschei site/release trust page. Customers and the
+publication pipeline must obtain the trusted key from that channel, not learn it only
+from the ZIP being checked.
+
+The production publication verifier intentionally requires that external key:
+
+```bash
+python tools/verify_solohost_artifact_v1.py \
+  <artifact-directory> \
+  --trusted-public-key /secure/out-of-band/koschei-release-public.pem
+```
+
+The verifier then fails closed unless all of the following hold:
+
+- source/private-file boundary checks pass;
+- the release manifest schema/product/channel are valid;
+- the manifest is marked `SIGNED` with the expected Ed25519 scheme;
+- the manifest-bound executable exists and its byte size and SHA-256 match;
+- the manifest signer key id equals the independently supplied trusted key id;
+- the detached manifest signature verifies against that trusted key.
+
+The production signing private key must never be committed to this repository or shipped
+inside the customer artifact.
 
 ## SoloHost beta assumptions
 
@@ -248,7 +278,11 @@ A failing gate means the artifact is not publishable.
 - Ed25519 detached signing implemented;
 - trusted-public-key verification implemented.
 
-The remaining Stage B proof is to execute the full build + smoke chain in the owner-controlled release environment and retain the resulting build/smoke receipts and artifact digests.
+- produce a customer executable without shipping the private Python source tree;
+- generate SHA-256 digests and release metadata;
+- sign the release manifest;
+- pin the owner release trust anchor outside the artifact;
+- prove CLI smoke tests against the sealed artifact.
 
 ### Stage C — next after Stage B proof
 
@@ -266,3 +300,17 @@ The remaining Stage B proof is to execute the full build + smoke chain in the ow
 - issue a durable one-time purchase entitlement for the purchased artifact;
 - unlock/download the signed artifact;
 - never place Pi wallet/private-key custody in Koschei.
+
+## Publication gate
+
+Before any image/package is submitted to SoloHost, run the fail-closed verifier with the
+independently pinned owner public key:
+
+```bash
+python tools/verify_solohost_artifact_v1.py \
+  <artifact-directory> \
+  --trusted-public-key /secure/out-of-band/koschei-release-public.pem
+```
+
+A failing gate means the artifact is not publishable. A key copied only from the artifact
+being verified does not satisfy the production trust model.

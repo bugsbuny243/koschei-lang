@@ -1,9 +1,13 @@
 """Fail-closed publication gate for Koschei Pi SoloHost customer artifacts.
 
-This verifier checks the assembled customer artifact directory, validates the
-release manifest against executable bytes and release evidence, and verifies a
-detached Ed25519 signature for publishable artifacts. Unsigned staging is
-accepted only with an explicit staging flag and is never reported as publishable.
+This verifier intentionally checks the *assembled customer artifact directory*, not
+an ordinary source checkout. A normal koschei-lang repository checkout is expected
+to fail this gate because it contains proprietary source.
+
+Release authenticity is anchored OUTSIDE the artifact. A public key bundled beside
+the binary may be useful as transport metadata, but it is never accepted as the
+trust source by this verifier. Production publication must supply an independently
+pinned Ed25519 public key with ``--trusted-public-key``.
 """
 from __future__ import annotations
 
@@ -20,9 +24,11 @@ import tempfile
 
 POLICY_PATH = Path(__file__).resolve().parents[1] / "distribution" / "solohost" / "artifact-policy-v1.json"
 REQUIRED_MANIFEST = "koschei-release-manifest.json"
-MANIFEST_SCHEMA = "koschei.solohost-release-manifest/v1"
-SMOKE_SCHEMA = "koschei.solohost-binary-smoke-receipt/v1"
+REQUIRED_SIGNATURE = "koschei-release-manifest.sig"
+RELEASE_SCHEMA = "koschei.solohost-release-manifest/v1"
 SIGNATURE_SCHEME = "ed25519-openssl-raw-v1"
+KEY_ID_PREFIX = "ed25519-sha256:"
+SHA256_RE = re.compile(r"[0-9a-f]{64}\Z")
 EXECUTABLE_CANDIDATES = {"ks", "ks.exe", "koschei", "koschei.exe"}
 SOURCE_COMMIT_RE = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
 SHA256_RE = re.compile(r"[0-9a-f]{64}\Z")
@@ -103,153 +109,188 @@ def _as_string_set(policy: dict[str, object], name: str) -> set[str]:
     return set(raw)
 
 
-def _load_manifest(root: Path, failures: list[str]) -> dict[str, object] | None:
-    path = root / REQUIRED_MANIFEST
-    if not path.is_file():
-        failures.append(f"missing required release metadata file: {REQUIRED_MANIFEST}")
-        return None
-    try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        failures.append(f"invalid release manifest: {exc}")
-        return None
-    if not isinstance(value, dict):
-        failures.append("release manifest must be a JSON object")
-        return None
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _simple_artifact_name(value: object, *, field: str) -> str:
+    if not isinstance(value, str) or not value:
+        raise ArtifactPolicyError(f"manifest {field} must be a non-empty filename")
+    path = Path(value)
+    if path.name != value or value in {".", ".."} or "/" in value or "\\" in value:
+        raise ArtifactPolicyError(f"manifest {field} must be a simple artifact-local filename")
     return value
 
 
-def _verify_release_evidence(manifest: dict[str, object], failures: list[str]) -> None:
-    source_commit = manifest.get("source_commit")
-    if not isinstance(source_commit, str) or not SOURCE_COMMIT_RE.fullmatch(source_commit):
-        failures.append("release manifest source_commit must be a full 40- or 64-character lowercase hexadecimal commit id")
-
-    evidence = manifest.get("release_evidence")
-    if not isinstance(evidence, dict):
-        failures.append("release manifest release_evidence section is missing")
-        return
-    if evidence.get("smoke_receipt_schema") != SMOKE_SCHEMA:
-        failures.append("release evidence smoke receipt schema is invalid")
-    smoke_digest = evidence.get("smoke_receipt_sha256")
-    if not isinstance(smoke_digest, str) or not SHA256_RE.fullmatch(smoke_digest):
-        failures.append("release evidence smoke_receipt_sha256 must be lowercase SHA-256 hex")
-    if evidence.get("native_build_passed") is not True:
-        failures.append("release evidence must attest a passing required native build smoke")
-    go_version = evidence.get("go_version")
-    if not isinstance(go_version, str) or not go_version.strip():
-        failures.append("release evidence must record the Go toolchain identity")
-
-
-def _verify_manifest(
-    root: Path,
-    manifest: dict[str, object],
-    failures: list[str],
-    *,
-    allow_unsigned_staging: bool,
-    public_key: Path | None,
-) -> None:
+def _load_release_manifest(root: Path) -> tuple[Path, dict[str, object]]:
     manifest_path = root / REQUIRED_MANIFEST
-    if manifest.get("schema") != MANIFEST_SCHEMA:
-        failures.append("unexpected release manifest schema")
-    if manifest.get("product") != "koschei-lang":
-        failures.append("release manifest product must be koschei-lang")
-    if manifest.get("channel") != "pi-solohost":
-        failures.append("release manifest channel must be pi-solohost")
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise ArtifactPolicyError(f"missing required release manifest: {REQUIRED_MANIFEST}") from exc
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ArtifactPolicyError(f"cannot load release manifest: {exc}") from exc
+    if not isinstance(manifest, dict) or manifest.get("schema") != RELEASE_SCHEMA:
+        raise ArtifactPolicyError("unexpected SoloHost release manifest schema")
+    if manifest.get("product") != "koschei-lang" or manifest.get("channel") != "pi-solohost":
+        raise ArtifactPolicyError("release manifest product/channel identity mismatch")
+    return manifest_path, manifest
 
-    version = manifest.get("version")
-    if not isinstance(version, str) or not version.strip():
-        failures.append("release manifest version must be non-empty")
-    platform = manifest.get("platform")
-    if not isinstance(platform, str) or not platform.strip():
-        failures.append("release manifest platform must be non-empty")
-    _verify_release_evidence(manifest, failures)
 
-    commercial = manifest.get("commercial")
-    if not isinstance(commercial, dict):
-        failures.append("release manifest commercial section is missing")
-    else:
-        if commercial.get("billing_mode") != "one_time_pi":
-            failures.append("release billing mode must be one_time_pi")
-        if commercial.get("recurring_subscription") is not False:
-            failures.append("recurring_subscription must be false")
+def _run_openssl(command: list[str]) -> subprocess.CompletedProcess[bytes]:
+    try:
+        return subprocess.run(command, check=False, capture_output=True)
+    except OSError as exc:
+        raise ArtifactPolicyError(f"cannot execute OpenSSL: {exc}") from exc
+
+
+def _trusted_key_id(trusted_public_key: Path) -> str:
+    if not trusted_public_key.is_file():
+        raise ArtifactPolicyError(f"trusted public key does not exist: {trusted_public_key}")
+    if shutil.which("openssl") is None:
+        raise ArtifactPolicyError("openssl executable is required for release verification")
+    with tempfile.TemporaryDirectory(prefix="koschei-release-trust-") as tmp:
+        public_der = Path(tmp) / "trusted-public.der"
+        result = _run_openssl([
+            "openssl",
+            "pkey",
+            "-pubin",
+            "-in",
+            str(trusted_public_key),
+            "-outform",
+            "DER",
+            "-out",
+            str(public_der),
+        ])
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout).decode("utf-8", errors="replace").strip()
+            raise ArtifactPolicyError(f"trusted public key is not a valid OpenSSL public key: {detail}")
+        return KEY_ID_PREFIX + hashlib.sha256(public_der.read_bytes()).hexdigest()
+
+
+def _verify_release_integrity(root: Path, trusted_public_key: Path) -> list[str]:
+    failures: list[str] = []
+    try:
+        manifest_path, manifest = _load_release_manifest(root)
+    except ArtifactPolicyError as exc:
+        return [str(exc)]
+
+    try:
+        entrypoint = _simple_artifact_name(manifest.get("entrypoint"), field="entrypoint")
+    except ArtifactPolicyError as exc:
+        failures.append(str(exc))
+        entrypoint = ""
+    if entrypoint and entrypoint not in EXECUTABLE_CANDIDATES:
+        failures.append(f"release manifest entrypoint is not a Koschei executable: {entrypoint}")
 
     artifact = manifest.get("artifact")
     if not isinstance(artifact, dict):
         failures.append("release manifest artifact section is missing")
-    else:
-        rel_path = artifact.get("path")
-        expected_sha = artifact.get("sha256")
-        expected_size = artifact.get("size_bytes")
-        if not isinstance(rel_path, str) or not rel_path:
-            failures.append("manifest artifact.path must be non-empty")
+        artifact = {}
+    try:
+        artifact_name = _simple_artifact_name(artifact.get("path"), field="artifact.path")
+    except ArtifactPolicyError as exc:
+        failures.append(str(exc))
+        artifact_name = ""
+
+    if entrypoint and artifact_name and artifact_name != entrypoint:
+        failures.append("release manifest entrypoint and artifact.path do not match")
+
+    artifact_path = root / artifact_name if artifact_name else None
+    expected_sha = artifact.get("sha256")
+    expected_size = artifact.get("size_bytes")
+    if not isinstance(expected_sha, str) or SHA256_RE.fullmatch(expected_sha) is None:
+        failures.append("release manifest artifact.sha256 must be a lowercase SHA-256 digest")
+    if not isinstance(expected_size, int) or isinstance(expected_size, bool) or expected_size < 0:
+        failures.append("release manifest artifact.size_bytes must be a non-negative integer")
+
+    if artifact_path is not None:
+        if not artifact_path.is_file():
+            failures.append(f"manifest-bound executable is missing: {artifact_name}")
         else:
-            artifact_path = root / rel_path
-            if artifact_path.parent.resolve() != root.resolve():
-                failures.append("manifest artifact.path must name a top-level artifact file")
-            elif not artifact_path.is_file():
-                failures.append(f"manifest artifact file is missing: {rel_path}")
-            else:
+            if isinstance(expected_sha, str) and SHA256_RE.fullmatch(expected_sha):
                 actual_sha = _sha256(artifact_path)
-                if expected_sha != actual_sha:
-                    failures.append("manifest artifact sha256 does not match executable bytes")
-                if expected_size != artifact_path.stat().st_size:
-                    failures.append("manifest artifact size_bytes does not match executable bytes")
+                if actual_sha != expected_sha:
+                    failures.append(
+                        f"artifact SHA-256 mismatch: manifest={expected_sha} actual={actual_sha}"
+                    )
+            if isinstance(expected_size, int) and not isinstance(expected_size, bool) and expected_size >= 0:
+                actual_size = artifact_path.stat().st_size
+                if actual_size != expected_size:
+                    failures.append(
+                        f"artifact size mismatch: manifest={expected_size} actual={actual_size}"
+                    )
 
     signature = manifest.get("signature")
     if not isinstance(signature, dict):
         failures.append("release manifest signature section is missing")
-        return
-    status = signature.get("status")
-    if status == "UNSIGNED-STAGING":
-        if not allow_unsigned_staging:
-            failures.append("release manifest is unsigned staging; publication is blocked")
-        return
-    if status != "SIGNED":
-        failures.append("release manifest signature status must be SIGNED or UNSIGNED-STAGING")
-        return
-
-    scheme = signature.get("scheme")
+        signature = {}
+    if signature.get("status") != "SIGNED":
+        failures.append("release manifest is not marked SIGNED")
+    if signature.get("scheme") != SIGNATURE_SCHEME:
+        failures.append(f"release signature scheme must be {SIGNATURE_SCHEME}")
     key_id = signature.get("key_id")
-    signature_file = signature.get("signature_file")
-    if scheme != SIGNATURE_SCHEME:
-        failures.append(f"unsupported release signature scheme: {scheme!r}")
-        return
-    if not isinstance(key_id, str) or not key_id:
-        failures.append("SIGNED manifest requires key_id")
-        return
-    if not isinstance(signature_file, str) or not signature_file:
-        failures.append("SIGNED manifest requires signature_file")
-        return
-    sig_path = root / signature_file
-    if sig_path.parent.resolve() != root.resolve() or not sig_path.is_file():
-        failures.append("signature_file must reference an existing top-level file")
-        return
-    if public_key is None:
-        failures.append("signed publication requires --public-key for cryptographic verification")
-        return
-    public_key = public_key.resolve()
-    if not public_key.is_file():
-        failures.append(f"release public key does not exist: {public_key}")
-        return
+    if not isinstance(key_id, str) or not key_id.startswith(KEY_ID_PREFIX) or SHA256_RE.fullmatch(key_id[len(KEY_ID_PREFIX):]) is None:
+        failures.append("release manifest signature.key_id is not a valid Ed25519 key identity")
+    try:
+        signature_name = _simple_artifact_name(
+            signature.get("signature_file"), field="signature.signature_file"
+        )
+    except ArtifactPolicyError as exc:
+        failures.append(str(exc))
+        signature_name = ""
+    if signature_name and signature_name != REQUIRED_SIGNATURE:
+        failures.append(f"release signature file must be {REQUIRED_SIGNATURE}")
 
-    actual_key_id = _public_key_id(public_key)
-    if key_id != actual_key_id:
-        failures.append("release manifest key_id does not match supplied public key")
-        return
-    if not _verify_ed25519_signature(
-        manifest_path=manifest_path,
-        signature_path=sig_path,
-        public_key=public_key,
+    signature_path = root / signature_name if signature_name else None
+    if signature_path is not None and not signature_path.is_file():
+        failures.append(f"detached release signature is missing: {signature_name}")
+
+    try:
+        trusted_key_id = _trusted_key_id(trusted_public_key.resolve())
+    except ArtifactPolicyError as exc:
+        failures.append(str(exc))
+        trusted_key_id = ""
+
+    if trusted_key_id and isinstance(key_id, str) and trusted_key_id != key_id:
+        failures.append(
+            "release signer does not match independently trusted key: "
+            f"manifest={key_id} trusted={trusted_key_id}"
+        )
+
+    if (
+        trusted_key_id
+        and isinstance(key_id, str)
+        and trusted_key_id == key_id
+        and signature_path is not None
+        and signature_path.is_file()
+        and signature.get("status") == "SIGNED"
+        and signature.get("scheme") == SIGNATURE_SCHEME
     ):
-        failures.append("release manifest Ed25519 signature verification failed")
+        result = _run_openssl([
+            "openssl",
+            "pkeyutl",
+            "-verify",
+            "-rawin",
+            "-in",
+            str(manifest_path),
+            "-pubin",
+            "-inkey",
+            str(trusted_public_key.resolve()),
+            "-sigfile",
+            str(signature_path),
+        ])
+        if result.returncode != 0:
+            failures.append("detached release signature does not verify against trusted public key")
+
+    return failures
 
 
-def verify_artifact(
-    root: Path,
-    *,
-    allow_unsigned_staging: bool = False,
-    public_key: Path | None = None,
-) -> list[str]:
+def verify_artifact(root: Path, *, trusted_public_key: Path | None = None) -> list[str]:
     policy = _load_policy()
     forbidden_path_names = _as_string_set(policy, "forbidden_path_names")
     forbidden_suffixes = _as_string_set(policy, "forbidden_suffixes")
@@ -294,6 +335,13 @@ def verify_artifact(
         if matched_markers:
             failures.append(f"secret-like filename marker {matched_markers!r}: {rel}")
 
+    if trusted_public_key is None:
+        failures.append(
+            "missing independent trusted public key; artifact-bundled keys are not trust anchors"
+        )
+    else:
+        failures.extend(_verify_release_integrity(root, trusted_public_key))
+
     return failures
 
 
@@ -301,15 +349,13 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("artifact_directory", type=Path)
     parser.add_argument(
-        "--allow-unsigned-staging",
-        action="store_true",
-        help="validate an unsigned local staging artifact without making it publishable",
-    )
-    parser.add_argument(
-        "--public-key",
+        "--trusted-public-key",
+        required=True,
         type=Path,
-        default=None,
-        help="trusted Ed25519 public key used to verify a signed publication artifact",
+        help=(
+            "independently pinned Ed25519 release public key; do not point this at "
+            "a key learned only from inside the artifact being verified"
+        ),
     )
     return parser
 
@@ -318,11 +364,7 @@ def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     root = args.artifact_directory.resolve()
     try:
-        failures = verify_artifact(
-            root,
-            allow_unsigned_staging=args.allow_unsigned_staging,
-            public_key=args.public_key,
-        )
+        failures = verify_artifact(root, trusted_public_key=args.trusted_public_key.resolve())
     except ArtifactPolicyError as exc:
         print(f"SOLOHOST ARTIFACT POLICY ERROR: {exc}", file=sys.stderr)
         return 2
@@ -335,10 +377,7 @@ def main(argv: list[str] | None = None) -> int:
 
     print("KOSCHEI SOLOHOST ARTIFACT: PASS")
     print(f"root: {root}")
-    if args.allow_unsigned_staging:
-        print("mode: unsigned staging validation only — NOT PUBLISHABLE")
-    else:
-        print("mode: signed publication gate")
+    print("source-leak, artifact digest, signer identity, and detached-signature checks passed")
     return 0
 
 
