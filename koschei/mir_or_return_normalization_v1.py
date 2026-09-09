@@ -398,6 +398,8 @@ class _OrReturnFunctionLowerer(_FunctionLowerer):
                 continue
             if isinstance(statement, IfStatement) and cls._supports_value_if(statement):
                 continue
+            if isinstance(statement, WhileStatement) and cls._supports_value_block(statement.body):
+                continue
             return False
         return True
 
@@ -437,6 +439,58 @@ class _OrReturnFunctionLowerer(_FunctionLowerer):
         self._emit(MirLoad(target, result_name, result_type, statement.location))
         return target
 
+    def _lower_value_while(self, statement: WhileStatement, result_type: TypeNode) -> int | None:
+        """Lower a while statement whose statement value is consumed by a block."""
+
+        body_type = checked_block_normal_type(self.typed_report, statement.body)
+        initial = self._emit_unit(statement.location)
+        result_name = self._new_internal_binding_name("value_while_result")
+        self._emit(MirBind(result_name, initial, True, result_type, statement.location))
+
+        condition_block = self._new_block()
+        condition_error_block = self._new_block()
+        decision_block = self._new_block()
+        body_block = self._new_block()
+        final_join = self._new_block()
+        self._terminate(MirJump(condition_block))
+
+        self.current = condition_block
+        condition = self._lower_expression(statement.condition)
+        condition_is_error = self._new_value()
+        self._emit(MirIsRuntimeError(condition_is_error, condition, BOOL, statement.location))
+        self._terminate(MirBranch(condition_is_error, condition_error_block, decision_block))
+
+        self.current = condition_error_block
+        self._emit(MirStore(result_name, condition, result_type, statement.location))
+        self._terminate(MirJump(final_join))
+
+        self.current = decision_block
+        self._terminate(MirBranch(condition, body_block, final_join))
+
+        self.current = body_block
+        self.loop_targets.append((final_join, condition_block))
+        try:
+            body_value = self._lower_value_block(statement.body, statement.location, body_type)
+        finally:
+            self.loop_targets.pop()
+
+        if body_value is not None and self.blocks[self.current].terminator is None:
+            self._emit(MirStore(result_name, body_value, result_type, statement.location))
+            body_is_error = self._new_value()
+            self._emit(MirIsRuntimeError(body_is_error, body_value, BOOL, statement.location))
+            body_error_block = self._new_block()
+            continue_block = self._new_block()
+            self._terminate(MirBranch(body_is_error, body_error_block, continue_block))
+            self.current = body_error_block
+            self._terminate(MirJump(final_join))
+            self.current = continue_block
+            self._terminate(MirJump(condition_block))
+
+        self.current = final_join
+        target = self._new_value()
+        self._emit(MirLoad(target, result_name, result_type, statement.location))
+        return target
+
     def _lower_value_block(self, block: Block, empty_location: SourceLocation, result_type: TypeNode | None = None) -> int | None:
         self.scopes.append({})
         try:
@@ -461,6 +515,10 @@ class _OrReturnFunctionLowerer(_FunctionLowerer):
                 if result_type is None:
                     raise ValueError("value-position if requires canonical result type")
                 return self._lower_value_if(tail, result_type)
+            if isinstance(tail, WhileStatement):
+                if result_type is None:
+                    raise ValueError("value-position while requires canonical result type")
+                return self._lower_value_while(tail, result_type)
             raise ValueError(f"proven value-block admission drifted: {type(tail).__name__}")
         finally:
             self.scopes.pop()
