@@ -56,13 +56,14 @@ def _declaration_digest(declaration: SigilDeclaration) -> str:
 
 
 def _require_admitted_subject_lineage(program: NativeProgram) -> None:
-    """Require every non-genesis semantic root to descend from prior `ka`.
+    """Require every non-genesis root to target a prior `ka` admission.
 
-    `ka` admits canonical existence while granting zero ambient authority.
-    `vor`, `shi`, `thal`, and `nur` may refine authority, evidence, survival or
-    visibility of an admitted subject, but they cannot create a subject merely
-    by naming one. This makes identity-before-authority an executable compiler
-    invariant rather than a vocabulary convention.
+    `ka` establishes recognized existence with zero ambient authority. `vor`,
+    `shi`, `thal`, and `nur` may refine what can happen to that admitted subject,
+    but none of them may manufacture a subject merely by spelling a new name.
+    This is the minimum executable form of the lexicon laws
+    `identity-before-authority` and `observation/recovery/visibility cannot invent
+    identity or authority`.
     """
 
     admitted: set[str] = set()
@@ -81,8 +82,8 @@ def check_native_sigils(program: NativeProgram) -> TypedSigilProgram:
     """Bind parsed native sigils to canonical Universe semantics.
 
     The Universe kernel owns sigil order/composition rules. This checker adds the
-    identity-lineage rule that makes subjects canonical semantic references:
-    every non-`ka` root must descend from an admitted subject in the same checked
+    identity-lineage rule that makes subjects real semantic references: every
+    non-`ka` root must descend from an admitted subject in the same checked
     native program.
     """
 

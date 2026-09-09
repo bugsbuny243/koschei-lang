@@ -32,7 +32,6 @@ from .mir_ir import (
     block_contract,
     validate_blocks,
 )
-from .mir_or_return_normalization_v1 import lower_function_blocks_v1
 from .native_sigil_mir_v1 import NativeSigilMir
 from .native_sigils_v1 import NativeProgram
 from .type_contracts import function_type, type_parameters_of
@@ -207,6 +206,25 @@ def _contract_import_target(target: str) -> str:
     return Path(target).stem
 
 
+def _semantic_value(value: Any) -> Any:
+    """Remove diagnostic source coordinates from a fingerprint payload.
+
+    Source positions are useful for tooling, but they are not semantic identity.
+    Moving the same checked program to another line must not manufacture another
+    sealed execution reality.
+    """
+
+    if isinstance(value, dict):
+        return {
+            key: _semantic_value(item)
+            for key, item in value.items()
+            if key not in {"location", "line", "column"}
+        }
+    if isinstance(value, (list, tuple)):
+        return [_semantic_value(item) for item in value]
+    return value
+
+
 def _source_sigil_identities(program: Program) -> tuple[tuple[str, str], ...]:
     if not isinstance(program, NativeProgram):
         return ()
@@ -276,26 +294,10 @@ def _native_sigil_output(report: NativeSigilMir | None) -> dict[str, Any] | None
     return contract
 
 
-def _program_contract(program: Program) -> dict[str, Any]:
-    """Project source AST into the MIR seal without making sigil coordinates semantic.
-
-    Existing function/control-flow source coordinates keep their historical MIR
-    fingerprint behavior. Native sigil line/column is diagnostic metadata only;
-    sigil semantic identity is carried by the checked NativeSigilMir contract.
-    """
-
-    payload = asdict(program)
-    if isinstance(program, NativeProgram):
-        payload["sigils"] = [
-            {"sigil": item.sigil, "subject": item.subject} for item in program.sigils
-        ]
-    return payload
-
-
 def _module_contract(module: MirModule) -> dict[str, Any]:
     return {
         "name": module.name,
-        "program": _program_contract(module.program),
+        "program": _semantic_value(asdict(module.program)),
         "imports": sorted(
             (alias, _contract_import_target(target))
             for alias, target in module.imports.items()
@@ -312,7 +314,9 @@ def _module_contract(module: MirModule) -> dict[str, Any]:
                 "calls": list(function.calls),
                 "effects": list(function.effects),
                 "resources": asdict(function.resources),
-                "blocks": [block_contract(block) for block in function.blocks],
+                "blocks": [
+                    _semantic_value(block_contract(block)) for block in function.blocks
+                ],
             }
             for function in module.functions
         ],
@@ -345,8 +349,6 @@ def _module_contract(module: MirModule) -> dict[str, Any]:
         "typed_expressions": [
             (
                 type(item.expression).__name__,
-                item.expression.location.line,
-                item.expression.location.column,
                 render_type(item.type),
             )
             for item in module.typed_report.expressions

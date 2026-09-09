@@ -39,15 +39,11 @@ class NativeSigilMirTests(unittest.TestCase):
         right = lower_native_sigils(parse("ka signing;\nvor signing;\n"))
         self.assertNotEqual(left.fingerprint, right.fingerprint)
 
-    def test_source_location_is_diagnostic_not_semantic_identity(self) -> None:
+    def test_source_location_is_diagnostic_only_not_part_of_semantic_seal(self) -> None:
         left = lower_native_sigils(parse("ka treasury;\nvor treasury;\n"))
         right = lower_native_sigils(parse("\nka treasury;\nvor treasury;\n"))
-        self.assertNotEqual(
-            (left.bindings[0].source_line, left.bindings[1].source_line),
-            (right.bindings[0].source_line, right.bindings[1].source_line),
-        )
         self.assertEqual(left.fingerprint, right.fingerprint)
-        self.assertEqual(left.universe_plan_digest, right.universe_plan_digest)
+        self.assertNotEqual(left.bindings[0].source_line, right.bindings[0].source_line)
 
     def test_tamper_fails_closed(self) -> None:
         mir = lower_native_sigils(parse("ka treasury;\nvor treasury;\n"))

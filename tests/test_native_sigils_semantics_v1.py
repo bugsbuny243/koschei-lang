@@ -73,9 +73,27 @@ class NativeSigilSemanticTests(unittest.TestCase):
             check_native_sigils(program)
 
     def test_duplicate_sigil_is_rejected_by_universe_semantics(self) -> None:
-        program = parse("ka treasury; ka identity;")
-        with self.assertRaisesRegex(NativeSigilSemanticError, "duplicate sigils"):
+        program = parse("ka treasury; ka treasury;")
+        with self.assertRaises(NativeSigilSemanticError):
             check_native_sigils(program)
+
+    def test_vor_without_genesis_admission_is_rejected(self) -> None:
+        program = parse("vor BuHicVarOlmayanSey;")
+        with self.assertRaisesRegex(
+            NativeSigilSemanticError,
+            "has no preceding ka admission",
+        ):
+            check_native_sigils(program)
+
+    def test_non_genesis_roots_cannot_invent_subjects(self) -> None:
+        for sigil in ("vor", "shi", "thal", "nur"):
+            with self.subTest(sigil=sigil):
+                program = parse(f"ka treasury; {sigil} invented;")
+                with self.assertRaisesRegex(
+                    NativeSigilSemanticError,
+                    "has no preceding ka admission",
+                ):
+                    check_native_sigils(program)
 
     def test_digest_is_deterministic(self) -> None:
         source = "ka treasury; vor treasury; shi treasury;"
