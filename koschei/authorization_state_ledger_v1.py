@@ -15,6 +15,7 @@ from .authorization_transition_v1 import (
     AuthorizationTransitionV1Error,
     DelegationLinkV1,
     ExecutionAuthorizationSnapshotV1,
+    _hash,
     _state_digest,
     authorization_snapshot_for_execution_v1,
 )
@@ -31,6 +32,20 @@ class AuthorizationStateLedgerV1:
         expected = _state_digest(replace(state, state_digest=""))
         if expected != state.state_digest:
             raise AuthorizationTransitionV1Error("authorization state seal mismatch")
+
+    @staticmethod
+    def _assert_transition_sealed(transition: AuthorizationTransitionV1) -> None:
+        payload = {
+            "kind": transition.kind,
+            "epoch": transition.epoch,
+            "previous_state_digest": transition.previous_state_digest,
+            "next_state_digest": transition.next_state_digest,
+            "reason_digest": transition.reason_digest,
+            "version": transition.version,
+        }
+        expected = _hash(b"koschei.authorization-transition/v1", payload)
+        if expected != transition.transition_digest:
+            raise AuthorizationTransitionV1Error("authorization transition seal mismatch")
 
     def register_initial(self, state: AuthorizationStateV1) -> None:
         self._assert_sealed(state)
@@ -58,6 +73,7 @@ class AuthorizationStateLedgerV1:
     ) -> None:
         self.assert_current(previous)
         self._assert_sealed(next_state)
+        self._assert_transition_sealed(transition)
         if previous.subject != next_state.subject:
             raise AuthorizationTransitionV1Error("authorization transition changes subject")
         if next_state.previous_state_digest != previous.state_digest:
