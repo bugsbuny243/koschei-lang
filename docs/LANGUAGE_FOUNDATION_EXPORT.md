@@ -56,4 +56,4 @@ The trusted build path proves which exported bytes came from the clean checked-o
 
 The corpus does not claim that every sentence in documentation is a formal language specification, that every example is production-safe, or that a model trained on the corpus understands Koschei. Those are separate validation gates.
 
-Koschei Sentinel is frozen and is not a consumer dependency or trust root for this exporter. Historical Git revisions may mention an earlier Sentinel handoff; those references are superseded by the active Lang-only architecture.
+Koschei Sentinel is reactivated, but it is still not a consumer dependency or trust root for this exporter. Any Sentinel handoff must use an explicit, versioned Koschei Fabric adapter and must not change the authoritative Lang corpus semantics, hashes, family boundaries, or trusted-export rules. The Lang exporter remains independently buildable and verifiable when Sentinel and Koschei Web3 are unavailable.
