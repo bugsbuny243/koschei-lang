@@ -5,6 +5,11 @@ intermediate representation that can be consumed by Library/Universe stages.
 It is intentionally separate from the existing function MIR while that MIR
 still contains AST fallback instructions. The two representations will be
 joined only after the first native boundary slice has executable parity.
+
+Source locations are diagnostic metadata only. They remain on bindings so tools
+can point back to source, but they are deliberately excluded from the semantic
+fingerprint: moving identical semantics to another line must not create another
+Koschei reality.
 """
 from __future__ import annotations
 
@@ -58,7 +63,6 @@ def _fingerprint(bindings: Iterable[MirSigilBinding], universe_digest: str) -> s
                     f"domain={binding.semantic_domain}",
                     f"authority={int(binding.may_grant_authority)}",
                     "obligations=" + ",".join(binding.obligations),
-                    f"location={binding.source_line}:{binding.source_column}",
                 )
             )
         )
