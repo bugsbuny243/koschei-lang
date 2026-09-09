@@ -28,6 +28,15 @@
       "frontend": "planned",
       "telemetry": "planned",
       "notes": "Exposes language-owned policy, identity, proof and agent contracts to Fabric without importing Web3 or Sentinel internals."
+    },
+    {
+      "id": "web5-identity-data-profile",
+      "domain": "web5",
+      "status": "planned",
+      "backend": "planned",
+      "frontend": "planned",
+      "telemetry": "planned",
+      "notes": "Tracks the future DID, credential and user-controlled data adapter layer without claiming production support before implementation."
     }
   ]
 }
