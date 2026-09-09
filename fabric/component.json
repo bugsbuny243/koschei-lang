@@ -31,7 +31,7 @@
       "backend": "existing",
       "frontend": "planned",
       "telemetry": "planned",
-      "notes": "Provider-independent AuthorizationState/AuthorizationTransition, eight-axis attenuation, VALID_PARENT_NOW and execution-time authorization snapshots exist on the integration branch. This does not close native broker/OS-confinement or T01-T14 acceptance gates."
+      "notes": "Provider-independent AuthorizationState/AuthorizationTransition, eight-axis attenuation, VALID_PARENT_NOW and execution-time authorization snapshots are present on main. Fresh effect authorization binding remains a separate draft integration candidate and is not counted as accepted here. Durable shared monotonic state, broker/worker OS confinement and T01-T14 acceptance remain open."
     },
     {
       "id": "web4-policy-agent-profile",
