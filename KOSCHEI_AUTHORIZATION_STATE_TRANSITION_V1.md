@@ -26,6 +26,7 @@ INTENT != CAPABILITY
 INTENT != EXECUTION_PERMISSION
 AUTHORIZED_AT_START != AUTHORIZED_AT_EXECUTION
 VALID_CHILD_DELEGATION requires VALID_PARENT_NOW
+VALID_EXECUTION requires CURRENT_AUTHORIZATION_STATE_HEAD
 AUDIT_LOG != AUDIT_PROOF
 ```
 
@@ -39,9 +40,11 @@ Historical validity is insufficient:
 
 ```text
 was_valid(parent) != valid(parent, now)
+was_active(state) != current_state(state, now)
 ```
 
 A child delegation is rejected when its parent is currently revoked, expired, unknown, stale, incorrectly signed, or no longer permits redelegation.
+An old active authorization state is rejected after the monotonic state head advances to a newer transition.
 
 ## Canonical constraint lattice
 
@@ -74,11 +77,19 @@ Initial issuance creates the first active state and is not modeled as an arbitra
 
 A suspended state cannot silently recover. V1 intentionally has no implicit resume transition. Revoked and expired states are terminal.
 
+## Monotonic current-state head
+
+A hash-linked transition history alone is insufficient. After a revocation an attacker could otherwise replay an older, correctly sealed `active` state.
+
+`AuthorizationStateLedgerV1` therefore maintains the current state digest for each subject and requires every committed transition to extend that exact head. Execution snapshots obtained through the ledger reject historical state rollback.
+
+The current implementation is an in-memory bootstrap ledger. It proves the invariant inside one trusted runtime only. Production acceptance requires durable/shared monotonic state with crash/restart, replica, rollback, and concurrency tests. This limitation remains an explicit security gate and must not be hidden by the existence of the bootstrap class.
+
 ## Execution-time snapshot
 
 Before an effect may proceed, Koschei must build `ExecutionAuthorizationSnapshotV1` from:
 
-1. the sealed current authorization state;
+1. the sealed **current monotonic** authorization state;
 2. a freshly verified delegation chain at the execution epoch;
 3. the immutable delegation-authority commitment;
 4. the effective constraint digest;
@@ -97,7 +108,7 @@ The existing execution permit already binds exact request, operation, epoch, can
 ```text
 IntentCommitment
   -> DelegationChain(current)
-  -> AuthorizationState(current)
+  -> AuthorizationStateLedger(current head)
   -> ExecutionAuthorizationSnapshotV1
   -> existing native authority/evidence verification
   -> AuthorizationDecisionV1
@@ -115,7 +126,7 @@ A normal log records statements made by a component. A Koschei audit proof must 
 IdentityEvidence
   -> IntentCommitment
   -> DelegationChain
-  -> AuthorizationState / ordered transitions
+  -> AuthorizationState / ordered transitions / monotonic head
   -> ExecutionAuthorizationSnapshot
   -> RuntimeDecision
   -> ExecutionPermit
@@ -132,4 +143,4 @@ External agent-audit, delegation, intent-token, OAuth, workload-identity, attest
 
 ## Security status
 
-Implementation of `authorization_transition_v1.py` plus unit tests establishes the provider-independent state-machine primitive only. It does **not** by itself close `LANG-01`, `LANG-02`, or `SUPPLY-02`; real broker/worker OS confinement, canonical execution acceptance, provenance/release-root acceptance, and the shared T01-T14 suite remain separate gates.
+Implementation of `authorization_transition_v1.py`, `authorization_state_ledger_v1.py`, and their unit tests establishes the provider-independent state-machine and bootstrap rollback-prevention primitives only. It does **not** by itself close `LANG-01`, `LANG-02`, or `SUPPLY-02`; durable monotonic state, real broker/worker OS confinement, canonical execution acceptance, provenance/release-root acceptance, and the shared T01-T14 suite remain separate gates.
