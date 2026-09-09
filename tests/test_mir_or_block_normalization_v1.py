@@ -18,9 +18,9 @@ from koschei.mir_extension_instructions_v4 import (
     MirIsRuntimeError,
     MirUnit,
 )
-from koschei.mir_ir import MirAstFallback, MirBind, MirBranch, MirConst, MirReturn
+from koschei.mir_ir import MirAstFallback, MirBind, MirBranch, MirConst, MirReturn, MirStore
 from koschei.mir_or_return_normalization_v1 import lower_function_blocks_v1
-from koschei.type_system import BOOL, ERROR, GenericType, INT, union_type
+from koschei.type_system import BOOL, ERROR, GenericType, INT, VOID, union_type
 
 
 def _loc(column: int = 1) -> SourceLocation:
@@ -137,13 +137,41 @@ def test_or_block_if_error_condition_has_explicit_error_result_path():
     assert any(isinstance(item, MirBind) and item.source == condition_const.target for item in instructions)
 
 
-def test_or_block_loop_tail_remains_explicit_migration_fallback():
+def test_or_block_while_tail_is_explicit_value_cfg_without_ast_fallback():
     condition = Literal(False, _loc(8))
     body_value = Literal(7, _loc(12))
     handler = Block((WhileStatement(condition, Block((ExpressionStatement(body_value, body_value.location),)), _loc(8)),))
-    blocks = _lower(handler, (condition, BOOL), (body_value, INT))
+    blocks = _lower(
+        handler,
+        (condition, BOOL),
+        (body_value, INT),
+        expression_type=union_type(INT, VOID),
+    )
     instructions = [item for block in blocks for item in block.instructions]
-    fallbacks = [item for item in instructions if isinstance(item, MirAstFallback)]
-    assert len(fallbacks) == 1
-    assert fallbacks[0].node_kind == "OrBlockExpression"
-    assert not any(isinstance(item, MirConst) and item.value == 7 for item in instructions)
+    assert not any(isinstance(item, MirAstFallback) for item in instructions)
+    assert any(isinstance(item, MirUnit) for item in instructions)
+    assert any(isinstance(item, MirIsRuntimeError) for item in instructions)
+    assert any(isinstance(item, MirConst) and item.value == 7 for item in instructions)
+    assert any(isinstance(item, MirStore) for item in instructions)
+    assert sum(isinstance(block.terminator, MirBranch) for block in blocks) >= 3
+
+
+def test_or_block_while_condition_error_is_stored_as_loop_value_not_function_return():
+    condition = Literal("error-sentinel", _loc(8))
+    body_value = Literal(7, _loc(12))
+    handler = Block((WhileStatement(condition, Block((ExpressionStatement(body_value, body_value.location),)), _loc(8)),))
+    blocks = _lower(
+        handler,
+        (condition, union_type(BOOL, ERROR)),
+        (body_value, INT),
+        expression_type=union_type(INT, ERROR, VOID),
+    )
+    instructions = [item for block in blocks for item in block.instructions]
+    condition_const = next(item for item in instructions if isinstance(item, MirConst) and item.value == "error-sentinel")
+    assert not any(isinstance(item, MirAstFallback) for item in instructions)
+    assert any(isinstance(item, MirStore) and item.source == condition_const.target for item in instructions)
+    assert not any(
+        isinstance(block.terminator, MirReturn)
+        and block.terminator.value == condition_const.target
+        for block in blocks
+    )
