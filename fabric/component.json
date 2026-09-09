@@ -23,6 +23,17 @@
       "notes": "Parser/compiler/runtime work exists, but canonical execution, public CLI transition, broker/worker OS isolation and independent release-root acceptance remain explicit P0 gates."
     },
     {
+      "id": "authorization-transition-ir",
+      "domain": "web4",
+      "status": "experimental",
+      "evidenceState": "partial",
+      "workPackages": ["AGENT-02", "AGENT-04", "LANG-01", "LANG-02"],
+      "backend": "existing",
+      "frontend": "planned",
+      "telemetry": "planned",
+      "notes": "Provider-independent AuthorizationState/AuthorizationTransition, eight-axis attenuation, VALID_PARENT_NOW and execution-time authorization snapshots exist on the integration branch. This does not close native broker/OS-confinement or T01-T14 acceptance gates."
+    },
+    {
       "id": "web4-policy-agent-profile",
       "domain": "web4",
       "status": "experimental",
