@@ -14,29 +14,35 @@
     {
       "id": "language-toolchain",
       "domain": "core",
-      "status": "stable",
+      "status": "experimental",
+      "evidenceState": "blocked",
+      "workPackages": ["LANG-01", "LANG-02", "LANG-03", "LANG-04", "SUPPLY-02"],
       "backend": "existing",
       "frontend": "existing",
       "telemetry": "existing",
-      "notes": "Existing parser, compiler/runtime, contracts and frontend identity surfaces remain intact."
+      "notes": "Parser/compiler/runtime work exists, but canonical execution, public CLI transition, broker/worker OS isolation and independent release-root acceptance remain explicit P0 gates."
     },
     {
-      "id": "web4-web6-policy-and-agent-profile",
+      "id": "web4-policy-agent-profile",
       "domain": "web4",
       "status": "experimental",
+      "evidenceState": "research",
+      "workPackages": ["AGENT-02", "AGENT-04", "LANG-03", "LANG-04"],
       "backend": "adapter",
       "frontend": "planned",
       "telemetry": "planned",
-      "notes": "Exposes language-owned policy, identity, proof and agent contracts to Fabric without importing Web3 or Sentinel internals."
+      "notes": "Exposes Lang-owned authority, delegation, budget and effect-receipt semantics to Fabric through explicit adapters. External model/tool metadata cannot define Lang authority."
     },
     {
       "id": "web5-identity-data-profile",
       "domain": "web5",
       "status": "planned",
+      "evidenceState": "unverified",
+      "workPackages": ["ID-01", "ID-02", "ID-03", "ID-04", "DATA-04"],
       "backend": "planned",
       "frontend": "planned",
       "telemetry": "planned",
-      "notes": "Tracks the future DID, credential and user-controlled data adapter layer without claiming production support before implementation."
+      "notes": "Tracks future DID, credential, revocation and user-controlled-data adapters without claiming completed Web5 product support."
     }
   ]
 }
