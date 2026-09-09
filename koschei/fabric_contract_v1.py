@@ -4,11 +4,11 @@ The provider is intentionally dependency-free and side-effect-free. It exposes
 Lang-owned capability metadata without importing Koschei Web3 or Sentinel
 internals, preserving the compiler/runtime project boundary.
 """
+
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from typing import Final
-
 
 
 FABRIC_SCHEMA_VERSION: Final = "1.0"
