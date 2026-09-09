@@ -16,7 +16,7 @@ from koschei.interpreter import run_mir
 from koschei.mir import require_mir
 from koschei.mir_executor_v1 import execute_mir_v1
 from koschei.mir_extension_instructions_v4 import MirIsRuntimeError
-from koschei.mir_ir import MirAstFallback, MirIterInit
+from koschei.mir_ir import MirAstFallback, MirBranch, MirIterInit
 from koschei.modules import check_graph, load_graph
 from koschei.typed_hir import lower_typed_hir
 from koschei.type_system import render_type
@@ -82,6 +82,7 @@ fn main() {
         instructions = _instructions(main)
         assert any(isinstance(item, MirIsRuntimeError) for item in instructions)
         assert any(isinstance(item, MirIterInit) for item in instructions)
+        assert any(isinstance(block.terminator, MirBranch) for block in main.blocks)
         assert not any(isinstance(item, MirAstFallback) for item in instructions)
 
         execute_mir_v1(mir)
