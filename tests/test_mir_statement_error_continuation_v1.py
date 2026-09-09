@@ -5,7 +5,7 @@ from koschei.interpreter import run_mir
 from koschei.mir import require_mir
 from koschei.mir_executor_v1 import execute_mir_v1
 from koschei.mir_extension_instructions_v4 import MirIsRuntimeError
-from koschei.mir_ir import MirBranch, MirReturn
+from koschei.mir_ir import MirAstFallback, MirBranch, MirReturn
 from koschei.modules import check_graph, load_graph
 
 
@@ -106,5 +106,39 @@ fn main() {
 
         execute_mir_v1(mir)
         assert capsys.readouterr().out == "body-once\nafter-while\n"
+    finally:
+        directory.cleanup()
+
+
+def test_for_body_error_terminates_loop_statement_and_continues_enclosing_block(capsys):
+    source = '''
+fn body_error() -> Error {
+    println("body-once")
+    return Error("body-error")
+}
+fn main() {
+    for item in [1, 2, 3] {
+        body_error()
+    }
+    println("after-for")
+}
+'''
+    directory, mir = _compiler_mir(source)
+    try:
+        assert run_mir(mir, []) == 0
+        assert capsys.readouterr().out == "body-once\nafter-for\n"
+
+        main = next(item for item in mir.root_module.functions if item.name == "main")
+        instructions = _instructions(main)
+        assert any(isinstance(item, MirIsRuntimeError) for item in instructions)
+        assert not any(isinstance(item, MirAstFallback) for item in instructions)
+        assert not any(
+            isinstance(block.terminator, MirReturn)
+            and block.terminator.value is not None
+            for block in main.blocks
+        )
+
+        execute_mir_v1(mir)
+        assert capsys.readouterr().out == "body-once\nafter-for\n"
     finally:
         directory.cleanup()
