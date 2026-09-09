@@ -30,10 +30,66 @@ SIGNATURE_SCHEME = "ed25519-openssl-raw-v1"
 KEY_ID_PREFIX = "ed25519-sha256:"
 SHA256_RE = re.compile(r"[0-9a-f]{64}\Z")
 EXECUTABLE_CANDIDATES = {"ks", "ks.exe", "koschei", "koschei.exe"}
+SOURCE_COMMIT_RE = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
+SHA256_RE = re.compile(r"[0-9a-f]{64}\Z")
 
 
 class ArtifactPolicyError(ValueError):
     pass
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _run_openssl(command: list[str]) -> subprocess.CompletedProcess[str]:
+    try:
+        return subprocess.run(command, check=False, capture_output=True, text=True)
+    except OSError as exc:
+        raise ArtifactPolicyError(f"cannot execute OpenSSL: {exc}") from exc
+
+
+def _public_key_id(public_key: Path) -> str:
+    if shutil.which("openssl") is None:
+        raise ArtifactPolicyError("openssl executable is required for signed release verification")
+    with tempfile.TemporaryDirectory() as tmp:
+        public_der = Path(tmp) / "public.der"
+        result = _run_openssl([
+            "openssl",
+            "pkey",
+            "-pubin",
+            "-in",
+            str(public_key),
+            "-outform",
+            "DER",
+            "-out",
+            str(public_der),
+        ])
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout).strip()
+            raise ArtifactPolicyError(f"invalid release public key: {detail}")
+        return "ed25519-sha256:" + hashlib.sha256(public_der.read_bytes()).hexdigest()
+
+
+def _verify_ed25519_signature(*, manifest_path: Path, signature_path: Path, public_key: Path) -> bool:
+    result = _run_openssl([
+        "openssl",
+        "pkeyutl",
+        "-verify",
+        "-rawin",
+        "-in",
+        str(manifest_path),
+        "-pubin",
+        "-inkey",
+        str(public_key),
+        "-sigfile",
+        str(signature_path),
+    ])
+    return result.returncode == 0
 
 
 def _load_policy() -> dict[str, object]:
@@ -249,15 +305,20 @@ def verify_artifact(root: Path, *, trusted_public_key: Path | None = None) -> li
 
     files = [path for path in root.rglob("*") if path.is_file()]
     if not files:
-        failures.append("artifact directory is empty")
-        return failures
-
-    names = {path.name for path in files}
-    if REQUIRED_MANIFEST not in names:
-        failures.append(f"missing required signed-release metadata file: {REQUIRED_MANIFEST}")
+        return ["artifact directory is empty"]
 
     if not any(path.name in EXECUTABLE_CANDIDATES for path in files):
         failures.append("missing Koschei executable entrypoint (ks/koschei)")
+
+    manifest = _load_manifest(root, failures)
+    if manifest is not None:
+        _verify_manifest(
+            root,
+            manifest,
+            failures,
+            allow_unsigned_staging=allow_unsigned_staging,
+            public_key=public_key,
+        )
 
     for path in files:
         rel = path.relative_to(root)
@@ -265,13 +326,10 @@ def verify_artifact(root: Path, *, trusted_public_key: Path | None = None) -> li
         blocked_parts = sorted(parts.intersection(forbidden_path_names))
         if blocked_parts:
             failures.append(f"forbidden private/source path component {blocked_parts!r}: {rel}")
-
         if path.name in forbidden_file_names:
             failures.append(f"forbidden source/build file: {rel}")
-
         if path.suffix.lower() in forbidden_suffixes:
             failures.append(f"forbidden source suffix {path.suffix}: {rel}")
-
         lower_name = path.name.lower()
         matched_markers = sorted(marker for marker in secret_markers if marker in lower_name)
         if matched_markers:
