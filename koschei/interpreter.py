@@ -45,6 +45,10 @@ from .ast_nodes import (
     UnaryExpression,
     WhileStatement,
 )
+from .http_response_budget_v1 import (
+    HttpResponseBudgetV1Error,
+    read_bounded_response_body_v1,
+)
 from .semantic import (
     INT_MAX,
     INT_MIN,
@@ -361,11 +365,6 @@ class _DiskCapability(_NarrowedCapability):
         if not _DIR_FD_SUPPORTED:
             return
         try:
-            # Güven çıpasını jeton oluşturulurken açıp sabitleriz. Sonraki
-            # işlemler yol adını yeniden çözmez; bu dizin yeniden adlandırılıp
-            # yerine kapsam dışına giden bir symlink konsa bile aynı inode'a
-            # bağlı kalır. O_NOFOLLOW son bileşenin yaratılış anında da bağ
-            # olmasını reddeder.
             self._root_fd = os.open(
                 self.prefix,
                 os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
@@ -383,17 +382,7 @@ class _DiskCapability(_NarrowedCapability):
             pass
         self._root_fd = None
 
-    # ------------------------------------------------------------------
-    # Yol çözümleme
-    # ------------------------------------------------------------------
-
     def _relative_parts(self, path: str) -> list[str] | None:
-        """Kapsam köküne göre bileşen listesi; kapsam dışıysa None.
-
-        Sözlüksel çalışır: `realpath` KULLANILMAZ, çünkü o da yarışa açık
-        bir dosya sistemi okumasıdır. Sembolik bağlar zaten geçiş sırasında
-        reddedildiği için sözlüksel normalleştirme burada güvenlidir.
-        """
         target = os.path.abspath(os.fspath(path))
         try:
             relative = os.path.relpath(target, self.prefix)
@@ -413,8 +402,6 @@ class _DiskCapability(_NarrowedCapability):
             if error is not None:
                 raise OSError(error.errno, error.strerror, error.filename)
             raise OSError(errno.EBADF, "Disk kapsam kökü açık değil", self.prefix)
-        # Her işlem kendi kopyasını kullanır; iç içe çağrılar veya fdopen kapanışı
-        # jetonun ömür boyu tuttuğu güven çıpasını kapatamaz.
         handle = os.dup(self._root_fd)
         try:
             yield handle
@@ -423,11 +410,6 @@ class _DiskCapability(_NarrowedCapability):
 
     @contextmanager
     def _parent_fd(self, parts: list[str]) -> "Iterator[int]":
-        """Son bileşenin ANA dizinine ait tanıtıcıyı verir.
-
-        Her ara bileşen O_NOFOLLOW ile açılır; biri sembolik bağsa
-        ELOOP alınır ve _SymlinkDenied yükseltilir.
-        """
         with self._scope_root_fd() as root:
             current = root
             opened: list[int] = []
@@ -440,10 +422,6 @@ class _DiskCapability(_NarrowedCapability):
                             dir_fd=current,
                         )
                     except OSError as error:
-                        # O_NOFOLLOW + O_DIRECTORY bir sembolik bağda ELOOP
-                        # DEĞİL ENOTDIR üretir (bağ dizin değildir). İkisini
-                        # de yakalayıp gerçekten bağ mı diye lstat ile
-                        # bakıyoruz; öyleyse hata iletisi net olsun.
                         if error.errno in (errno.ELOOP, errno.ENOTDIR):
                             if _is_symlink_at(component, current):
                                 raise _SymlinkDenied(component) from error
@@ -470,16 +448,10 @@ class _DiskCapability(_NarrowedCapability):
 
     @staticmethod
     def _symlink_denied(name: str) -> KsError:
-        # KS3402 geriye dönük kapsam-ihlali sözleşmesini korur; KS3405
-        # reddin özel sebebini (symlink) makine-okunur biçimde açıklar.
         return KsError(
             "KS3402: Disk kapsamı sembolik bağ üzerinden aşılamaz; "
             f"KS3405: Kapsam içinde sembolik bağ takip edilmez: {name}"
         )
-
-    # ------------------------------------------------------------------
-    # Okuma işlemleri
-    # ------------------------------------------------------------------
 
     def read(self, path: str) -> str | KsError:
         return self.read_file(path)
@@ -546,12 +518,6 @@ class DiskReadCaps(_DiskCapability):
         )
 
     def _scope_then_deny(self, path: str, operation: str) -> KsError:
-        """Kapsam ihlali, yetki ihlalinden ÖNCE bildirilir.
-
-        Kapsam dışı bir yol için 'bu jeton yazamaz' demek, saldırgana
-        kapsamın nerede bittiğini değil jetonun türünü sızdırır. Eski
-        davranış da böyleydi; korunuyor.
-        """
         if self._relative_parts(path) is None:
             return self._reject(path)
         return self._denied(operation)
@@ -611,9 +577,6 @@ class DiskCaps(_DiskCapability):
                 name = parts[-1]
                 info = os.stat(name, dir_fd=parent, follow_symlinks=False)
                 if stat.S_ISLNK(info.st_mode):
-                    # Bağın kendisi silinebilir (kapsam dışına çıkmaz), ama
-                    # sessizce yapmak yerine açıkça reddediyoruz: kapsam
-                    # içinde sembolik bağ hiç bulunmamalı.
                     return self._symlink_denied(name)
                 if stat.S_ISDIR(info.st_mode):
                     os.rmdir(name, dir_fd=parent)
@@ -629,14 +592,6 @@ class DiskCaps(_DiskCapability):
 
 
 class _ScopedRedirectHandler(urllib.request.HTTPRedirectHandler):
-    """Yönlendirmeyi yalnızca aynı origin içinde izler.
-
-    Kapsam dışı bir yönlendirme hedefi görülürse istek TAKİP EDİLMEZ ve
-    _ScopedRedirectDenied yükseltilir; NetCaps.get bunu KS3402 hata DEĞERİNE
-    çevirir. Böylece izinli sunucu 302 ile başka bir host'a yönlendirse bile
-    yetki sınırı aşılamaz.
-    """
-
     max_redirections = 5
 
     def __init__(self, origin_key: tuple[str, str, int | None] | None) -> None:
@@ -657,12 +612,6 @@ class _ScopedRedirectDenied(Exception):
 def _build_http_only_opener(
     origin_key: tuple[str, str, int | None] | None,
 ) -> urllib.request.OpenerDirector:
-    """Yalnızca HTTP(S) handler'ları olan bir opener oluşturur.
-
-    urllib.request.build_opener() açık handler verilse bile varsayılan FileHandler,
-    FTPHandler ve DataHandler ekler. Ağ capability'sinin disk/veri şemalarına
-    dönüşmemesi için OpenerDirector elle ve allowlist ile kurulur.
-    """
     opener = urllib.request.OpenerDirector()
     for handler in (
         urllib.request.ProxyHandler(),
@@ -697,7 +646,11 @@ class NetCaps(_NarrowedCapability):
             request = urllib.request.Request(url, method="GET")
             with self._opener.open(request, timeout=10) as response:
                 charset = response.headers.get_content_charset() or "utf-8"
-                body = response.read().decode(charset, errors="replace")
+                try:
+                    payload = read_bounded_response_body_v1(response)
+                except HttpResponseBudgetV1Error as error:
+                    return KsError(str(error))
+                body = payload.decode(charset, errors="replace")
                 return Response(body, int(response.status))
         except _ScopedRedirectDenied as denied:
             return KsError(
@@ -757,7 +710,6 @@ class ProcessCaps(_NarrowedCapability):
 
 
 def _contains_capability(value: Any, seen: set[int] | None = None) -> bool:
-    """Dinamik kapsayıcıların capability type-laundering yapmasını engeller."""
     if isinstance(
         value,
         (
@@ -856,20 +808,13 @@ class Interpreter:
                     ),
                     tuple(getattr(declaration, "type_parameters", ())),
                 )
-        # Modül anahtarı -> o modülün fonksiyon tablosu
         self.namespaces = namespaces or {}
-        # Yerel import adı -> modül anahtarı
         self.imports = imports or {}
-        # Modül anahtarı -> o modülün kendi import alias tablosu
         self.module_imports = module_imports or {}
         self.environment = _Environment()
         self._depth = 0
 
     MAX_CALL_DEPTH = 512
-
-    # Her Koschei çağrısı birden fazla Python çerçevesi kullanır; KS3105'in
-    # Python'un kendi RecursionError'ından ÖNCE devreye girmesi için yorumlayıcı
-    # çalışırken Python limiti yükseltilir.
     _PYTHON_RECURSION_HEADROOM = 20000
 
     def execute_main(self) -> Any:
@@ -878,7 +823,7 @@ class Interpreter:
             sys.setrecursionlimit(self._PYTHON_RECURSION_HEADROOM)
         try:
             return self._execute_main()
-        except RecursionError as error:  # güvenlik ağı: KS koduna çevrilir
+        except RecursionError as error:
             raise KoscheiRuntimeError(
                 "KS3105",
                 f"Çağrı derinliği sınırı aşıldı ({self.MAX_CALL_DEPTH}); "
@@ -1513,7 +1458,6 @@ class Interpreter:
                         "type-laundering girişimini reddetti.",
                         member.location,
                     )
-                # Değerler değişmezdir: push YENİ bir liste döndürür.
                 return receiver + [arguments[0]]
             if name == "contains":
                 self._require_arity(name, arguments, 1, member.location)
@@ -1574,7 +1518,6 @@ class Interpreter:
                         "type-laundering girişimini reddetti.",
                         member.location,
                     )
-                # Değerler değişmezdir: set YENİ bir Map döndürür.
                 updated = dict(receiver)
                 updated[key] = value
                 return updated
@@ -1760,11 +1703,6 @@ def run(
     module_imports: dict[str, dict[str, str]] | None = None,
     structs: dict[str, Any] | None = None,
 ) -> int:
-    """Programı çalıştırır.
-
-    namespaces/imports verilmezse tek dosyalık program varsayılır. Modül grafiği
-    varsa semantic denetimi çağıran taraf (CLI) yapmıştır; burada tekrarlanmaz.
-    """
     if namespaces is None:
         semantic_check(program)
     result = Interpreter(

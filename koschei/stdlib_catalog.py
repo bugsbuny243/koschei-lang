@@ -225,9 +225,13 @@ CATALOG: tuple[Family, ...] = (
             "get",
             capability="NetCaps",
             required=("deadline", "response_bytes", "redirects"),
-            enforced=("deadline", "redirects"),
+            enforced=("deadline", "response_bytes", "redirects"),
             security_sensitive=True,
-            note="Response body is still read without a hard byte limit in both bootstraps.",
+            note=(
+                "All declared resource budgets plus identity-only transport guards are "
+                "implemented on the current branch; status remains reserved until the "
+                "canonical full validation receipt proves cross-backend parity."
+            ),
         ),
         *(
             _reserved(
