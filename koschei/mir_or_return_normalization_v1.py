@@ -45,9 +45,9 @@ from .mir_ir import (
     MirReturn,
     MirStore,
     _FunctionLowerer,
-    _list_item_type,
 )
 from .type_system import BOOL, VOID, GenericType, TypeNode, UnknownType
+from .typed_hir import iterable_success_item_type
 
 
 class _OrReturnFunctionLowerer(_FunctionLowerer):
@@ -185,15 +185,10 @@ class _OrReturnFunctionLowerer(_FunctionLowerer):
         self.current = exit_block
 
     def _lower_for(self, statement: ForStatement) -> None:
-        """Preserve source for-loop body Error completion without runtime guessing.
-
-        The iterable must already be a checked List<T>. Error-bearing iterable
-        unions remain fail-closed until Typed HIR exposes a canonical success-list
-        projection; lowering must not invent that fact independently.
-        """
+        """Normalize iterable/body Error completion from checked Typed-HIR facts."""
 
         iterable_type = self._type_of(statement.iterable)
-        item_type = _list_item_type(iterable_type)
+        item_type = iterable_success_item_type(iterable_type)
         if item_type is None or not self._supports_value_block(statement.body):
             self._emit(
                 MirAstFallback(
@@ -207,6 +202,28 @@ class _OrReturnFunctionLowerer(_FunctionLowerer):
 
         body_type = checked_block_normal_type(self.typed_report, statement.body)
         iterable = self._lower_expression(statement.iterable)
+        iterable_is_error = self._new_value()
+        self._emit(
+            MirIsRuntimeError(
+                iterable_is_error,
+                iterable,
+                BOOL,
+                statement.location,
+            )
+        )
+        iterable_error_block = self._new_block()
+        iterator_init_block = self._new_block()
+        condition_block = self._new_block()
+        body_block = self._new_block()
+        exit_block = self._new_block()
+        self._terminate(
+            MirBranch(iterable_is_error, iterable_error_block, iterator_init_block)
+        )
+
+        self.current = iterable_error_block
+        self._terminate(MirJump(exit_block))
+
+        self.current = iterator_init_block
         iterator = self._new_value()
         self._emit(
             MirIterInit(
@@ -216,9 +233,6 @@ class _OrReturnFunctionLowerer(_FunctionLowerer):
                 statement.location,
             )
         )
-        condition_block = self._new_block()
-        body_block = self._new_block()
-        exit_block = self._new_block()
         self._terminate(MirJump(condition_block))
 
         self.current = condition_block
