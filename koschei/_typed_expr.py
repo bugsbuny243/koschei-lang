@@ -6,9 +6,14 @@ from ._typed_ops import binary_type, method_type
 from .ast_nodes import (
     AssignmentExpression,
     BinaryExpression,
+    Block,
     CallExpression,
+    ExpressionStatement,
+    ForStatement,
     Identifier,
+    IfStatement,
     InterpolatedString,
+    LetStatement,
     ListLiteral,
     Literal,
     MapLiteral,
@@ -17,21 +22,115 @@ from .ast_nodes import (
     OrBlockExpression,
     OrElseExpression,
     OrReturnExpression,
+    ReturnStatement,
     StructLiteral,
     UnaryExpression,
+    WhileStatement,
 )
 from .type_system import (
     BOOL,
+    ERROR,
     FLOAT,
     INT,
     STRING,
     UNKNOWN,
+    VOID,
     NamedType,
     UnknownType,
+    alternatives,
     generic,
     success_type,
     union_type,
 )
+
+
+def _recorded_expression_type(checked_facts, expression):
+    """Read an already-checked Typed-HIR expression fact by object identity."""
+
+    for item in reversed(checked_facts.expressions):
+        if item.expression is expression:
+            return item.type
+    return UNKNOWN
+
+
+def _error_result_type(type_node):
+    """Project the canonical Error alternative without re-running inference."""
+
+    return ERROR if any(option == ERROR for option in alternatives(type_node)) else None
+
+
+def _checked_statement_normal_type(checked_facts, statement):
+    """Project normal-exit statement value from already-checked Typed-HIR facts.
+
+    ``None`` means the statement has no normal continuation (an explicit
+    function return). This function never calls ``infer`` and therefore cannot
+    become a second expression-type authority.
+    """
+
+    if isinstance(statement, LetStatement):
+        return VOID
+    if isinstance(statement, ReturnStatement):
+        return None
+    if isinstance(statement, ExpressionStatement):
+        return _recorded_expression_type(checked_facts, statement.expression)
+    if isinstance(statement, IfStatement):
+        normal_types = []
+        condition_error = _error_result_type(
+            _recorded_expression_type(checked_facts, statement.condition)
+        )
+        if condition_error is not None:
+            normal_types.append(condition_error)
+        then_type = checked_block_normal_type(checked_facts, statement.then_block)
+        if then_type is not None:
+            normal_types.append(then_type)
+        if isinstance(statement.else_branch, Block):
+            else_type = checked_block_normal_type(checked_facts, statement.else_branch)
+        elif isinstance(statement.else_branch, IfStatement):
+            else_type = _checked_statement_normal_type(checked_facts, statement.else_branch)
+        else:
+            else_type = VOID
+        if else_type is not None:
+            normal_types.append(else_type)
+        return union_type(*normal_types) if normal_types else None
+    if isinstance(statement, WhileStatement):
+        normal_types = [VOID]
+        condition_error = _error_result_type(
+            _recorded_expression_type(checked_facts, statement.condition)
+        )
+        if condition_error is not None:
+            normal_types.append(condition_error)
+        body_type = checked_block_normal_type(checked_facts, statement.body)
+        if body_type is not None:
+            normal_types.append(body_type)
+        return union_type(*normal_types)
+    if isinstance(statement, ForStatement):
+        normal_types = [VOID]
+        iterable_error = _error_result_type(
+            _recorded_expression_type(checked_facts, statement.iterable)
+        )
+        if iterable_error is not None:
+            normal_types.append(iterable_error)
+        body_type = checked_block_normal_type(checked_facts, statement.body)
+        if body_type is not None:
+            normal_types.append(body_type)
+        return union_type(*normal_types)
+    return UNKNOWN
+
+
+def checked_block_normal_type(checked_facts, block: Block):
+    """Canonical normal-exit value type projected only from checked HIR facts."""
+
+    normal_type = VOID
+    can_continue = True
+    for statement in block.statements:
+        statement_type = _checked_statement_normal_type(checked_facts, statement)
+        if not can_continue:
+            continue
+        if statement_type is None:
+            can_continue = False
+        else:
+            normal_type = statement_type
+    return normal_type if can_continue else None
 
 
 def infer_expression(checker, expression):
@@ -143,7 +242,13 @@ def infer_expression(checker, expression):
     if isinstance(expression, OrBlockExpression):
         narrowed = success_type(checker.infer(expression.value))
         checker.check_block(expression.handler)
-        return checker.record(expression, narrowed)
+        handler_type = checked_block_normal_type(checker, expression.handler)
+        result_type = (
+            narrowed
+            if handler_type is None
+            else union_type(narrowed, handler_type)
+        )
+        return checker.record(expression, result_type)
 
     if isinstance(expression, MatchExpression):
         value_type = checker.infer(expression.value)

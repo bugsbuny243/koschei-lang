@@ -1,0 +1,108 @@
+from pathlib import Path
+import tempfile
+
+from koschei.mir import require_mir
+from koschei.mir_ir import MirAstFallback, MirBranch, MirCall, MirReturn
+from koschei.mir_or_return_normalization_v1 import (
+    MirFallibleIsSuccess,
+    MirFalliblePayload,
+    lower_function_blocks_v1,
+)
+from koschei.modules import check_graph, load_graph
+
+
+def _lower_execute(source: str):
+    directory = tempfile.TemporaryDirectory()
+    path = Path(directory.name) / "authority.ks"
+    path.write_text(source, encoding="utf-8")
+    graph = load_graph(path)
+    check_graph(graph)
+    mir = require_mir(graph)
+    module = mir.root_module
+    function = next(item for item in module.functions if item.name == "execute")
+    blocks = lower_function_blocks_v1(function.declaration, module.typed_report)
+    return directory, blocks
+
+
+def _instructions(blocks):
+    return [instruction for block in blocks for instruction in block.instructions]
+
+
+def test_or_return_normalizes_inner_capability_call_without_ast_fallback():
+    directory, blocks = _lower_execute(
+        '''
+fn execute(net: NetCaps, url: String) -> Response or Error {
+    return net.get(url) or return Error("network")
+}
+fn main() { println("ready") }
+'''
+    )
+    try:
+        instructions = _instructions(blocks)
+        assert not any(
+            isinstance(item, MirAstFallback)
+            and item.node_kind == "OrReturnExpression"
+            for item in instructions
+        )
+        assert sum(isinstance(item, MirCall) for item in instructions) == 2
+        assert sum(isinstance(item, MirFallibleIsSuccess) for item in instructions) == 1
+        assert sum(isinstance(item, MirFalliblePayload) for item in instructions) == 1
+        assert any(isinstance(block.terminator, MirBranch) for block in blocks)
+        assert any(isinstance(block.terminator, MirReturn) for block in blocks)
+    finally:
+        directory.cleanup()
+
+
+def test_or_return_emits_one_inner_capability_call_and_failure_only_replacement():
+    directory, blocks = _lower_execute(
+        '''
+fn execute(net: NetCaps, url: String) -> Response or Error {
+    let response = net.get(url) or return Error("replacement")
+    return response
+}
+fn main() { println("ready") }
+'''
+    )
+    try:
+        instructions = _instructions(blocks)
+        calls = [item for item in instructions if isinstance(item, MirCall)]
+        # One call is net.get(url), the other is Error("replacement").  The
+        # capability call itself appears once: normalization never re-lowers
+        # expression.value on either branch.
+        assert len(calls) == 2
+        success_tests = [
+            item for item in instructions if isinstance(item, MirFallibleIsSuccess)
+        ]
+        payloads = [item for item in instructions if isinstance(item, MirFalliblePayload)]
+        assert len(success_tests) == 1
+        assert len(payloads) == 1
+        assert payloads[0].source == success_tests[0].source
+
+        branch = next(block for block in blocks if isinstance(block.terminator, MirBranch))
+        failure = next(block for block in blocks if block.id == branch.terminator.else_block)
+        assert isinstance(failure.terminator, MirReturn)
+        assert any(isinstance(item, MirCall) for item in failure.instructions)
+    finally:
+        directory.cleanup()
+
+
+def test_or_return_without_replacement_returns_original_fallible_value():
+    directory, blocks = _lower_execute(
+        '''
+fn execute(net: NetCaps, url: String) -> Response or Error {
+    return net.get(url) or return
+}
+fn main() { println("ready") }
+'''
+    )
+    try:
+        instructions = _instructions(blocks)
+        success_test = next(
+            item for item in instructions if isinstance(item, MirFallibleIsSuccess)
+        )
+        branch = next(block for block in blocks if isinstance(block.terminator, MirBranch))
+        failure = next(block for block in blocks if block.id == branch.terminator.else_block)
+        assert isinstance(failure.terminator, MirReturn)
+        assert failure.terminator.value == success_test.source
+    finally:
+        directory.cleanup()

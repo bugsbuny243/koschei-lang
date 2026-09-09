@@ -283,10 +283,17 @@ def check_graph(graph: ModuleGraph) -> SemanticReport:
     assert report is not None
 
     # Attach compiler products only after every module and both lowering paths
-    # have succeeded. MIR consumes these exact checked reports; it does not
-    # independently re-infer capability effects from AST source.
-    graph_mir = lower_mir_graph(graph, typed_reports, effect_reports)
+    # have succeeded. Native sigil semantics are an input to canonical MIR, not
+    # a sidecar: a missing/foreign native report makes MIR lowering fail closed.
+    graph_mir = lower_mir_graph(
+        graph,
+        typed_reports,
+        effect_reports,
+        native_mir_reports,
+    )
     graph.mir = graph_mir
+    # Temporary compatibility mirror for callers that have not migrated to
+    # MirModule.native_sigils yet. This is no longer the semantic authority.
     graph.native_sigil_mir = native_mir_reports
     return report
 

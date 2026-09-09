@@ -38,11 +38,31 @@ from .type_system import (
     NamedType,
     TypeNode,
     UnknownType,
+    alternatives,
     generic,
     is_named,
     parse_type_ref,
     substitute_type,
 )
+
+
+def iterable_success_item_type(type_node: TypeNode) -> TypeNode | None:
+    """Project the checked List item type for a for-loop success path.
+
+    A top-level Error alternative is control-flow evidence, not an iterable
+    shape.  Typed HIR owns this projection so MIR/runtime consumers never need
+    to rediscover or guess it.  Any other ambiguous union remains fail-closed.
+    """
+
+    success_options = tuple(option for option in alternatives(type_node) if option != ERROR)
+    if len(success_options) != 1:
+        return None
+    success = success_options[0]
+    if isinstance(success, GenericType) and success.name == "List":
+        return success.arguments[0] if success.arguments else UNKNOWN
+    if is_named(success, "List") or isinstance(success, UnknownType):
+        return UNKNOWN
+    return None
 
 
 @dataclass(frozen=True, slots=True)
@@ -188,7 +208,7 @@ class TypedHIRChecker:
             self.infer(statement.condition)
             self.check_block(statement.body)
         elif isinstance(statement, ForStatement):
-            item_type = self.list_item(self.infer(statement.iterable))
+            item_type = iterable_success_item_type(self.infer(statement.iterable))
             if item_type is None:
                 return
             self.scopes.append({})
@@ -303,11 +323,7 @@ class TypedHIRChecker:
 
     @staticmethod
     def list_item(type_node: TypeNode) -> TypeNode | None:
-        if isinstance(type_node, GenericType) and type_node.name == "List":
-            return type_node.arguments[0] if type_node.arguments else UNKNOWN
-        if is_named(type_node, "List") or isinstance(type_node, UnknownType):
-            return UNKNOWN
-        return None
+        return iterable_success_item_type(type_node)
 
     def validate_arguments(
         self, function, arguments: tuple[TypeNode, ...], location: SourceLocation
