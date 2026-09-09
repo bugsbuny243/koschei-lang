@@ -31,7 +31,8 @@ classifiers = [
 # The compiler core remains Python-standard-library only. Qwen training and
 # inference are optional Lang research outside the compiler dependency graph and
 # enter Koschei only through sealed native-intelligence identities/evidence.
-# Koschei Sentinel is frozen and is not a Lang dependency.
+# Koschei Sentinel is reactivated but remains a contract-only Fabric peer, not a
+# Lang compiler/runtime dependency.
 dependencies = []
 
 [project.urls]
