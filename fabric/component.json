@@ -1,0 +1,33 @@
+{
+  "schemaVersion": "1.0",
+  "component": "koschei-lang",
+  "repository": "bugsbuny243/koschei-lang",
+  "role": "programmable-policy-agent-language",
+  "preserveExisting": true,
+  "defaultMode": "observe",
+  "compatibility": {
+    "breakingChangesAllowed": false,
+    "crossProjectAccess": "contract-only",
+    "legacyInterfaces": "preserve"
+  },
+  "capabilities": [
+    {
+      "id": "language-toolchain",
+      "domain": "core",
+      "status": "stable",
+      "backend": "existing",
+      "frontend": "existing",
+      "telemetry": "existing",
+      "notes": "Existing parser, compiler/runtime, contracts and frontend identity surfaces remain intact."
+    },
+    {
+      "id": "web4-web6-policy-and-agent-profile",
+      "domain": "web4",
+      "status": "experimental",
+      "backend": "adapter",
+      "frontend": "planned",
+      "telemetry": "planned",
+      "notes": "Exposes language-owned policy, identity, proof and agent contracts to Fabric without importing Web3 or Sentinel internals."
+    }
+  ]
+}
