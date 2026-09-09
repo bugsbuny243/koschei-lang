@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from pathlib import Path
+import tempfile
 import unittest
 
+from koschei.modules import check_graph, load_graph
 from koschei.native_sigil_semantics_v1 import (
     NativeSigilSemanticError,
     check_native_sigils,
@@ -50,6 +53,19 @@ class NativeSigilSemanticTests(unittest.TestCase):
         self.assertEqual(tuple(item.subject for item in typed.declarations), ("treasury", "treasury"))
         self.assertFalse(typed.declarations[0].may_grant_authority)
         self.assertTrue(typed.declarations[1].may_grant_authority)
+
+    def test_check_graph_enforces_ka_lineage_before_mir_attachment(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "root.ks"
+            path.write_text("vor treasury;\n", encoding="utf-8")
+            graph = load_graph(path)
+            with self.assertRaisesRegex(
+                NativeSigilSemanticError,
+                "vor subject 'treasury'.*ka admission",
+            ):
+                check_graph(graph)
+            self.assertIsNone(graph.mir)
+            self.assertEqual(graph.native_sigil_mir, {})
 
     def test_ka_must_be_first_when_composed(self) -> None:
         program = parse("vor treasury; ka treasury;")
