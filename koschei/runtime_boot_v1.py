@@ -1,9 +1,9 @@
 """Fail-closed boot gate for Koschei runtime execution.
 
-The interpreter provides implementations; canonical contracts own language
-authority and boundary policy. Every public runtime entrypoint that executes
-checked MIR must pass through this gate before any user program receives a
-SystemCaps value.
+The runtime implementation provides value/capability primitives; canonical
+contracts own language authority and boundary policy. Every public runtime
+entrypoint that executes checked MIR must pass through this gate before any user
+program receives a SystemCaps value.
 """
 from __future__ import annotations
 
@@ -53,9 +53,29 @@ def require_runtime_ready(runtime: ModuleType) -> RuntimeCapabilityRegistry:
 
 
 def run_checked_mir(mir_graph: Any, argv: list[str] | None = None) -> int:
-    """Execute sealed MIR only after runtime validation and canonical binding."""
+    """Execute sealed MIR after runtime validation and canonical binding.
+
+    The boot gate validates the runtime capability implementation and the exact
+    MIR v4 instruction registry before execution. There is no AST execution
+    fallback from this public checked-MIR path.
+    """
 
     from . import interpreter
+    from .mir_executor_v1 import execute_mir_v1
+    from .mir_instruction_registry_v4 import require_mir_v4_graph_registry
 
     require_runtime_ready(interpreter)
-    return interpreter.run_mir(mir_graph, list(argv or []))
+    try:
+        mir_graph.assert_sealed()
+        require_mir_v4_graph_registry(mir_graph)
+    except (AttributeError, TypeError, ValueError) as error:
+        raise RuntimeBootError(
+            f"KOSCHEI MIR BOOT DENIED: {error}"
+        ) from error
+    result = execute_mir_v1(mir_graph, list(argv or []))
+    if isinstance(result, interpreter.KsError):
+        import sys
+
+        print(f"KOSCHEI RUNTIME ERROR: {result.message}", file=sys.stderr)
+        return 1
+    return 0

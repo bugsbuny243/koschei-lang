@@ -38,11 +38,15 @@ fn main() { println("ready") }
             module_name="authority",
             function_name="execute",
         )
+        execute = next(item for item in mir.root_module.functions if item.name == "execute")
+        assert execute.resources.ast_fallbacks == 0
         assert basis.mir_fingerprint == mir.fingerprint
         assert basis.capability_type == "NetCaps"
         assert basis.capability_method == "get"
         assert basis.canonical_effect == NET_IO
         assert basis.power_domain == POWER_DOMAIN_NETWORK
+        assert basis.normalized_mir is True
+        assert basis.compatibility_fallback is False
         assert basis.authority is False
         basis.assert_matches_mir(mir)
     finally:
@@ -63,7 +67,7 @@ fn main() { println("ready") }
     try:
         with pytest.raises(
             CompilerCapabilityEffectBasisV1Error,
-            match="exactly one direct capability call",
+            match="exactly one normalized MIR capability call",
         ):
             derive_compiler_capability_effect_basis_v1(
                 mir,

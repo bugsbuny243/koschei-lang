@@ -10,14 +10,16 @@ only remove operations; it cannot widen, switch subjects, switch epochs or move
 to another compiler/Universe identity.
 
 This lets an operator delegate a narrow task to an agent, and that agent delegate
-an even narrower task to a sub-agent, while preserving a cryptographic authority
-lineage.  It is actor-agnostic: "agent" is a deployment role, not a new Koschei
-semantic root.
+an even narrower task to a sub-agent, while preserving hash-bound parent links.
+A self-hash does not authenticate an issuer: the surrounding enforcement path
+must admit the root and verify the lineage.  It is actor-agnostic: "agent" is a
+deployment role, not a new Koschei semantic root.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
+import re
 from typing import Iterable
 
 from .native_sigil_mir_v1 import NativeSigilMir
@@ -31,10 +33,31 @@ class AuthorityDelegationError(ValueError):
 
 
 def _canonical_operations(operations: Iterable[str]) -> tuple[str, ...]:
-    result = tuple(sorted(set(operations)))
-    if not result or any(not item for item in result):
+    if isinstance(operations, (str, bytes)):
+        raise AuthorityDelegationError("authority operations must be an iterable of operation names")
+    try:
+        values = tuple(operations)
+    except TypeError as exc:
+        raise AuthorityDelegationError("authority operations must be iterable") from exc
+    if not values:
         raise AuthorityDelegationError("authority grant requires non-empty operations")
-    return result
+    for value in values:
+        _require_text(value, "operation")
+        if "," in value:
+            raise AuthorityDelegationError("authority operation cannot contain the v1 comma delimiter")
+    return tuple(sorted(set(values)))
+
+
+def _require_text(value: str, field: str) -> None:
+    if type(value) is not str or not value:
+        raise AuthorityDelegationError(f"authority grant {field} must be a non-empty string")
+    if any(ord(char) < 32 or ord(char) == 127 for char in value):
+        raise AuthorityDelegationError(f"authority grant {field} cannot contain control characters")
+
+
+def _require_nonnegative_integer(value: int, field: str) -> None:
+    if type(value) is not int or value < 0:
+        raise AuthorityDelegationError(f"authority grant {field} must be a non-negative integer")
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,23 +76,8 @@ class AuthorityGrant:
 
     def assert_sealed(self, mir: NativeSigilMir) -> None:
         mir.assert_sealed()
-        if self.epoch < 0:
-            raise AuthorityDelegationError("authority grant epoch cannot be negative")
-        if self.depth < 0:
-            raise AuthorityDelegationError("authority grant depth cannot be negative")
-        if not self.grant_id or not self.actor_identity_digest:
-            raise AuthorityDelegationError("authority grant identity fields cannot be empty")
-        if self.native_mir_fingerprint != mir.fingerprint:
-            raise AuthorityDelegationError("authority grant MIR identity mismatch")
-        if self.universe_plan_digest != mir.universe_plan_digest:
-            raise AuthorityDelegationError("authority grant Universe identity mismatch")
-        vor_subjects = {item.subject for item in mir.bindings if item.sigil == "vor"}
-        if self.subject not in vor_subjects:
-            raise AuthorityDelegationError(
-                "authority grant subject is not declared by a vor binding"
-            )
-        if self.operations != _canonical_operations(self.operations):
-            raise AuthorityDelegationError("authority grant operations are not canonical")
+        if type(self.version) is not int or self.version != 1:
+            raise AuthorityDelegationError("unsupported authority grant version")
         expected = _grant_digest(
             self.grant_id,
             self.subject,
@@ -81,6 +89,15 @@ class AuthorityGrant:
             self.parent_grant_digest,
             self.depth,
         )
+        if self.native_mir_fingerprint != mir.fingerprint:
+            raise AuthorityDelegationError("authority grant MIR identity mismatch")
+        if self.universe_plan_digest != mir.universe_plan_digest:
+            raise AuthorityDelegationError("authority grant Universe identity mismatch")
+        vor_subjects = {item.subject for item in mir.bindings if item.sigil == "vor"}
+        if self.subject not in vor_subjects:
+            raise AuthorityDelegationError(
+                "authority grant subject is not declared by a vor binding"
+            )
         if self.digest != expected:
             raise AuthorityDelegationError("authority grant seal mismatch")
 
@@ -96,6 +113,26 @@ def _grant_digest(
     parent_digest: str,
     depth: int,
 ) -> str:
+    # Keep the existing v1 encoding and valid seals stable. Reject ambiguous
+    # delimiters instead of silently changing the authority identity format.
+    for field, value in (
+        ("grant_id", grant_id),
+        ("subject", subject),
+        ("actor_identity_digest", actor_identity_digest),
+        ("native_mir_fingerprint", mir_fingerprint),
+        ("universe_plan_digest", universe_digest),
+        ("parent_grant_digest", parent_digest),
+    ):
+        _require_text(value, field)
+    _require_nonnegative_integer(epoch, "epoch")
+    _require_nonnegative_integer(depth, "depth")
+    if type(operations) is not tuple or operations != _canonical_operations(operations):
+        raise AuthorityDelegationError("authority grant operations are not canonical")
+    if depth == 0:
+        if parent_digest != "ROOT":
+            raise AuthorityDelegationError("root authority grant must use the ROOT parent marker")
+    elif re.fullmatch(r"[a-f0-9]{64}", parent_digest) is None:
+        raise AuthorityDelegationError("child authority grant requires a parent digest")
     values = (
         grant_id,
         subject,
@@ -107,8 +144,6 @@ def _grant_digest(
         parent_digest,
         str(depth),
     )
-    if any(value == "" for value in values[:-1]):
-        raise AuthorityDelegationError("authority grant fields cannot be empty")
     payload = "\n".join(values).encode("utf-8")
     return hashlib.sha256(_CTX + payload).hexdigest()
 
@@ -210,7 +245,11 @@ def require_request_authority(
     request: CanonicalEffectRequest,
     grant: AuthorityGrant,
 ) -> None:
-    """Require one exact request to be covered by one exact authority grant."""
+    """Check request coverage by a grant already admitted by enforcement.
+
+    This does not authenticate a self-hashed grant or admit an unverified parent
+    lineage. Root admission and ancestor validation remain caller obligations.
+    """
     request.assert_sealed(mir)
     grant.assert_sealed(mir)
     if request.subject != grant.subject:

@@ -21,9 +21,11 @@ class NativeSigilMirTests(unittest.TestCase):
             tuple(item.sigil for item in mir.bindings),
             ("ka", "vor", "shi", "thal", "nur"),
         )
+        self.assertTrue(all(item.subject == "treasury" for item in mir.bindings))
         self.assertEqual(mir.bindings[1].semantic_domain, "authority.narrowing.effects")
         self.assertTrue(mir.bindings[1].may_grant_authority)
         self.assertFalse(mir.bindings[0].may_grant_authority)
+        self.assertFalse(any(item.may_grant_authority for item in mir.bindings[2:]))
 
     def test_lowering_is_deterministic(self) -> None:
         source = "ka treasury;\nvor treasury;\nshi treasury;\n"

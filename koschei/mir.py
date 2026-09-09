@@ -30,7 +30,6 @@ from .mir_ir import (
     MirBranch,
     MirJump,
     block_contract,
-    lower_function_blocks,
     validate_blocks,
 )
 from .native_sigil_mir_v1 import NativeSigilMir
@@ -472,7 +471,7 @@ def lower_module(
             blocks,
         )
         for declaration in module.program.declarations
-        for blocks in (lower_function_blocks(declaration, typed_report),)
+        for blocks in (lower_function_blocks_v1(declaration, typed_report),)
     )
     result = MirModule(
         str(module.path) if key is None else key,

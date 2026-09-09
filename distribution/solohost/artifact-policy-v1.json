@@ -12,7 +12,8 @@
     "source_checkout_allowed_in_customer_artifact": false,
     "signed_release_manifest_required": true,
     "immutable_version_required": true,
-    "sha256_required": true
+    "sha256_required": true,
+    "full_smoke_evidence_required": true
   },
   "forbidden_path_names": [
     ".git",
@@ -24,7 +25,9 @@
   ],
   "forbidden_suffixes": [
     ".py",
-    ".pyi"
+    ".pyi",
+    ".pyc",
+    ".go"
   ],
   "forbidden_file_names": [
     "pyproject.toml",
@@ -42,6 +45,7 @@
   ],
   "notes": [
     "This policy is a Koschei internal publication gate, not an invented Pi SoloHost manifest schema.",
-    "Pi-specific publisher metadata must be added only from an observed official publisher schema."
+    "Pi-specific publisher metadata must be added only from an observed official publisher schema.",
+    "Third-party runtime/toolchain binaries may be present in the eventual SoloHost container, but Koschei Python/Go source must not be present in the customer artifact."
   ]
 }
