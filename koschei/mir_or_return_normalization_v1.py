@@ -7,6 +7,7 @@ from .ast_nodes import (
     Block,
     Expression,
     ExpressionStatement,
+    ForStatement,
     IfStatement,
     InterpolatedString,
     LetStatement,
@@ -36,13 +37,17 @@ from .mir_ir import (
     MirAstFallback,
     MirBind,
     MirBranch,
+    MirIterHasNext,
+    MirIterInit,
+    MirIterNext,
     MirJump,
     MirLoad,
     MirReturn,
     MirStore,
     _FunctionLowerer,
+    _list_item_type,
 )
-from .type_system import BOOL, VOID, TypeNode, UnknownType
+from .type_system import BOOL, VOID, GenericType, TypeNode, UnknownType
 
 
 class _OrReturnFunctionLowerer(_FunctionLowerer):
@@ -158,6 +163,93 @@ class _OrReturnFunctionLowerer(_FunctionLowerer):
             )
         finally:
             self.loop_targets.pop()
+
+        if body_value is not None and self.blocks[self.current].terminator is None:
+            body_is_error = self._new_value()
+            self._emit(
+                MirIsRuntimeError(
+                    body_is_error,
+                    body_value,
+                    BOOL,
+                    statement.location,
+                )
+            )
+            body_error_block = self._new_block()
+            continue_block = self._new_block()
+            self._terminate(MirBranch(body_is_error, body_error_block, continue_block))
+            self.current = body_error_block
+            self._terminate(MirJump(exit_block))
+            self.current = continue_block
+            self._terminate(MirJump(condition_block))
+
+        self.current = exit_block
+
+    def _lower_for(self, statement: ForStatement) -> None:
+        """Preserve source for-loop body Error completion without runtime guessing.
+
+        The iterable must already be a checked List<T>. Error-bearing iterable
+        unions remain fail-closed until Typed HIR exposes a canonical success-list
+        projection; lowering must not invent that fact independently.
+        """
+
+        iterable_type = self._type_of(statement.iterable)
+        item_type = _list_item_type(iterable_type)
+        if item_type is None or not self._supports_value_block(statement.body):
+            self._emit(
+                MirAstFallback(
+                    None,
+                    type(statement).__name__,
+                    UnknownType(),
+                    statement.location,
+                )
+            )
+            return
+
+        body_type = checked_block_normal_type(self.typed_report, statement.body)
+        iterable = self._lower_expression(statement.iterable)
+        iterator = self._new_value()
+        self._emit(
+            MirIterInit(
+                iterator,
+                iterable,
+                GenericType("Iterator", (item_type,)),
+                statement.location,
+            )
+        )
+        condition_block = self._new_block()
+        body_block = self._new_block()
+        exit_block = self._new_block()
+        self._terminate(MirJump(condition_block))
+
+        self.current = condition_block
+        has_next = self._new_value()
+        self._emit(MirIterHasNext(has_next, iterator, BOOL, statement.location))
+        self._terminate(MirBranch(has_next, body_block, exit_block))
+
+        self.current = body_block
+        self.scopes.append({})
+        self.loop_targets.append((exit_block, condition_block))
+        try:
+            item = self._new_value()
+            self._emit(MirIterNext(item, iterator, item_type, statement.location))
+            binding_name = self._new_binding_name(statement.variable)
+            self._emit(
+                MirBind(
+                    binding_name,
+                    item,
+                    False,
+                    item_type,
+                    statement.location,
+                )
+            )
+            body_value = self._lower_value_block(
+                statement.body,
+                statement.location,
+                body_type,
+            )
+        finally:
+            self.loop_targets.pop()
+            self.scopes.pop()
 
         if body_value is not None and self.blocks[self.current].terminator is None:
             body_is_error = self._new_value()
