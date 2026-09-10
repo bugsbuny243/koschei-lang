@@ -1,5 +1,7 @@
 # Koschei (`.ks`)
 
+Koschei Lang; kendi semantiği, derleyicisi, kütüphaneleri ve çalışma ortamıyla siber güvenlik temelli genel amaçlı yazılım geliştirme dilidir. Dış bağımlılıksız ekosistem ve Rust’ı güvenlikte aşmak geliştirme hedefidir. **Lang ve Sentinel aynı ticari paketlerde birlikte sunulacak; dilin bağımsızlığı korunacaktır.** [Güncel ürün yönü](docs/PRODUCT_DIRECTION_2026-09-10.md).
+
 > **Özel ticari geliştirme deposu. Koschei proprietary yazılımdır. Bu repoya erişim; yeniden dağıtım, alt lisanslama, satış veya kaynak kodu yayımlama hakkı vermez. Ayrıntılar için `LICENSE` dosyasına bakın.**
 
 **Capability tabanlı güvenli bir programlama dili. İçe aktardığınız bir paket, siz açıkça bir jeton vermedikçe diskinize, ağınıza veya ortam değişkenlerinize dokunamaz.**

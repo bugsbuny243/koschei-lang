@@ -41,6 +41,7 @@ Repository = "https://github.com/bugsbuny243/koschei-lang"
 Issues = "https://github.com/bugsbuny243/koschei-lang/issues"
 
 [project.scripts]
+ks-bundle-check = "koschei.commercial_bundle_v1:main"
 koschei = "koschei.cli_entry:main"
 ks = "koschei.cli_entry:main"
 ks-lsp = "koschei.lsp_v5:main"

@@ -130,7 +130,7 @@ def fabric_component_v1() -> FabricComponentV1:
         schemaVersion=FABRIC_SCHEMA_VERSION,
         component=FABRIC_COMPONENT,
         repository="bugsbuny243/koschei-lang",
-        role="programmable-policy-agent-language",
+        role="independent-security-programming-language",
         preserveExisting=True,
         defaultMode="observe",
         breakingChangesAllowed=False,
