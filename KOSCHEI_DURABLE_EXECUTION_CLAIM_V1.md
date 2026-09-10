@@ -110,7 +110,7 @@ Those remain independent security gates.
 
 ## Candidate acceptance cases
 
-The accompanying tests cover:
+The dependency-free `unittest` suite now participates directly in the repository's canonical `python3 -m unittest discover -s tests` step and covers:
 
 1. durable authorization head survives reopen;
 2. durable execution claim survives reopen;
@@ -125,4 +125,4 @@ The accompanying tests cover:
 11. unsupported schema version fails closed;
 12. directory/non-file store path fails closed.
 
-These are candidate tests until the repository's canonical `ks-local-validate --profile full` recipe is executed and its external evidence receipt is retained.
+The tests are wired into the canonical runner without requiring `pytest` or another test dependency. They remain candidate evidence until `ks-local-validate --profile full` is actually executed in a full checkout/toolchain environment and its external validation receipt is retained.
