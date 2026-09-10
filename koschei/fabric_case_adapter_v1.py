@@ -3,12 +3,21 @@
 This adapter never derives authority from Fabric JSON, Sentinel output, tool
 metadata, or arbitrary external input. It only projects an already-evaluated
 Lang-native authority/runtime result into the shared Fabric envelope shape.
+
+A Fabric ``isolationState=VERIFIED`` claim is proof-gated: metadata alone cannot
+create it. The caller must provide an authenticated native confinement
+attestation bound to the exact policy/runtime/revocation/native/grant basis.
 """
 
 from __future__ import annotations
 
 import re
 from dataclasses import asdict, dataclass
+
+from .native_confinement_attestation_v1 import (
+    NativeConfinementAttestationV1,
+    assert_verified_native_confinement_v1,
+)
 
 _SHA256_RE = re.compile(r"^[a-f0-9]{64}$")
 _AUTHORITY_STATES = frozenset({"AUTHORIZED", "DENIED", "REVOKED", "UNVERIFIED", "UNKNOWN"})
@@ -51,8 +60,16 @@ def build_lang_fabric_projection_v1(
     grant_digest_sha256: str | None = None,
     max_spend_minor_units: int | None = None,
     mapping_state: str = "PARTIAL",
+    confinement_attestation: NativeConfinementAttestationV1 | None = None,
+    confinement_verifier_key: bytes | None = None,
+    trusted_confinement_attester_id: str | None = None,
 ) -> FabricLangProjectionV1:
-    """Project a Lang-native decision without widening its scope or authority."""
+    """Project a Lang-native decision without widening its scope or authority.
+
+    ``VERIFIED`` isolation is fail-closed. It requires an authenticated native
+    attestation bound to this exact projection. Weaker isolation states remain
+    backward compatible and do not require confinement evidence.
+    """
     if not principal.strip() or not caller.strip():
         raise ValueError("principal and caller are required")
     if not scope or any(not item.strip() for item in scope):
@@ -84,6 +101,26 @@ def build_lang_fabric_projection_v1(
     grant_digest = None
     if grant_digest_sha256 is not None:
         grant_digest = _require_sha256(grant_digest_sha256, "grant_digest_sha256")
+
+    if isolation_state == "VERIFIED":
+        if confinement_attestation is None:
+            raise ValueError(
+                "VERIFIED isolation requires an authenticated native confinement attestation"
+            )
+        if confinement_verifier_key is None:
+            raise ValueError("VERIFIED isolation requires a confinement verifier key")
+        if trusted_confinement_attester_id is None:
+            raise ValueError("VERIFIED isolation requires a trusted confinement attester id")
+        assert_verified_native_confinement_v1(
+            confinement_attestation,
+            verifier_key=confinement_verifier_key,
+            trusted_attester_id=trusted_confinement_attester_id,
+            expected_policy_version=policy_version,
+            expected_runtime_version=runtime_version,
+            expected_revocation_epoch=revocation_epoch,
+            expected_native_digest_sha256=native_digest,
+            expected_grant_digest_sha256=grant_digest,
+        )
 
     authority: dict[str, object] = {
         "authorityOwner": "koschei-lang",
