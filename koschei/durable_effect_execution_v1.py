@@ -28,7 +28,6 @@ from .durable_authorization_store_v1 import (
 from .effect_execution_receipt_v1 import EffectExecutionReceiptV1, execute_effect_with_receipt_v1
 from .execution_permit_v1 import ExecutionConsumptionReceiptV1, ExecutionPermitLedgerV1, ExecutionPermitV1
 from .external_adapter_contract_v1 import ExternalAdapterEvidenceV1, ExternalAdapterGrantV1
-from .fresh_effect_authorization_v1 import assert_effect_authorization_binding_v1
 from .native_sigil_mir_v1 import NativeSigilMir
 from .native_sigil_request_binding_v1 import CanonicalEffectRequest
 
@@ -62,7 +61,7 @@ def execute_effect_with_durable_authorization_v1(
     EffectExecutionReceiptV1,
     bytes | None,
 ]:
-    """Bind -> atomically durable-claim -> consume bootstrap permit -> invoke effect."""
+    """Atomically durable-claim exact authority, then invoke the measured effect."""
 
     if not isinstance(store, DurableAuthorizationStoreV1):
         raise DurableEffectExecutionV1Error("durable authorization store is required")
@@ -71,32 +70,24 @@ def execute_effect_with_durable_authorization_v1(
     if not isinstance(effect_key, bytes) or len(effect_key) < 32:
         raise DurableEffectExecutionV1Error("effect_key must contain at least 32 bytes")
 
-    assert_effect_authorization_binding_v1(
-        state=state,
-        intent=intent,
-        grant=grant,
-        mir=mir,
-        request=request,
-        current_epoch=current_epoch,
-    )
     snapshot, durable_claim = store.claim_execution(
         state=state,
         delegation_chain=delegation_chain,
+        intent=intent,
         permit=permit,
         runtime_key=runtime_key,
         decision_key=decision_key,
         grant=grant,
         evidence=evidence,
         decision=decision,
+        mir=mir,
+        request=request,
         current_epoch=current_epoch,
-        request_digest=request.digest,
-        operation=request.operation,
         claim_key=claim_key,
     )
 
-    # The durable claim is now the replay authority. A fresh in-memory permit
-    # ledger is used only to preserve the existing strict consumption/effect
-    # receipt chain; it is not relied on for restart-safe replay prevention.
+    # Durable claim is the restart-safe replay authority. This fresh in-memory
+    # ledger preserves the existing strict consumption/effect receipt chain only.
     consumption, effect_receipt, result = execute_effect_with_receipt_v1(
         ledger=ExecutionPermitLedgerV1(),
         permit=permit,
