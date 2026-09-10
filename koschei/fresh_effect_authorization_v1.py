@@ -85,27 +85,22 @@ def _assert_exact_effect_constraints(
         )
 
 
-def assert_fresh_effect_authorization_v1(
+def assert_effect_authorization_binding_v1(
     *,
-    authorization_ledger: AuthorizationStateLedgerV1,
     state: AuthorizationStateV1,
-    delegation_chain: tuple[DelegationLinkV1, ...],
     intent: IntentCommitmentV1,
     grant: ExternalAdapterGrantV1,
     mir: NativeSigilMir,
     request: CanonicalEffectRequest,
     current_epoch: int,
-) -> ExecutionAuthorizationSnapshotV1:
-    """Prove current, exact authority for one canonical effect request.
+) -> None:
+    """Bind exact request identity/intent/scope without selecting a state ledger.
 
-    The intent remains non-authoritative. It is required only to bind the
-    authorization state to the exact sealed request (`intent_digest ==
-    request.digest`). The current ledger head and delegation validity are then
-    re-evaluated at the execution epoch by AuthorizationStateLedgerV1.
+    This helper carries no authority and performs no current-head check. Durable
+    and bootstrap execution paths use it before their own authoritative head
+    checks so the binding rules remain single-sourced.
     """
 
-    if not isinstance(authorization_ledger, AuthorizationStateLedgerV1):
-        raise FreshEffectAuthorizationV1Error("authorization state ledger is required")
     mir.assert_sealed()
     request.assert_sealed(mir)
     if not isinstance(current_epoch, int) or isinstance(current_epoch, bool) or current_epoch < 0:
@@ -128,6 +123,36 @@ def assert_fresh_effect_authorization_v1(
         raise FreshEffectAuthorizationV1Error("adapter grant scope differs from canonical request")
 
     _assert_exact_effect_constraints(state, request=request, grant=grant)
+
+
+def assert_fresh_effect_authorization_v1(
+    *,
+    authorization_ledger: AuthorizationStateLedgerV1,
+    state: AuthorizationStateV1,
+    delegation_chain: tuple[DelegationLinkV1, ...],
+    intent: IntentCommitmentV1,
+    grant: ExternalAdapterGrantV1,
+    mir: NativeSigilMir,
+    request: CanonicalEffectRequest,
+    current_epoch: int,
+) -> ExecutionAuthorizationSnapshotV1:
+    """Prove current, exact authority for one canonical effect request.
+
+    The intent remains non-authoritative. It is required only to bind the
+    authorization state to the exact sealed request. The current ledger head and
+    delegation validity are then re-evaluated at the execution epoch.
+    """
+
+    if not isinstance(authorization_ledger, AuthorizationStateLedgerV1):
+        raise FreshEffectAuthorizationV1Error("authorization state ledger is required")
+    assert_effect_authorization_binding_v1(
+        state=state,
+        intent=intent,
+        grant=grant,
+        mir=mir,
+        request=request,
+        current_epoch=current_epoch,
+    )
     return authorization_ledger.snapshot_for_execution(
         state,
         delegation_chain,
