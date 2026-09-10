@@ -2,7 +2,7 @@
   "schemaVersion": "1.0",
   "component": "koschei-lang",
   "repository": "bugsbuny243/koschei-lang",
-  "role": "programmable-policy-agent-language",
+  "role": "independent-security-programming-language",
   "preserveExisting": true,
   "defaultMode": "observe",
   "compatibility": {

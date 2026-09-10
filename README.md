@@ -1,5 +1,11 @@
 # Koschei (`.ks`)
 
+## Product direction and joint packages
+
+Koschei Lang is an independent programming language and library ecosystem for cybersecurity-centered general-purpose software development. Its own semantics, compiler, standard library and runtime define the product; Web3 and agent integrations are applications of the language. Self-contained distribution and surpassing Rust in security remain development goals requiring executed evidence.
+
+**Koschei Lang and Koschei Sentinel are offered together in the same commercial packages.** Their runtime dependencies and release gates remain independent. See [product direction](docs/PRODUCT_DIRECTION_2026-09-10.md) and the [offline bundle contract](docs/COMMERCIAL_BUNDLE_V1.md).
+
 > **Private commercial development repository. Koschei is proprietary software. Access to this repository does not grant redistribution, sublicensing, resale, or publication rights. See `LICENSE`.**
 
 **A capability-secure programming language. An imported package cannot touch your disk, network, or environment unless you hand it a token.**
