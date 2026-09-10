@@ -158,19 +158,20 @@ def authority(items):
     return intent, delegation_chain, state
 
 
-def claim_kwargs(items, state, delegation_chain):
+def claim_kwargs(items, state, delegation_chain, intent=None):
     return dict(
         state=state,
         delegation_chain=delegation_chain,
+        intent=intent or authority(items)[0],
         permit=items["permit"],
         runtime_key=items["runtime_key"],
         decision_key=items["decision_key"],
         grant=items["grant"],
         evidence=items["evidence"],
         decision=items["decision"],
+        mir=items["mir"],
+        request=items["request"],
         current_epoch=41,
-        request_digest=items["request"].digest,
-        operation=items["request"].operation,
         claim_key=items["claim_key"],
     )
 
@@ -198,11 +199,13 @@ def execute_kwargs(items, store, intent, delegation_chain, state, effect):
 
 def test_initial_head_and_claim_survive_reopen(tmp_path):
     items = effect_chain()
-    _, delegation_chain, state = authority(items)
+    intent, delegation_chain, state = authority(items)
     path = tmp_path / "authority.db"
     store = DurableAuthorizationStoreV1(path)
     store.register_initial(state)
-    snapshot, claim = store.claim_execution(**claim_kwargs(items, state, delegation_chain))
+    snapshot, claim = store.claim_execution(
+        **claim_kwargs(items, state, delegation_chain, intent)
+    )
 
     reopened = DurableAuthorizationStoreV1(path)
     assert reopened.current_head_digest(state.subject) == state.state_digest
@@ -214,12 +217,12 @@ def test_initial_head_and_claim_survive_reopen(tmp_path):
         permit=items["permit"],
     )
     with pytest.raises(DurableAuthorizationStoreV1Error, match="replay detected"):
-        reopened.claim_execution(**claim_kwargs(items, state, delegation_chain))
+        reopened.claim_execution(**claim_kwargs(items, state, delegation_chain, intent))
 
 
 def test_durable_revocation_head_blocks_old_state_claim(tmp_path):
     items = effect_chain()
-    _, delegation_chain, state = authority(items)
+    intent, delegation_chain, state = authority(items)
     store = DurableAuthorizationStoreV1(tmp_path / "authority.db")
     store.register_initial(state)
     revoked, transition = transition_authorization_state_v1(
@@ -231,7 +234,7 @@ def test_durable_revocation_head_blocks_old_state_claim(tmp_path):
     store.commit_transition(state, revoked, transition)
 
     with pytest.raises(DurableAuthorizationStoreV1Error, match="current durable monotonic head"):
-        store.claim_execution(**claim_kwargs(items, state, delegation_chain))
+        store.claim_execution(**claim_kwargs(items, state, delegation_chain, intent))
     assert not store.has_execution_claim(items["permit"].permit_digest)
 
 
@@ -256,14 +259,14 @@ def test_transition_head_persists_and_stale_compare_and_swap_fails(tmp_path):
 
 def test_concurrent_duplicate_claim_has_exactly_one_local_winner(tmp_path):
     items = effect_chain()
-    _, delegation_chain, state = authority(items)
+    intent, delegation_chain, state = authority(items)
     path = tmp_path / "authority.db"
     DurableAuthorizationStoreV1(path).register_initial(state)
 
     def contender():
         store = DurableAuthorizationStoreV1(path)
         try:
-            store.claim_execution(**claim_kwargs(items, state, delegation_chain))
+            store.claim_execution(**claim_kwargs(items, state, delegation_chain, intent))
             return "claimed"
         except DurableAuthorizationStoreV1Error as error:
             return str(error)
@@ -335,6 +338,24 @@ def test_invalid_effect_key_does_not_burn_durable_claim(tmp_path):
         execute_effect_with_durable_authorization_v1(**kwargs)
     assert not store.has_execution_claim(items["permit"].permit_digest)
     assert calls == []
+
+
+def test_direct_durable_claim_cannot_bypass_exact_intent_binding(tmp_path):
+    items = effect_chain()
+    intent, delegation_chain, state = authority(items)
+    store = DurableAuthorizationStoreV1(tmp_path / "authority.db")
+    store.register_initial(state)
+    forged_intent = IntentCommitmentV1(
+        principal=intent.principal,
+        intent_digest=h("different-request"),
+        purpose_digest=intent.purpose_digest,
+        created_epoch=41,
+    )
+    with pytest.raises(ValueError, match="exact canonical request"):
+        store.claim_execution(
+            **claim_kwargs(items, state, delegation_chain, forged_intent)
+        )
+    assert not store.has_execution_claim(items["permit"].permit_digest)
 
 
 def test_schema_version_mismatch_fails_closed(tmp_path):
