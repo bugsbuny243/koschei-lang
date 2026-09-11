@@ -155,6 +155,14 @@ class DurableAuthorizationStoreV1:
                 columns = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
                 if not required.issubset(columns):
                     raise DurableAuthorizationStoreV1Error(f"durable authorization schema for {table} is incomplete")
+            executable_schema = conn.execute(
+                "SELECT type, name FROM sqlite_master "
+                "WHERE type IN ('trigger', 'view') ORDER BY type, name LIMIT 1"
+            ).fetchone()
+            if executable_schema is not None:
+                raise DurableAuthorizationStoreV1Error(
+                    "durable authorization store contains unsupported executable schema object"
+                )
         except DurableAuthorizationStoreV1Error:
             raise
         except sqlite3.Error:
