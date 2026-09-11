@@ -1,8 +1,9 @@
 from concurrent.futures import ThreadPoolExecutor
 import hashlib
+from pathlib import Path
 import sqlite3
-
-import pytest
+import tempfile
+import unittest
 
 from koschei.authorization_decision_v1 import issue_authorization_decision_v1
 from koschei.authorization_transition_v1 import (
@@ -197,183 +198,196 @@ def execute_kwargs(items, store, intent, delegation_chain, state, effect):
     )
 
 
-def test_initial_head_and_claim_survive_reopen(tmp_path):
-    items = effect_chain()
-    intent, delegation_chain, state = authority(items)
-    path = tmp_path / "authority.db"
-    store = DurableAuthorizationStoreV1(path)
-    store.register_initial(state)
-    snapshot, claim = store.claim_execution(
-        **claim_kwargs(items, state, delegation_chain, intent)
-    )
+class DurableAuthorizationStoreV1Tests(unittest.TestCase):
+    """Dependency-free durable replay/revocation acceptance candidates."""
 
-    reopened = DurableAuthorizationStoreV1(path)
-    assert reopened.current_head_digest(state.subject) == state.state_digest
-    assert reopened.has_execution_claim(items["permit"].permit_digest)
-    claim.assert_authenticated(
-        claim_key=items["claim_key"],
-        state=state,
-        snapshot=snapshot,
-        permit=items["permit"],
-    )
-    with pytest.raises(DurableAuthorizationStoreV1Error, match="replay detected"):
-        reopened.claim_execution(**claim_kwargs(items, state, delegation_chain, intent))
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.tmp_path = Path(self._tmp.name)
 
-
-def test_durable_revocation_head_blocks_old_state_claim(tmp_path):
-    items = effect_chain()
-    intent, delegation_chain, state = authority(items)
-    store = DurableAuthorizationStoreV1(tmp_path / "authority.db")
-    store.register_initial(state)
-    revoked, transition = transition_authorization_state_v1(
-        state,
-        kind="REVOKE",
-        epoch=42,
-        reason_digest=h("owner-revoked"),
-    )
-    store.commit_transition(state, revoked, transition)
-
-    with pytest.raises(DurableAuthorizationStoreV1Error, match="current durable monotonic head"):
-        store.claim_execution(**claim_kwargs(items, state, delegation_chain, intent))
-    assert not store.has_execution_claim(items["permit"].permit_digest)
-
-
-def test_transition_head_persists_and_stale_compare_and_swap_fails(tmp_path):
-    items = effect_chain()
-    _, _, state = authority(items)
-    path = tmp_path / "authority.db"
-    store = DurableAuthorizationStoreV1(path)
-    store.register_initial(state)
-    revoked, transition = transition_authorization_state_v1(
-        state,
-        kind="REVOKE",
-        epoch=42,
-        reason_digest=h("owner-revoked"),
-    )
-    store.commit_transition(state, revoked, transition)
-    reopened = DurableAuthorizationStoreV1(path)
-    assert reopened.current_head_digest(state.subject) == revoked.state_digest
-    with pytest.raises(DurableAuthorizationStoreV1Error, match="current durable monotonic head"):
-        reopened.commit_transition(state, revoked, transition)
-
-
-def test_concurrent_duplicate_claim_has_exactly_one_local_winner(tmp_path):
-    items = effect_chain()
-    intent, delegation_chain, state = authority(items)
-    path = tmp_path / "authority.db"
-    DurableAuthorizationStoreV1(path).register_initial(state)
-
-    def contender():
+    def test_initial_head_and_claim_survive_reopen(self):
+        items = effect_chain()
+        intent, delegation_chain, state = authority(items)
+        path = self.tmp_path / "authority.db"
         store = DurableAuthorizationStoreV1(path)
-        try:
+        store.register_initial(state)
+        snapshot, claim = store.claim_execution(
+            **claim_kwargs(items, state, delegation_chain, intent)
+        )
+
+        reopened = DurableAuthorizationStoreV1(path)
+        self.assertEqual(reopened.current_head_digest(state.subject), state.state_digest)
+        self.assertTrue(reopened.has_execution_claim(items["permit"].permit_digest))
+        claim.assert_authenticated(
+            claim_key=items["claim_key"],
+            state=state,
+            snapshot=snapshot,
+            permit=items["permit"],
+        )
+        with self.assertRaisesRegex(DurableAuthorizationStoreV1Error, "replay detected"):
+            reopened.claim_execution(**claim_kwargs(items, state, delegation_chain, intent))
+
+    def test_durable_revocation_head_blocks_old_state_claim(self):
+        items = effect_chain()
+        intent, delegation_chain, state = authority(items)
+        store = DurableAuthorizationStoreV1(self.tmp_path / "authority.db")
+        store.register_initial(state)
+        revoked, transition = transition_authorization_state_v1(
+            state,
+            kind="REVOKE",
+            epoch=42,
+            reason_digest=h("owner-revoked"),
+        )
+        store.commit_transition(state, revoked, transition)
+
+        with self.assertRaisesRegex(
+            DurableAuthorizationStoreV1Error, "current durable monotonic head"
+        ):
             store.claim_execution(**claim_kwargs(items, state, delegation_chain, intent))
-            return "claimed"
-        except DurableAuthorizationStoreV1Error as error:
-            return str(error)
+        self.assertFalse(store.has_execution_claim(items["permit"].permit_digest))
 
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        outcomes = list(pool.map(lambda _: contender(), range(2)))
-    assert outcomes.count("claimed") == 1
-    assert sum("replay detected" in item for item in outcomes) == 1
+    def test_transition_head_persists_and_stale_compare_and_swap_fails(self):
+        items = effect_chain()
+        _, _, state = authority(items)
+        path = self.tmp_path / "authority.db"
+        store = DurableAuthorizationStoreV1(path)
+        store.register_initial(state)
+        revoked, transition = transition_authorization_state_v1(
+            state,
+            kind="REVOKE",
+            epoch=42,
+            reason_digest=h("owner-revoked"),
+        )
+        store.commit_transition(state, revoked, transition)
+        reopened = DurableAuthorizationStoreV1(path)
+        self.assertEqual(reopened.current_head_digest(state.subject), revoked.state_digest)
+        with self.assertRaisesRegex(
+            DurableAuthorizationStoreV1Error, "current durable monotonic head"
+        ):
+            reopened.commit_transition(state, revoked, transition)
 
+    def test_concurrent_duplicate_claim_has_exactly_one_local_winner(self):
+        items = effect_chain()
+        intent, delegation_chain, state = authority(items)
+        path = self.tmp_path / "authority.db"
+        DurableAuthorizationStoreV1(path).register_initial(state)
 
-def test_durable_executor_commits_claim_before_callback_and_blocks_restart_replay(tmp_path):
-    items = effect_chain()
-    intent, delegation_chain, state = authority(items)
-    path = tmp_path / "authority.db"
-    store = DurableAuthorizationStoreV1(path)
-    store.register_initial(state)
-    calls = []
+        def contender():
+            store = DurableAuthorizationStoreV1(path)
+            try:
+                store.claim_execution(**claim_kwargs(items, state, delegation_chain, intent))
+                return "claimed"
+            except DurableAuthorizationStoreV1Error as error:
+                return str(error)
 
-    snapshot, claim, consumption, receipt, result = execute_effect_with_durable_authorization_v1(
-        **execute_kwargs(
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            outcomes = list(pool.map(lambda _: contender(), range(2)))
+        self.assertEqual(outcomes.count("claimed"), 1)
+        self.assertEqual(sum("replay detected" in item for item in outcomes), 1)
+
+    def test_durable_executor_commits_claim_before_callback_and_blocks_restart_replay(self):
+        items = effect_chain()
+        intent, delegation_chain, state = authority(items)
+        path = self.tmp_path / "authority.db"
+        store = DurableAuthorizationStoreV1(path)
+        store.register_initial(state)
+        calls = []
+
+        snapshot, claim, consumption, receipt, result = execute_effect_with_durable_authorization_v1(
+            **execute_kwargs(
+                items,
+                store,
+                intent,
+                delegation_chain,
+                state,
+                lambda _: calls.append(
+                    store.has_execution_claim(items["permit"].permit_digest)
+                )
+                or b"ok",
+            )
+        )
+        self.assertEqual(calls, [True])
+        self.assertEqual(result, b"ok")
+        self.assertEqual(receipt.outcome, "effect-completed")
+        self.assertEqual(consumption.permit_digest, items["permit"].permit_digest)
+        claim.assert_authenticated(
+            claim_key=items["claim_key"], state=state, snapshot=snapshot, permit=items["permit"]
+        )
+
+        replay_calls = []
+        reopened = DurableAuthorizationStoreV1(path)
+        with self.assertRaisesRegex(DurableAuthorizationStoreV1Error, "replay detected"):
+            execute_effect_with_durable_authorization_v1(
+                **execute_kwargs(
+                    items,
+                    reopened,
+                    intent,
+                    delegation_chain,
+                    state,
+                    lambda _: replay_calls.append(1) or b"bad",
+                )
+            )
+        self.assertEqual(replay_calls, [])
+
+    def test_invalid_effect_key_does_not_burn_durable_claim(self):
+        items = effect_chain()
+        intent, delegation_chain, state = authority(items)
+        store = DurableAuthorizationStoreV1(self.tmp_path / "authority.db")
+        store.register_initial(state)
+        calls = []
+        kwargs = execute_kwargs(
             items,
             store,
             intent,
             delegation_chain,
             state,
-            lambda _: calls.append(store.has_execution_claim(items["permit"].permit_digest)) or b"ok",
+            lambda _: calls.append(1) or b"bad",
         )
-    )
-    assert calls == [True]
-    assert result == b"ok"
-    assert receipt.outcome == "effect-completed"
-    assert consumption.permit_digest == items["permit"].permit_digest
-    claim.assert_authenticated(
-        claim_key=items["claim_key"], state=state, snapshot=snapshot, permit=items["permit"]
-    )
+        kwargs["effect_key"] = b"short"
+        with self.assertRaisesRegex(DurableEffectExecutionV1Error, "effect_key"):
+            execute_effect_with_durable_authorization_v1(**kwargs)
+        self.assertFalse(store.has_execution_claim(items["permit"].permit_digest))
+        self.assertEqual(calls, [])
 
-    replay_calls = []
-    reopened = DurableAuthorizationStoreV1(path)
-    with pytest.raises(DurableAuthorizationStoreV1Error, match="replay detected"):
-        execute_effect_with_durable_authorization_v1(
-            **execute_kwargs(
-                items,
-                reopened,
-                intent,
-                delegation_chain,
-                state,
-                lambda _: replay_calls.append(1) or b"bad",
+    def test_direct_durable_claim_cannot_bypass_exact_intent_binding(self):
+        items = effect_chain()
+        intent, delegation_chain, state = authority(items)
+        store = DurableAuthorizationStoreV1(self.tmp_path / "authority.db")
+        store.register_initial(state)
+        forged_intent = IntentCommitmentV1(
+            principal=intent.principal,
+            intent_digest=h("different-request"),
+            purpose_digest=intent.purpose_digest,
+            created_epoch=41,
+        )
+        with self.assertRaisesRegex(ValueError, "exact canonical request"):
+            store.claim_execution(
+                **claim_kwargs(items, state, delegation_chain, forged_intent)
             )
+        self.assertFalse(store.has_execution_claim(items["permit"].permit_digest))
+
+    def test_schema_version_mismatch_fails_closed(self):
+        path = self.tmp_path / "authority.db"
+        conn = sqlite3.connect(path)
+        conn.execute(
+            "CREATE TABLE koschei_store_metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
         )
-    assert replay_calls == []
-
-
-def test_invalid_effect_key_does_not_burn_durable_claim(tmp_path):
-    items = effect_chain()
-    intent, delegation_chain, state = authority(items)
-    store = DurableAuthorizationStoreV1(tmp_path / "authority.db")
-    store.register_initial(state)
-    calls = []
-    kwargs = execute_kwargs(
-        items,
-        store,
-        intent,
-        delegation_chain,
-        state,
-        lambda _: calls.append(1) or b"bad",
-    )
-    kwargs["effect_key"] = b"short"
-    with pytest.raises(DurableEffectExecutionV1Error, match="effect_key"):
-        execute_effect_with_durable_authorization_v1(**kwargs)
-    assert not store.has_execution_claim(items["permit"].permit_digest)
-    assert calls == []
-
-
-def test_direct_durable_claim_cannot_bypass_exact_intent_binding(tmp_path):
-    items = effect_chain()
-    intent, delegation_chain, state = authority(items)
-    store = DurableAuthorizationStoreV1(tmp_path / "authority.db")
-    store.register_initial(state)
-    forged_intent = IntentCommitmentV1(
-        principal=intent.principal,
-        intent_digest=h("different-request"),
-        purpose_digest=intent.purpose_digest,
-        created_epoch=41,
-    )
-    with pytest.raises(ValueError, match="exact canonical request"):
-        store.claim_execution(
-            **claim_kwargs(items, state, delegation_chain, forged_intent)
+        conn.execute(
+            "INSERT INTO koschei_store_metadata(key, value) VALUES('schema_version', '999')"
         )
-    assert not store.has_execution_claim(items["permit"].permit_digest)
+        conn.commit()
+        conn.close()
+
+        with self.assertRaisesRegex(
+            DurableAuthorizationStoreV1Error, "unsupported.*schema version"
+        ):
+            DurableAuthorizationStoreV1(path)
+
+    def test_directory_path_is_rejected_fail_closed(self):
+        with self.assertRaisesRegex(DurableAuthorizationStoreV1Error, "not a file"):
+            DurableAuthorizationStoreV1(self.tmp_path)
 
 
-def test_schema_version_mismatch_fails_closed(tmp_path):
-    path = tmp_path / "authority.db"
-    conn = sqlite3.connect(path)
-    conn.execute(
-        "CREATE TABLE koschei_store_metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
-    )
-    conn.execute(
-        "INSERT INTO koschei_store_metadata(key, value) VALUES('schema_version', '999')"
-    )
-    conn.commit()
-    conn.close()
-
-    with pytest.raises(DurableAuthorizationStoreV1Error, match="unsupported.*schema version"):
-        DurableAuthorizationStoreV1(path)
-
-
-def test_directory_path_is_rejected_fail_closed(tmp_path):
-    with pytest.raises(DurableAuthorizationStoreV1Error, match="not a file"):
-        DurableAuthorizationStoreV1(tmp_path)
+if __name__ == "__main__":
+    unittest.main()
