@@ -13,6 +13,7 @@ from .mir_extension_instructions_v4 import MirVariantIs, MirVariantPayload
 from .mir_ir import MirBasicBlock, MirBranch, MirJump
 
 VariantProofV1 = tuple[int, str]
+VariantTestV1 = tuple[int, int, str]
 
 
 def _canonical_variant_identity(value: str) -> bool:
@@ -22,8 +23,8 @@ def _canonical_variant_identity(value: str) -> bool:
     return bool(separator and owner and variant and "::" not in variant)
 
 
-def _variant_tests(blocks: tuple[MirBasicBlock, ...]) -> dict[int, VariantProofV1]:
-    tests: dict[int, VariantProofV1] = {}
+def _variant_tests(blocks: tuple[MirBasicBlock, ...]) -> dict[int, VariantTestV1]:
+    tests: dict[int, VariantTestV1] = {}
     for block in blocks:
         for instruction in block.instructions:
             if isinstance(instruction, (MirVariantIs, MirVariantPayload)):
@@ -32,26 +33,22 @@ def _variant_tests(blocks: tuple[MirBasicBlock, ...]) -> dict[int, VariantProofV
                         "MIR variant identity must be canonical Owner::Variant"
                     )
             if isinstance(instruction, MirVariantIs):
-                tests[instruction.target] = (instruction.source, instruction.variant)
+                tests[instruction.target] = (
+                    block.id,
+                    instruction.source,
+                    instruction.variant,
+                )
     return tests
-
-
-def _successors(block: MirBasicBlock) -> tuple[int, ...]:
-    terminator = block.terminator
-    if isinstance(terminator, MirJump):
-        return (terminator.target,)
-    if isinstance(terminator, MirBranch):
-        return (terminator.then_block, terminator.else_block)
-    return ()
 
 
 def validate_variant_proofs_v1(blocks: tuple[MirBasicBlock, ...]) -> None:
     """Require exact true-edge proof before every `MirVariantPayload`.
 
     Proofs propagate across jumps and are intersected at CFG joins. A
-    `MirVariantIs` creates a positive proof only on the true branch of the same
-    basic block. This deliberately rejects payload extraction in the test block,
-    on the false edge, after an ambiguous join, or under a different variant.
+    `MirVariantIs` creates a positive proof only when the branch consuming its
+    result is in the same basic block as that exact test. This deliberately
+    rejects payload extraction in the test block, on the false edge, after an
+    ambiguous join, under a different variant, or from a non-dominating test.
     """
 
     if not blocks:
@@ -79,7 +76,10 @@ def validate_variant_proofs_v1(blocks: tuple[MirBasicBlock, ...]) -> None:
             terminator = block.terminator
             edge_facts: list[tuple[int, frozenset[VariantProofV1]]] = []
             if isinstance(terminator, MirBranch):
-                positive = tests.get(terminator.condition)
+                test = tests.get(terminator.condition)
+                positive = None
+                if test is not None and test[0] == block.id:
+                    positive = (test[1], test[2])
                 if positive is None:
                     edge_facts.extend(
                         ((terminator.then_block, facts), (terminator.else_block, facts))
@@ -116,4 +116,4 @@ def validate_variant_proofs_v1(blocks: tuple[MirBasicBlock, ...]) -> None:
                 )
 
 
-__all__ = ["VariantProofV1", "validate_variant_proofs_v1"]
+__all__ = ["VariantProofV1", "VariantTestV1", "validate_variant_proofs_v1"]
