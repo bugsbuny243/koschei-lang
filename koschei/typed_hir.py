@@ -13,6 +13,8 @@ from .ast_nodes import (
     ForStatement,
     IfStatement,
     LetStatement,
+    MatchArm,
+    MatchExpression,
     Program,
     ReturnStatement,
     SourceLocation,
@@ -50,8 +52,8 @@ def iterable_success_item_type(type_node: TypeNode) -> TypeNode | None:
     """Project the checked List item type for a for-loop success path.
 
     A top-level Error alternative is control-flow evidence, not an iterable
-    shape.  Typed HIR owns this projection so MIR/runtime consumers never need
-    to rediscover or guess it.  Any other ambiguous union remains fail-closed.
+    shape. Typed HIR owns this projection so MIR/runtime consumers never need
+    to rediscover or guess it. Any other ambiguous union remains fail-closed.
     """
 
     success_options = tuple(option for option in alternatives(type_node) if option != ERROR)
@@ -80,13 +82,47 @@ class TypedExpression:
 
 
 @dataclass(frozen=True, slots=True)
+class TypedMatchArmResolution:
+    """One compiler-authoritative match-arm identity.
+
+    ``canonical_variant`` is never reconstructed by MIR or a backend. It is
+    emitted only after Typed HIR resolved the scrutinee type against the enum
+    declaration/builtin sum type that owns the visible arm name.
+    """
+
+    arm: MatchArm
+    owner: str
+    variant: str
+    canonical_variant: str
+    payload_type: TypeNode | None
+    binding_type: TypeNode | None
+
+
+@dataclass(frozen=True, slots=True)
+class TypedMatchResolution:
+    expression: MatchExpression
+    value_type: TypeNode
+    arms: tuple[TypedMatchArmResolution, ...]
+    exhaustive: bool
+
+
+@dataclass(frozen=True, slots=True)
 class TypedHIRReport:
     bindings: tuple[TypedBinding, ...]
     expressions: tuple[TypedExpression, ...]
     collections: int
+    match_resolutions: tuple[TypedMatchResolution, ...] = ()
 
     def binding_types(self, name: str) -> tuple[TypeNode, ...]:
         return tuple(item.type for item in self.bindings if item.name == name)
+
+    def match_resolution_of(
+        self, expression: MatchExpression
+    ) -> TypedMatchResolution | None:
+        for item in self.match_resolutions:
+            if item.expression is expression:
+                return item
+        return None
 
 
 class TypedHIRChecker:
@@ -115,6 +151,7 @@ class TypedHIRChecker:
         self.scopes: list[dict[str, TypeNode]] = []
         self.bindings: list[TypedBinding] = []
         self.expressions: list[TypedExpression] = []
+        self.match_resolutions: list[TypedMatchResolution] = []
         self.collections = 0
         self.current_function = None
         self.contracts = TypeContractValidator(program, self.imports)
@@ -137,7 +174,10 @@ class TypedHIRChecker:
                 self.scopes.pop()
                 self.current_function = None
         return TypedHIRReport(
-            tuple(self.bindings), tuple(self.expressions), self.collections
+            tuple(self.bindings),
+            tuple(self.expressions),
+            self.collections,
+            tuple(self.match_resolutions),
         )
 
     def declare(
@@ -359,9 +399,7 @@ class TypedHIRChecker:
                 expression.location,
             )
 
-        actuals = {
-            name: self.infer(value) for name, value in supplied.items()
-        }
+        actuals = {name: self.infer(value) for name, value in supplied.items()}
         evidence = tuple(
             (field.type_ref, actuals[field.name]) for field in declaration.fields
         )
@@ -384,32 +422,132 @@ class TypedHIRChecker:
             )
         return instantiated_declaration_type(declaration, mapping)
 
-    def variant_payload(self, value_type: TypeNode, variant: str) -> TypeNode:
+    def resolve_match_variant(
+        self, value_type: TypeNode, variant: str
+    ) -> tuple[str, TypeNode | None, tuple[str, ...]] | None:
+        """Resolve a visible arm name to its canonical owner and payload.
+
+        This is the single Typed-HIR authority for match identity. Consumers
+        must use the emitted ``Owner::Variant`` fact rather than guessing an
+        owner from the source-visible variant token.
+        """
+
         if isinstance(value_type, GenericType):
             if value_type.name == "Option":
-                return value_type.arguments[0] if variant == "Some" else UNKNOWN
+                if variant == "Some":
+                    payload = value_type.arguments[0] if value_type.arguments else UNKNOWN
+                    return "Option", payload, ("Some", "None")
+                if variant == "None":
+                    return "Option", None, ("Some", "None")
+                return None
             if value_type.name == "Result":
                 if variant == "Ok":
-                    return value_type.arguments[0]
+                    payload = value_type.arguments[0] if value_type.arguments else UNKNOWN
+                    return "Result", payload, ("Ok", "Err")
                 if variant == "Err":
-                    return value_type.arguments[1]
+                    payload = value_type.arguments[1] if len(value_type.arguments) > 1 else ERROR
+                    return "Result", payload, ("Ok", "Err")
+                return None
             declaration = self.enums.get(value_type.name)
             if declaration is not None:
-                mapping = dict(
-                    zip(type_parameters_of(declaration), value_type.arguments)
-                )
+                mapping = dict(zip(type_parameters_of(declaration), value_type.arguments))
+                expected = tuple(item.name for item in declaration.variants)
                 for item in declaration.variants:
-                    if item.name == variant and item.payload_type is not None:
-                        return substitute_type(
+                    if item.name != variant:
+                        continue
+                    payload = None
+                    if item.payload_type is not None:
+                        payload = substitute_type(
                             declaration_type(declaration, item.payload_type), mapping
                         )
+                    return declaration.name, payload, expected
+                return None
+
         if isinstance(value_type, NamedType):
+            if value_type.name == "Option":
+                if variant == "Some":
+                    return "Option", UNKNOWN, ("Some", "None")
+                if variant == "None":
+                    return "Option", None, ("Some", "None")
+                return None
+            if value_type.name == "Result":
+                if variant == "Ok":
+                    return "Result", UNKNOWN, ("Ok", "Err")
+                if variant == "Err":
+                    return "Result", ERROR, ("Ok", "Err")
+                return None
             declaration = self.enums.get(value_type.name)
             if declaration is not None:
+                expected = tuple(item.name for item in declaration.variants)
                 for item in declaration.variants:
-                    if item.name == variant and item.payload_type is not None:
-                        return declaration_type(declaration, item.payload_type)
-        return UNKNOWN
+                    if item.name != variant:
+                        continue
+                    payload = (
+                        declaration_type(declaration, item.payload_type)
+                        if item.payload_type is not None
+                        else None
+                    )
+                    return declaration.name, payload, expected
+                return None
+        return None
+
+    def record_match_resolution(
+        self,
+        expression: MatchExpression,
+        value_type: TypeNode,
+        arm_rows: list[
+            tuple[
+                MatchArm,
+                tuple[str, TypeNode | None, tuple[str, ...]] | None,
+                TypeNode | None,
+            ]
+        ],
+    ) -> None:
+        if not arm_rows or any(resolution is None for _, resolution, _ in arm_rows):
+            return
+
+        owners = {resolution[0] for _, resolution, _ in arm_rows if resolution is not None}
+        if len(owners) != 1:
+            return
+
+        resolved_arms: list[TypedMatchArmResolution] = []
+        expected_variants: tuple[str, ...] | None = None
+        for arm, resolution, binding_type in arm_rows:
+            if resolution is None:
+                return
+            owner, payload_type, expected = resolution
+            if expected_variants is None:
+                expected_variants = expected
+            elif expected_variants != expected:
+                return
+            resolved_arms.append(
+                TypedMatchArmResolution(
+                    arm=arm,
+                    owner=owner,
+                    variant=arm.variant,
+                    canonical_variant=f"{owner}::{arm.variant}",
+                    payload_type=payload_type,
+                    binding_type=binding_type,
+                )
+            )
+
+        seen = {item.variant for item in resolved_arms}
+        exhaustive = bool(expected_variants) and set(expected_variants).issubset(seen)
+        self.match_resolutions.append(
+            TypedMatchResolution(
+                expression=expression,
+                value_type=value_type,
+                arms=tuple(resolved_arms),
+                exhaustive=exhaustive,
+            )
+        )
+
+    def variant_payload(self, value_type: TypeNode, variant: str) -> TypeNode:
+        resolution = self.resolve_match_variant(value_type, variant)
+        if resolution is None:
+            return UNKNOWN
+        _, payload_type, _ = resolution
+        return UNKNOWN if payload_type is None else payload_type
 
 
 def lower_typed_hir(
