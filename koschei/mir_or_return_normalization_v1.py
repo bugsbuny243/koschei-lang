@@ -400,6 +400,8 @@ class _OrReturnFunctionLowerer(_FunctionLowerer):
                 continue
             if isinstance(statement, WhileStatement) and cls._supports_value_block(statement.body):
                 continue
+            if isinstance(statement, ForStatement) and cls._supports_value_block(statement.body):
+                continue
             return False
         return True
 
@@ -491,6 +493,80 @@ class _OrReturnFunctionLowerer(_FunctionLowerer):
         self._emit(MirLoad(target, result_name, result_type, statement.location))
         return target
 
+    def _lower_value_for(self, statement: ForStatement, result_type: TypeNode) -> int | None:
+        """Lower a for statement whose statement value is consumed by a block."""
+
+        iterable_type = self._type_of(statement.iterable)
+        item_type = iterable_success_item_type(iterable_type)
+        if item_type is None:
+            raise ValueError("value-position for requires a checked List iterable")
+
+        body_type = checked_block_normal_type(self.typed_report, statement.body)
+        initial = self._emit_unit(statement.location)
+        result_name = self._new_internal_binding_name("value_for_result")
+        self._emit(MirBind(result_name, initial, True, result_type, statement.location))
+
+        iterable = self._lower_expression(statement.iterable)
+        iterable_is_error = self._new_value()
+        self._emit(MirIsRuntimeError(iterable_is_error, iterable, BOOL, statement.location))
+        iterable_error_block = self._new_block()
+        iterator_init_block = self._new_block()
+        condition_block = self._new_block()
+        body_block = self._new_block()
+        final_join = self._new_block()
+        self._terminate(MirBranch(iterable_is_error, iterable_error_block, iterator_init_block))
+
+        self.current = iterable_error_block
+        self._emit(MirStore(result_name, iterable, result_type, statement.location))
+        self._terminate(MirJump(final_join))
+
+        self.current = iterator_init_block
+        iterator = self._new_value()
+        self._emit(
+            MirIterInit(
+                iterator,
+                iterable,
+                GenericType("Iterator", (item_type,)),
+                statement.location,
+            )
+        )
+        self._terminate(MirJump(condition_block))
+
+        self.current = condition_block
+        has_next = self._new_value()
+        self._emit(MirIterHasNext(has_next, iterator, BOOL, statement.location))
+        self._terminate(MirBranch(has_next, body_block, final_join))
+
+        self.current = body_block
+        self.scopes.append({})
+        self.loop_targets.append((final_join, condition_block))
+        try:
+            item = self._new_value()
+            self._emit(MirIterNext(item, iterator, item_type, statement.location))
+            binding_name = self._new_binding_name(statement.variable)
+            self._emit(MirBind(binding_name, item, False, item_type, statement.location))
+            body_value = self._lower_value_block(statement.body, statement.location, body_type)
+        finally:
+            self.loop_targets.pop()
+            self.scopes.pop()
+
+        if body_value is not None and self.blocks[self.current].terminator is None:
+            self._emit(MirStore(result_name, body_value, result_type, statement.location))
+            body_is_error = self._new_value()
+            self._emit(MirIsRuntimeError(body_is_error, body_value, BOOL, statement.location))
+            body_error_block = self._new_block()
+            continue_block = self._new_block()
+            self._terminate(MirBranch(body_is_error, body_error_block, continue_block))
+            self.current = body_error_block
+            self._terminate(MirJump(final_join))
+            self.current = continue_block
+            self._terminate(MirJump(condition_block))
+
+        self.current = final_join
+        target = self._new_value()
+        self._emit(MirLoad(target, result_name, result_type, statement.location))
+        return target
+
     def _lower_value_block(self, block: Block, empty_location: SourceLocation, result_type: TypeNode | None = None) -> int | None:
         self.scopes.append({})
         try:
@@ -519,6 +595,10 @@ class _OrReturnFunctionLowerer(_FunctionLowerer):
                 if result_type is None:
                     raise ValueError("value-position while requires canonical result type")
                 return self._lower_value_while(tail, result_type)
+            if isinstance(tail, ForStatement):
+                if result_type is None:
+                    raise ValueError("value-position for requires canonical result type")
+                return self._lower_value_for(tail, result_type)
             raise ValueError(f"proven value-block admission drifted: {type(tail).__name__}")
         finally:
             self.scopes.pop()
