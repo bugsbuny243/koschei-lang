@@ -123,7 +123,7 @@ class MirIterNext:
     location: SourceLocation
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True=True)
 class MirMember:
     target: int
     object: int
@@ -654,3 +654,10 @@ def validate_blocks(blocks: tuple[MirBasicBlock, ...]) -> None:
     missing = uses - definitions
     if missing:
         raise ValueError(f"MIR uses undefined values: {sorted(missing)}")
+
+    # Variant payload authority is part of the canonical MIR validity contract,
+    # not a backend/runtime concern. Import lazily to avoid a module cycle: the
+    # proof validator consumes MirBasicBlock/MirBranch definitions from here.
+    from .mir_variant_proof_v1 import validate_variant_proofs_v1
+
+    validate_variant_proofs_v1(blocks)
