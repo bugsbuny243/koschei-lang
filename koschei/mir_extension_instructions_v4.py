@@ -55,6 +55,28 @@ class MirIsRuntimeError:
 
 
 @dataclass(frozen=True, slots=True)
+class MirVariantIs:
+    """Compare one checked value against one compiler-selected variant identity."""
+
+    target: int
+    source: int
+    variant: str
+    type: TypeNode
+    location: SourceLocation
+
+
+@dataclass(frozen=True, slots=True)
+class MirVariantPayload:
+    """Extract payload only on a CFG path proven for the exact same variant."""
+
+    target: int
+    source: int
+    variant: str
+    type: TypeNode
+    location: SourceLocation
+
+
+@dataclass(frozen=True, slots=True)
 class MirMapNew:
     target: int
     type: TypeNode
@@ -112,6 +134,8 @@ MIR_V4_EXTENSION_INSTRUCTION_TYPES = (
     MirFalliblePayload,
     MirInterpolate,
     MirIsRuntimeError,
+    MirVariantIs,
+    MirVariantPayload,
     MirMapNew,
     MirMapInsert,
     MirMapFinish,
