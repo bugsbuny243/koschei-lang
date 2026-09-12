@@ -253,19 +253,29 @@ def infer_expression(checker, expression):
     if isinstance(expression, MatchExpression):
         value_type = checker.infer(expression.value)
         results = []
+        arm_rows = []
         for arm in expression.arms:
+            resolution = checker.resolve_match_variant(value_type, arm.variant)
+            payload_type = UNKNOWN if resolution is None else resolution[1]
+            binding_type = (
+                None
+                if arm.binding is None
+                else UNKNOWN if payload_type is None else payload_type
+            )
+            arm_rows.append((arm, resolution, binding_type))
             checker.scopes.append({})
             try:
                 if arm.binding is not None:
                     checker.declare(
                         arm.binding,
-                        checker.variant_payload(value_type, arm.variant),
+                        UNKNOWN if binding_type is None else binding_type,
                         arm.location,
                         "match-payload",
                     )
                 results.append(checker.infer(arm.body))
             finally:
                 checker.scopes.pop()
+        checker.record_match_resolution(expression, value_type, arm_rows)
         return checker.record(expression, union_type(*results))
 
     if isinstance(expression, AssignmentExpression):
