@@ -103,6 +103,35 @@ def test_payload_proof_is_lost_at_ambiguous_cfg_join():
         validate_variant_proofs_v1(blocks)
 
 
+def test_non_dominating_test_target_cannot_manufacture_payload_proof():
+    location = _loc()
+    blocks = (
+        MirBasicBlock(
+            0,
+            (MirConst(0, "enum-sentinel", INT, location),),
+            MirJump(2),
+        ),
+        MirBasicBlock(
+            1,
+            (MirVariantIs(1, 0, "Choice::Some", BOOL, location),),
+            MirReturn(1),
+        ),
+        MirBasicBlock(2, (), MirBranch(1, 3, 4)),
+        MirBasicBlock(
+            3,
+            (MirVariantPayload(2, 0, "Choice::Some", INT, location),),
+            MirReturn(2),
+        ),
+        MirBasicBlock(4, (), MirReturn(0)),
+    )
+
+    # The legacy structural SSA validator checks global definition/use, not
+    # dominance. The variant proof gate must therefore reject this shape.
+    validate_blocks(blocks)
+    with pytest.raises(ValueError, match="lacks exact proven predecessor path"):
+        validate_variant_proofs_v1(blocks)
+
+
 def test_visible_variant_name_without_owner_identity_fails_closed():
     location = _loc()
     blocks = (
