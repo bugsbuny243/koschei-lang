@@ -66,19 +66,19 @@ def test_variant_source_participates_in_existing_ssa_validation():
 def test_payload_is_allowed_only_on_matching_true_edge():
     blocks = _proven_blocks()
 
+    # Canonical MIR validation owns both structural SSA and variant-path proof.
     validate_blocks(blocks)
     validate_variant_proofs_v1(blocks)
 
 
-def test_payload_rejects_different_variant_than_predecessor_proof():
+def test_canonical_gate_rejects_different_variant_than_predecessor_proof():
     blocks = _proven_blocks("Choice::None")
 
-    validate_blocks(blocks)
     with pytest.raises(ValueError, match="lacks exact proven predecessor path"):
-        validate_variant_proofs_v1(blocks)
+        validate_blocks(blocks)
 
 
-def test_payload_proof_is_lost_at_ambiguous_cfg_join():
+def test_canonical_gate_loses_payload_proof_at_ambiguous_cfg_join():
     location = _loc()
     blocks = (
         MirBasicBlock(
@@ -98,12 +98,11 @@ def test_payload_proof_is_lost_at_ambiguous_cfg_join():
         ),
     )
 
-    validate_blocks(blocks)
     with pytest.raises(ValueError, match="lacks exact proven predecessor path"):
-        validate_variant_proofs_v1(blocks)
+        validate_blocks(blocks)
 
 
-def test_non_dominating_test_target_cannot_manufacture_payload_proof():
+def test_canonical_gate_rejects_non_dominating_test_target():
     location = _loc()
     blocks = (
         MirBasicBlock(
@@ -125,14 +124,13 @@ def test_non_dominating_test_target_cannot_manufacture_payload_proof():
         MirBasicBlock(4, (), MirReturn(0)),
     )
 
-    # The legacy structural SSA validator checks global definition/use, not
-    # dominance. The variant proof gate must therefore reject this shape.
-    validate_blocks(blocks)
+    # Global definition/use alone would admit %1 here. Canonical validation
+    # must not turn that non-dominating value into payload authority.
     with pytest.raises(ValueError, match="lacks exact proven predecessor path"):
-        validate_variant_proofs_v1(blocks)
+        validate_blocks(blocks)
 
 
-def test_visible_variant_name_without_owner_identity_fails_closed():
+def test_canonical_gate_rejects_visible_variant_name_without_owner_identity():
     location = _loc()
     blocks = (
         MirBasicBlock(
@@ -147,6 +145,5 @@ def test_visible_variant_name_without_owner_identity_fails_closed():
         MirBasicBlock(2, (), MirReturn(0)),
     )
 
-    validate_blocks(blocks)
     with pytest.raises(ValueError, match="canonical Owner::Variant"):
-        validate_variant_proofs_v1(blocks)
+        validate_blocks(blocks)
