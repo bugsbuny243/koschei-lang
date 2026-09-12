@@ -21,13 +21,14 @@ from .mir_container_staging_v1 import (
     MirStructNew,
     MirStructSet,
 )
-from .mir_extension_instructions_v4 import MirUnit
+from .mir_extension_instructions_v4 import MirUnit, MirVariantIs, MirVariantPayload
 from .mir_ir import (
     MirAstFallback, MirBinary, MirBind, MirBranch, MirCall, MirConst,
     MirIterHasNext, MirIterInit, MirIterNext, MirJump, MirList, MirLoad,
     MirMember, MirReturn, MirStore, MirUnary, MirUnreachable,
 )
 from .mir_or_return_normalization_v1 import MirFallibleIsSuccess, MirFalliblePayload, MirInterpolate
+from .mir_variant_runtime_v1 import MirVariantRuntimeError, variant_is_v1, variant_payload_v1
 from .runtime_primitive_facade_v1 import RuntimePrimitiveFacadeV1
 from .semantic import INT_MAX, INT_MIN
 from .type_system import alternatives, render_type
@@ -220,6 +221,30 @@ class MirExecutorV1:
             return
         if isinstance(instruction, MirIsRuntimeError):
             values[instruction.target] = self.primitives.is_runtime_error(values[instruction.source])
+            return
+        if isinstance(instruction, MirVariantIs):
+            try:
+                values[instruction.target] = variant_is_v1(
+                    values[instruction.source], instruction.variant
+                )
+            except MirVariantRuntimeError as error:
+                raise MirExecutionError(
+                    "KS5002",
+                    f"Canonical MIR variant comparison failed closed: {error}",
+                    instruction.location,
+                ) from error
+            return
+        if isinstance(instruction, MirVariantPayload):
+            try:
+                values[instruction.target] = variant_payload_v1(
+                    values[instruction.source], instruction.variant
+                )
+            except MirVariantRuntimeError as error:
+                raise MirExecutionError(
+                    "KS5002",
+                    f"Canonical MIR variant payload failed closed: {error}",
+                    instruction.location,
+                ) from error
             return
         if isinstance(instruction, MirMapNew):
             values[instruction.target] = self.primitives.map_builder()
