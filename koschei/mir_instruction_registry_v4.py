@@ -24,6 +24,8 @@ from .mir_extension_instructions_v4 import (
     MirStructNew,
     MirStructSet,
     MirUnit,
+    MirVariantIs,
+    MirVariantPayload,
 )
 from .mir_ir import (
     MirAstFallback,
@@ -50,6 +52,8 @@ MirInstructionV4: TypeAlias = (
     | MirFalliblePayload
     | MirInterpolate
     | MirIsRuntimeError
+    | MirVariantIs
+    | MirVariantPayload
     | MirMapNew
     | MirMapInsert
     | MirMapFinish
