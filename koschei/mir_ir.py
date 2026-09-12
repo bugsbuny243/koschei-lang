@@ -123,7 +123,7 @@ class MirIterNext:
     location: SourceLocation
 
 
-@dataclass(frozen=True, slots=True=True)
+@dataclass(frozen=True, slots=True)
 class MirMember:
     target: int
     object: int
