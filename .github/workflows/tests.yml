@@ -38,6 +38,15 @@ jobs:
           python --version > /tmp/koschei-validation-evidence/python-version.txt 2>&1
           go version > /tmp/koschei-validation-evidence/go-version.txt 2>&1
 
+      - name: Generate acquisition SBOM snapshot
+        run: |
+          python tools/acquisition_sbom_v1.py \
+            --output /tmp/koschei-acquisition-sbom.json
+          sha256sum /tmp/koschei-acquisition-sbom.json \
+            > /tmp/koschei-validation-evidence/acquisition-sbom.sha256
+          cp /tmp/koschei-acquisition-sbom.json \
+            /tmp/koschei-validation-evidence/acquisition-sbom.json
+
       - name: Run canonical full validation recipe
         run: |
           ks-local-validate \
