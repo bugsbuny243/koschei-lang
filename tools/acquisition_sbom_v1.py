@@ -35,26 +35,33 @@ def _docker_from_images(text: str) -> tuple[str, ...]:
         stripped = line.strip()
         if not stripped.upper().startswith("FROM "):
             continue
-        value = stripped.split()[1]
-        images.append(value)
+        images.append(stripped.split()[1])
     return tuple(images)
 
 
+def _normalize_docker_run(text: str) -> str:
+    return text.replace("\\\n", " ")
+
+
 def _docker_pip_packages(text: str) -> tuple[str, ...]:
+    normalized = _normalize_docker_run(text)
     packages: list[str] = []
-    for line in text.replace("\\\n", " ").splitlines():
-        if "python -m pip install" not in line:
-            continue
-        tail = line.split("python -m pip install", 1)[1]
-        tokens = [token for token in tail.strip().split() if not token.startswith("-")]
-        packages.extend(tokens)
+    for match in re.finditer(r"python -m pip install\s+(.+?)(?=\s+&&|$)", normalized):
+        tokens = match.group(1).strip().split()
+        for token in tokens:
+            if token.startswith("-"):
+                continue
+            packages.append(token)
     return tuple(packages)
 
 
 def _apt_packages(text: str) -> tuple[str, ...]:
-    normalized = text.replace("\\\n", " ")
+    normalized = _normalize_docker_run(text)
     packages: list[str] = []
-    for match in re.finditer(r"apt-get install\s+-y\s+--no-install-recommends\s+(.+?)(?:&&|$)", normalized):
+    for match in re.finditer(
+        r"apt-get install\s+-y\s+--no-install-recommends\s+(.+?)(?=\s+&&|$)",
+        normalized,
+    ):
         packages.extend(match.group(1).strip().split())
     return tuple(packages)
 
@@ -64,8 +71,8 @@ def _is_immutable_image(image: str) -> bool:
 
 
 def _is_exact_python_requirement(requirement: str) -> bool:
-    if requirement in {".", "-e"}:
-        return False
+    # Acquisition mode is deliberately stricter than normal packaging. A bare
+    # name, range or exact version without an artifact hash remains mutable.
     return "==" in requirement and "--hash=" in requirement
 
 
@@ -95,13 +102,13 @@ def build_sbom(root: Path) -> dict[str, object]:
         if not _is_immutable_image(image):
             mutable_roots.append(f"container-image:{image}")
     for req in build_requirements:
-        if "==" not in req:
+        if not _is_exact_python_requirement(req):
             mutable_roots.append(f"python-build:{req}")
     for package in apt_packages:
         if "=" not in package:
             mutable_roots.append(f"apt:{package}")
     for package in docker_pip_packages:
-        if package in {"pip", ".", "pytest"} or not _is_exact_python_requirement(package):
+        if not _is_exact_python_requirement(package):
             mutable_roots.append(f"docker-pip:{package}")
 
     payload: dict[str, object] = {
@@ -133,7 +140,9 @@ def build_sbom(root: Path) -> dict[str, object]:
         "mutable_roots": sorted(set(mutable_roots)),
     }
     payload["reproducible_inputs"] = not bool(payload["mutable_roots"])
-    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    canonical = json.dumps(
+        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    ).encode("utf-8")
     payload["sbom_sha256"] = _sha256_bytes(canonical)
     return payload
 
