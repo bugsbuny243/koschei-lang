@@ -1,10 +1,8 @@
 name: Koschei Compiler Tests
 
 # GitHub-hosted Actions are not part of the canonical validation boundary for
-# this repository. The hosted Free-plan allowance is unavailable, so automatic
-# push/PR runs would only create false-red status noise. Keep this workflow as a
-# manual fallback recipe; the real path is `ks-local-validate --profile full`
-# with receipt/evidence stored outside the checkout.
+# this repository. Keep this workflow as a manual reproducibility recipe only;
+# the authority remains `ks-local-validate --profile full` plus retained receipt.
 on:
   workflow_dispatch:
 
@@ -26,10 +24,19 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.21"
+          # Match the current production Docker toolchain. `native/go.mod`
+          # remains the language/module floor, not the acquisition build pin.
+          go-version: "1.24"
 
       - name: Install package and local validator dependencies
         run: python -m pip install -e . pytest
+
+      - name: Bind validation evidence to exact commit
+        run: |
+          mkdir -p /tmp/koschei-validation-evidence
+          git rev-parse HEAD > /tmp/koschei-validation-evidence/candidate-commit.txt
+          python --version > /tmp/koschei-validation-evidence/python-version.txt 2>&1
+          go version > /tmp/koschei-validation-evidence/go-version.txt 2>&1
 
       - name: Run canonical full validation recipe
         run: |
@@ -38,11 +45,18 @@ jobs:
             --output /tmp/koschei-local-validation.json \
             --evidence-dir /tmp/koschei-validation-evidence
 
+      - name: Hash validation receipt
+        if: always()
+        run: |
+          if [ -f /tmp/koschei-local-validation.json ]; then
+            sha256sum /tmp/koschei-local-validation.json > /tmp/koschei-validation-evidence/validation-receipt.sha256
+          fi
+
       - name: Upload sealed validation receipt
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: koschei-local-validation
+          name: koschei-local-validation-${{ github.sha }}
           path: |
             /tmp/koschei-local-validation.json
             /tmp/koschei-validation-evidence
