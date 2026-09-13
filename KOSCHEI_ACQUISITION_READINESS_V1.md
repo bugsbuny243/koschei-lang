@@ -16,9 +16,9 @@ Purpose: make technical acquisition readiness evidence-driven. A gate may be mar
 | Gate | Status | Current evidence | Closure requirement |
 | --- | --- | --- | --- |
 | Canonical compiler security authority | PARTIAL | Physics/Khar/Galaxy/MIR authority layers exist; Physics registry explicitly carries `authority=False` | Close remaining Laws 6/8/10/11/12 without creating parallel semantic authority |
-| Match semantic single-truth path | PARTIAL | `TypedMatchResolution`, `MirVariantIs`, `MirVariantPayload`, CFG proof validation, fail-closed runtime boundary, and `mir_canonical_lowering_v1.py` exist | Production `mir.py` must explicitly import/use the canonical lowering entry-point; then pin with regression tests and validation receipt |
-| Production MIR lowering entry-point | BLOCKER | `mir.py` calls `lower_function_blocks_v1(...)`; current import section does not explicitly bind that symbol | Wire `koschei.mir_canonical_lowering_v1.lower_function_blocks_v1` explicitly and prove supported `MatchExpression` no longer enters AST fallback |
-| Fresh full validation evidence | NEEDS_EXTERNAL_EVIDENCE | `ks-local-validate` is packaged as the local validation command | Produce and retain a fresh full-profile validation receipt for the exact acquisition candidate commit |
+| Match semantic single-truth path | PARTIAL | `TypedMatchResolution`, `MirVariantIs`, `MirVariantPayload`, CFG proof validation, fail-closed runtime boundary, canonical Match lowering, and production canonical entry-point wiring exist | Prove supported `MatchExpression` produces no AST fallback and preserve parity across sealed consumers |
+| Production MIR lowering entry-point | PARTIAL | `mir.py` now explicitly imports `koschei.mir_canonical_lowering_v1.lower_function_blocks_v1`; `tests/test_mir_canonical_entrypoint_v1.py` pins module identity | Run the regression under the full validation profile and retain the receipt for the exact candidate commit |
+| Fresh full validation evidence | NEEDS_EXTERNAL_EVIDENCE | `ks-local-validate` is packaged as the local validation command; hosted Actions currently provide no run evidence for this branch | Produce and retain a fresh full-profile validation receipt for the exact acquisition candidate commit |
 | Protected release branch | NEEDS_EXTERNAL_EVIDENCE | Current connector cannot read private-repository branch-protection/ruleset endpoints | Buyer data room must contain branch/ruleset export or equivalent administrative screenshot/API evidence showing required protections |
 | Reproducible acquisition candidate | BLOCKER | Current package metadata is `0.10.0`; public GitHub release remains `v0.9.0` prerelease with no assets | Cut a version-consistent candidate with immutable commit/tag identity, checksums, build recipe, validation receipt, and release artifacts |
 | Dependency attack surface | VERIFIED_SLICE | `pyproject.toml` declares zero runtime Python dependencies for compiler core | Add generated SBOM covering repository/build/native/tooling dependencies, not only Python runtime dependencies |
@@ -69,11 +69,10 @@ The final candidate record must bind at minimum:
 
 ## Immediate execution order
 
-1. Fix explicit production MIR lowering wiring and add regression coverage.
-2. Run/retain full validation evidence for the exact head.
-3. Generate third-party/SBOM inventory and historical-license revision map.
-4. Align package/release/tag identity for the next candidate; do not overwrite historical `v0.9.0` evidence.
-5. Add buyer-facing reproducible build and benchmark dossier.
-6. Close remaining Physics Laws 6/8/10/11/12 with evidence, not labels.
+1. Prove canonical Match production lowering under the full validation profile and retain the exact-head receipt.
+2. Generate third-party/SBOM inventory and historical-license revision map.
+3. Align package/release/tag identity for the next candidate; do not overwrite historical `v0.9.0` evidence.
+4. Add buyer-facing reproducible build and benchmark dossier.
+5. Close remaining Physics Laws 6/8/10/11/12 with evidence, not labels.
 
 This document is a technical due-diligence control, not legal advice and not a valuation statement.
