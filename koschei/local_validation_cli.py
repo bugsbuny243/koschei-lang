@@ -84,7 +84,10 @@ def _steps(profile: str, candidate: str, adversarial_json: Path) -> tuple[tuple[
             ),
         ),
         ("verify-script-syntax", ("bash", "-n", "verify.sh")),
-        ("repository-truth", ("bash", "verify.sh")),
+        (
+            "repository-truth",
+            (sys.executable, "tools/run_repository_truth_v4.py"),
+        ),
         (
             "adversarial-lab-v2",
             (
