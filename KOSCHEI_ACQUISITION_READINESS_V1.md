@@ -16,12 +16,12 @@ Purpose: make technical acquisition readiness evidence-driven. A gate may be mar
 | Gate | Status | Current evidence | Closure requirement |
 | --- | --- | --- | --- |
 | Canonical compiler security authority | PARTIAL | Physics/Khar/Galaxy/MIR authority layers exist; Physics registry explicitly carries `authority=False` | Close remaining Laws 6/8/10/11/12 without creating parallel semantic authority |
-| Match semantic single-truth path | PARTIAL | `TypedMatchResolution`, `MirVariantIs`, `MirVariantPayload`, CFG proof validation, fail-closed runtime boundary, canonical Match lowering, and production canonical entry-point wiring exist | Prove supported `MatchExpression` produces no AST fallback and preserve parity across sealed consumers |
-| Production MIR lowering entry-point | PARTIAL | `mir.py` now explicitly imports `koschei.mir_canonical_lowering_v1.lower_function_blocks_v1`; `tests/test_mir_canonical_entrypoint_v1.py` pins module identity | Run the regression under the full validation profile and retain the receipt for the exact candidate commit |
-| Fresh full validation evidence | NEEDS_EXTERNAL_EVIDENCE | `ks-local-validate` is packaged as the local validation command; hosted Actions currently provide no run evidence for this branch | Produce and retain a fresh full-profile validation receipt for the exact acquisition candidate commit |
-| Protected release branch | NEEDS_EXTERNAL_EVIDENCE | Current connector cannot read private-repository branch-protection/ruleset endpoints | Buyer data room must contain branch/ruleset export or equivalent administrative screenshot/API evidence showing required protections |
-| Reproducible acquisition candidate | BLOCKER | Current package metadata is `0.10.0`; public GitHub release remains `v0.9.0` prerelease with no assets | Cut a version-consistent candidate with immutable commit/tag identity, checksums, build recipe, validation receipt, and release artifacts |
-| Dependency attack surface | VERIFIED_SLICE | `pyproject.toml` declares zero runtime Python dependencies for compiler core | Add generated SBOM covering repository/build/native/tooling dependencies, not only Python runtime dependencies |
+| Match semantic single-truth path | PARTIAL | `TypedMatchResolution`, `MirVariantIs`, `MirVariantPayload`, CFG proof validation, fail-closed runtime boundary, canonical Match lowering, production canonical entry-point wiring and production-path no-fallback regression coverage exist | Execute the production regressions under the full validation profile and preserve parity across sealed consumers |
+| Production MIR lowering entry-point | PARTIAL | `mir.py` explicitly imports `koschei.mir_canonical_lowering_v1.lower_function_blocks_v1`; regression tests pin module identity and Match no-fallback intent | Run under the full validation profile and retain the receipt for the exact candidate commit |
+| Fresh full validation evidence | NEEDS_EXTERNAL_EVIDENCE | `ks-local-validate` is canonical; the manual workflow now binds candidate commit, Python/Go versions and receipt SHA-256 to uploaded evidence | Produce and retain a fresh full-profile validation receipt for the exact acquisition candidate commit |
+| Protected release branch | BLOCKER | Repository branch metadata reports `main` as `protected=false` with required status checks off | Enable and retain evidence for an appropriate protected release/main policy before buyer-ready status |
+| Reproducible acquisition candidate | BLOCKER | Package metadata is `0.10.0`; public GitHub release remains `v0.9.0` prerelease with no assets. `tools/acquisition_candidate_manifest_v1.py` now fail-closes on tag/version mismatch, dirty tree, missing evidence and absent signing scope | Produce the evidence set, use immutable dependency/build pins, generate the candidate manifest, cut a coherent tag/release and retain checksums/artifacts |
+| Dependency attack surface | VERIFIED_SLICE | `pyproject.toml` declares zero runtime Python dependencies for compiler core; `native/go.mod` has no external `require` entries | Generate a complete hash-bound SBOM covering build/container/OS/native/tooling/model surfaces |
 | Native/backend semantic parity | PARTIAL | Sealed MIR/native structures exist | Produce cross-consumer parity tests for interpreter/native/backend fingerprint and authorization semantics |
 | Fail-closed execution proofs | PARTIAL | Canonical proof/evidence mechanisms and variant CFG proof validation exist | Make proof-producing execution structurally authoritative on critical effect paths and retain verification fixtures |
 | Rollback/continuity resistance | PARTIAL | Continuity semantics exist | Bind accepted state to rollback-aware monotonic/external evidence appropriate to deployment model |
@@ -32,9 +32,9 @@ Purpose: make technical acquisition readiness evidence-driven. A gate may be mar
 | Gate | Status | Current evidence | Closure requirement |
 | --- | --- | --- | --- |
 | Current code license | VERIFIED_SLICE | Repository `LICENSE` states current/future code is proprietary and confidential unless separately licensed | Counsel/owner should confirm acquisition agreement transfers all relevant rights and confidential materials |
-| Historical public licensing | PARTIAL | `LICENSE` explicitly states earlier publicly released MIT revisions remain under their historical terms | Produce a revision/tag map identifying exactly which historical commits were MIT-public and which code lineage is proprietary |
+| Historical public licensing | PARTIAL | `KOSCHEI_LICENSE_LINEAGE_V1.md` records the repository boundary: parent `30086337...` still carries MIT; transition commit `661798a8...` replaces it with proprietary terms while preserving historical grants | Retain public release/publication history showing which historical revisions were actually distributed under MIT |
 | Chain of title | NEEDS_EXTERNAL_EVIDENCE | Repository metadata names an author/copyright holder, but source control alone cannot prove complete legal ownership | Collect contributor/contractor assignments, employment/IP agreements if applicable, and signed owner attestation |
-| Third-party code/license inventory | BLOCKER | License notice acknowledges third-party components may exist, but this gate has no complete inventory yet | Generate SBOM + NOTICE/attribution inventory + provenance for vendored/native/model/tooling components |
+| Third-party code/license inventory | PARTIAL | `KOSCHEI_THIRD_PARTY_PROVENANCE_V1.md` records Python, Go, container, OS and packaging surfaces and identifies current unpinned build dependencies | Generate SBOM + NOTICE/attribution inventory + immutable provenance for the exact candidate |
 | Trademark/domain/account transfer | NEEDS_EXTERNAL_EVIDENCE | Not provable from source | Inventory names, domains, package registries, social accounts, signing identities, cloud accounts, and transfer procedures |
 
 ## P1 commercial engineering gates
@@ -67,12 +67,15 @@ The final candidate record must bind at minimum:
 - licensing/chain-of-title evidence index;
 - date and toolchain/environment metadata.
 
+`tools/acquisition_candidate_manifest_v1.py` is the fail-closed binder for this evidence set. It is a packaging/provenance mechanism, not a readiness oracle.
+
 ## Immediate execution order
 
-1. Prove canonical Match production lowering under the full validation profile and retain the exact-head receipt.
-2. Generate third-party/SBOM inventory and historical-license revision map.
-3. Align package/release/tag identity for the next candidate; do not overwrite historical `v0.9.0` evidence.
-4. Add buyer-facing reproducible build and benchmark dossier.
+1. Execute canonical Match production lowering under the full validation profile and retain the exact-head receipt.
+2. Produce the complete hash-bound SBOM/NOTICE from the existing third-party inventory.
+3. Pin acquisition build inputs and align package/release/tag identity for `0.10.0`; do not overwrite historical `v0.9.0` evidence.
+4. Add buyer-facing reproducible build, benchmark dossier and threat model artifacts, then seal them with the candidate manifest.
 5. Close remaining Physics Laws 6/8/10/11/12 with evidence, not labels.
+6. Enable release/main protection appropriate to the final acquisition candidate and retain administrative evidence.
 
 This document is a technical due-diligence control, not legal advice and not a valuation statement.
