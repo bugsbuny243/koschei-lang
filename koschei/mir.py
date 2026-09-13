@@ -24,6 +24,7 @@ from .ast_nodes import Expression, FunctionDeclaration, Program, SourceLocation
 from .capability_effect_contract_v1 import CANONICAL_CAPABILITY_EFFECTS
 from .diagnostics import CATALOG, ENGLISH_CATALOG, Diagnostic
 from .effect_contracts_v1 import EffectReport, FunctionEffects
+from .mir_canonical_lowering_v1 import lower_function_blocks_v1
 from .mir_ir import (
     MirAstFallback,
     MirBasicBlock,
