@@ -113,3 +113,37 @@ fn main() {
     _assert_native_admitted(mir)
     assert run_mir_with_budget(mir) == 0
     assert capsys.readouterr().out == "99\n"
+
+
+def test_payload_free_user_enum_value_is_canonicalized_before_match(tmp_path, capsys) -> None:
+    source = tmp_path / "main.ks"
+    source.write_text(
+        """
+enum State {
+    Ready(Int),
+    Idle,
+}
+
+fn main() {
+    println(match Idle {
+        Ready(value) => value,
+        Idle => 5,
+    })
+}
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    graph = load_graph(source)
+    check_graph(graph)
+    mir = require_mir(graph)
+
+    constructors = [
+        item for item in _instructions(mir) if isinstance(item, MirVariantConstruct)
+    ]
+    assert [item.variant for item in constructors] == ["State::Idle"]
+    assert constructors[0].source is None
+    _assert_native_admitted(mir)
+    assert run_mir_with_budget(mir) == 0
+    assert capsys.readouterr().out == "5\n"
