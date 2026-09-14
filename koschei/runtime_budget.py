@@ -1,9 +1,10 @@
 """Fail-closed runtime resource budgets for Koschei V5.
 
-Normalized graphs that the direct MIR runtime can execute are now routed through
-that backend. Graphs containing not-yet-normalized language constructs remain on
-the checked AST compatibility interpreter. Both paths preserve explicit step and
-call-depth budgets; the selected mode is deterministic and inspectable.
+Normalized graphs that the direct MIR runtime can execute are routed through
+that backend. Legacy graphs containing not-yet-normalized language constructs
+may remain on the checked AST compatibility interpreter, but compiler-owned
+canonical runtime facts may never be re-derived there. Both paths preserve
+explicit step and call-depth budgets.
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ from typing import Any, Literal
 from .ast_nodes import SourceLocation
 from .diagnostics import CATALOG, ENGLISH_CATALOG, Diagnostic
 from .interpreter import Interpreter, KoscheiRuntimeError, KsError
+from .mir_extension_instructions_v4 import MirVariantIs, MirVariantPayload
 from .mir_native_runtime import (
     MirNativeCallDepthExceeded,
     MirNativeProgramError,
@@ -116,6 +118,27 @@ def runtime_execution_mode(mir_graph) -> RuntimeExecutionMode:
     return "mir_native_v1" if native.supported and scope.safe else "ast_compat_v1"
 
 
+def _requires_canonical_mir_runtime_v1(mir_graph) -> bool:
+    """Return whether execution owns facts that AST compatibility may not re-derive.
+
+    Variant identity is compiler-owned after Typed-HIR resolution. Once emitted
+    as ``Owner::Variant`` MIR facts, routing the same program back through the AST
+    interpreter would create a second semantic authority. This guard is narrow on
+    purpose and should grow only when another normalized instruction becomes a
+    canonical execution fact.
+    """
+
+    for module in mir_graph.in_dependency_order():
+        for function in module.functions:
+            for block in function.blocks:
+                if any(
+                    isinstance(instruction, (MirVariantIs, MirVariantPayload))
+                    for instruction in block.instructions
+                ):
+                    return True
+    return False
+
+
 def run_mir_with_budget(
     mir_graph,
     argv: list[str] | None = None,
@@ -127,7 +150,8 @@ def run_mir_with_budget(
 
     mir_graph.assert_sealed()
     budget = RuntimeBudget(max_steps=max_steps, max_call_depth=max_call_depth)
-    if runtime_execution_mode(mir_graph) == "mir_native_v1":
+    mode = runtime_execution_mode(mir_graph)
+    if mode == "mir_native_v1":
         try:
             return run_mir_native(
                 mir_graph,
@@ -157,6 +181,20 @@ def run_mir_with_budget(
                 f"Native MIR runtime sözleşmesi ihlal edildi: {exc}",
                 SourceLocation(1, 1),
             ) from exc
+
+    if _requires_canonical_mir_runtime_v1(mir_graph):
+        native = inspect_native_mir_support(mir_graph)
+        scope = inspect_mir_scope_safety(mir_graph)
+        blockers = list(native.reasons)
+        if not scope.safe:
+            blockers.extend(scope.reasons)
+        detail = "; ".join(dict.fromkeys(blockers)) or "native runtime admission failed"
+        raise KoscheiRuntimeError(
+            "KS5002",
+            "Canonical MIR execution fact exists; AST compatibility fallback is "
+            f"forbidden. Native blockers: {detail}",
+            SourceLocation(1, 1),
+        )
 
     root = mir_graph.root_module
     result = BudgetedInterpreter(
