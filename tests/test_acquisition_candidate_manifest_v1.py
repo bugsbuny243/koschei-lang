@@ -12,6 +12,7 @@ from koschei.local_validation_v1 import (
     seal_local_validation_step_v1,
 )
 from tools import acquisition_candidate_manifest_v1 as candidate
+from tools.reproducible_artifact_receipt_v1 import build_receipt
 
 
 ZERO64 = "0" * 64
@@ -56,6 +57,17 @@ def _write_sbom(path: Path, version: str, *, reproducible: bool = True) -> None:
     path.write_text(json.dumps(payload), encoding="utf-8")
 
 
+def _write_reproducibility_receipt(
+    path: Path, artifact: Path, commit: str
+) -> None:
+    mirror = path.with_name("independent-build-copy.bin")
+    mirror.write_bytes(artifact.read_bytes())
+    path.write_text(
+        json.dumps(build_receipt(artifact, mirror, commit)),
+        encoding="utf-8",
+    )
+
+
 def _evidence_files(tmp_path: Path, commit: str = "a" * 40) -> dict[str, Path]:
     result: dict[str, Path] = {}
     for name in (
@@ -68,9 +80,15 @@ def _evidence_files(tmp_path: Path, commit: str = "a" * 40) -> dict[str, Path]:
         path = tmp_path / f"{name}.bin"
         path.write_bytes(name.encode("utf-8"))
         result[name] = path
+
     receipt = tmp_path / "validation_receipt.json"
     _write_receipt(receipt, commit)
     result["validation_receipt"] = receipt
+
+    repro = tmp_path / "reproducibility_receipt.json"
+    _write_reproducibility_receipt(repro, result["build_artifact"], commit)
+    result["reproducibility_receipt"] = repro
+
     sbom = tmp_path / "sbom.json"
     _write_sbom(sbom, "0.10.0")
     result["sbom"] = sbom
@@ -146,6 +164,23 @@ def test_mutable_sbom_fails_closed(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(candidate, "require_clean_tree", lambda root: None)
     monkeypatch.setattr(candidate, "git_head", lambda root: "a" * 40)
     with pytest.raises(ValueError, match="reproducible production inputs"):
+        candidate.build_manifest(
+            root=tmp_path,
+            tag="v0.10.0",
+            signing_identity="not-deployed: acquisition candidate only",
+            **evidence,
+        )
+
+
+def test_reproducibility_receipt_must_match_build_artifact(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    _root(tmp_path)
+    evidence = _evidence_files(tmp_path)
+    evidence["build_artifact"].write_bytes(b"tampered-after-receipt")
+    monkeypatch.setattr(candidate, "require_clean_tree", lambda root: None)
+    monkeypatch.setattr(candidate, "git_head", lambda root: "a" * 40)
+    with pytest.raises(ValueError, match="artifact digest mismatch"):
         candidate.build_manifest(
             root=tmp_path,
             tag="v0.10.0",
