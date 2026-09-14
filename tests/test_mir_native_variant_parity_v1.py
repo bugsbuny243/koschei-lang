@@ -6,7 +6,7 @@ from koschei.ast_nodes import SourceLocation
 from koschei.interpreter import EnumValue
 from koschei.mir import require_mir
 from koschei.mir_extension_instructions_v4 import MirVariantIs, MirVariantPayload
-from koschei.mir_native_runtime import MirNativeRuntimeError, _MirExecutor
+from koschei.mir_native_runtime import MirNativeRuntimeError, _BuiltinRef, _MirExecutor
 from koschei.modules import check_graph, load_graph
 from koschei.type_system import BOOL, INT
 
@@ -96,3 +96,36 @@ def test_native_variant_runtime_rejects_visible_only_identity(tmp_path) -> None:
             set(),
             mir.root,
         )
+
+
+def test_native_builtin_option_constructors_emit_canonical_owner(tmp_path) -> None:
+    _mir, executor = _executor_for_minimal_graph(tmp_path)
+
+    some = executor._invoke(_BuiltinRef("Some"), [41])
+    none = executor._invoke(_BuiltinRef("None"), [])
+
+    assert isinstance(some, EnumValue)
+    assert (some.enum_name, some.variant, some.payload) == ("Option", "Some", 41)
+    assert isinstance(none, EnumValue)
+    assert (none.enum_name, none.variant) == ("Option", "None")
+
+
+def test_native_builtin_result_constructors_emit_canonical_owner(tmp_path) -> None:
+    _mir, executor = _executor_for_minimal_graph(tmp_path)
+
+    ok = executor._invoke(_BuiltinRef("Ok"), [41])
+    err = executor._invoke(_BuiltinRef("Err"), ["boom"])
+
+    assert isinstance(ok, EnumValue)
+    assert (ok.enum_name, ok.variant, ok.payload) == ("Result", "Ok", 41)
+    assert isinstance(err, EnumValue)
+    assert (err.enum_name, err.variant, err.payload) == ("Result", "Err", "boom")
+
+
+def test_native_builtin_variant_constructor_arity_fails_closed(tmp_path) -> None:
+    _mir, executor = _executor_for_minimal_graph(tmp_path)
+
+    with pytest.raises(MirNativeRuntimeError, match="Some expects one argument"):
+        executor._invoke(_BuiltinRef("Some"), [])
+    with pytest.raises(MirNativeRuntimeError, match="None expects zero arguments"):
+        executor._invoke(_BuiltinRef("None"), [1])
