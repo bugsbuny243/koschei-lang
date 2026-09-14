@@ -1,9 +1,20 @@
 from __future__ import annotations
 
 from koschei.mir import require_mir
-from koschei.mir_native_runtime import inspect_native_mir_support
+from koschei.mir_extension_instructions_v4 import MirVariantConstruct
+from koschei.mir_native_variant_construct_v1 import inspect_native_mir_support
 from koschei.modules import check_graph, load_graph
 from koschei.runtime_budget import run_mir_with_budget, runtime_execution_mode
+
+
+def _instructions(mir):
+    return tuple(
+        instruction
+        for module in mir.in_dependency_order()
+        for function in module.functions
+        for block in function.blocks
+        for instruction in block.instructions
+    )
 
 
 def test_option_match_runs_source_to_native_without_ast_compat(tmp_path, capsys) -> None:
@@ -25,6 +36,8 @@ fn main() {
     check_graph(graph)
     mir = require_mir(graph)
 
+    constructors = [item for item in _instructions(mir) if isinstance(item, MirVariantConstruct)]
+    assert [item.variant for item in constructors] == ["Option::Some"]
     support = inspect_native_mir_support(mir)
     assert support.supported, support.reasons
     assert runtime_execution_mode(mir) == "mir_native_v1"
@@ -51,8 +64,43 @@ fn main() {
     check_graph(graph)
     mir = require_mir(graph)
 
+    constructors = [item for item in _instructions(mir) if isinstance(item, MirVariantConstruct)]
+    assert [item.variant for item in constructors] == ["Result::Ok"]
     support = inspect_native_mir_support(mir)
     assert support.supported, support.reasons
     assert runtime_execution_mode(mir) == "mir_native_v1"
     assert run_mir_with_budget(mir) == 0
     assert capsys.readouterr().out == "7\n"
+
+
+def test_user_enum_match_runs_source_to_native_with_exact_owner(tmp_path, capsys) -> None:
+    source = tmp_path / "main.ks"
+    source.write_text(
+        """
+enum State {
+    Ready(Int),
+    Idle,
+}
+
+fn main() {
+    println(match Ready(99) {
+        Ready(value) => value,
+        Idle => 0,
+    })
+}
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    graph = load_graph(source)
+    check_graph(graph)
+    mir = require_mir(graph)
+
+    constructors = [item for item in _instructions(mir) if isinstance(item, MirVariantConstruct)]
+    assert [item.variant for item in constructors] == ["State::Ready"]
+    support = inspect_native_mir_support(mir)
+    assert support.supported, support.reasons
+    assert runtime_execution_mode(mir) == "mir_native_v1"
+    assert run_mir_with_budget(mir) == 0
+    assert capsys.readouterr().out == "99\n"
