@@ -1,20 +1,66 @@
 from __future__ import annotations
 
+from dataclasses import asdict
 import hashlib
+import json
 from pathlib import Path
 
 import pytest
 
+from koschei.local_validation_v1 import (
+    seal_local_validation_receipt_v1,
+    seal_local_validation_step_v1,
+)
 from tools import acquisition_candidate_manifest_v1 as candidate
 
 
-def _evidence_files(tmp_path: Path) -> dict[str, Path]:
-    result = {}
+ZERO64 = "0" * 64
+
+
+def _write_release_inputs(root: Path) -> None:
+    for name in candidate.RELEASE_INPUTS:
+        (root / name).write_text(f"{name}\n", encoding="utf-8")
+
+
+def _write_receipt(path: Path, commit: str) -> None:
+    step = seal_local_validation_step_v1(
+        step_id="fixture",
+        command=("fixture",),
+        returncode=0,
+        stdout_sha256=ZERO64,
+        stderr_sha256=ZERO64,
+    )
+    receipt = seal_local_validation_receipt_v1(
+        source_commit=commit,
+        checkout_clean=True,
+        profile="full",
+        python_version="3.12.fixture",
+        go_version="go1.24.fixture",
+        platform="linux-amd64-fixture",
+        steps=(step,),
+    )
+    path.write_text(json.dumps(asdict(receipt)), encoding="utf-8")
+
+
+def _write_sbom(path: Path, version: str, *, reproducible: bool = True) -> None:
+    payload = {
+        "schema": "koschei.acquisition-sbom/v1",
+        "project": {"version": version},
+        "reproducible_inputs": reproducible,
+        "mutable_roots": [] if reproducible else ["fixture:mutable"],
+    }
+    canonical = json.dumps(
+        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    ).encode("utf-8")
+    payload["sbom_sha256"] = hashlib.sha256(canonical).hexdigest()
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+
+def _evidence_files(tmp_path: Path, commit: str = "a" * 40) -> dict[str, Path]:
+    result: dict[str, Path] = {}
     for name in (
         "source_archive",
         "build_artifact",
-        "validation_receipt",
-        "sbom",
         "benchmark_dossier",
         "threat_model",
         "license_lineage",
@@ -22,15 +68,27 @@ def _evidence_files(tmp_path: Path) -> dict[str, Path]:
         path = tmp_path / f"{name}.bin"
         path.write_bytes(name.encode("utf-8"))
         result[name] = path
+    receipt = tmp_path / "validation_receipt.json"
+    _write_receipt(receipt, commit)
+    result["validation_receipt"] = receipt
+    sbom = tmp_path / "sbom.json"
+    _write_sbom(sbom, "0.10.0")
+    result["sbom"] = sbom
     return result
+
+
+def _root(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "koschei-lang"\nversion = "0.10.0"\n',
+        encoding="utf-8",
+    )
+    _write_release_inputs(tmp_path)
 
 
 def test_evidence_record_binds_size_and_sha256(tmp_path: Path):
     path = tmp_path / "evidence.bin"
     path.write_bytes(b"koschei-evidence")
-
     record = candidate.evidence_record(path)
-
     assert record["bytes"] == len(b"koschei-evidence")
     assert record["sha256"] == hashlib.sha256(b"koschei-evidence").hexdigest()
 
@@ -40,13 +98,10 @@ def test_missing_evidence_fails_closed(tmp_path: Path):
         candidate.evidence_record(tmp_path / "missing.json")
 
 
-def test_candidate_manifest_binds_exact_version_commit_and_all_evidence(
+def test_candidate_manifest_binds_exact_version_commit_evidence_and_release_inputs(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
-    (tmp_path / "pyproject.toml").write_text(
-        '[project]\nname = "koschei-lang"\nversion = "0.10.0"\n',
-        encoding="utf-8",
-    )
+    _root(tmp_path)
     evidence = _evidence_files(tmp_path)
     monkeypatch.setattr(candidate, "require_clean_tree", lambda root: None)
     monkeypatch.setattr(candidate, "git_head", lambda root: "a" * 40)
@@ -64,18 +119,48 @@ def test_candidate_manifest_binds_exact_version_commit_and_all_evidence(
     assert manifest["version"] == "0.10.0"
     assert manifest["tag"] == "v0.10.0"
     assert set(manifest["evidence"]) == set(evidence)
+    assert set(manifest["release_inputs"]) == set(candidate.RELEASE_INPUTS)
     assert len(manifest["manifest_sha256"]) == 64
 
 
-def test_version_tag_mismatch_fails_closed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    (tmp_path / "pyproject.toml").write_text(
-        '[project]\nname = "koschei-lang"\nversion = "0.10.0"\n',
-        encoding="utf-8",
-    )
+def test_receipt_for_different_commit_fails_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    _root(tmp_path)
+    evidence = _evidence_files(tmp_path, commit="b" * 40)
+    monkeypatch.setattr(candidate, "require_clean_tree", lambda root: None)
+    monkeypatch.setattr(candidate, "git_head", lambda root: "a" * 40)
+    with pytest.raises(ValueError, match="validation receipt is not release-valid"):
+        candidate.build_manifest(
+            root=tmp_path,
+            tag="v0.10.0",
+            signing_identity="not-deployed: acquisition candidate only",
+            **evidence,
+        )
+
+
+def test_mutable_sbom_fails_closed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    _root(tmp_path)
+    evidence = _evidence_files(tmp_path)
+    _write_sbom(evidence["sbom"], "0.10.0", reproducible=False)
+    monkeypatch.setattr(candidate, "require_clean_tree", lambda root: None)
+    monkeypatch.setattr(candidate, "git_head", lambda root: "a" * 40)
+    with pytest.raises(ValueError, match="reproducible production inputs"):
+        candidate.build_manifest(
+            root=tmp_path,
+            tag="v0.10.0",
+            signing_identity="not-deployed: acquisition candidate only",
+            **evidence,
+        )
+
+
+def test_version_tag_mismatch_fails_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    _root(tmp_path)
     evidence = _evidence_files(tmp_path)
     monkeypatch.setattr(candidate, "require_clean_tree", lambda root: None)
-    monkeypatch.setattr(candidate, "git_head", lambda root: "b" * 40)
-
+    monkeypatch.setattr(candidate, "git_head", lambda root: "a" * 40)
     with pytest.raises(ValueError, match="tag/version mismatch"):
         candidate.build_manifest(
             root=tmp_path,
@@ -85,15 +170,13 @@ def test_version_tag_mismatch_fails_closed(tmp_path: Path, monkeypatch: pytest.M
         )
 
 
-def test_empty_signing_scope_is_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    (tmp_path / "pyproject.toml").write_text(
-        '[project]\nname = "koschei-lang"\nversion = "0.10.0"\n',
-        encoding="utf-8",
-    )
+def test_empty_signing_scope_is_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    _root(tmp_path)
     evidence = _evidence_files(tmp_path)
     monkeypatch.setattr(candidate, "require_clean_tree", lambda root: None)
-    monkeypatch.setattr(candidate, "git_head", lambda root: "c" * 40)
-
+    monkeypatch.setattr(candidate, "git_head", lambda root: "a" * 40)
     with pytest.raises(ValueError, match="signing identity must be explicit"):
         candidate.build_manifest(
             root=tmp_path,
