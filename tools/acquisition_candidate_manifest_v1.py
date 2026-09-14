@@ -1,22 +1,34 @@
 #!/usr/bin/env python3
 """Create a fail-closed acquisition-candidate evidence manifest.
 
-This tool does not decide that a candidate is buyer-ready. It binds already
-produced evidence files to one immutable Git commit and package version so a
-reviewer can verify that release, validation, SBOM, benchmark and threat-model
-artifacts all refer to the same candidate.
+The manifest binds one immutable Git commit, package version, release inputs and
+already-produced evidence. Validation/SBOM files are not trusted by filename:
+their internal commit/version/reproducibility claims are verified first.
 """
 from __future__ import annotations
 
 import argparse
+from dataclasses import asdict
 import hashlib
 import json
 from pathlib import Path
 import subprocess
 import tomllib
 
+from koschei.local_validation_v1 import (
+    LocalValidationReceiptV1,
+    LocalValidationStepV1,
+)
+
 REPOSITORY = "bugsbuny243/koschei-lang"
 SCHEMA = "koschei.acquisition-candidate/v1"
+SBOM_SCHEMA = "koschei.acquisition-sbom/v1"
+RELEASE_INPUTS = (
+    "Dockerfile.production",
+    "production-container-lock.json",
+    "production-build-bootstrap.txt",
+    "production-build-requirements.txt",
+)
 
 
 def sha256_file(path: Path) -> str:
@@ -62,6 +74,67 @@ def evidence_record(path: Path) -> dict[str, object]:
     }
 
 
+def _json_object(path: Path, label: str) -> dict[str, object]:
+    if not path.is_file():
+        raise ValueError(f"required acquisition evidence is missing: {path}")
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"{label} is not valid JSON") from exc
+    if not isinstance(value, dict):
+        raise ValueError(f"{label} must be a JSON object")
+    return value
+
+
+def _validation_receipt(path: Path, commit: str) -> None:
+    payload = _json_object(path, "validation receipt")
+    try:
+        steps = tuple(
+            LocalValidationStepV1(**step) for step in payload.get("steps", ())
+        )
+        receipt = LocalValidationReceiptV1(
+            source_commit=payload["source_commit"],
+            checkout_clean=payload["checkout_clean"],
+            profile=payload["profile"],
+            python_version=payload["python_version"],
+            go_version=payload["go_version"],
+            platform=payload["platform"],
+            steps=steps,
+            passed=payload["passed"],
+            release_eligible=payload["release_eligible"],
+            authority=payload["authority"],
+            digest=payload["digest"],
+            version=payload.get("version", 1),
+        )
+        receipt.require_for_release(commit)
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError(f"validation receipt is not release-valid: {exc}") from exc
+
+
+def _sbom(path: Path, version: str) -> None:
+    payload = _json_object(path, "SBOM")
+    if payload.get("schema") != SBOM_SCHEMA:
+        raise ValueError("SBOM schema mismatch")
+    project = payload.get("project")
+    if not isinstance(project, dict) or project.get("version") != version:
+        raise ValueError("SBOM belongs to a different package version")
+    if payload.get("reproducible_inputs") is not True:
+        raise ValueError("SBOM does not prove reproducible production inputs")
+    if payload.get("mutable_roots") != []:
+        raise ValueError("SBOM still reports mutable production roots")
+    supplied = payload.get("sbom_sha256")
+    if not isinstance(supplied, str) or len(supplied) != 64:
+        raise ValueError("SBOM digest is missing")
+    unsigned = dict(payload)
+    unsigned.pop("sbom_sha256", None)
+    canonical = json.dumps(
+        unsigned, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    ).encode("utf-8")
+    actual = hashlib.sha256(canonical).hexdigest()
+    if actual != supplied:
+        raise ValueError("SBOM digest mismatch")
+
+
 def build_manifest(
     *,
     root: Path,
@@ -88,6 +161,9 @@ def build_manifest(
             "signing identity must be explicit; use a scoped 'not-deployed' statement if necessary"
         )
 
+    _validation_receipt(validation_receipt, commit)
+    _sbom(sbom, version)
+
     evidence = {
         "source_archive": evidence_record(source_archive),
         "build_artifact": evidence_record(build_artifact),
@@ -97,6 +173,9 @@ def build_manifest(
         "threat_model": evidence_record(threat_model),
         "license_lineage": evidence_record(license_lineage),
     }
+    release_inputs = {
+        relative: evidence_record(root / relative) for relative in RELEASE_INPUTS
+    }
     payload: dict[str, object] = {
         "schema": SCHEMA,
         "repository": REPOSITORY,
@@ -104,6 +183,7 @@ def build_manifest(
         "version": version,
         "tag": tag,
         "signing_identity": signing_identity.strip(),
+        "release_inputs": release_inputs,
         "evidence": evidence,
     }
     canonical = json.dumps(
