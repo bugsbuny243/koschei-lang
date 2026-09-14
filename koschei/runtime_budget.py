@@ -16,8 +16,12 @@ from typing import Any, Literal
 from .ast_nodes import SourceLocation
 from .diagnostics import CATALOG, ENGLISH_CATALOG, Diagnostic
 from .interpreter import Interpreter, KoscheiRuntimeError, KsError
-from .mir_extension_instructions_v4 import MirVariantIs, MirVariantPayload
-from .mir_native_runtime import (
+from .mir_extension_instructions_v4 import (
+    MirVariantConstruct,
+    MirVariantIs,
+    MirVariantPayload,
+)
+from .mir_native_variant_construct_v1 import (
     MirNativeCallDepthExceeded,
     MirNativeProgramError,
     MirNativeRuntimeError,
@@ -121,18 +125,19 @@ def runtime_execution_mode(mir_graph) -> RuntimeExecutionMode:
 def _requires_canonical_mir_runtime_v1(mir_graph) -> bool:
     """Return whether execution owns facts that AST compatibility may not re-derive.
 
-    Variant identity is compiler-owned after Typed-HIR resolution. Once emitted
-    as ``Owner::Variant`` MIR facts, routing the same program back through the AST
-    interpreter would create a second semantic authority. This guard is narrow on
-    purpose and should grow only when another normalized instruction becomes a
-    canonical execution fact.
+    Variant construction/test/payload identity is compiler-owned once sealed as
+    ``Owner::Variant`` MIR facts. Routing the same program back through the AST
+    interpreter would create a second semantic authority.
     """
 
     for module in mir_graph.in_dependency_order():
         for function in module.functions:
             for block in function.blocks:
                 if any(
-                    isinstance(instruction, (MirVariantIs, MirVariantPayload))
+                    isinstance(
+                        instruction,
+                        (MirVariantConstruct, MirVariantIs, MirVariantPayload),
+                    )
                     for instruction in block.instructions
                 ):
                     return True
