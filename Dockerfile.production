@@ -46,10 +46,12 @@ RUN python -m pip install \
 WORKDIR /src
 COPY . .
 
+# The immutable source commit is supplied by the release orchestrator and then
+# embedded into the staging manifest. This build never assumes that .git is
+# present inside the container context.
 ARG RELEASE_GIT_COMMIT_SHA
 RUN set -eux; \
     test -n "${RELEASE_GIT_COMMIT_SHA}"; \
-    test "$(git rev-parse HEAD 2>/dev/null || printf '%s' "${RELEASE_GIT_COMMIT_SHA}")" = "${RELEASE_GIT_COMMIT_SHA}" || true; \
     python tools/build_solohost_binary_v1.py --mode onefile --output out/build; \
     BIN="$(find out/build -type f -name ks -perm -111 | head -n1)"; \
     test -n "$BIN"; \
