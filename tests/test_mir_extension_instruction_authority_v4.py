@@ -10,6 +10,8 @@ from koschei.mir_extension_instructions_v4 import (
     MirIsRuntimeError,
     MirMapInsert,
     MirUnit,
+    MirVariantIs,
+    MirVariantPayload,
 )
 from koschei.mir_instruction_registry_v4 import (
     MIR_V4_EXTENSION_INSTRUCTION_TYPES as RegistryExtensionTypes,
@@ -39,6 +41,8 @@ def test_extension_instruction_authority_has_no_duplicate_class_names():
         "MirFalliblePayload",
         "MirInterpolate",
         "MirIsRuntimeError",
+        "MirVariantIs",
+        "MirVariantPayload",
         "MirMapNew",
         "MirMapInsert",
         "MirMapFinish",
@@ -55,6 +59,12 @@ def test_v4_registry_reuses_extension_authority_instead_of_copying_it():
         MirInterpolate(3, (1, 2), STRING, location)
     )
     assert is_mir_v4_extension_instruction(MirUnit(4, VOID, location))
+    assert is_mir_v4_extension_instruction(
+        MirVariantIs(5, 4, "Option::Some", BOOL, location)
+    )
+    assert is_mir_v4_extension_instruction(
+        MirVariantPayload(6, 4, "Option::Some", STRING, location)
+    )
 
 
 def test_unit_instruction_contract_is_canonical_and_host_opaque():
