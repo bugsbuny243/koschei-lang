@@ -272,7 +272,13 @@ def infer_expression(checker, expression):
                         arm.location,
                         "match-payload",
                     )
-                results.append(checker.infer(arm.body))
+                if isinstance(arm.body, Block):
+                    checker.check_block(arm.body)
+                    arm_type = checked_block_normal_type(checker, arm.body)
+                    if arm_type is not None:
+                        results.append(arm_type)
+                else:
+                    results.append(checker.infer(arm.body))
             finally:
                 checker.scopes.pop()
         checker.record_match_resolution(expression, value_type, arm_rows)
