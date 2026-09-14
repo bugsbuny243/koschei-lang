@@ -2,13 +2,12 @@
 """Create a fail-closed acquisition-candidate evidence manifest.
 
 The manifest binds one immutable Git commit, package version, release inputs and
-already-produced evidence. Validation/SBOM files are not trusted by filename:
-their internal commit/version/reproducibility claims are verified first.
+already-produced evidence. Validation, SBOM and reproducibility receipts are
+verified semantically before their bytes are admitted to the candidate record.
 """
 from __future__ import annotations
 
 import argparse
-from dataclasses import asdict
 import hashlib
 import json
 from pathlib import Path
@@ -23,6 +22,7 @@ from koschei.local_validation_v1 import (
 REPOSITORY = "bugsbuny243/koschei-lang"
 SCHEMA = "koschei.acquisition-candidate/v1"
 SBOM_SCHEMA = "koschei.acquisition-sbom/v1"
+REPRO_SCHEMA = "koschei.reproducible-artifact-receipt/v1"
 RELEASE_INPUTS = (
     "Dockerfile.production",
     "production-container-lock.json",
@@ -111,6 +111,20 @@ def _validation_receipt(path: Path, commit: str) -> None:
         raise ValueError(f"validation receipt is not release-valid: {exc}") from exc
 
 
+def _verify_self_digest(payload: dict[str, object], field: str, label: str) -> None:
+    supplied = payload.get(field)
+    if not isinstance(supplied, str) or len(supplied) != 64:
+        raise ValueError(f"{label} digest is missing")
+    unsigned = dict(payload)
+    unsigned.pop(field, None)
+    canonical = json.dumps(
+        unsigned, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    ).encode("utf-8")
+    actual = hashlib.sha256(canonical).hexdigest()
+    if actual != supplied:
+        raise ValueError(f"{label} digest mismatch")
+
+
 def _sbom(path: Path, version: str) -> None:
     payload = _json_object(path, "SBOM")
     if payload.get("schema") != SBOM_SCHEMA:
@@ -122,17 +136,24 @@ def _sbom(path: Path, version: str) -> None:
         raise ValueError("SBOM does not prove reproducible production inputs")
     if payload.get("mutable_roots") != []:
         raise ValueError("SBOM still reports mutable production roots")
-    supplied = payload.get("sbom_sha256")
-    if not isinstance(supplied, str) or len(supplied) != 64:
-        raise ValueError("SBOM digest is missing")
-    unsigned = dict(payload)
-    unsigned.pop("sbom_sha256", None)
-    canonical = json.dumps(
-        unsigned, sort_keys=True, separators=(",", ":"), ensure_ascii=False
-    ).encode("utf-8")
-    actual = hashlib.sha256(canonical).hexdigest()
-    if actual != supplied:
-        raise ValueError("SBOM digest mismatch")
+    _verify_self_digest(payload, "sbom_sha256", "SBOM")
+
+
+def _reproducibility_receipt(path: Path, commit: str, artifact: Path) -> None:
+    payload = _json_object(path, "reproducibility receipt")
+    if payload.get("schema") != REPRO_SCHEMA:
+        raise ValueError("reproducibility receipt schema mismatch")
+    if payload.get("source_commit") != commit:
+        raise ValueError("reproducibility receipt belongs to a different source commit")
+    if payload.get("independent_builds") != 2 or payload.get("byte_identical") is not True:
+        raise ValueError("reproducibility receipt does not prove two byte-identical builds")
+    if payload.get("authority") is not False:
+        raise ValueError("reproducibility receipt cannot carry authority")
+    if payload.get("artifact_sha256") != sha256_file(artifact):
+        raise ValueError("reproducibility receipt artifact digest mismatch")
+    if payload.get("artifact_bytes") != artifact.stat().st_size:
+        raise ValueError("reproducibility receipt artifact size mismatch")
+    _verify_self_digest(payload, "receipt_sha256", "reproducibility receipt")
 
 
 def build_manifest(
@@ -142,6 +163,7 @@ def build_manifest(
     source_archive: Path,
     build_artifact: Path,
     validation_receipt: Path,
+    reproducibility_receipt: Path,
     sbom: Path,
     benchmark_dossier: Path,
     threat_model: Path,
@@ -163,11 +185,13 @@ def build_manifest(
 
     _validation_receipt(validation_receipt, commit)
     _sbom(sbom, version)
+    _reproducibility_receipt(reproducibility_receipt, commit, build_artifact)
 
     evidence = {
         "source_archive": evidence_record(source_archive),
         "build_artifact": evidence_record(build_artifact),
         "validation_receipt": evidence_record(validation_receipt),
+        "reproducibility_receipt": evidence_record(reproducibility_receipt),
         "sbom": evidence_record(sbom),
         "benchmark_dossier": evidence_record(benchmark_dossier),
         "threat_model": evidence_record(threat_model),
@@ -200,6 +224,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--source-archive", type=Path, required=True)
     parser.add_argument("--build-artifact", type=Path, required=True)
     parser.add_argument("--validation-receipt", type=Path, required=True)
+    parser.add_argument("--reproducibility-receipt", type=Path, required=True)
     parser.add_argument("--sbom", type=Path, required=True)
     parser.add_argument("--benchmark-dossier", type=Path, required=True)
     parser.add_argument("--threat-model", type=Path, required=True)
@@ -218,6 +243,7 @@ def main() -> int:
         source_archive=args.source_archive,
         build_artifact=args.build_artifact,
         validation_receipt=args.validation_receipt,
+        reproducibility_receipt=args.reproducibility_receipt,
         sbom=args.sbom,
         benchmark_dossier=args.benchmark_dossier,
         threat_model=args.threat_model,
