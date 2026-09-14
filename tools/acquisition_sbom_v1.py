@@ -1,15 +1,10 @@
 #!/usr/bin/env python3
-"""Generate a deterministic acquisition SBOM snapshot from repository declarations.
+"""Generate a deterministic acquisition/release SBOM root snapshot.
 
-This is an evidence generator, not a vulnerability scanner. It records declared
-runtime/build/toolchain roots and explicitly marks mutable/unpinned inputs so an
-acquisition candidate cannot present an incomplete dependency picture as
-reproducible.
-
-Python artifact hashes live in requirements-format lock files rather than in
-``pyproject.toml``. PEP 508 build-system requirements cannot legally carry pip
-``--hash`` options, so treating that field as the artifact lock would create an
-impossible release gate.
+This is an evidence generator, not a vulnerability scanner. Production
+reproducibility is evaluated from ``Dockerfile.production`` plus explicit lock
+files. The mutable Railway/testnet Dockerfile is intentionally not release
+authority.
 """
 from __future__ import annotations
 
@@ -21,10 +16,15 @@ import re
 import tomllib
 
 SCHEMA = "koschei.acquisition-sbom/v1"
+CONTAINER_LOCK_SCHEMA = "koschei.production-container-lock/v1"
+PRODUCTION_DOCKERFILE = "Dockerfile.production"
+CONTAINER_LOCK = "production-container-lock.json"
 PYTHON_LOCKS = (
     "production-build-bootstrap.txt",
     "production-build-requirements.txt",
 )
+_IMAGE_DIGEST = re.compile(r"@sha256:[0-9a-f]{64}$")
+_SNAPSHOT = re.compile(r"^[0-9]{8}T[0-9]{6}Z$")
 
 
 def _sha256_bytes(data: bytes) -> str:
@@ -42,9 +42,8 @@ def _docker_from_images(text: str) -> tuple[str, ...]:
     images: list[str] = []
     for line in text.splitlines():
         stripped = line.strip()
-        if not stripped.upper().startswith("FROM "):
-            continue
-        images.append(stripped.split()[1])
+        if stripped.upper().startswith("FROM "):
+            images.append(stripped.split()[1])
     return tuple(images)
 
 
@@ -53,7 +52,7 @@ def _normalize_docker_run(text: str) -> str:
 
 
 def _docker_pip_packages(text: str) -> tuple[str, ...]:
-    """Return only inline package specs, excluding -r/--requirement files."""
+    """Return only inline package specs, excluding requirement files."""
 
     normalized = _normalize_docker_run(text)
     packages: list[str] = []
@@ -92,15 +91,11 @@ def _apt_packages(text: str) -> tuple[str, ...]:
     normalized = _normalize_docker_run(text)
     packages: list[str] = []
     for match in re.finditer(
-        r"apt-get install\s+-y\s+--no-install-recommends\s+(.+?)(?=\s+&&|$)",
+        r"apt-get(?:\s+-o\s+[^\s]+)*\s+install\s+-y\s+--no-install-recommends\s+(.+?)(?=\s*;|\s+&&|$)",
         normalized,
     ):
         packages.extend(match.group(1).strip().split())
     return tuple(packages)
-
-
-def _is_immutable_image(image: str) -> bool:
-    return "@sha256:" in image
 
 
 def _normalized_python_name(value: str) -> str:
@@ -139,10 +134,33 @@ def _parse_hash_lock(text: str, source: str) -> tuple[dict[str, str], ...]:
     return tuple(rows)
 
 
+def _container_lock(payload: object) -> dict[str, object]:
+    if not isinstance(payload, dict) or payload.get("schema") != CONTAINER_LOCK_SCHEMA:
+        raise ValueError("production container lock has invalid schema")
+    if payload.get("platform") != "linux/amd64":
+        raise ValueError("production container lock must target linux/amd64")
+    images = payload.get("images")
+    snapshot = payload.get("debian_snapshot")
+    if not isinstance(images, dict) or not isinstance(snapshot, dict):
+        raise ValueError("production container lock is structurally incomplete")
+    required_images = ("go_toolchain", "python_builder", "python_runtime")
+    for name in required_images:
+        value = images.get(name)
+        if not isinstance(value, str) or _IMAGE_DIGEST.search(value) is None:
+            raise ValueError(f"production container image is not digest pinned: {name}")
+    timestamp = snapshot.get("timestamp")
+    if not isinstance(timestamp, str) or _SNAPSHOT.fullmatch(timestamp) is None:
+        raise ValueError("Debian snapshot timestamp must be YYYYMMDDThhmmssZ")
+    if snapshot.get("suite") != "bookworm" or snapshot.get("security_suite") != "bookworm-security":
+        raise ValueError("production Debian snapshot suite drifted")
+    return payload
+
+
 def build_sbom(root: Path) -> dict[str, object]:
     pyproject_bytes = _read(root, "pyproject.toml")
     go_mod_bytes = _read(root, "native/go.mod")
-    docker_bytes = _read(root, "Dockerfile")
+    docker_bytes = _read(root, PRODUCTION_DOCKERFILE)
+    container_lock_bytes = _read(root, CONTAINER_LOCK)
     lock_bytes = {relative: _read(root, relative) for relative in PYTHON_LOCKS}
 
     pyproject = tomllib.loads(pyproject_bytes.decode("utf-8"))
@@ -163,6 +181,12 @@ def build_sbom(root: Path) -> dict[str, object]:
             raise ValueError(f"duplicate Python build lock entry for {name}")
         locked_by_name[name] = row
 
+    container_lock = _container_lock(json.loads(container_lock_bytes.decode("utf-8")))
+    locked_images = container_lock["images"]
+    assert isinstance(locked_images, dict)
+    locked_snapshot = container_lock["debian_snapshot"]
+    assert isinstance(locked_snapshot, dict)
+
     go_text = go_mod_bytes.decode("utf-8")
     external_go_requirements = tuple(
         line.strip() for line in go_text.splitlines() if line.strip().startswith("require ")
@@ -174,17 +198,32 @@ def build_sbom(root: Path) -> dict[str, object]:
     docker_pip_packages = _docker_pip_packages(docker_text)
     docker_requirement_files = _docker_requirement_files(docker_text)
 
+    expected_images = (
+        locked_images["go_toolchain"],
+        locked_images["python_builder"],
+        locked_images["python_runtime"],
+    )
     mutable_roots: list[str] = []
+    if base_images != expected_images:
+        mutable_roots.append("production-container-lock:dockerfile-image-drift")
     for image in base_images:
-        if not _is_immutable_image(image):
+        if _IMAGE_DIGEST.search(image) is None:
             mutable_roots.append(f"container-image:{image}")
+
+    snapshot = str(locked_snapshot["timestamp"])
+    required_snapshot_fragments = (
+        f"snapshot.debian.org/archive/debian/${{DEBIAN_SNAPSHOT}}/",
+        f"snapshot.debian.org/archive/debian-security/${{DEBIAN_SNAPSHOT}}/",
+        f"ARG DEBIAN_SNAPSHOT={snapshot}",
+        "[check-valid-until=no]",
+    )
+    if any(fragment not in docker_text for fragment in required_snapshot_fragments):
+        mutable_roots.append("debian-snapshot:dockerfile-lock-drift")
+
     for req in build_requirements:
         name = _requirement_name(req)
         if name not in locked_by_name:
             mutable_roots.append(f"python-build:{req}")
-    for package in apt_packages:
-        if "=" not in package:
-            mutable_roots.append(f"apt:{package}")
     for package in docker_pip_packages:
         name = _requirement_name(package)
         if name not in locked_by_name:
@@ -210,8 +249,11 @@ def build_sbom(root: Path) -> dict[str, object]:
             "external_requirements": list(external_go_requirements),
         },
         "container": {
+            "dockerfile": PRODUCTION_DOCKERFILE,
             "dockerfile_sha256": _sha256_bytes(docker_bytes),
+            "platform": container_lock["platform"],
             "base_images": list(base_images),
+            "debian_snapshot": dict(locked_snapshot),
             "apt_packages": list(apt_packages),
             "inline_pip_packages": list(docker_pip_packages),
             "python_requirement_files": list(docker_requirement_files),
@@ -219,7 +261,8 @@ def build_sbom(root: Path) -> dict[str, object]:
         "source_inputs": {
             "pyproject_toml_sha256": _sha256_bytes(pyproject_bytes),
             "native_go_mod_sha256": _sha256_bytes(go_mod_bytes),
-            "dockerfile_sha256": _sha256_bytes(docker_bytes),
+            "production_dockerfile_sha256": _sha256_bytes(docker_bytes),
+            "production_container_lock_sha256": _sha256_bytes(container_lock_bytes),
             "python_lock_sha256": {
                 relative: _sha256_bytes(data) for relative, data in sorted(lock_bytes.items())
             },
@@ -241,7 +284,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--require-reproducible",
         action="store_true",
-        help="fail if any mutable/unpinned build root remains",
+        help="fail if any mutable/unpinned production build root remains",
     )
     return parser
 
