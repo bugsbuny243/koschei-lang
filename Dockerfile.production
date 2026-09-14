@@ -1,6 +1,6 @@
 # Production/acquisition release container.
 # Every base image is pinned by immutable Docker Official Image index digest.
-# Debian package resolution is pinned to one snapshot.debian.org archive state.
+# Debian package resolution is pinned to one literal snapshot.debian.org state.
 
 FROM golang:1.24-bookworm@sha256:1a6d4452c65dea36aac2e2d606b01b4a029ec90cc1ae53890540ce6173ea77ac AS go-toolchain
 
@@ -9,21 +9,19 @@ FROM python:3.12-bookworm@sha256:581429e3df12d76e6af4be5ab7d0e7fc2013eb57dc23d2d
 COPY --from=go-toolchain /usr/local/go /usr/local/go
 ENV PATH="/usr/local/go/bin:${PATH}"
 
-ARG DEBIAN_SNAPSHOT=20260901T000000Z
 RUN set -eux; \
     printf '%s\n' \
-      "deb [check-valid-until=no] https://snapshot.debian.org/archive/debian/${DEBIAN_SNAPSHOT}/ bookworm main" \
-      "deb [check-valid-until=no] https://snapshot.debian.org/archive/debian-security/${DEBIAN_SNAPSHOT}/ bookworm-security main" \
+      "deb [check-valid-until=no] https://snapshot.debian.org/archive/debian/20260901T000000Z/ bookworm main" \
+      "deb [check-valid-until=no] https://snapshot.debian.org/archive/debian-security/20260901T000000Z/ bookworm-security main" \
       > /etc/apt/sources.list; \
     rm -f /etc/apt/sources.list.d/*; \
     apt-get -o Acquire::Check-Valid-Until=false update; \
     apt-get -o Acquire::Check-Valid-Until=false install -y --no-install-recommends \
       build-essential \
       ca-certificates \
-      openssl \
       patchelf; \
     dpkg-query -W -f='${Package}\t${Version}\n' \
-      build-essential ca-certificates openssl patchelf \
+      build-essential ca-certificates patchelf \
       | sort > /tmp/koschei-debian-build-packages.tsv; \
     rm -rf /var/lib/apt/lists/*
 
