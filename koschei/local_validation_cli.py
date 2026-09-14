@@ -74,6 +74,16 @@ def _steps(profile: str, candidate: str, adversarial_json: Path) -> tuple[tuple[
             ),
         ),
         (
+            "pytest-suite",
+            (
+                sys.executable,
+                "-m",
+                "pytest",
+                "-q",
+                "tests",
+            ),
+        ),
+        (
             "lang-sentinel-separation",
             (
                 sys.executable,
