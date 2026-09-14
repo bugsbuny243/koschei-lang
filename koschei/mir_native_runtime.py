@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .mir import MirFunction, MirGraph
+from .mir_extension_instructions_v4 import MirVariantIs, MirVariantPayload
 from .mir_ir import (
     MirAstFallback,
     MirBinary,
@@ -30,6 +31,11 @@ from .mir_ir import (
     MirStore,
     MirUnary,
     MirUnreachable,
+)
+from .mir_variant_runtime_v1 import (
+    MirVariantRuntimeError,
+    variant_is_v1,
+    variant_payload_v1,
 )
 
 _SUPPORTED_BINARY = frozenset({"+", "-", "*", "==", "!=", "<", "<=", ">", ">="})
@@ -147,6 +153,8 @@ def inspect_native_mir_support(mir: MirGraph) -> MirNativeSupport:
         MirIterNext,
         MirMember,
         MirCall,
+        MirVariantIs,
+        MirVariantPayload,
     )
     for module in mir.in_dependency_order():
         if module.program.structs:
@@ -393,6 +401,26 @@ class _MirExecutor:
             left = self._value(values, instruction.left)
             right = self._value(values, instruction.right)
             values[instruction.target] = _binary(instruction.operator, left, right)
+            return
+        if isinstance(instruction, MirVariantIs):
+            source = self._value(values, instruction.source)
+            try:
+                values[instruction.target] = variant_is_v1(source, instruction.variant)
+            except MirVariantRuntimeError as exc:
+                raise MirNativeRuntimeError(
+                    f"MIR variant comparison failed closed: {exc}"
+                ) from exc
+            return
+        if isinstance(instruction, MirVariantPayload):
+            source = self._value(values, instruction.source)
+            try:
+                values[instruction.target] = variant_payload_v1(
+                    source, instruction.variant
+                )
+            except MirVariantRuntimeError as exc:
+                raise MirNativeRuntimeError(
+                    f"MIR variant payload extraction failed closed: {exc}"
+                ) from exc
             return
         if isinstance(instruction, MirList):
             values[instruction.target] = tuple(
