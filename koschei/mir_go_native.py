@@ -165,16 +165,27 @@ def inspect_mir_go_support(mir: MirGraph) -> MirGoSupport:
             reasons.append(
                 f"{function.name}: unsupported return type {render_type(function.return_type)}"
             )
-        parameter_names: set[str] = set()
+        parameter_names = {parameter.name for parameter in function.parameters}
+        if len(parameter_names) != len(function.parameters):
+            reasons.append(f"{function.name}: duplicate parameter")
         for parameter in function.parameters:
-            if parameter.name in parameter_names:
-                reasons.append(f"{function.name}: duplicate parameter {parameter.name}")
-            parameter_names.add(parameter.name)
             if _go_type(parameter.type, allow_void=False, enum_names=enum_names) is None:
                 reasons.append(
                     f"{function.name}: unsupported parameter type {render_type(parameter.type)}"
                 )
 
+        all_binding_names = {
+            instruction.name
+            for block in function.blocks
+            for instruction in block.instructions
+            if isinstance(instruction, MirBind)
+        }
+        known_load_names = (
+            set(parameter_names)
+            | all_binding_names
+            | function_names
+            | set(_PRINT_BUILTINS)
+        )
         binding_names: set[str] = set()
         for block in function.blocks:
             for instruction in block.instructions:
@@ -206,6 +217,11 @@ def inspect_mir_go_support(mir: MirGraph) -> MirGoSupport:
                             f"{render_type(instruction.type)}"
                         )
                 elif isinstance(instruction, MirStore):
+                    if instruction.name not in all_binding_names:
+                        reasons.append(
+                            f"{function.name}: store targets unknown binding "
+                            f"{instruction.name!r}"
+                        )
                     if _go_type(
                         instruction.type,
                         allow_void=False,
@@ -260,13 +276,14 @@ def inspect_mir_go_support(mir: MirGraph) -> MirGoSupport:
                             f"{render_type(instruction.type)}"
                         )
                 elif isinstance(instruction, MirLoad):
-                    if (
-                        instruction.name not in function_names
-                        and instruction.name not in _PRINT_BUILTINS
-                        and instruction.name == "Error"
-                    ):
+                    if instruction.name == "Error":
                         reasons.append(
                             f"{function.name}: Error values are not MIR-Go v1 yet"
+                        )
+                    elif instruction.name not in known_load_names:
+                        reasons.append(
+                            f"{function.name}: unknown static MIR load "
+                            f"{instruction.name!r}"
                         )
                 elif isinstance(instruction, MirCall):
                     result_type = _go_type(
@@ -595,6 +612,12 @@ def _value_types(
                 continue
             type_node = getattr(instruction, "type", None)
             if type_node is None:
+                continue
+            if (
+                isinstance(instruction, MirCall)
+                and isinstance(type_node, NamedType)
+                and type_node.name == "Void"
+            ):
                 continue
             result[target] = type_node
     return result
