@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from .interpreter import EnumValue
 from .mir import MirFunction, MirGraph
 from .mir_extension_instructions_v4 import MirVariantIs, MirVariantPayload
 from .mir_ir import (
@@ -40,7 +41,7 @@ from .mir_variant_runtime_v1 import (
 
 _SUPPORTED_BINARY = frozenset({"+", "-", "*", "==", "!=", "<", "<=", ">", ">="})
 _SUPPORTED_UNARY = frozenset({"!", "-", "+"})
-_BUILTINS = frozenset({"print", "println", "Error"})
+_BUILTINS = frozenset({"print", "println", "Error", "Some", "None", "Ok", "Err"})
 _MAX_CALL_DEPTH = 512
 _DEFAULT_MAX_STEPS = 1_000_000
 
@@ -495,6 +496,22 @@ class _MirExecutor:
                 if len(arguments) != 1:
                     raise MirNativeRuntimeError("Error expects one argument")
                 return _ErrorValue(_to_string(arguments[0]))
+            if callee.name == "Some":
+                if len(arguments) != 1:
+                    raise MirNativeRuntimeError("Some expects one argument")
+                return EnumValue("Option", "Some", arguments[0])
+            if callee.name == "None":
+                if arguments:
+                    raise MirNativeRuntimeError("None expects zero arguments")
+                return EnumValue("Option", "None")
+            if callee.name == "Ok":
+                if len(arguments) != 1:
+                    raise MirNativeRuntimeError("Ok expects one argument")
+                return EnumValue("Result", "Ok", arguments[0])
+            if callee.name == "Err":
+                if len(arguments) != 1:
+                    raise MirNativeRuntimeError("Err expects one argument")
+                return EnumValue("Result", "Err", arguments[0])
         raise MirNativeRuntimeError("MIR call target is not callable")
 
     @staticmethod
