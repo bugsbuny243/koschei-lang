@@ -8,10 +8,13 @@ Typed-HIR result type rather than runtime/backend name lookup.
 """
 from __future__ import annotations
 
-from .ast_nodes import CallExpression, Expression, MatchExpression
+from .ast_nodes import CallExpression, Expression, Identifier, MatchExpression
 from .mir_match_lowering_v1 import lower_match_expression_v1
 from .mir_or_return_normalization_v1 import _OrReturnFunctionLowerer
-from .mir_variant_constructor_lowering_v1 import lower_variant_constructor_v1
+from .mir_variant_constructor_lowering_v1 import (
+    lower_payload_free_variant_v1,
+    lower_variant_constructor_v1,
+)
 
 
 class _CanonicalFunctionLowererV1(_OrReturnFunctionLowerer):
@@ -20,6 +23,10 @@ class _CanonicalFunctionLowererV1(_OrReturnFunctionLowerer):
             return lower_match_expression_v1(self, expression)
         if isinstance(expression, CallExpression):
             constructed = lower_variant_constructor_v1(self, expression)
+            if constructed is not None:
+                return constructed
+        if isinstance(expression, Identifier):
+            constructed = lower_payload_free_variant_v1(self, expression)
             if constructed is not None:
                 return constructed
         return super()._lower_expression(expression)
