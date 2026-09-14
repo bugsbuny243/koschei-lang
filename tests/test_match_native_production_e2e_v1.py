@@ -3,6 +3,7 @@ from __future__ import annotations
 from koschei.mir import require_mir
 from koschei.mir_extension_instructions_v4 import MirVariantConstruct
 from koschei.mir_native_variant_construct_v1 import inspect_native_mir_support
+from koschei.mir_scope_safety import inspect_mir_scope_safety
 from koschei.modules import check_graph, load_graph
 from koschei.runtime_budget import run_mir_with_budget, runtime_execution_mode
 
@@ -15,6 +16,14 @@ def _instructions(mir):
         for block in function.blocks
         for instruction in block.instructions
     )
+
+
+def _assert_native_admitted(mir) -> None:
+    support = inspect_native_mir_support(mir)
+    scope = inspect_mir_scope_safety(mir)
+    assert support.supported, support.reasons
+    assert scope.safe, scope.reasons
+    assert runtime_execution_mode(mir) == "mir_native_v1"
 
 
 def test_option_match_runs_source_to_native_without_ast_compat(tmp_path, capsys) -> None:
@@ -36,11 +45,11 @@ fn main() {
     check_graph(graph)
     mir = require_mir(graph)
 
-    constructors = [item for item in _instructions(mir) if isinstance(item, MirVariantConstruct)]
+    constructors = [
+        item for item in _instructions(mir) if isinstance(item, MirVariantConstruct)
+    ]
     assert [item.variant for item in constructors] == ["Option::Some"]
-    support = inspect_native_mir_support(mir)
-    assert support.supported, support.reasons
-    assert runtime_execution_mode(mir) == "mir_native_v1"
+    _assert_native_admitted(mir)
     assert run_mir_with_budget(mir) == 0
     assert capsys.readouterr().out == "41\n"
 
@@ -64,11 +73,11 @@ fn main() {
     check_graph(graph)
     mir = require_mir(graph)
 
-    constructors = [item for item in _instructions(mir) if isinstance(item, MirVariantConstruct)]
+    constructors = [
+        item for item in _instructions(mir) if isinstance(item, MirVariantConstruct)
+    ]
     assert [item.variant for item in constructors] == ["Result::Ok"]
-    support = inspect_native_mir_support(mir)
-    assert support.supported, support.reasons
-    assert runtime_execution_mode(mir) == "mir_native_v1"
+    _assert_native_admitted(mir)
     assert run_mir_with_budget(mir) == 0
     assert capsys.readouterr().out == "7\n"
 
@@ -97,10 +106,10 @@ fn main() {
     check_graph(graph)
     mir = require_mir(graph)
 
-    constructors = [item for item in _instructions(mir) if isinstance(item, MirVariantConstruct)]
+    constructors = [
+        item for item in _instructions(mir) if isinstance(item, MirVariantConstruct)
+    ]
     assert [item.variant for item in constructors] == ["State::Ready"]
-    support = inspect_native_mir_support(mir)
-    assert support.supported, support.reasons
-    assert runtime_execution_mode(mir) == "mir_native_v1"
+    _assert_native_admitted(mir)
     assert run_mir_with_budget(mir) == 0
     assert capsys.readouterr().out == "99\n"
