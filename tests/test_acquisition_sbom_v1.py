@@ -16,7 +16,7 @@ _HASH_E = "e" * 64
 def _fixture_repo(tmp_path: Path, *, pinned: bool) -> Path:
     (tmp_path / "native").mkdir()
     (tmp_path / "pyproject.toml").write_text(
-        """[build-system]\nrequires = [\"setuptools>=68\"]\nbuild-backend = \"setuptools.build_meta\"\n\n[project]\nname = \"koschei-lang\"\nversion = \"0.10.0\"\ndependencies = []\n""",
+        """[build-system]\nrequires = [\"setuptools==84.0.0\"]\nbuild-backend = \"setuptools.build_meta\"\n\n[project]\nname = \"koschei-lang\"\nversion = \"0.10.0\"\ndependencies = []\n""",
         encoding="utf-8",
     )
     (tmp_path / "native" / "go.mod").write_text(
@@ -95,6 +95,22 @@ def test_sbom_binds_declared_inputs_and_is_deterministic(tmp_path: Path):
     assert first["reproducible_inputs"] is True
     assert first["mutable_roots"] == []
     assert len(first["sbom_sha256"]) == 64
+
+
+def test_declared_build_version_must_match_hash_lock(tmp_path: Path):
+    root = _fixture_repo(tmp_path, pinned=True)
+    pyproject = root / "pyproject.toml"
+    pyproject.write_text(
+        pyproject.read_text(encoding="utf-8").replace(
+            "setuptools==84.0.0", "setuptools==83.0.0"
+        ),
+        encoding="utf-8",
+    )
+
+    result = sbom.build_sbom(root)
+
+    assert result["reproducible_inputs"] is False
+    assert "python-build-version-drift:setuptools==83.0.0" in set(result["mutable_roots"])
 
 
 def test_dockerfile_drift_from_container_lock_is_reported(tmp_path: Path):
