@@ -25,6 +25,7 @@ PYTHON_LOCKS = (
 )
 _IMAGE_DIGEST = re.compile(r"@sha256:[0-9a-f]{64}$")
 _SNAPSHOT = re.compile(r"^[0-9]{8}T[0-9]{6}Z$")
+_EXACT_REQUIREMENT = re.compile(r"^([A-Za-z0-9_.-]+)==([^\s]+)$")
 
 
 def _sha256_bytes(data: bytes) -> str:
@@ -212,8 +213,8 @@ def build_sbom(root: Path) -> dict[str, object]:
 
     snapshot = str(locked_snapshot["timestamp"])
     required_snapshot_fragments = (
-        f"snapshot.debian.org/archive/debian/${{DEBIAN_SNAPSHOT}}/",
-        f"snapshot.debian.org/archive/debian-security/${{DEBIAN_SNAPSHOT}}/",
+        "snapshot.debian.org/archive/debian/${DEBIAN_SNAPSHOT}/",
+        "snapshot.debian.org/archive/debian-security/${DEBIAN_SNAPSHOT}/",
         f"ARG DEBIAN_SNAPSHOT={snapshot}",
         "[check-valid-until=no]",
     )
@@ -222,8 +223,13 @@ def build_sbom(root: Path) -> dict[str, object]:
 
     for req in build_requirements:
         name = _requirement_name(req)
-        if name not in locked_by_name:
+        locked = locked_by_name.get(name)
+        if locked is None:
             mutable_roots.append(f"python-build:{req}")
+            continue
+        exact = _EXACT_REQUIREMENT.fullmatch(req)
+        if exact is None or exact.group(2) != locked["version"]:
+            mutable_roots.append(f"python-build-version-drift:{req}")
     for package in docker_pip_packages:
         name = _requirement_name(package)
         if name not in locked_by_name:
