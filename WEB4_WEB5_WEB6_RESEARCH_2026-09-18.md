@@ -175,3 +175,28 @@ Sources:
 3. Reject identifier representations that can undergo lossy host-number conversion.
 4. Delegation validity requires authority continuity/attenuation at every hop; a complete provenance chain is not sufficient.
 5. These Community Group discussions are design/adversarial evidence, not W3C Recommendations and not automatic Koschei semantic authority.
+
+
+## 2026-09-19 protocol-negotiation delta
+
+### Agent Protocol Negotiation Protocol (APNP) — draft-cui-agent-protocol-negotiation-protocol-00 (16 Sep 2026)
+A new individual Internet-Draft proposes a negotiation layer for heterogeneous agent protocols. It defines capability advertisement, intersection, deterministic protocol selection, downgrade protection, and a negotiation transcript hash intended to bind the selected protocol and parameters to the later session.
+
+Koschei relevance: VERY HIGH as an interoperability/adversarial target. The key invariant is that discovery/negotiation cannot silently weaken the security profile. Any external-agent adapter must bind the exact negotiated protocol/version/parameters to the admitted session/evidence and fail closed when no acceptable intersection exists. A fallback must never widen authority or erase required verification.
+
+Source: https://www.ietf.org/archive/id/draft-cui-agent-protocol-negotiation-protocol-00.html
+
+### OAuth authorization across trust domains — draft-parecki-oauth-trust-domain-00 (8 Sep 2026)
+This individual Internet-Draft addresses OAuth authorization when clients and resource servers span different trust domains, introducing explicit trust-domain and authorization-server relationship metadata.
+
+Koschei relevance: MEDIUM/HIGH for external admission adapters. Trust-domain metadata is observable external policy evidence, not Koschei authority. Cross-domain authorization must bind the exact issuer/domain relationship used at decision time and reject ambiguous or conflicting trust paths.
+
+Source: https://www.ietf.org/archive/id/draft-parecki-oauth-trust-domain-00.html
+
+## 2026-09-19 protocol-negotiation decision
+
+1. Bind exact external protocol name, version and security-relevant negotiated parameters to session/evidence identity.
+2. No acceptable protocol intersection = DENY; do not invent a permissive fallback.
+3. Negotiation fallback may preserve or strengthen requirements but must never weaken required identity, authority, evidence, freshness, revocation or effect-verification guarantees.
+4. Cross-domain trust metadata is evidence only and cannot manufacture Khar/compiler authority.
+5. Ambiguous/conflicting external trust paths fail closed.
