@@ -148,3 +148,30 @@ Sources:
 3. Future external-action proof envelopes must bind the exact governing revision in force at decision time.
 4. Evidence referenced but unavailable must fail closed where the claim depends on it; silent degradation to unchecked state is forbidden.
 5. Agent communication protocol participation cannot manufacture Khar or compiler authority.
+
+
+## 2026-09-19 identity/canonicalization delta
+
+### W3C AIKR / Agent Identity discussion — canonicalization false-match risk
+A 17 Sep 2026 Community Group discussion records an important conformance failure: numeric identifier values outside the exact interoperable integer range can collapse to the same canonical JSON representation in some processing paths, producing a silent false identity match rather than a visible mismatch. The discussion also notes that canonical bytes alone cannot establish semantic equality when units, namespaces, or schema references differ.
+
+Koschei relevance: VERY HIGH as adversarial input. Canonical serialization MUST NOT be treated as semantic identity by itself. Security-critical identifiers need a domain/type/schema contract before byte-level canonicalization, and unsafe numeric identifier domains must fail closed rather than pass through a lossy host-number representation.
+
+Source: https://lists.w3.org/Archives/Public/public-aikr/2026Sep/0027.html
+
+### Authority continuity across delegation
+September AIKR/Agent Identity discussion separately emphasizes that a traceable A -> B -> C delegation chain proves provenance but does not by itself prove that authority remained within the original principal's scope.
+
+Koschei relevance: VERY HIGH. Every delegation hop must preserve or attenuate authority; provenance alone is insufficient. A downstream agent/tool may never widen scope merely because its own identity and delegation link are valid.
+
+Sources:
+- https://lists.w3.org/Archives/Public/public-aikr/2026Sep/0012.html
+- https://lists.w3.org/Archives/Public/public-aikr/2026Sep/0017.html
+
+## 2026-09-19 identity/canonicalization decision
+
+1. Separate semantic identity from serialization canonicalization.
+2. Security identifiers require explicit namespace/schema/type meaning before equality is admitted.
+3. Reject identifier representations that can undergo lossy host-number conversion.
+4. Delegation validity requires authority continuity/attenuation at every hop; a complete provenance chain is not sufficient.
+5. These Community Group discussions are design/adversarial evidence, not W3C Recommendations and not automatic Koschei semantic authority.
