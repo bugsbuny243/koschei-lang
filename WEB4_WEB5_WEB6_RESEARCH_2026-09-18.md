@@ -79,3 +79,38 @@ Source: https://web6.oasisomniverse.one/
 - W3C Group Note: published W3C note, not the same as a W3C Recommendation.
 - IETF items above: Internet-Drafts; drafts may change or expire and are not IETF standards merely by publication.
 - OASIS WEB6 item: project/vendor claim; watch-only.
+
+
+## 2026-09-19 delta
+
+### Agent Registry Protocol (ARPA) — draft-sankarshan-agent-registry-protocol-00 (17 Sep 2026)
+A new individual Standards-Track-intended Internet-Draft defines an HTTP/JSON registry protocol for resolving who operates a software agent, its deployment, typed relationships, bounded delegated authority, lifecycle status, and evidence supporting a reliance decision.
+
+Koschei relevance: VERY HIGH as an external comparison target. The useful invariant is not the HTTP/JSON representation; it is the explicit binding between exact agent/deployment identity, bounded authority, lifecycle/revocation state, and evidence. External ARPA records MUST remain admission evidence and MUST NOT manufacture Khar/compiler authority.
+
+Source: https://www.ietf.org/archive/id/draft-sankarshan-agent-registry-protocol-00.html
+
+### W3C DID / Controlled Identifiers maintenance transition discussion (10–12 Sep 2026)
+W3C DID and Verifiable Credentials participants are discussing moving long-term Controlled Identifiers maintenance toward the DID WG while coordinating an overlap period with VCWG.
+
+Koschei relevance: MEDIUM. This reinforces the need to bind external identity evidence to an explicit specification/version and verifier policy rather than assuming a permanent maintainer or static registry. No Koschei canonical semantic change follows from this governance discussion.
+
+Source: https://lists.w3.org/Archives/Public/public-vc-wg/2026Sep/0030.html
+
+### Agent Web Protocol v0.2 — community project signal
+AWP publishes a /.well-known/agent.json discovery surface for machine-readable capabilities, authentication requirements, typed actions, and references to sibling agent protocols.
+
+Koschei relevance: WATCH/HIGH for external service discovery. Treat the manifest as untrusted observable input until verified and admitted. Discovery MUST NOT equal authority; advertised capability MUST NOT equal Koschei capability.
+
+Source: https://www.agentwebprotocol.org/
+
+### Web6 status re-check
+No new IETF/W3C consensus specification named Web6 was identified in the 2026-09-19 scan. Continue watch-only classification for the label itself.
+
+## 2026-09-19 Koschei delta decision
+
+1. Add exact **agent + deployment + authority + lifecycle + evidence** binding to the external-agent admission comparison checklist.
+2. External registry/discovery documents are observable claims, never canonical authority by themselves.
+3. Bind accepted external identity evidence to specification/version and verifier policy so maintenance transitions cannot silently alter Koschei admission meaning.
+4. Keep revocation/current-lifecycle verification mandatory before converting delegated-agent evidence into any external service admission.
+5. No new Web6 language semantic layer is justified by today's standards evidence.
