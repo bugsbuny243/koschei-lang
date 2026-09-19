@@ -310,7 +310,7 @@ class _OrReturnFunctionLowerer(_FunctionLowerer):
     def _lower_struct_literal(self, expression: StructLiteral) -> int:
         result_type = self._type_of(expression)
         builder = self._new_value()
-        self._emit(MirStructNew(builder, expression.type_name, result_type, expression.location))
+        required_fields = tuple(field_name for field_name, _ in expression.fields)\n        self._emit(MirStructNew(builder, expression.type_name, required_fields, result_type, expression.location))
         result_name = self._new_internal_binding_name("struct_result")
         self._emit(MirBind(result_name, builder, True, result_type, expression.location))
         final_join = self._new_block()
