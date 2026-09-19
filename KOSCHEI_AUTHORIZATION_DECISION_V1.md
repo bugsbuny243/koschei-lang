@@ -151,3 +151,28 @@ Create the machine-verifiable **Proof Envelope** that commits the complete linea
 
 Then move permit replay state and decision/permit key custody from Python bootstrap
 objects into a runtime-owned monotonic/transactional boundary.
+
+
+## IDENTITY CANONICALIZATION AND DELEGATION CONTINUITY GATE — 2026-09-19
+
+Authorization identity is a semantic contract before it is a byte/digest contract.
+
+A canonical serialization or matching digest MUST NOT by itself establish that two
+security-critical identifiers denote the same subject, namespace, unit, schema, or
+authority domain. The identity contract that gives those bytes meaning must already
+be explicit and admitted.
+
+Security-critical identifiers MUST NOT pass through a lossy host-number
+representation. If an external identifier cannot be represented without loss under
+the admitted identity/schema contract, the bridge MUST reject it rather than hash a
+silently rounded/colliding representation.
+
+For delegated external authority, provenance alone is insufficient. A valid chain
+A -> B -> C proves where a delegation claim came from; it does not prove that C
+remained inside A's original authority. Every admitted hop MUST preserve or attenuate
+the preceding scope and lifetime. No hop may widen operation, subject, resource,
+epoch/lifetime, or other authority dimension.
+
+These requirements apply before external evidence is allowed to participate in the
+canonical authority bridge. They do not grant external identity systems authority
+over Koschei's native Khar/compiler enforcement.
