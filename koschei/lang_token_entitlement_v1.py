@@ -34,6 +34,9 @@ class VerifiedTokenBalanceV1:
     raw_balance: int
     commitment: str
     slot: int
+    evidence_spec: str
+    verifier_policy: str
+    lifecycle_current: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,6 +50,9 @@ class LangEntitlementDecisionV1:
     commitment: str
     slot: int
     challenge_hash: str
+    evidence_spec: str
+    verifier_policy: str
+    lifecycle_current: bool
     allowed: bool
     reason: str
 
@@ -82,16 +88,21 @@ def decide_lang_entitlement_v1(
         raise ValueError("canonical raw token balance must be a non-negative integer")
     if not wallet.challenge_hash:
         raise ValueError("challenge evidence is required")
+    if not balance.evidence_spec or not balance.verifier_policy:
+        raise ValueError("chain evidence specification and verifier policy are required")
 
     required = _required_raw_balance(balance.decimals)
     proof_ok = wallet.signature_verified and wallet.challenge_consumed
+    lifecycle_ok = balance.lifecycle_current
     enough = balance.raw_balance >= required
-    allowed = proof_ok and enough
+    allowed = proof_ok and lifecycle_ok and enough
 
     if not wallet.signature_verified:
         reason = "wallet-signature-not-verified"
     elif not wallet.challenge_consumed:
         reason = "challenge-not-consumed"
+    elif not lifecycle_ok:
+        reason = "chain-evidence-lifecycle-not-current"
     elif not enough:
         reason = "balance-below-threshold"
     else:
@@ -107,6 +118,9 @@ def decide_lang_entitlement_v1(
         commitment=balance.commitment,
         slot=balance.slot,
         challenge_hash=wallet.challenge_hash,
+        evidence_spec=balance.evidence_spec,
+        verifier_policy=balance.verifier_policy,
+        lifecycle_current=balance.lifecycle_current,
         allowed=allowed,
         reason=reason,
     )
