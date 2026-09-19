@@ -200,3 +200,37 @@ Source: https://www.ietf.org/archive/id/draft-parecki-oauth-trust-domain-00.html
 3. Negotiation fallback may preserve or strengthen requirements but must never weaken required identity, authority, evidence, freshness, revocation or effect-verification guarantees.
 4. Cross-domain trust metadata is evidence only and cannot manufacture Khar/compiler authority.
 5. Ambiguous/conflicting external trust paths fail closed.
+
+
+## 2026-09-19 federation/evidence delta
+
+### Web4 Federation Policy Advertisement — draft-jacobs-web4-federation-policy-00 (12 Sep 2026)
+This individual IETF Internet-Draft defines machine-readable federation policy advertisements covering authority, versions/profiles, evidence formats, retention, challenges/appeals, revocation, disclosure, jurisdiction, proof and status.
+
+Koschei impact: advertised policy is observable external evidence, never canonical authority. Admission must bind the exact policy/profile/version/status used at decision time; stale, revoked, ambiguous or unsupported policy fails closed.
+
+### Web4 Evidence Receipts — draft-jacobs-web4-evidence-receipts-00 (12 Sep 2026)
+This individual draft defines durable cryptographically verifiable receipts for assessment, authority, policy, claim and node-lifecycle events without requiring protected evidence itself to be published.
+
+Koschei impact: strengthens the existing receipt architecture. A receipt proves only its explicitly bound event/state and must not be promoted to execution/effect/finality proof. Protected evidence may remain private while its integrity/provenance commitment is independently verifiable.
+
+### Web4 Claims and Verification — draft-jacobs-web4-claims-verification-00 (12 Sep 2026)
+This individual draft explicitly separates claims, evidence, assessments, assertions, verification events, challenges, supersession, suspension, expiration, revocation and receipts.
+
+Koschei impact: preserve these state distinctions rather than collapsing them into a generic "verified" boolean. Revocation/suspension/expiration/supersession are lifecycle facts and must be checked at the authorization/effect boundary.
+
+Sources:
+- https://www.ietf.org/archive/id/draft-jacobs-web4-federation-policy-00.html
+- https://www.ietf.org/archive/id/draft-jacobs-web4-evidence-receipts-00.html
+- https://www.ietf.org/archive/id/draft-jacobs-web4-claims-verification-00.html
+
+### Web5/Web6 recheck
+No new primary IETF/W3C consensus Web5/Web6 technical standard was found in this delta. Do not manufacture semantics from labels alone.
+
+## 2026-09-19 federation/evidence decision
+
+1. External federation policy must bind exact profile/version/status and remains non-authoritative.
+2. Receipt type must state exactly what fact it proves; no receipt-type promotion.
+3. claim != evidence != assessment != verification != execution != effect != finality.
+4. suspension, expiration, revocation and supersession are first-class lifecycle gates.
+5. private evidence may use verifiable commitments, but unavailable evidence required for a decision remains fail-closed.
