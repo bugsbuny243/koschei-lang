@@ -114,3 +114,37 @@ No new IETF/W3C consensus specification named Web6 was identified in the 2026-09
 3. Bind accepted external identity evidence to specification/version and verifier policy so maintenance transitions cannot silently alter Koschei admission meaning.
 4. Keep revocation/current-lifecycle verification mandatory before converting delegated-agent evidence into any external service admission.
 5. No new Web6 language semantic layer is justified by today's standards evidence.
+
+
+## 2026-09-19 05:57+03 delta
+
+### IETF Agent Communication Protocols (agentproto) proposed WG review
+On 17 Sep 2026 the IESG announced review of a proposed Agent Communication Protocols working group. The announcement explicitly frames agent protocols around delegated user authority and auditability concerns. This is a proposed WG under review, not an established standard.
+
+Koschei relevance: HIGH. Track protocol-layer separation between dialog/communication and authority. Koschei MUST continue to bind an external agent action to the exact delegated authority/evidence rather than treating protocol participation as authority.
+
+Source: https://mailarchive.ietf.org/arch/msg/ietf-announce/PLF82HzLpIZQecDl0rzIm1FTxb4/
+
+### Independent Determinability of Agent Actions — draft-wadkins-agentproto-action-determinability-00
+The 10 Sep 2026 individual Internet-Draft separates authorization, enforcement, execution and intended effect into distinct transitions and requires enough preserved evidence for an independent evaluator to determine the claimed transition later.
+
+Koschei relevance: VERY HIGH. This maps directly onto Koschei's observable-vs-canonical separation and proof-carrying execution. A declared request or authorization MUST NOT stand in for an executed effect. Future Koschei external-action receipts should bind governing revision + material action + resulting effect evidence.
+
+Source: https://www.ietf.org/archive/id/draft-wadkins-agentproto-action-determinability-00.html
+
+### W3C AIKR / Agent Identity trust-layer discussion — declared vs resolved facts
+September discussion highlights a concrete failure class: checking a declared scope against another declared identifier can prove internal consistency while failing to prove the actual resolved/executed target. Participants distinguish consistency checks from evidence checks that recompute or resolve the real target.
+
+Koschei relevance: VERY HIGH as adversarial design input, but this is Community Group discussion rather than W3C Recommendation. Add a hard rule for external adapters: **no declared slot is accepted as the corresponding executed fact**. Effect evidence must be resolved/recomputed and bound to the authority decision.
+
+Sources:
+- https://lists.w3.org/Archives/Public/public-aikr/2026Sep/0029.html
+- https://lists.w3.org/Archives/Public/public-aikr/2026Sep/0028.html
+
+## 2026-09-19 05:57+03 Koschei delta decision
+
+1. Preserve four distinct external-action facts: authorization, enforcement decision, execution, effect.
+2. A protocol declaration/manifest/request is observable evidence, never proof of the executed target/effect by itself.
+3. Future external-action proof envelopes must bind the exact governing revision in force at decision time.
+4. Evidence referenced but unavailable must fail closed where the claim depends on it; silent degradation to unchecked state is forbidden.
+5. Agent communication protocol participation cannot manufacture Khar or compiler authority.
