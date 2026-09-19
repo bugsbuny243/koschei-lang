@@ -116,6 +116,7 @@ class MirMapFinish:
 class MirStructNew:
     target: int
     type_name: str
+    required_fields: tuple[str, ...]
     type: TypeNode
     location: SourceLocation
 
