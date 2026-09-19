@@ -176,3 +176,28 @@ epoch/lifetime, or other authority dimension.
 These requirements apply before external evidence is allowed to participate in the
 canonical authority bridge. They do not grant external identity systems authority
 over Koschei's native Khar/compiler enforcement.
+
+
+## PROTOCOL NEGOTIATION / DOWNGRADE GATE — 2026-09-19
+
+External protocol discovery and negotiation are pre-admission observations, not
+authority.
+
+When an external adapter relies on negotiated agent/authentication protocol state,
+the admitted evidence MUST bind the exact protocol identity, version and all
+security-relevant negotiated parameters. The later authorization/session path MUST
+verify that binding rather than re-negotiate or infer a compatible profile.
+
+If peers have no intersection that satisfies Koschei's required identity, evidence,
+freshness, revocation, authority-scope and effect-verification guarantees, admission
+MUST fail closed. A compatibility fallback may preserve or strengthen those
+requirements; it MUST NOT weaken them.
+
+A negotiation transcript/hash can provide binding evidence but does not create
+authority. Likewise, external trust-domain or issuer metadata is evidence describing
+a claimed trust relationship. Conflicting, ambiguous, stale or unresolved trust
+paths MUST NOT be collapsed into an allow decision.
+
+No negotiated protocol, fallback, issuer relationship or cross-domain metadata may
+widen the operation/subject/resource/lifetime admitted by the canonical native
+authority basis.
