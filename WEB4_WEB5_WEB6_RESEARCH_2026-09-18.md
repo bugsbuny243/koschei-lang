@@ -422,3 +422,23 @@ No new primary IETF/W3C consensus Web5/Web6 technical standard was identified in
 2. Adversarial tests must exercise the actual executor when claiming runtime enforcement.
 3. Delegated/sub-execution evidence binds the exact executing identity/run, not merely the top-level identity.
 4. A declared invariant cannot satisfy an evidence gate by being compared only with another declaration.
+
+
+## 2026-09-20 evidence-qualified authorization delta
+
+### IETF agent evidence boundary
+A new September 2026 individual Internet-Draft, `draft-watts-agent-evidence-boundary-00`, defines Evidence Qualification Receipts for binding an authorization-triggering proposition to an evidence profile, evidence digests, contradiction state, freshness and evaluation result. Its core architectural point is useful for Koschei: identity/delegation/permission alone do not establish that the factual premise used to authorize an operation is adequately supported.
+
+Primary source: https://www.ietf.org/ietf-ftp/internet-drafts/draft-watts-agent-evidence-boundary-00.html
+
+This is an Experimental Internet-Draft, not an IETF standard.
+
+### Koschei impact
+1. A compiler/runtime admission fact that depends on evidence must bind the exact evidence profile/digest and freshness state used for the decision.
+2. Identity, delegation and authorization do not substitute for evidence sufficiency.
+3. Contradictory, stale, unavailable or unverifiable required evidence fails closed.
+4. External evidence qualification remains evidence only; it cannot mint Khar, compiler authority, execution, effect or finality.
+5. For aggregate execution, runtime facts must be compiler-owned sealed facts; source literals cannot self-declare the contract they are being checked against.
+
+### Web5/Web6 recheck
+No new primary IETF/W3C consensus Web5/Web6 technical standard was identified in this delta.
