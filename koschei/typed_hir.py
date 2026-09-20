@@ -107,11 +107,19 @@ class TypedMatchResolution:
 
 
 @dataclass(frozen=True, slots=True)
+class TypedStructLiteralResolution:
+    expression: Expression
+    type_name: str
+    required_fields: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class TypedHIRReport:
     bindings: tuple[TypedBinding, ...]
     expressions: tuple[TypedExpression, ...]
     collections: int
     match_resolutions: tuple[TypedMatchResolution, ...] = ()
+    struct_literal_resolutions: tuple[TypedStructLiteralResolution, ...] = ()
 
     def binding_types(self, name: str) -> tuple[TypeNode, ...]:
         return tuple(item.type for item in self.bindings if item.name == name)
@@ -120,6 +128,12 @@ class TypedHIRReport:
         self, expression: MatchExpression
     ) -> TypedMatchResolution | None:
         for item in self.match_resolutions:
+            if item.expression is expression:
+                return item
+        return None
+
+    def struct_literal_resolution_of(self, expression) -> TypedStructLiteralResolution | None:
+        for item in self.struct_literal_resolutions:
             if item.expression is expression:
                 return item
         return None
@@ -152,6 +166,7 @@ class TypedHIRChecker:
         self.bindings: list[TypedBinding] = []
         self.expressions: list[TypedExpression] = []
         self.match_resolutions: list[TypedMatchResolution] = []
+        self.struct_literal_resolutions: list[TypedStructLiteralResolution] = []
         self.collections = 0
         self.current_function = None
         self.contracts = TypeContractValidator(program, self.imports)
@@ -178,6 +193,7 @@ class TypedHIRChecker:
             tuple(self.expressions),
             self.collections,
             tuple(self.match_resolutions),
+            tuple(self.struct_literal_resolutions),
         )
 
     def declare(
@@ -376,6 +392,10 @@ class TypedHIRChecker:
             return NamedType(expression.type_name)
 
         expected_fields = {field.name: field for field in declaration.fields}
+        required_fields = tuple(field.name for field in declaration.fields)
+        self.struct_literal_resolutions.append(
+            TypedStructLiteralResolution(expression, declaration.name, required_fields)
+        )
         supplied: dict[str, object] = {}
         for name, value in expression.fields:
             if name in supplied:
