@@ -283,3 +283,26 @@ No new primary IETF/W3C consensus Web5/Web6 technical standard was identified in
 2. proposal != authorization != permit != execution != effect != finality.
 3. pending/attested/final states remain distinct and cannot be silently promoted.
 4. Runtime aggregate construction must consume only sealed compiler facts; host/source reconstruction is forbidden.
+
+
+## 2026-09-20 assessment-envelope delta
+
+### Web4 Assessment Assertions — draft-jacobs-web4-assessment-assertions-00 (12 Sep 2026)
+This individual Internet-Draft defines an implementation-neutral envelope for externally presented assessment results, including subject, issuer, policy, result, validity, evidence commitments, proof and current status while allowing protected assessment methods to remain confidential.
+
+Koschei relevance: HIGH for bank/marketplace/exchange-class integrations. An externally supplied risk/compliance/identity assessment can be admitted only as evidence. Its exact subject, issuer, policy/profile, validity interval, evidence commitment, proof and current lifecycle status must be bound before use. An assessment result cannot itself mint Khar, compiler authority, an execution permit, effect completion or finality.
+
+Source: https://www.ietf.org/ietf-ftp/internet-drafts/draft-jacobs-web4-assessment-assertions-00.html
+
+This is an individual Internet-Draft, not an IETF standard.
+
+### Web5/Web6 recheck
+No new primary IETF/W3C consensus Web5/Web6 technical standard was identified in this delta.
+
+## 2026-09-20 assessment-envelope decision
+
+1. External assessment != canonical authority.
+2. Bind subject + issuer + policy/profile + validity + evidence commitment + proof + current status.
+3. Expired, suspended, revoked, superseded, ambiguous or unverifiable assessment fails closed.
+4. Confidential scoring internals do not justify accepting an unverifiable result.
+5. Assessment evidence cannot be promoted into execution/effect/finality proof.
