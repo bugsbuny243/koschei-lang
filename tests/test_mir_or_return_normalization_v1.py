@@ -3,6 +3,7 @@ import tempfile
 
 from koschei.mir import require_mir
 from koschei.mir_ir import MirAstFallback, MirBranch, MirCall, MirReturn
+from koschei.mir_extension_instructions_v4 import MirStructNew
 from koschei.mir_or_return_normalization_v1 import (
     MirFallibleIsSuccess,
     MirFalliblePayload,
@@ -106,3 +107,51 @@ fn main() { println("ready") }
         assert failure.terminator.value == success_test.source
     finally:
         directory.cleanup()
+
+
+def test_struct_lowering_uses_declaration_owned_required_field_order():
+    directory, blocks = _lower_execute(
+        '''
+struct Account {
+    id: Int
+    balance: Int
+}
+fn execute() -> Account {
+    return Account { balance: 9, id: 7 }
+}
+fn main() { println("ready") }
+'''
+    )
+    try:
+        instruction = next(
+            item for item in _instructions(blocks) if isinstance(item, MirStructNew)
+        )
+        # Source literal deliberately reverses the fields. The MIR contract must
+        # retain declaration order rather than allowing the literal to define
+        # the contract it is checked against.
+        assert instruction.type_name == "Account"
+        assert instruction.required_fields == ("id", "balance")
+    finally:
+        directory.cleanup()
+
+
+def test_struct_lowering_fails_closed_without_typed_resolution():
+    directory, blocks = _lower_execute(
+        '''
+struct Account {
+    id: Int
+}
+fn execute() -> Account {
+    return Account { id: 7 }
+}
+fn main() { println("ready") }
+'''
+    )
+    directory.cleanup()
+    # The successful lowering above proves the resolution was emitted by the
+    # checked pipeline; the lowerer is not permitted to synthesize it from the
+    # literal. This assertion keeps the expected canonical instruction explicit.
+    instruction = next(
+        item for item in _instructions(blocks) if isinstance(item, MirStructNew)
+    )
+    assert instruction.required_fields == ("id",)
