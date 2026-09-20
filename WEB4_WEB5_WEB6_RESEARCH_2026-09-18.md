@@ -398,3 +398,27 @@ No new primary IETF/W3C consensus Web5/Web6 technical standard was identified in
 2. Security gates must exercise the real canonical runtime transition when that transition exists.
 3. Expected rejection predicates duplicated only inside tests do not prove runtime enforcement.
 4. Exact-head validation remains distinct from source-level test construction.
+
+
+## 2026-09-20 declared-vs-observed runtime evidence delta
+
+### W3C community discussion — run records under identity
+A September Agent Identity Community Group discussion proposes a useful distinction for verifiable agent runs: identity/declarations answer who or what was asserted, while a per-run record is needed to establish what actually executed. The discussion specifically raises delegated subagents and the need to distinguish declared from observed behaviour.
+
+Source: https://lists.w3.org/Archives/Public/public-agent-identity/2026Sep/0021.html
+
+A related AIKR Community Group thread describes consistency checks (declared fact versus declared fact) separately from evidence checks (declared fact versus recomputed/resolved/observed fact). This is directly relevant to Koschei runtime validation: reproducing a sealed-contract predicate in a test is not equivalent to observing the canonical executor enforce it.
+
+Source: https://lists.w3.org/Archives/Public/public-aikr/2026Sep/0028.html
+
+These are W3C Community Group discussions, not W3C Recommendations.
+
+### Web5/Web6 recheck
+No new primary IETF/W3C consensus Web5/Web6 technical standard was identified in this delta.
+
+## 2026-09-20 declared-vs-observed decision
+
+1. Compiler/runtime declarations and observed execution evidence remain separate facts.
+2. Adversarial tests must exercise the actual executor when claiming runtime enforcement.
+3. Delegated/sub-execution evidence binds the exact executing identity/run, not merely the top-level identity.
+4. A declared invariant cannot satisfy an evidence gate by being compared only with another declaration.
