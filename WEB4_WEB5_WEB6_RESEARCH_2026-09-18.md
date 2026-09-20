@@ -374,3 +374,27 @@ No new primary IETF/W3C consensus Web5/Web6 technical standard was identified in
 2. Runtime validates/consumes those sealed invariants; it does not reconstruct them from AST/source.
 3. Missing, duplicate, conflicting or already-consumed aggregate state fails closed.
 4. Host representation convenience never defines Koschei aggregate semantics.
+
+
+## 2026-09-20 adversarial execution-evidence delta
+
+### Web4 execution/evidence boundary recheck
+The current Web4 draft set continues to separate declared authority and durable evidence from the actual execution/effect event. For Koschei validation, representation-level assertions are therefore insufficient evidence that a runtime transition enforces the sealed contract.
+
+Koschei impact: HIGH. Adversarial tests for sealed aggregates must drive the real MIR executor path, not merely recreate the expected predicate in test code.
+
+Primary references:
+- https://datatracker.ietf.org/doc/html/draft-reilly-web4-00
+- https://www.ietf.org/archive/id/draft-jacobs-web4-evidence-receipts-00.html
+
+These remain individual Internet-Drafts, not IETF standards.
+
+### Web5/Web6 recheck
+No new primary IETF/W3C consensus Web5/Web6 technical standard was identified in this delta.
+
+## 2026-09-20 adversarial execution-evidence decision
+
+1. Representation tests are not execution evidence.
+2. Security gates must exercise the real canonical runtime transition when that transition exists.
+3. Expected rejection predicates duplicated only inside tests do not prove runtime enforcement.
+4. Exact-head validation remains distinct from source-level test construction.
