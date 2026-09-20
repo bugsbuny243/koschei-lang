@@ -13,7 +13,7 @@ from typing import Any
 
 from .interpreter import EnumValue
 from .mir import MirFunction, MirGraph
-from .mir_extension_instructions_v4 import MirVariantIs, MirVariantPayload
+from .mir_extension_instructions_v4 import (\n    MirStructFinish,\n    MirStructNew,\n    MirStructSet,\n    MirVariantIs,\n    MirVariantPayload,\n)
 from .mir_ir import (
     MirAstFallback,
     MirBinary,
@@ -423,6 +423,34 @@ class _MirExecutor:
                     f"MIR variant payload extraction failed closed: {exc}"
                 ) from exc
             return
+        if isinstance(instruction, MirStructNew):
+            if len(set(instruction.required_fields)) != len(instruction.required_fields):
+                raise MirNativeRuntimeError("duplicate field in sealed struct contract")
+            values[instruction.target] = _StructBuilder(instruction.type_name, instruction.required_fields, {})
+            return
+        if isinstance(instruction, MirStructSet):
+            builder = self._struct_builder(values, instruction.object)
+            if builder.consumed:
+                raise MirNativeRuntimeError("struct builder already consumed")
+            if instruction.field not in builder.required_fields:
+                raise MirNativeRuntimeError("struct field outside sealed contract")
+            if instruction.field in builder.fields:
+                raise MirNativeRuntimeError("duplicate struct field assignment")
+            builder.fields[instruction.field] = self._value(values, instruction.source)
+            return
+        if isinstance(instruction, MirStructFinish):
+            builder = self._struct_builder(values, instruction.source)
+            if builder.consumed:
+                raise MirNativeRuntimeError("struct builder already consumed")
+            missing = tuple(f for f in builder.required_fields if f not in builder.fields)
+            if missing:
+                raise MirNativeRuntimeError("missing required struct fields: " + ", ".join(missing))
+            builder.consumed = True
+            values[instruction.target] = _StructValue(
+                builder.type_name,
+                tuple((f, builder.fields[f]) for f in builder.required_fields),
+            )
+            return
         if isinstance(instruction, MirList):
             values[instruction.target] = tuple(
                 self._value(values, item) for item in instruction.items
@@ -513,6 +541,13 @@ class _MirExecutor:
                     raise MirNativeRuntimeError("Err expects one argument")
                 return EnumValue("Result", "Err", arguments[0])
         raise MirNativeRuntimeError("MIR call target is not callable")
+
+    @staticmethod
+    def _struct_builder(values: dict[int, Any], value_id: int) -> _StructBuilder:
+        value = _MirExecutor._value(values, value_id)
+        if not isinstance(value, _StructBuilder):
+            raise MirNativeRuntimeError("invalid MIR struct builder")
+        return value
 
     @staticmethod
     def _value(values: dict[int, Any], value_id: int) -> Any:
