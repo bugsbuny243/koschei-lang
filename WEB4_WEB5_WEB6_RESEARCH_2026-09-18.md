@@ -442,3 +442,22 @@ This is an Experimental Internet-Draft, not an IETF standard.
 
 ### Web5/Web6 recheck
 No new primary IETF/W3C consensus Web5/Web6 technical standard was identified in this delta.
+
+
+## 2026-09-21 evidence-profile version binding delta
+
+### Evidence qualification profile stability
+The current evidence-boundary draft makes evidence qualification dependent on a named/profiled evaluation contract rather than an unversioned assertion. For Koschei, the useful consequence is that a security decision must not silently change meaning when the evidence-evaluation profile changes.
+
+Primary source: https://www.ietf.org/ietf-ftp/internet-drafts/draft-watts-agent-evidence-boundary-00.html
+
+This remains an Experimental Internet-Draft, not an IETF standard.
+
+### Koschei decision
+1. Evidence-dependent admission binds the exact evaluation profile/version used.
+2. Re-evaluation under another profile is a new decision fact, not continuation of the old one.
+3. Compiler-owned aggregate contracts follow the same conservation rule: runtime consumes the exact checked contract and may not substitute source-visible structure.
+4. Missing canonical checked resolution fails closed before execution.
+
+### Web5/Web6 recheck
+No new primary IETF/W3C consensus Web5/Web6 technical standard was identified in this delta.
