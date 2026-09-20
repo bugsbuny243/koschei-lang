@@ -350,3 +350,27 @@ No new primary IETF/W3C consensus Web5/Web6 technical standard was identified in
 2. Redaction/selective disclosure cannot remove fields required to establish event identity or lifecycle validity.
 3. Missing required disclosed/committed fact = unverifiable, therefore fail closed.
 4. Privacy-preserving audit receipts still cannot mint authority or imply effect/finality.
+
+
+## 2026-09-20 runtime-proof projection delta
+
+### Web4 evidence / execution boundary synthesis
+Current Web4 drafts continue to reinforce a design constraint already adopted by Koschei: externally supplied evidence, receipts and authority declarations are useful only when projected into an exact local execution contract. The runtime must not reconstruct omitted security facts from source text, host objects or permissive defaults.
+
+Koschei impact: HIGH for aggregate/state execution. Sealed MIR aggregate contracts should contain every compiler-owned fact needed for deterministic runtime validation. Runtime construction is therefore a proof-consumption boundary, not a second type checker or semantic authority.
+
+Primary references:
+- https://datatracker.ietf.org/doc/html/draft-reilly-web4-00
+- https://www.ietf.org/archive/id/draft-jacobs-web4-evidence-receipts-00.html
+
+Both are individual Internet-Drafts, not IETF standards.
+
+### Web5/Web6 recheck
+No new primary IETF/W3C consensus Web5/Web6 technical standard was identified in this delta.
+
+## 2026-09-20 runtime-proof projection decision
+
+1. MIR carries exact compiler-owned aggregate invariants required at execution.
+2. Runtime validates/consumes those sealed invariants; it does not reconstruct them from AST/source.
+3. Missing, duplicate, conflicting or already-consumed aggregate state fails closed.
+4. Host representation convenience never defines Koschei aggregate semantics.
