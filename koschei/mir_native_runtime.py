@@ -13,7 +13,13 @@ from typing import Any
 
 from .interpreter import EnumValue
 from .mir import MirFunction, MirGraph
-from .mir_extension_instructions_v4 import (\n    MirStructFinish,\n    MirStructNew,\n    MirStructSet,\n    MirVariantIs,\n    MirVariantPayload,\n)
+from .mir_extension_instructions_v4 import (
+    MirStructFinish,
+    MirStructNew,
+    MirStructSet,
+    MirVariantIs,
+    MirVariantPayload,
+)
 from .mir_ir import (
     MirAstFallback,
     MirBinary,
@@ -94,6 +100,20 @@ class _ErrorValue:
 
 
 @dataclass(slots=True)
+class _StructBuilder:
+    type_name: str
+    required_fields: tuple[str, ...]
+    fields: dict[str, Any]
+    consumed: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class _StructValue:
+    type_name: str
+    fields: tuple[tuple[str, Any], ...]
+
+
+@dataclass(slots=True)
 class _ListIterator:
     items: tuple[Any, ...]
     index: int = 0
@@ -156,10 +176,11 @@ def inspect_native_mir_support(mir: MirGraph) -> MirNativeSupport:
         MirCall,
         MirVariantIs,
         MirVariantPayload,
+        MirStructNew,
+        MirStructSet,
+        MirStructFinish,
     )
     for module in mir.in_dependency_order():
-        if module.program.structs:
-            reasons.append(f"{module.name}: native MIR v1 does not execute structs yet")
         if module.program.enums:
             reasons.append(f"{module.name}: native MIR v1 does not execute enums yet")
         for function in module.functions:
