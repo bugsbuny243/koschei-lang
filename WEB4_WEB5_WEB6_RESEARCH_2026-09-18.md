@@ -261,3 +261,25 @@ These are community discussions, not W3C Recommendations.
 3. Required referenced evidence becoming unavailable = DENY / unverifiable, never implicit success.
 4. Verification records bind evidence mode (carried/reference) and the resolution policy/version.
 5. None of these external identity/evidence facts mint Khar or compiler authority.
+
+
+## 2026-09-20 execution-time authority delta
+
+### Web4 profile: authority checked at execution boundary
+The active individual Internet-Draft `draft-reilly-web4-00` states that agent authority is a privilege-escalation surface and requires blast-radius classification to be verified at the point of execution rather than only at proposal time. It also separates pending from attested anchor state.
+
+Koschei impact: HIGH and directly aligned with the existing authorization/effect split. A proposal-time decision or permit is not sufficient evidence for a later effect. Security-relevant authority/lifecycle facts must still be current at the execution boundary, and pending evidence must never be promoted to attested/final state.
+
+Source: https://datatracker.ietf.org/doc/html/draft-reilly-web4-00
+
+This is an individual Internet-Draft, not an IETF standard.
+
+### Web5/Web6 recheck
+No new primary IETF/W3C consensus Web5/Web6 technical standard was identified in this delta. Labels alone remain non-authoritative.
+
+## 2026-09-20 execution-boundary decision
+
+1. Revalidate security-relevant authority/lifecycle state at execution, not only proposal/admission.
+2. proposal != authorization != permit != execution != effect != finality.
+3. pending/attested/final states remain distinct and cannot be silently promoted.
+4. Runtime aggregate construction must consume only sealed compiler facts; host/source reconstruction is forbidden.
