@@ -234,3 +234,30 @@ No new primary IETF/W3C consensus Web5/Web6 technical standard was found in this
 3. claim != evidence != assessment != verification != execution != effect != finality.
 4. suspension, expiration, revocation and supersession are first-class lifecycle gates.
 5. private evidence may use verifiable commitments, but unavailable evidence required for a decision remains fail-closed.
+
+
+## 2026-09-20 subagent identity / evidence availability delta
+
+### W3C Agent Identity CG discussion — delegated subagents (18 Sep 2026)
+A new community-group issue asks whether a top-level agent identity assertion also covers delegated subagents and what minimum per-run record is required to make that claim independently checkable afterwards.
+
+Koschei relevance: HIGH. Parent identity must not be silently inherited as child identity or child authority. Every delegated execution hop needs an exact subject/deployment/run binding and an auditable parent-child relationship. Missing child evidence fails closed.
+
+Source: https://lists.w3.org/Archives/Public/public-agent-identity/2026Sep/0033.html
+
+### W3C AIKR discussion — carried vs referenced evidence (17 Sep 2026)
+The current community discussion distinguishes declared consistency from recomputed/resolved evidence and notes a failure mode where referenced evidence becomes unavailable. An unavailable reference can otherwise turn a verification step into an unchecked step without any explicit false statement.
+
+Koschei relevance: HIGH. Evidence availability is part of the verification contract. A required external receipt/evidence reference that cannot be resolved must never degrade into success. Receipts should record whether critical evidence is carried or referenced and bind the resolution policy used at decision time.
+
+Source: https://lists.w3.org/Archives/Public/public-aikr/2026Sep/0028.html
+
+These are community discussions, not W3C Recommendations.
+
+## 2026-09-20 decision
+
+1. Parent-agent identity does not imply child/subagent identity or authority.
+2. Delegated execution evidence binds exact parent, child, deployment/run and authority attenuation.
+3. Required referenced evidence becoming unavailable = DENY / unverifiable, never implicit success.
+4. Verification records bind evidence mode (carried/reference) and the resolution policy/version.
+5. None of these external identity/evidence facts mint Khar or compiler authority.
