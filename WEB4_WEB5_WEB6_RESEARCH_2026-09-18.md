@@ -328,3 +328,25 @@ No new primary IETF/W3C consensus Web5/Web6 technical standard was identified in
 2. Receipt integrity != evidence sufficiency/freshness/authority.
 3. Long-lived audit identity must not bypass execution-time lifecycle checks.
 4. Financial/commerce receipts must bind exact event class so authorization, execution, effect and finality cannot be confused.
+
+
+## 2026-09-20 receipt-privacy delta
+
+### Web4 Evidence Receipts — selective disclosure / privacy boundary
+The active individual evidence-receipt draft permits protected evidence to remain private while exposing cryptographic commitments and event metadata sufficient for later verification. For Koschei this is useful only if privacy does not erase the verifier's ability to establish the exact event class, subject, issuer, policy/lifecycle state and evidence commitment required by the decision.
+
+Koschei impact: HIGH for regulated financial/commerce systems. Auditability should not require copying sensitive customer evidence into every execution receipt; however, redaction/selective disclosure must never turn a required proof field into an unverifiable wildcard.
+
+Source: https://www.ietf.org/archive/id/draft-jacobs-web4-evidence-receipts-00.html
+
+This remains an individual Internet-Draft, not an IETF standard.
+
+### Web5/Web6 recheck
+No new primary IETF/W3C consensus Web5/Web6 technical standard was identified in this delta.
+
+## 2026-09-20 receipt-privacy decision
+
+1. Sensitive evidence may remain private while exact cryptographic commitments are retained.
+2. Redaction/selective disclosure cannot remove fields required to establish event identity or lifecycle validity.
+3. Missing required disclosed/committed fact = unverifiable, therefore fail closed.
+4. Privacy-preserving audit receipts still cannot mint authority or imply effect/finality.
