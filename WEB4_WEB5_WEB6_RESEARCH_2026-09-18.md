@@ -306,3 +306,25 @@ No new primary IETF/W3C consensus Web5/Web6 technical standard was identified in
 3. Expired, suspended, revoked, superseded, ambiguous or unverifiable assessment fails closed.
 4. Confidential scoring internals do not justify accepting an unverifiable result.
 5. Assessment evidence cannot be promoted into execution/effect/finality proof.
+
+
+## 2026-09-20 durable-reference delta
+
+### Web4 Evidence Receipts — durable reference semantics recheck
+The current individual Web4 evidence-receipt draft treats a receipt as a durable, cryptographically verifiable reference to an event while allowing protected evidence to remain private. That reinforces a distinction Koschei must preserve: durable receipt identity/integrity does not guarantee that separately referenced evidence is currently available, sufficient, fresh or authoritative.
+
+Koschei impact: HIGH for long-lived financial/commerce audit trails. A bank/order/exchange audit record can retain a durable receipt while authorization and effect verification independently check evidence availability, lifecycle and exact event type.
+
+Source: https://www.ietf.org/archive/id/draft-jacobs-web4-evidence-receipts-00.html
+
+This remains an individual Internet-Draft, not an IETF standard.
+
+### Web5/Web6 recheck
+No new primary IETF/W3C consensus Web5/Web6 technical standard was identified in this delta.
+
+## 2026-09-20 durable-reference decision
+
+1. Durable receipt != currently resolvable evidence.
+2. Receipt integrity != evidence sufficiency/freshness/authority.
+3. Long-lived audit identity must not bypass execution-time lifecycle checks.
+4. Financial/commerce receipts must bind exact event class so authorization, execution, effect and finality cannot be confused.
