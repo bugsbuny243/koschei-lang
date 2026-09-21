@@ -461,3 +461,23 @@ This remains an Experimental Internet-Draft, not an IETF standard.
 
 ### Web5/Web6 recheck
 No new primary IETF/W3C consensus Web5/Web6 technical standard was identified in this delta.
+
+
+## 2026-09-21 resolved-target execution delta
+
+### Fresh primary-source recheck
+A fresh W3C Community Group recheck found a concrete execution-boundary failure mode: authorization may compare a declared scope with another declared identifier while the actual resolved outbound target never enters the check. A related discussion distinguishes consistency checks (declared-vs-declared) from evidence checks (declared-vs-resolved/recomputed/observed).
+
+Primary W3C sources:
+- https://lists.w3.org/Archives/Public/public-agent-identity/2026Sep/0024.html
+- https://lists.w3.org/Archives/Public/public-aikr/2026Sep/0029.html
+- https://lists.w3.org/Archives/Public/public-aikr/2026Sep/0028.html
+
+These are Community Group discussions, not W3C Recommendations.
+
+### Koschei decision
+1. A declared source/runtime contract is not proof that the executor enforced it.
+2. Security tests claiming runtime enforcement must drive the actual runtime transition.
+3. Where an action has a resolved target, authorization evidence must bind that resolved target rather than only source-visible/declarative identifiers.
+4. Missing observed/resolved evidence remains fail-closed.
+5. No new primary IETF/W3C consensus Web5/Web6 technical standard was identified in this recheck.
