@@ -522,3 +522,22 @@ These are W3C Community Group discussions, not W3C Recommendations.
 2. Duplicate-key behavior must come from a compiler/language-owned canonical rule or remain unsupported/fail-closed.
 3. Runtime evidence must record the actual canonical transition, not a declaration of expected host behavior.
 4. No new primary IETF/W3C consensus Web5/Web6 technical standard was identified in this recheck.
+
+
+## 2026-09-23 authority-transition receipt delta
+
+### Fresh primary IETF recheck
+A fresh IETF Datatracker search found `draft-watts-agent-authority-transition-receipts-00` (12 Sep 2026). It defines a signed, non-bearer receipt binding an operation to principal, policy, evidence set, decision, audience, validity interval, and predecessor authority state. It is an Informational Internet-Draft, not an IETF standard.
+
+Primary source: https://datatracker.ietf.org/doc/html/draft-watts-agent-authority-transition-receipts-00
+
+The recheck also reconfirmed `draft-wadkins-agentproto-action-determinability-00`: authorization, enforcement, execution and intended effect are distinct transitions whose evidence must not be promoted across boundaries.
+
+Primary source: https://datatracker.ietf.org/doc/html/draft-wadkins-agentproto-action-determinability-00
+
+### Koschei impact
+1. State-transition evidence binds predecessor state as well as the resulting decision/state.
+2. A receipt remains non-authoritative evidence; possession of it cannot itself grant Khar/compiler/runtime authority.
+3. Runtime collection semantics must be Koschei-owned transitions, not inherited from host containers.
+4. Until Map duplicate-key behavior is explicitly defined by the language contract, native execution must fail closed rather than silently inherit host overwrite semantics.
+5. No new primary IETF/W3C consensus Web5/Web6 technical standard was identified in this recheck.
