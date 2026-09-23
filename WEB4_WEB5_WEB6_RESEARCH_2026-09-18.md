@@ -504,3 +504,21 @@ These are W3C Community Group discussions, not W3C Recommendations.
 3. Declared contracts remain compiler-owned inputs; observed execution remains a separate evidence class.
 4. Unresolvable required evidence is not success and cannot silently degrade to an unchecked allow.
 5. No new primary IETF/W3C consensus Web5/Web6 technical standard was identified in this recheck.
+
+
+## 2026-09-23 evidence-resolution identity delta
+
+### Fresh primary-source recheck
+A fresh W3C AIKR Community Group recheck reinforces a useful execution-evidence boundary: a verifier must distinguish declared identifiers from the value actually resolved/recomputed/observed during verification. A consistency comparison between declarations is not evidence that the real execution target or effect matched them.
+
+Primary sources:
+- https://lists.w3.org/Archives/Public/public-aikr/2026Sep/0028.html
+- https://lists.w3.org/Archives/Public/public-aikr/2026Sep/0029.html
+
+These are W3C Community Group discussions, not W3C Recommendations.
+
+### Koschei decision
+1. Map semantics cannot be inherited accidentally from a host container.
+2. Duplicate-key behavior must come from a compiler/language-owned canonical rule or remain unsupported/fail-closed.
+3. Runtime evidence must record the actual canonical transition, not a declaration of expected host behavior.
+4. No new primary IETF/W3C consensus Web5/Web6 technical standard was identified in this recheck.
