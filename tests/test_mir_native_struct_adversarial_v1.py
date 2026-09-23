@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import unittest
-from unittest.mock import Mock
-
 from koschei.mir_extension_instructions_v4 import MirStructFinish, MirStructNew, MirStructSet
 from koschei.mir_ir import MirConst
 from koschei.mir_native_runtime import MirNativeRuntimeError, _MirExecutor, _StructValue
@@ -16,9 +14,9 @@ ACCOUNT = NamedType("Account")
 
 def _executor():
     executor = object.__new__(_MirExecutor)
-    executor.mir = Mock()
-    executor.mir.module_of.return_value = Mock(imports={})
-    executor.functions_by_module = {"root": {}}
+    # Struct/const transitions do not consult graph/module state. Keep this
+    # harness deliberately minimal so the observed result comes from the real
+    # executor instruction implementation, not from a mocked semantic layer.
     return executor
 
 
