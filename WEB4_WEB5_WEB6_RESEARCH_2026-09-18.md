@@ -481,3 +481,26 @@ These are Community Group discussions, not W3C Recommendations.
 3. Where an action has a resolved target, authorization evidence must bind that resolved target rather than only source-visible/declarative identifiers.
 4. Missing observed/resolved evidence remains fail-closed.
 5. No new primary IETF/W3C consensus Web5/Web6 technical standard was identified in this recheck.
+
+
+## 2026-09-23 observed-execution conformance delta
+
+### Fresh primary-source recheck
+A fresh W3C Agent Conformance Community Group recheck produced a directly relevant implementation lesson: an earlier comparison used declared expected fields without running the checker; the later emitter ran the pinned checker and treated its output as the observation. The distinction is exactly the boundary Koschei needs between representation tests and runtime enforcement evidence.
+
+Primary source: https://lists.w3.org/Archives/Public/public-agent-conformance/2026Sep/0052.html
+
+Related W3C AIKR discussion continues to distinguish declared-vs-declared consistency from declared-vs-resolved/recomputed/observed evidence, including binding the actual resolved execution target.
+
+Primary sources:
+- https://lists.w3.org/Archives/Public/public-aikr/2026Sep/0028.html
+- https://lists.w3.org/Archives/Public/public-aikr/2026Sep/0029.html
+
+These are W3C Community Group discussions, not W3C Recommendations.
+
+### Koschei decision
+1. Expected-state assertions alone do not prove runtime enforcement.
+2. Security gates claiming execution enforcement must exercise the canonical executor and observe its result.
+3. Declared contracts remain compiler-owned inputs; observed execution remains a separate evidence class.
+4. Unresolvable required evidence is not success and cannot silently degrade to an unchecked allow.
+5. No new primary IETF/W3C consensus Web5/Web6 technical standard was identified in this recheck.
