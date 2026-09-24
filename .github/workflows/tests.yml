@@ -10,6 +10,10 @@ on:
       - production/runtime-variant-parity-v1
   workflow_dispatch:
 
+concurrency:
+  group: koschei-production-validation-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
