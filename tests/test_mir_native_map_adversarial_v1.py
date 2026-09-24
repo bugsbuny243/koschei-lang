@@ -3,7 +3,15 @@ from __future__ import annotations
 import unittest
 
 from koschei.ast_nodes import SourceLocation
-from koschei.mir_extension_instructions_v4 import MirMapFinish, MirMapInsert, MirMapNew
+from koschei.mir_extension_instructions_v4 import (
+    MirMapContains,
+    MirMapFinish,
+    MirMapGet,
+    MirMapInsert,
+    MirMapKeys,
+    MirMapNew,
+    MirMapSet,
+)
 from koschei.mir_ir import MirConst
 from koschei.mir_native_runtime import MirNativeRuntimeError, _MapValue, _MirExecutor
 from koschei.type_system import INT, STRING, generic
@@ -88,6 +96,47 @@ class NativeMirMapAdversarialTests(unittest.TestCase):
             _run((
                 MirConst(1, 7, INT, LOC),
                 MirMapFinish(2, 1, MAP, LOC),
+            ))
+
+    def test_map_methods_preserve_canonical_behavior(self):
+        values = _run((
+            MirMapNew(1, MAP, LOC),
+            MirConst(2, "a", STRING, LOC),
+            MirConst(3, 1, INT, LOC),
+            MirMapInsert(1, (2, 3), MAP, LOC),
+            MirMapFinish(4, 1, MAP, LOC),
+            MirMapGet(5, 4, 2, INT, LOC),
+            MirConst(6, "b", STRING, LOC),
+            MirConst(7, 2, INT, LOC),
+            MirMapSet(8, 4, 6, 7, MAP, LOC),
+            MirMapKeys(9, 8, generic("List", STRING), LOC),
+            MirMapContains(10, 8, 6, generic("Bool"), LOC),
+        ))
+        self.assertEqual(values[5], 1)
+        self.assertEqual(values[8], _MapValue((("a", 1), ("b", 2))))
+        self.assertEqual(values[9], ("a", "b"))
+        self.assertTrue(values[10])
+
+    def test_map_set_replaces_without_reordering(self):
+        values = _run((
+            MirMapNew(1, MAP, LOC),
+            MirConst(2, "a", STRING, LOC),
+            MirConst(3, 1, INT, LOC),
+            MirMapInsert(1, (2, 3), MAP, LOC),
+            MirConst(4, "b", STRING, LOC),
+            MirConst(5, 2, INT, LOC),
+            MirMapInsert(1, (4, 5), MAP, LOC),
+            MirMapFinish(6, 1, MAP, LOC),
+            MirConst(7, 9, INT, LOC),
+            MirMapSet(8, 6, 2, 7, MAP, LOC),
+        ))
+        self.assertEqual(values[8].entries, (("a", 9), ("b", 2)))
+
+    def test_map_method_rejects_non_map_receiver(self):
+        with self.assertRaisesRegex(MirNativeRuntimeError, "invalid MIR Map value"):
+            _run((
+                MirConst(1, 7, INT, LOC),
+                MirMapKeys(2, 1, generic("List", STRING), LOC),
             ))
 
     def test_finished_order_follows_insertion_order(self):
