@@ -2,8 +2,14 @@ from pathlib import Path
 import tempfile
 
 from koschei.mir import require_mir
-from koschei.mir_ir import MirAstFallback, MirBranch, MirCall, MirReturn
-from koschei.mir_extension_instructions_v4 import MirStructNew
+from koschei.mir_ir import MirAstFallback, MirBranch, MirCall, MirMember, MirReturn
+from koschei.mir_extension_instructions_v4 import (
+    MirMapContains,
+    MirMapGet,
+    MirMapKeys,
+    MirMapSet,
+    MirStructNew,
+)
 from koschei.mir_or_return_normalization_v1 import (
     MirFallibleIsSuccess,
     MirFalliblePayload,
@@ -105,6 +111,46 @@ fn main() { println("ready") }
         failure = next(block for block in blocks if block.id == branch.terminator.else_block)
         assert isinstance(failure.terminator, MirReturn)
         assert failure.terminator.value == success_test.source
+    finally:
+        directory.cleanup()
+
+
+def test_map_methods_lower_to_sealed_opcodes_without_generic_member_call():
+    directory, blocks = _lower_execute(
+        '''
+fn execute() {
+    let values = {"a": 1}
+    let found = values.get("a") or 0
+    let changed = values.set("b", 2)
+    let keys = changed.keys()
+    let has = changed.contains("b")
+    println(found)
+    println(keys)
+    println(has)
+}
+fn main() { execute() }
+'''
+    )
+    try:
+        instructions = _instructions(blocks)
+        assert any(isinstance(item, MirMapGet) for item in instructions)
+        assert any(isinstance(item, MirMapSet) for item in instructions)
+        assert any(isinstance(item, MirMapKeys) for item in instructions)
+        assert any(isinstance(item, MirMapContains) for item in instructions)
+        assert not any(isinstance(item, MirMember) for item in instructions)
+        # Calls that remain here are real function/builtin calls, not Map method
+        # dispatch. Map method meaning is carried only by the sealed opcodes.
+        assert all(
+            not (
+                isinstance(item, MirCall)
+                and any(
+                    isinstance(candidate, MirMember)
+                    and candidate.target == item.callee
+                    for candidate in instructions
+                )
+            )
+            for item in instructions
+        )
     finally:
         directory.cleanup()
 
