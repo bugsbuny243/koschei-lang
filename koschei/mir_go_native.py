@@ -1,24 +1,9 @@
-"""NON-AUTHORITATIVE host conformance adapter for sealed Koschei MIR.
+"""NON-AUTHORITATIVE Go conformance projection for sealed Koschei MIR v4.
 
-ARCHITECTURAL STATUS
-====================
-This module is bootstrap/conformance machinery only. It is NOT the Koschei
-native runtime, does not define Koschei language semantics, and must never be
-used to repair, infer, reinterpret, or extend compiler-owned facts.
-
-Canonical execution meaning is owned by the sealed Koschei MIR/state-transition
-contract described by ``KOSCHEI_NATIVE_EXECUTION_BOUNDARY_V1.md``. This adapter
-may only project already-sealed facts into a Go program and must fail closed
-when that projection is incomplete.
-
-The historical module name is retained temporarily to avoid a broad import/API
-migration inside the same production branch. New architecture and production
-claims must classify it as a host conformance adapter, not as Koschei-native.
-
-This backend consumes sealed MIR blocks directly and emits a program-counter
-state machine for each function. Unsupported constructs are reported before
-generation; this module never consults the source AST. Variant values use only
-sealed ``Owner::Variant`` MIR identities and are never re-resolved by Go.
+Koschei semantics are owned by canonical checking, Typed HIR and sealed MIR.
+This module only materializes the already-sealed scalar/control-flow/variant
+subset into Go for bootstrap/native parity evidence. It never consults the AST
+and fails closed for unsupported MIR instructions.
 """
 
 from __future__ import annotations
@@ -30,6 +15,8 @@ from typing import Any
 
 from .mir import MirFunction, MirGraph
 from .mir_extension_instructions_v4 import (
+    MirIsRuntimeError,
+    MirUnit,
     MirVariantConstruct,
     MirVariantIs,
     MirVariantPayload,
@@ -64,14 +51,16 @@ _UNARY = frozenset({"!", "-", "+"})
 _PRINT_BUILTINS = frozenset({"print", "println"})
 _GO_IDENTIFIER = re.compile(r"[^A-Za-z0-9_]")
 _ENUM_GO_TYPE = "_ksEnumValue"
+_UNIT_GO_TYPE = "_ksUnit"
 _BUILTIN_VARIANTS = {
     "Option": {"Some": True, "None": False},
     "Result": {"Ok": True, "Err": True},
 }
 
 
+
 class MirGoUnsupported(ValueError):
-    """Raised when sealed Koschei MIR cannot be projected by this host adapter."""
+    """Raised when a checked graph is not yet representable by MIR-Go v1."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,264 +89,586 @@ def _variant_contract_reasons(mir: MirGraph) -> tuple[str, ...]:
                 try:
                     owner, variant = split_canonical_variant_v1(instruction.variant)
                 except MirVariantRuntimeError as exc:
-                    reasons.append(f"{label}: invalid canonical variant identity: {exc}")
+                    reasons.append(
+                        f"{label}: invalid canonical variant identity: {exc}"
+                    )
                     continue
                 builtin = _BUILTIN_VARIANTS.get(owner)
                 if builtin is not None:
                     expects_payload = builtin.get(variant)
                     if expects_payload is None:
-                        reasons.append(f"{label}: unknown builtin canonical variant {instruction.variant}")
+                        reasons.append(
+                            f"{label}: unknown builtin canonical variant "
+                            f"{instruction.variant}"
+                        )
                         continue
-                    if isinstance(instruction, MirVariantConstruct):
-                        if expects_payload != (instruction.source is not None):
-                            reasons.append(f"{label}: constructor payload shape drifted for {instruction.variant}")
-                    if isinstance(instruction, MirVariantPayload) and not expects_payload:
-                        reasons.append(f"{label}: payload requested from payload-free {instruction.variant}")
-                    continue
-                declaration = declarations.get(owner)
-                if declaration is None:
-                    reasons.append(f"{label}: unknown canonical enum owner {owner!r}")
-                    continue
-                target = next((item for item in declaration.variants if item.name == variant), None)
-                if target is None:
-                    reasons.append(f"{label}: unknown canonical enum variant {instruction.variant!r}")
-                    continue
-                expects_payload = target.payload_type is not None
+                else:
+                    declaration = declarations.get(owner)
+                    if declaration is None:
+                        reasons.append(
+                            f"{label}: unknown canonical enum owner {owner!r}"
+                        )
+                        continue
+                    target = next(
+                        (item for item in declaration.variants if item.name == variant),
+                        None,
+                    )
+                    if target is None:
+                        reasons.append(
+                            f"{label}: unknown canonical enum variant "
+                            f"{instruction.variant!r}"
+                        )
+                        continue
+                    expects_payload = target.payload_type is not None
                 if isinstance(instruction, MirVariantConstruct):
                     if expects_payload != (instruction.source is not None):
-                        reasons.append(f"{label}: constructor payload shape drifted for {instruction.variant}")
+                        reasons.append(
+                            f"{label}: constructor payload shape drifted for "
+                            f"{instruction.variant}"
+                        )
                 if isinstance(instruction, MirVariantPayload) and not expects_payload:
-                    reasons.append(f"{label}: payload requested from payload-free {instruction.variant}")
+                    reasons.append(
+                        f"{label}: payload requested from payload-free "
+                        f"{instruction.variant}"
+                    )
     return tuple(dict.fromkeys(reasons))
 
 
-def _type_to_go(type_node: TypeNode) -> str | None:
-    if isinstance(type_node, NamedType):
-        if type_node.name in _SCALAR_TYPES:
-            return _SCALAR_TYPES[type_node.name]
-        return _ENUM_GO_TYPE
-    if isinstance(type_node, GenericType):
-        if type_node.name in {"Option", "Result"}:
-            return _ENUM_GO_TYPE
+def _type_supported(type_node: TypeNode, enum_names: frozenset[str], *, allow_void: bool) -> bool:
     if isinstance(type_node, UnknownType):
-        return None
-    return None
-
-
-def _go_ident(name: str) -> str:
-    value = _GO_IDENTIFIER.sub("_", name)
-    if not value or value[0].isdigit():
-        value = "_" + value
-    return value
-
-
-def _value_name(value_id: int) -> str:
-    return f"v{value_id}"
-
-
-def _literal(value: Any) -> str:
-    if value is None:
-        return "nil"
-    if value is True:
-        return "true"
-    if value is False:
-        return "false"
-    if isinstance(value, str):
-        return json.dumps(value)
-    if isinstance(value, (int, float)):
-        return repr(value)
-    raise MirGoUnsupported(f"unsupported constant for host projection: {value!r}")
+        return False
+    if isinstance(type_node, NamedType):
+        if type_node.name == "Void":
+            return allow_void
+        return type_node.name in _SCALAR_TYPES or type_node.name in enum_names
+    if isinstance(type_node, GenericType):
+        return type_node.name in {"Option", "Result"}
+    return False
 
 
 def inspect_mir_go_support(mir: MirGraph) -> MirGoSupport:
-    """Report whether this non-authoritative host adapter can project the graph."""
+    """Report whether the sealed graph is representable by this host adapter."""
+
+    mir.assert_sealed()
     reasons: list[str] = []
     if len(mir.modules) != 1:
-        reasons.append("host adapter v1 supports one module only")
+        reasons.append("MIR-Go v1 requires a single module")
     root = mir.root_module
-    if root.program.imports:
-        reasons.append("host adapter v1 does not project imports")
+    if root.imports:
+        reasons.append("MIR-Go v1 does not compile imports yet")
     if root.program.structs:
-        reasons.append("host adapter v1 does not project structs")
+        reasons.append("MIR-Go v1 does not compile structs yet")
+
+    enum_names = frozenset(item.name for item in root.program.enums)
     reasons.extend(_variant_contract_reasons(mir))
+
+    main = next((item for item in root.functions if item.name == "main"), None)
+    if main is None:
+        reasons.append("MIR-Go v1 requires main")
+    elif main.parameters:
+        reasons.append("MIR-Go v1 requires zero-parameter main")
+
+    function_names = {item.name for item in root.functions}
+    static_loads = function_names | _PRINT_BUILTINS
+
     for function in root.functions:
-        if _type_to_go(function.return_type) is None:
-            reasons.append(f"{function.name}: unsupported return type {render_type(function.return_type)}")
+        if not _type_supported(function.return_type, enum_names, allow_void=True):
+            reasons.append(
+                f"{function.name}: unsupported return type "
+                f"{render_type(function.return_type)}"
+            )
+        parameter_names: set[str] = set()
+        binding_names: set[str] = set()
         for parameter in function.parameters:
-            if _type_to_go(parameter.type_node) is None:
-                reasons.append(f"{function.name}: unsupported parameter type {render_type(parameter.type_node)}")
+            if parameter.name in parameter_names:
+                reasons.append(
+                    f"{function.name}: duplicate parameter {parameter.name}"
+                )
+            parameter_names.add(parameter.name)
+            if not _type_supported(parameter.type, enum_names, allow_void=False):
+                reasons.append(
+                    f"{function.name}: unsupported parameter type "
+                    f"{render_type(parameter.type)}"
+                )
+
         for block in function.blocks:
             for instruction in block.instructions:
                 if isinstance(instruction, MirAstFallback):
-                    reasons.append(f"{function.name}: AST fallback is forbidden at sealed host boundary")
-                elif not isinstance(
+                    reasons.append(
+                        f"{function.name}: AST fallback remains for "
+                        f"{instruction.node_kind}"
+                    )
+                    continue
+                if isinstance(instruction, MirMember):
+                    reasons.append(
+                        f"{function.name}: member access is not MIR-Go yet"
+                    )
+                    continue
+                if isinstance(instruction, MirBind):
+                    binding_names.add(instruction.name)
+                    if not _type_supported(
+                        instruction.type, enum_names, allow_void=True
+                    ):
+                        reasons.append(
+                            f"{function.name}: unsupported binding type "
+                            f"{render_type(instruction.type)}"
+                        )
+                elif isinstance(instruction, MirStore):
+                    if not _type_supported(
+                        instruction.type, enum_names, allow_void=True
+                    ):
+                        reasons.append(
+                            f"{function.name}: unsupported store type "
+                            f"{render_type(instruction.type)}"
+                        )
+                elif isinstance(instruction, MirConst):
+                    if instruction.value is None:
+                        reasons.append(
+                            f"{function.name}: null-like MIR constant is unsupported"
+                        )
+                    elif not _type_supported(
+                        instruction.type, enum_names, allow_void=False
+                    ):
+                        reasons.append(
+                            f"{function.name}: unsupported constant type "
+                            f"{render_type(instruction.type)}"
+                        )
+                elif isinstance(instruction, MirUnary):
+                    if instruction.operator not in _UNARY:
+                        reasons.append(
+                            f"{function.name}: unary operator "
+                            f"{instruction.operator!r} unsupported"
+                        )
+                    if not _type_supported(
+                        instruction.type, enum_names, allow_void=False
+                    ):
+                        reasons.append(
+                            f"{function.name}: unsupported unary result type "
+                            f"{render_type(instruction.type)}"
+                        )
+                elif isinstance(instruction, MirBinary):
+                    if instruction.operator not in _BINARY:
+                        reasons.append(
+                            f"{function.name}: binary operator "
+                            f"{instruction.operator!r} unsupported"
+                        )
+                    if not _type_supported(
+                        instruction.type, enum_names, allow_void=False
+                    ):
+                        reasons.append(
+                            f"{function.name}: unsupported binary result type "
+                            f"{render_type(instruction.type)}"
+                        )
+                elif isinstance(instruction, MirLoad):
+                    if (
+                        instruction.name not in binding_names
+                        and instruction.name not in parameter_names
+                        and instruction.name not in static_loads
+                    ):
+                        reasons.append(
+                            f"{function.name}: unknown static MIR load "
+                            f"{instruction.name!r}"
+                        )
+                elif isinstance(instruction, MirCall):
+                    if not _type_supported(
+                        instruction.type, enum_names, allow_void=True
+                    ):
+                        reasons.append(
+                            f"{function.name}: unsupported call result type "
+                            f"{render_type(instruction.type)}"
+                        )
+                elif isinstance(instruction, MirUnit):
+                    pass
+                elif isinstance(instruction, MirIsRuntimeError):
+                    pass
+                elif isinstance(
                     instruction,
-                    (
-                        MirConst, MirBind, MirLoad, MirStore, MirBinary, MirUnary,
-                        MirMember, MirCall, MirJump, MirBranch, MirReturn,
-                        MirUnreachable, MirVariantConstruct, MirVariantIs,
-                        MirVariantPayload,
-                    ),
+                    (MirVariantConstruct, MirVariantIs, MirVariantPayload),
                 ):
-                    reasons.append(f"{function.name}: unsupported sealed MIR instruction {type(instruction).__name__}")
+                    if not _type_supported(
+                        instruction.type, enum_names, allow_void=False
+                    ):
+                        reasons.append(
+                            f"{function.name}: unsupported variant result type "
+                            f"{render_type(instruction.type)}"
+                        )
+                elif not isinstance(instruction, MirLoad):
+                    reasons.append(
+                        f"{function.name}: unsupported instruction "
+                        f"{type(instruction).__name__}"
+                    )
+
     return MirGoSupport(not reasons, tuple(dict.fromkeys(reasons)))
 
 
-def _function_signature(function: MirFunction) -> str:
-    params = []
-    for parameter in function.parameters:
-        go_type = _type_to_go(parameter.type_node)
-        if go_type is None:
-            raise MirGoUnsupported(f"unsupported parameter type {render_type(parameter.type_node)}")
-        params.append(f"{_go_ident(parameter.name)} {go_type}")
-    result = _type_to_go(function.return_type)
-    if result is None:
-        raise MirGoUnsupported(f"unsupported return type {render_type(function.return_type)}")
-    suffix = f" {result}" if result else ""
-    return f"func {_go_ident(function.name)}({', '.join(params)}){suffix}"
+def generate_go_mir_native(mir: MirGraph) -> str:
+    """Project sealed MIR into Go without acquiring semantic authority."""
 
-
-def _zero_value(go_type: str) -> str:
-    if go_type == "bool": return "false"
-    if go_type in {"int64", "float64"}: return "0"
-    if go_type == "string": return '""'
-    if go_type == _ENUM_GO_TYPE: return f"{_ENUM_GO_TYPE}{{}}"
-    return "nil"
-
-
-def _emit_function(function: MirFunction) -> list[str]:
-    lines = [_function_signature(function) + " {"]
-    values: set[int] = set()
-    variables: dict[str, str] = {}
-    mutable: set[str] = set()
-    for parameter in function.parameters:
-        variables[parameter.name] = _go_ident(parameter.name)
-    for block in function.blocks:
-        for instruction in block.instructions:
-            target = getattr(instruction, "target", None)
-            if isinstance(target, int): values.add(target)
-    for value_id in sorted(values):
-        lines.append(f"    var {_value_name(value_id)} any")
-    lines.append(f"    pc := {function.entry_block}")
-    lines.append("    for {")
-    lines.append("        switch pc {")
-    for block in function.blocks:
-        lines.append(f"        case {block.id}:")
-        for instruction in block.instructions:
-            if isinstance(instruction, MirConst):
-                lines.append(f"            {_value_name(instruction.target)} = {_literal(instruction.value)}")
-            elif isinstance(instruction, MirBind):
-                name = _go_ident(instruction.name)
-                if instruction.name not in variables:
-                    variables[instruction.name] = name
-                    lines.append(f"            var {name} any")
-                lines.append(f"            {name} = {_value_name(instruction.source)}")
-                if instruction.mutable: mutable.add(instruction.name)
-            elif isinstance(instruction, MirLoad):
-                name = variables.get(instruction.name)
-                if name is None: raise MirGoUnsupported(f"unknown sealed load {instruction.name!r}")
-                lines.append(f"            {_value_name(instruction.target)} = {name}")
-            elif isinstance(instruction, MirStore):
-                name = variables.get(instruction.name)
-                if name is None or instruction.name not in mutable:
-                    raise MirGoUnsupported(f"invalid sealed store {instruction.name!r}")
-                lines.append(f"            {name} = {_value_name(instruction.source)}")
-            elif isinstance(instruction, MirBinary):
-                if instruction.operator in {"+", "-", "*"}:
-                    lines.append(
-                        f"            {_value_name(instruction.target)} = "
-                        f"{_value_name(instruction.left)}.(int64) "
-                        f"{instruction.operator} "
-                        f"{_value_name(instruction.right)}.(int64)"
-                    )
-                else:
-                    lines.append(
-                        f"            {_value_name(instruction.target)} = "
-                        f"fmt.Sprint({_value_name(instruction.left)}) "
-                        f"{instruction.operator} "
-                        f"fmt.Sprint({_value_name(instruction.right)})"
-                    )
-            elif isinstance(instruction, MirUnary):
-                if instruction.operator == "!": lines.append(f"            {_value_name(instruction.target)} = !{_value_name(instruction.operand)}.(bool)")
-                else: lines.append(f"            {_value_name(instruction.target)} = {instruction.operator}{_value_name(instruction.operand)}.(int64)")
-            elif isinstance(instruction, MirMember):
-                raise MirGoUnsupported("member projection is not yet supported by host adapter")
-            elif isinstance(instruction, MirCall):
-                args = ", ".join(_value_name(arg) for arg in instruction.arguments)
-                if instruction.callee in _PRINT_BUILTINS:
-                    call = "fmt.Println" if instruction.callee == "println" else "fmt.Print"
-                    lines.append(f"            {call}({args})")
-                    if instruction.target is not None: lines.append(f"            {_value_name(instruction.target)} = nil")
-                else:
-                    target = _go_ident(instruction.callee)
-                    if instruction.target is None: lines.append(f"            {target}({args})")
-                    else: lines.append(f"            {_value_name(instruction.target)} = {target}({args})")
-            elif isinstance(instruction, MirVariantConstruct):
-                owner, variant = split_canonical_variant_v1(instruction.variant)
-                payload = "nil" if instruction.source is None else _value_name(instruction.source)
-                has_payload = "false" if instruction.source is None else "true"
-                lines.append(f"            {_value_name(instruction.target)} = {_ENUM_GO_TYPE}{{owner: {json.dumps(owner)}, variant: {json.dumps(variant)}, hasPayload: {has_payload}, payload: {payload}}}")
-            elif isinstance(instruction, MirVariantIs):
-                owner, variant = split_canonical_variant_v1(instruction.variant)
-                source = _value_name(instruction.source)
-                lines.append(f"            _e, _ok := {source}.({_ENUM_GO_TYPE})")
-                lines.append(f"            {_value_name(instruction.target)} = _ok && _e.owner == {json.dumps(owner)} && _e.variant == {json.dumps(variant)}")
-            elif isinstance(instruction, MirVariantPayload):
-                owner, variant = split_canonical_variant_v1(instruction.variant)
-                source = _value_name(instruction.source)
-                lines.append(f"            _e, _ok := {source}.({_ENUM_GO_TYPE})")
-                lines.append(f"            if !_ok || _e.owner != {json.dumps(owner)} || _e.variant != {json.dumps(variant)} || !_e.hasPayload {{ panic(\"sealed Koschei variant proof violated\") }}")
-                lines.append(f"            {_value_name(instruction.target)} = _e.payload")
-        terminator = block.terminator
-        if isinstance(terminator, MirJump):
-            lines.append(f"            pc = {terminator.target}")
-            lines.append("            continue")
-        elif isinstance(terminator, MirBranch):
-            lines.append(f"            if {_value_name(terminator.condition)}.(bool) {{ pc = {terminator.if_true} }} else {{ pc = {terminator.if_false} }}")
-            lines.append("            continue")
-        elif isinstance(terminator, MirReturn):
-            if terminator.value is None: lines.append("            return")
-            else: lines.append(f"            return {_value_name(terminator.value)}.({_type_to_go(function.return_type)})")
-        elif isinstance(terminator, MirUnreachable):
-            lines.append('            panic("sealed Koschei unreachable state reached")')
-        else:
-            raise MirGoUnsupported(f"unsupported terminator {type(terminator).__name__}")
-    lines.append("        default:")
-    lines.append('            panic("invalid sealed Koschei program counter")')
-    lines.append("        }")
-    lines.append("    }")
-    lines.append("}")
-    return lines
-
-
-def emit_go_from_mir(mir: MirGraph) -> str:
-    """Project sealed Koschei MIR into Go without acquiring semantic authority."""
-    mir.assert_sealed()
     support = inspect_mir_go_support(mir)
     if not support.supported:
         raise MirGoUnsupported("; ".join(support.reasons))
+
     root = mir.root_module
+    functions = list(root.functions)
+    function_symbols = {
+        function.name: f"_ks_fn_{index}_{_safe_identifier(function.name)}"
+        for index, function in enumerate(functions)
+    }
+    uses_fmt = any(
+        isinstance(instruction, MirLoad)
+        and instruction.name in _PRINT_BUILTINS
+        for function in functions
+        for block in function.blocks
+        for instruction in block.instructions
+    )
+
     lines = [
-        "// Generated host conformance projection from sealed Koschei MIR.",
-        "// NON-AUTHORITATIVE: Koschei semantics are owned by the sealed MIR contract.",
+        "// Code generated from sealed Koschei MIR v4. DO NOT EDIT.",
+        "// NON-AUTHORITATIVE host projection; sealed MIR owns semantics.",
         "package main",
         "",
-        'import "fmt"',
-        "",
-        f"type {_ENUM_GO_TYPE} struct {{",
-        "    owner string",
-        "    variant string",
-        "    hasPayload bool",
-        "    payload any",
-        "}",
-        "",
     ]
-    for function in root.functions:
-        lines.extend(_emit_function(function))
+    if uses_fmt:
+        lines.extend(['import "fmt"', ""])
+    lines.extend(
+        [
+            f"type {_UNIT_GO_TYPE} struct {{}}",
+            f"type {_ENUM_GO_TYPE} struct {{",
+            "    owner string",
+            "    variant string",
+            "    hasPayload bool",
+            "    payload any",
+            "}",
+            "",
+        ]
+    )
+    for function in functions:
+        lines.extend(_emit_function(function, function_symbols))
         lines.append("")
-    if not any(function.name == "main" for function in root.functions):
+    if "main" not in function_symbols:
         raise MirGoUnsupported("sealed graph has no main function")
+    lines.extend(["func main() {", f"\t{function_symbols['main']}()", "}", ""])
     return "\n".join(lines)
 
 
-__all__ = ["MirGoSupport", "MirGoUnsupported", "emit_go_from_mir", "inspect_mir_go_support"]
+def emit_go_from_mir(mir: MirGraph) -> str:
+    """Compatibility name for the same non-authoritative sealed projection."""
+
+    return generate_go_mir_native(mir)
+
+
+def _emit_function(
+    function: MirFunction,
+    function_symbols: dict[str, str],
+) -> list[str]:
+    binding_symbols = _binding_symbols(function)
+    parameter_symbols = {
+        parameter.name: f"_ks_p_{index}_{_safe_identifier(parameter.name)}"
+        for index, parameter in enumerate(function.parameters)
+    }
+    runtime_names = {**parameter_symbols, **binding_symbols}
+    symbolic_values = _symbolic_loads(function, runtime_names, function_symbols)
+    value_types = _value_types(function, symbolic_values)
+
+    parameters = ", ".join(
+        f"{parameter_symbols[item.name]} {_require_go_type(item.type)}"
+        for item in function.parameters
+    )
+    return_type = _require_go_type(function.return_type, allow_void=True)
+    signature = f"func {function_symbols[function.name]}({parameters})"
+    if return_type:
+        signature += f" {return_type}"
+    lines = [signature + " {"]
+
+    for name, symbol in binding_symbols.items():
+        type_node = _binding_type(function, name)
+        lines.append(f"\tvar {symbol} {_require_go_type(type_node)}")
+        lines.append(f"\t_ = {symbol}")
+    for value_id, type_node in sorted(value_types.items()):
+        go_type = _require_go_type(type_node)
+        lines.append(f"\tvar _ks_v_{value_id} {go_type}")
+        lines.append(f"\t_ = _ks_v_{value_id}")
+
+    lines.extend(["\t_ks_pc := 0", "\tfor {", "\t\tswitch _ks_pc {"])
+    for block in function.blocks:
+        lines.append(f"\t\tcase {block.id}:")
+        for instruction in block.instructions:
+            lines.extend(
+                _emit_instruction(
+                    instruction,
+                    runtime_names=runtime_names,
+                    symbolic_values=symbolic_values,
+                    function_symbols=function_symbols,
+                )
+            )
+        lines.extend(_emit_terminator(block.terminator, function.return_type))
+    lines.extend(
+        [
+            "\t\tdefault:",
+            '\t\t\tpanic("invalid sealed Koschei MIR block")',
+            "\t\t}",
+            "\t}",
+            "}",
+        ]
+    )
+    return lines
+
+
+def _emit_instruction(
+    instruction: Any,
+    *,
+    runtime_names: dict[str, str],
+    symbolic_values: dict[int, tuple[str, str]],
+    function_symbols: dict[str, str],
+) -> list[str]:
+    prefix = "\t\t\t"
+    if isinstance(instruction, MirConst):
+        return [
+            f"{prefix}_ks_v_{instruction.target} = "
+            f"{_literal_for_type(instruction.value, instruction.type)}"
+        ]
+    if isinstance(instruction, MirLoad):
+        if instruction.target in symbolic_values:
+            return []
+        symbol = runtime_names.get(instruction.name)
+        if symbol is None:
+            raise MirGoUnsupported(f"unknown MIR load {instruction.name!r}")
+        return [f"{prefix}_ks_v_{instruction.target} = {symbol}"]
+    if isinstance(instruction, MirBind):
+        return [
+            f"{prefix}{runtime_names[instruction.name]} = "
+            f"_ks_v_{instruction.source}"
+        ]
+    if isinstance(instruction, MirStore):
+        return [
+            f"{prefix}{runtime_names[instruction.name]} = "
+            f"_ks_v_{instruction.source}"
+        ]
+    if isinstance(instruction, MirUnary):
+        operand_type = _require_go_type(instruction.type)
+        return [
+            f"{prefix}_ks_v_{instruction.target} = "
+            f"{instruction.operator}_ks_v_{instruction.operand}"
+        ]
+    if isinstance(instruction, MirBinary):
+        return [
+            f"{prefix}_ks_v_{instruction.target} = _ks_v_{instruction.left} "
+            f"{instruction.operator} _ks_v_{instruction.right}"
+        ]
+    if isinstance(instruction, MirCall):
+        symbolic = symbolic_values.get(instruction.callee)
+        if symbolic is None:
+            raise MirGoUnsupported(
+                "MIR-Go v1 requires statically resolved call targets"
+            )
+        kind, name = symbolic
+        arguments = ", ".join(
+            f"_ks_v_{item}" for item in instruction.arguments
+        )
+        if kind == "builtin":
+            if len(instruction.arguments) != 1:
+                raise MirGoUnsupported(f"{name} requires one argument")
+            call = "fmt.Println" if name == "println" else "fmt.Print"
+            return [f"{prefix}{call}({arguments})"]
+        call = f"{function_symbols[name]}({arguments})"
+        if _require_go_type(instruction.type, allow_void=True):
+            return [f"{prefix}_ks_v_{instruction.target} = {call}"]
+        return [f"{prefix}{call}"]
+    if isinstance(instruction, MirUnit):
+        return [
+            f"{prefix}_ks_v_{instruction.target} = {_UNIT_GO_TYPE}{{}}"
+        ]
+    if isinstance(instruction, MirIsRuntimeError):
+        # The strict MIR-Go subset admits only values whose checked type cannot
+        # materialize a runtime Error. Error-bearing unions/fallible operations
+        # remain unsupported, so this proof is deterministically false here.
+        return [f"{prefix}_ks_v_{instruction.target} = false"]
+    if isinstance(instruction, MirVariantConstruct):
+        owner, variant = split_canonical_variant_v1(instruction.variant)
+        payload = (
+            "nil"
+            if instruction.source is None
+            else f"_ks_v_{instruction.source}"
+        )
+        has_payload = "false" if instruction.source is None else "true"
+        return [
+            f"{prefix}_ks_v_{instruction.target} = {_ENUM_GO_TYPE}{{"
+            f'owner: {json.dumps(owner)}, variant: {json.dumps(variant)}, '
+            f"hasPayload: {has_payload}, payload: {payload}}}"
+        ]
+    if isinstance(instruction, MirVariantIs):
+        owner, variant = split_canonical_variant_v1(instruction.variant)
+        temp = f"_ks_variant_{instruction.target}"
+        ok = f"_ks_variant_ok_{instruction.target}"
+        return [
+            f"{prefix}{temp}, {ok} := "
+            f"_ks_v_{instruction.source}.({_ENUM_GO_TYPE})",
+            f"{prefix}_ks_v_{instruction.target} = "
+            f"{ok} && {temp}.owner == {json.dumps(owner)} && "
+            f"{temp}.variant == {json.dumps(variant)}",
+        ]
+    if isinstance(instruction, MirVariantPayload):
+        owner, variant = split_canonical_variant_v1(instruction.variant)
+        temp = f"_ks_variant_{instruction.target}"
+        ok = f"_ks_variant_ok_{instruction.target}"
+        target_type = _require_go_type(instruction.type)
+        return [
+            f"{prefix}{temp}, {ok} := "
+            f"_ks_v_{instruction.source}.({_ENUM_GO_TYPE})",
+            f"{prefix}if !{ok} || {temp}.owner != {json.dumps(owner)} || "
+            f"{temp}.variant != {json.dumps(variant)} || !{temp}.hasPayload {{",
+            f'{prefix}\tpanic("canonical variant payload proof mismatch")',
+            f"{prefix}}}",
+            f"{prefix}_ks_v_{instruction.target} = "
+            f"{temp}.payload.({target_type})",
+        ]
+    raise MirGoUnsupported(
+        f"unsupported instruction reached MIR-Go emitter: "
+        f"{type(instruction).__name__}"
+    )
+
+
+def _emit_terminator(terminator: Any, return_type: TypeNode) -> list[str]:
+    prefix = "\t\t\t"
+    if isinstance(terminator, MirReturn):
+        if terminator.value is None:
+            return [f"{prefix}return"]
+        return [f"{prefix}return _ks_v_{terminator.value}"]
+    if isinstance(terminator, MirJump):
+        return [f"{prefix}_ks_pc = {terminator.target}", f"{prefix}continue"]
+    if isinstance(terminator, MirBranch):
+        return [
+            f"{prefix}if _ks_v_{terminator.condition} {{",
+            f"{prefix}\t_ks_pc = {terminator.then_block}",
+            f"{prefix}}} else {{",
+            f"{prefix}\t_ks_pc = {terminator.else_block}",
+            f"{prefix}}}",
+            f"{prefix}continue",
+        ]
+    if isinstance(terminator, MirUnreachable):
+        if _require_go_type(return_type, allow_void=True):
+            return [f'{prefix}panic("unreachable sealed Koschei MIR block")']
+        return [f'{prefix}panic("unreachable sealed Koschei MIR block")']
+    raise MirGoUnsupported(f"unsupported terminator {type(terminator).__name__}")
+
+
+def _symbolic_loads(
+    function: MirFunction,
+    runtime_names: dict[str, str],
+    function_symbols: dict[str, str],
+) -> dict[int, tuple[str, str]]:
+    result: dict[int, tuple[str, str]] = {}
+    for block in function.blocks:
+        for instruction in block.instructions:
+            if not isinstance(instruction, MirLoad):
+                continue
+            if instruction.name in runtime_names:
+                continue
+            if instruction.name in function_symbols:
+                result[instruction.target] = ("function", instruction.name)
+            elif instruction.name in _PRINT_BUILTINS:
+                result[instruction.target] = ("builtin", instruction.name)
+            else:
+                raise MirGoUnsupported(f"unknown static MIR load {instruction.name!r}")
+    return result
+
+
+def _binding_symbols(function: MirFunction) -> dict[str, str]:
+    names: list[str] = []
+    for block in function.blocks:
+        for instruction in block.instructions:
+            if isinstance(instruction, MirBind) and instruction.name not in names:
+                names.append(instruction.name)
+    return {
+        name: f"_ks_b_{index}_{_safe_identifier(name)}" for index, name in enumerate(names)
+    }
+
+
+def _binding_type(function: MirFunction, name: str) -> TypeNode:
+    for block in function.blocks:
+        for instruction in block.instructions:
+            if isinstance(instruction, MirBind) and instruction.name == name:
+                return instruction.type
+    raise MirGoUnsupported(f"binding type missing for {name!r}")
+
+
+def _value_types(
+    function: MirFunction,
+    symbolic_values: dict[int, tuple[str, str]],
+) -> dict[int, TypeNode]:
+    result: dict[int, TypeNode] = {}
+    for block in function.blocks:
+        for instruction in block.instructions:
+            target = getattr(instruction, "target", None)
+            if target is None or target in symbolic_values:
+                continue
+            type_node = getattr(instruction, "type", None)
+            if type_node is None:
+                continue
+            if isinstance(instruction, MirCall) and not _require_go_type(
+                type_node, allow_void=True
+            ):
+                continue
+            result[target] = type_node
+    return result
+
+
+def _go_type(type_node: TypeNode, *, allow_void: bool) -> str | None:
+    if isinstance(type_node, UnknownType):
+        return None
+    if isinstance(type_node, NamedType):
+        if type_node.name == "Void":
+            return "" if allow_void else _UNIT_GO_TYPE
+        if type_node.name in _SCALAR_TYPES:
+            return _SCALAR_TYPES[type_node.name]
+        return _ENUM_GO_TYPE
+    if isinstance(type_node, GenericType) and type_node.name in {"Option", "Result"}:
+        return _ENUM_GO_TYPE
+    return None
+
+
+def _require_go_type(type_node: TypeNode, *, allow_void: bool = False) -> str:
+    value = _go_type(type_node, allow_void=allow_void)
+    if value is None:
+        raise MirGoUnsupported(
+            f"unsupported MIR-Go type {render_type(type_node)}"
+        )
+    return value
+
+
+def _literal_for_type(value: object, type_node: TypeNode) -> str:
+    rendered = _literal(value)
+    if isinstance(type_node, NamedType):
+        if type_node.name == "Int":
+            return f"int64({rendered})"
+        if type_node.name == "Float":
+            return f"float64({rendered})"
+    return rendered
+
+
+def _literal(value: object) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, str):
+        return json.dumps(value, ensure_ascii=False)
+    if isinstance(value, int) and not isinstance(value, bool):
+        return str(value)
+    if isinstance(value, float):
+        return repr(value)
+    raise MirGoUnsupported(f"unsupported MIR literal {value!r}")
+
+
+def _safe_identifier(value: str) -> str:
+    cleaned = _GO_IDENTIFIER.sub("_", value)
+    if not cleaned or cleaned[0].isdigit():
+        cleaned = "_" + cleaned
+    return cleaned
+
+
+__all__ = [
+    "MirGoSupport",
+    "MirGoUnsupported",
+    "emit_go_from_mir",
+    "generate_go_mir_native",
+    "inspect_mir_go_support",
+]
