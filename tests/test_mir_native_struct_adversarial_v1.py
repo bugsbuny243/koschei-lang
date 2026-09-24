@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 from koschei.mir_extension_instructions_v4 import MirStructFinish, MirStructNew, MirStructSet
-from koschei.mir_ir import MirConst
+from koschei.mir_ir import MirConst, MirMember
 from koschei.mir_native_runtime import MirNativeRuntimeError, _MirExecutor, _StructValue
 from koschei.type_system import INT, NamedType
 from koschei.ast_nodes import SourceLocation
@@ -44,6 +44,18 @@ class NativeMirStructAdversarialTests(unittest.TestCase):
             values[4],
             _StructValue("Account", (("id", 7), ("balance", 9))),
         )
+
+    def test_checked_struct_field_projection_executes_directly(self):
+        values = _run((
+            MirStructNew(1, "Account", ("id", "balance"), ACCOUNT, LOC),
+            MirConst(2, 7, INT, LOC),
+            MirStructSet(1, "id", 2, ACCOUNT, LOC),
+            MirConst(3, 9, INT, LOC),
+            MirStructSet(1, "balance", 3, ACCOUNT, LOC),
+            MirStructFinish(4, 1, ACCOUNT, LOC),
+            MirMember(5, 4, "id", INT, LOC),
+        ))
+        self.assertEqual(values[5], 7)
 
     def test_missing_required_field_fails_at_finish(self):
         with self.assertRaisesRegex(MirNativeRuntimeError, "missing required struct fields: balance"):
