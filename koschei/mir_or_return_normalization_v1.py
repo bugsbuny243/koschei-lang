@@ -5,6 +5,7 @@ from ._typed_expr import checked_block_normal_type
 from .ast_nodes import (
     BinaryExpression,
     Block,
+    CallExpression,
     Expression,
     ExpressionStatement,
     ForStatement,
@@ -12,6 +13,7 @@ from .ast_nodes import (
     InterpolatedString,
     LetStatement,
     MapLiteral,
+    MemberExpression,
     OrBlockExpression,
     OrElseExpression,
     OrReturnExpression,
@@ -25,9 +27,13 @@ from .mir_extension_instructions_v4 import (
     MirFalliblePayload,
     MirInterpolate,
     MirIsRuntimeError,
+    MirMapContains,
     MirMapFinish,
+    MirMapGet,
     MirMapInsert,
+    MirMapKeys,
     MirMapNew,
+    MirMapSet,
     MirStructFinish,
     MirStructNew,
     MirStructSet,
@@ -311,6 +317,75 @@ class _OrReturnFunctionLowerer(_FunctionLowerer):
         target = self._new_value()
         self._emit(MirLoad(target, result_name, result_type, expression.location))
         return target
+
+    def _lower_map_method_call(self, expression: CallExpression) -> int | None:
+        if not isinstance(expression.callee, MemberExpression):
+            return None
+        resolution = self.typed_report.map_method_resolution_of(expression)
+        if resolution is None:
+            return None
+
+        receiver = self._lower_expression(expression.callee.object)
+        arguments = tuple(
+            self._lower_expression(argument) for argument in expression.arguments
+        )
+        target = self._new_value()
+        result_type = self._type_of(expression)
+        method = resolution.method
+
+        if method == "get":
+            if len(arguments) != 1:
+                raise ValueError("canonical Map.get arity drifted")
+            self._emit(
+                MirMapGet(
+                    target,
+                    receiver,
+                    arguments[0],
+                    result_type,
+                    expression.location,
+                )
+            )
+            return target
+        if method == "set":
+            if len(arguments) != 2:
+                raise ValueError("canonical Map.set arity drifted")
+            self._emit(
+                MirMapSet(
+                    target,
+                    receiver,
+                    arguments[0],
+                    arguments[1],
+                    result_type,
+                    expression.location,
+                )
+            )
+            return target
+        if method == "keys":
+            if arguments:
+                raise ValueError("canonical Map.keys arity drifted")
+            self._emit(
+                MirMapKeys(
+                    target,
+                    receiver,
+                    result_type,
+                    expression.location,
+                )
+            )
+            return target
+        if method == "contains":
+            if len(arguments) != 1:
+                raise ValueError("canonical Map.contains arity drifted")
+            self._emit(
+                MirMapContains(
+                    target,
+                    receiver,
+                    arguments[0],
+                    result_type,
+                    expression.location,
+                )
+            )
+            return target
+        raise ValueError(f"unsupported canonical Map method: {method}")
 
     def _lower_struct_literal(self, expression: StructLiteral) -> int:
         result_type = self._type_of(expression)
@@ -659,6 +734,10 @@ class _OrReturnFunctionLowerer(_FunctionLowerer):
         return target
 
     def _lower_expression(self, expression: Expression) -> int:
+        if isinstance(expression, CallExpression):
+            lowered_map_call = self._lower_map_method_call(expression)
+            if lowered_map_call is not None:
+                return lowered_map_call
         if isinstance(expression, MapLiteral):
             return self._lower_map_literal(expression)
         if isinstance(expression, StructLiteral):
