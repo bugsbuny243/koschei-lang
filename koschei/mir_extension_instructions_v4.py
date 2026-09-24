@@ -113,6 +113,42 @@ class MirMapFinish:
 
 
 @dataclass(frozen=True, slots=True)
+class MirMapGet:
+    target: int
+    object: int
+    key: int
+    type: TypeNode
+    location: SourceLocation
+
+
+@dataclass(frozen=True, slots=True)
+class MirMapSet:
+    target: int
+    object: int
+    key: int
+    value: int
+    type: TypeNode
+    location: SourceLocation
+
+
+@dataclass(frozen=True, slots=True)
+class MirMapKeys:
+    target: int
+    object: int
+    type: TypeNode
+    location: SourceLocation
+
+
+@dataclass(frozen=True, slots=True)
+class MirMapContains:
+    target: int
+    object: int
+    key: int
+    type: TypeNode
+    location: SourceLocation
+
+
+@dataclass(frozen=True, slots=True)
 class MirStructNew:
     target: int
     type_name: str
@@ -152,6 +188,10 @@ MIR_V4_EXTENSION_INSTRUCTION_TYPES = (
     MirMapNew,
     MirMapInsert,
     MirMapFinish,
+    MirMapGet,
+    MirMapSet,
+    MirMapKeys,
+    MirMapContains,
     MirStructNew,
     MirStructSet,
     MirStructFinish,
