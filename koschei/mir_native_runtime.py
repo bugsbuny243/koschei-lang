@@ -14,6 +14,9 @@ from typing import Any
 from .interpreter import EnumValue
 from .mir import MirFunction, MirGraph
 from .mir_extension_instructions_v4 import (
+    MirMapFinish,
+    MirMapInsert,
+    MirMapNew,
     MirStructFinish,
     MirStructNew,
     MirStructSet,
@@ -100,6 +103,17 @@ class _ErrorValue:
 
 
 @dataclass(slots=True)
+class _MapBuilder:
+    entries: list[tuple[str, Any]]
+    consumed: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class _MapValue:
+    entries: tuple[tuple[str, Any], ...]
+
+
+@dataclass(slots=True)
 class _StructBuilder:
     type_name: str
     required_fields: tuple[str, ...]
@@ -176,6 +190,9 @@ def inspect_native_mir_support(mir: MirGraph) -> MirNativeSupport:
         MirCall,
         MirVariantIs,
         MirVariantPayload,
+        MirMapNew,
+        MirMapInsert,
+        MirMapFinish,
         MirStructNew,
         MirStructSet,
         MirStructFinish,
@@ -444,6 +461,30 @@ class _MirExecutor:
                     f"MIR variant payload extraction failed closed: {exc}"
                 ) from exc
             return
+        if isinstance(instruction, MirMapNew):
+            values[instruction.target] = _MapBuilder([])
+            return
+        if isinstance(instruction, MirMapInsert):
+            builder = self._map_builder(values, instruction.object)
+            if builder.consumed:
+                raise MirNativeRuntimeError("map builder already consumed")
+            if len(instruction.arguments) != 2:
+                raise MirNativeRuntimeError("MIR map insert requires key and value")
+            key = self._value(values, instruction.arguments[0])
+            if not isinstance(key, str):
+                raise MirNativeRuntimeError("MIR Map key must be String")
+            if any(existing_key == key for existing_key, _ in builder.entries):
+                raise MirNativeRuntimeError("duplicate Map key insertion")
+            value = self._value(values, instruction.arguments[1])
+            builder.entries.append((key, value))
+            return
+        if isinstance(instruction, MirMapFinish):
+            builder = self._map_builder(values, instruction.source)
+            if builder.consumed:
+                raise MirNativeRuntimeError("map builder already consumed")
+            builder.consumed = True
+            values[instruction.target] = _MapValue(tuple(builder.entries))
+            return
         if isinstance(instruction, MirStructNew):
             if len(set(instruction.required_fields)) != len(instruction.required_fields):
                 raise MirNativeRuntimeError("duplicate field in sealed struct contract")
@@ -564,6 +605,13 @@ class _MirExecutor:
         raise MirNativeRuntimeError("MIR call target is not callable")
 
     @staticmethod
+    def _map_builder(values: dict[int, Any], value_id: int) -> _MapBuilder:
+        value = _MirExecutor._value(values, value_id)
+        if not isinstance(value, _MapBuilder):
+            raise MirNativeRuntimeError("invalid MIR map builder")
+        return value
+
+    @staticmethod
     def _struct_builder(values: dict[int, Any], value_id: int) -> _StructBuilder:
         value = _MirExecutor._value(values, value_id)
         if not isinstance(value, _StructBuilder):
@@ -622,6 +670,12 @@ def _binary(operator: str, left: Any, right: Any) -> Any:
     raise MirNativeRuntimeError(f"unsupported binary operator {operator!r}")
 
 
+def _to_map_repr(value: Any) -> str:
+    if isinstance(value, str):
+        return f'"{value}"'
+    return _to_string(value)
+
+
 def _to_string(value: Any) -> str:
     if value is _UNIT:
         return "unit"
@@ -634,6 +688,11 @@ def _to_string(value: Any) -> str:
         return text
     if isinstance(value, tuple):
         return "[" + ", ".join(_to_string(item) for item in value) + "]"
+    if isinstance(value, _MapValue):
+        inner = ", ".join(
+            f'"{key}": {_to_map_repr(item)}' for key, item in value.entries
+        )
+        return "{" + inner + "}"
     if isinstance(value, _ErrorValue):
         return value.message
     return str(value)
