@@ -240,6 +240,8 @@ class TypedHIRChecker:
         receiver_type: TypeNode,
         method: str,
     ) -> None:
+        if method not in {"get", "set", "keys", "contains"}:
+            return
         if (
             isinstance(receiver_type, GenericType)
             and receiver_type.name == "Map"
