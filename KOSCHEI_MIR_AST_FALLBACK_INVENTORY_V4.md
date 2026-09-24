@@ -23,6 +23,8 @@ The v4 path explicitly normalizes:
 - `or return`;
 - `or else` with failure-only fallback evaluation;
 - Map/Struct literals with staged fail-fast construction;
+- compiler-owned Map method calls (`get`, `set`, `keys`, `contains`) lowered
+  to exact sealed MIR opcodes rather than generic member dispatch;
 - let / expression / return statements;
 - statement-context `if` / `while` / `for` Error continuation;
 - a value-producing `or { ... }` subset including value-position `if`, nested
@@ -97,11 +99,12 @@ before executable MIR. Host object shape is not assignment authority.
 
 ### P1 — native-binary coverage is narrower than direct MIR runtime
 
-Strict MIR-Go intentionally remains a supported subset. In particular imports,
-structs, and several normalized collection/iteration instructions still require
-explicit backend parity before `ks build` can claim full-language native binary
-coverage. Unsupported programs fail closed rather than falling back to the
-ambient legacy AST-Go backend.
+Strict MIR-Go intentionally remains a supported subset. The direct sealed MIR
+runtime now carries compiler-owned Struct construction and Map
+construction/get/set/keys/contains semantics. Imports, remaining List/member
+surfaces and strict binary adapter parity still require explicit closure before
+`ks build` can claim full-language native binary coverage. Unsupported programs
+fail closed rather than falling back to the ambient legacy AST-Go backend.
 
 ### P2 — non-List `ForStatement`
 
@@ -156,8 +159,9 @@ semantics or compiler rejection.
 
 1. run canonical `ks-local-validate --profile full` on an exact clean head and
    retain its external receipt/evidence;
-2. close remaining strict MIR-Go parity for production-supported native binary
-   features rather than using legacy AST-Go fallback;
+2. close remaining strict native parity for imports, List/member surfaces and
+   production-supported binary features rather than using legacy AST-Go
+   fallback;
 3. pin reproducible build/toolchain/SBOM inputs;
 4. align package, tag, release artifact and checksum identity;
 5. close release branch/ruleset and provenance gates.
