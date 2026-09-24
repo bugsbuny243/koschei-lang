@@ -9,7 +9,7 @@ from koschei.reality_evidence_ledger_v1 import (
     RealityEvidenceLedgerV1,
     append_reality_evidence_v1,
     project_commitment_v1,
-    sentinel_evidence_view_v1,
+    observer_evidence_view_v1,
     verify_reality_evidence_ledger_v1,
 )
 
@@ -69,7 +69,7 @@ class RealityEvidenceLedgerV1Tests(unittest.TestCase):
 
     def test_observer_view_is_read_only_and_secret_redacted(self) -> None:
         ledger = self._append(RealityEvidenceLedgerV1())
-        view = sentinel_evidence_view_v1(ledger)
+        view = observer_evidence_view_v1(ledger)
         self.assertEqual(len(view), 1)
         self.assertEqual(view[0].command, "run")
         self.assertEqual(view[0].outcome, "ALLOW")
