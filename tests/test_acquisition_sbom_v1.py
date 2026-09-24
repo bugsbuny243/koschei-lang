@@ -97,6 +97,21 @@ def test_sbom_binds_declared_inputs_and_is_deterministic(tmp_path: Path):
     assert len(first["sbom_sha256"]) == 64
 
 
+def test_multiline_docker_pip_commands_consume_both_lock_files(tmp_path: Path):
+    root = _fixture_repo(tmp_path, pinned=True)
+
+    result = sbom.build_sbom(root)
+
+    assert set(result["container"]["python_requirement_files"]) == {
+        "production-build-bootstrap.txt",
+        "production-build-requirements.txt",
+    }
+    assert not any(
+        str(item).startswith("docker-python-lock-not-consumed:")
+        for item in result["mutable_roots"]
+    )
+
+
 def test_declared_build_version_must_match_hash_lock(tmp_path: Path):
     root = _fixture_repo(tmp_path, pinned=True)
     pyproject = root / "pyproject.toml"
