@@ -124,7 +124,19 @@ def validate_runtime_module(runtime: ModuleType) -> RuntimeCapabilityRegistry:
     runtime_types = runtime_capability_types(runtime)
 
     system_type = runtime_types["SystemCaps"]
-    slots = frozenset(getattr(system_type, "__slots__", ()))
+    # Capability extensions use narrow subclasses so the base authority roots are
+    # not redefined. Validate the complete instance slot surface across the MRO;
+    # looking only at the most-derived __slots__ mistakes an additive extension
+    # for replacement and can hide or falsely reject inherited roots.
+    slots = frozenset(
+        slot
+        for cls in system_type.__mro__
+        for slot in (
+            (getattr(cls, "__slots__", ()),)
+            if isinstance(getattr(cls, "__slots__", ()), str)
+            else getattr(cls, "__slots__", ())
+        )
+    )
     expected_slots = frozenset(registry.system_members)
     if slots != expected_slots:
         raise RuntimeError(
