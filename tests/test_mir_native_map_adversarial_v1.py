@@ -14,7 +14,7 @@ from koschei.mir_extension_instructions_v4 import (
 )
 from koschei.mir_ir import MirConst
 from koschei.mir_native_runtime import MirNativeRuntimeError, _MapValue, _MirExecutor
-from koschei.type_system import INT, STRING, generic
+from koschei.type_system import BOOL, INT, STRING, generic
 
 
 LOC = SourceLocation(1, 1)
@@ -110,7 +110,7 @@ class NativeMirMapAdversarialTests(unittest.TestCase):
             MirConst(7, 2, INT, LOC),
             MirMapSet(8, 4, 6, 7, MAP, LOC),
             MirMapKeys(9, 8, generic("List", STRING), LOC),
-            MirMapContains(10, 8, 6, generic("Bool"), LOC),
+            MirMapContains(10, 8, 6, BOOL, LOC),
         ))
         self.assertEqual(values[5], 1)
         self.assertEqual(values[8], _MapValue((("a", 1), ("b", 2))))
