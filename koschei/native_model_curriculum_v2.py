@@ -71,10 +71,10 @@ _CTX = b"koschei.native-model-curriculum/v2\x00"
 _HEX = frozenset(string.hexdigits.lower())
 _CANONICAL_SOURCE = (
     "ka treasury;\n"
-    "vor withdrawal;\n"
-    "shi evidence;\n"
-    "thal recovery;\n"
-    "nur visibility;\n"
+    "vor treasury;\n"
+    "shi treasury;\n"
+    "thal treasury;\n"
+    "nur treasury;\n"
 )
 
 
