@@ -309,15 +309,40 @@ class _OrReturnFunctionLowerer(_FunctionLowerer):
 
     def _lower_struct_literal(self, expression: StructLiteral) -> int:
         result_type = self._type_of(expression)
+        resolution = self.typed_report.struct_literal_resolution_of(expression)
+        if resolution is None:
+            raise ValueError("struct literal requires canonical Typed-HIR resolution")
         builder = self._new_value()
-        required_fields = tuple(field_name for field_name, _ in expression.fields)\n        self._emit(MirStructNew(builder, expression.type_name, required_fields, result_type, expression.location))
+        self._emit(
+            MirStructNew(
+                builder,
+                resolution.type_name,
+                resolution.required_fields,
+                result_type,
+                expression.location,
+            )
+        )
         result_name = self._new_internal_binding_name("struct_result")
         self._emit(MirBind(result_name, builder, True, result_type, expression.location))
         final_join = self._new_block()
         for field_name, value_expression in expression.fields:
             value = self._lower_expression(value_expression)
-            self._store_error_or_continue(value, result_name=result_name, result_type=result_type, final_join=final_join, location=value_expression.location)
-            self._emit(MirStructSet(builder, field_name, value, result_type, expression.location))
+            self._store_error_or_continue(
+                value,
+                result_name=result_name,
+                result_type=result_type,
+                final_join=final_join,
+                location=value_expression.location,
+            )
+            self._emit(
+                MirStructSet(
+                    builder,
+                    field_name,
+                    value,
+                    result_type,
+                    expression.location,
+                )
+            )
         finished = self._new_value()
         self._emit(MirStructFinish(finished, builder, result_type, expression.location))
         self._emit(MirStore(result_name, finished, result_type, expression.location))
