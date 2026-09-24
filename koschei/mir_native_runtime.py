@@ -14,9 +14,13 @@ from typing import Any
 from .interpreter import EnumValue
 from .mir import MirFunction, MirGraph
 from .mir_extension_instructions_v4 import (
+    MirMapContains,
     MirMapFinish,
+    MirMapGet,
     MirMapInsert,
+    MirMapKeys,
     MirMapNew,
+    MirMapSet,
     MirStructFinish,
     MirStructNew,
     MirStructSet,
@@ -193,6 +197,10 @@ def inspect_native_mir_support(mir: MirGraph) -> MirNativeSupport:
         MirMapNew,
         MirMapInsert,
         MirMapFinish,
+        MirMapGet,
+        MirMapSet,
+        MirMapKeys,
+        MirMapContains,
         MirStructNew,
         MirStructSet,
         MirStructFinish,
@@ -485,6 +493,47 @@ class _MirExecutor:
             builder.consumed = True
             values[instruction.target] = _MapValue(tuple(builder.entries))
             return
+        if isinstance(instruction, MirMapGet):
+            source = self._map_value(values, instruction.object)
+            key = self._value(values, instruction.key)
+            if not isinstance(key, str):
+                raise MirNativeRuntimeError("MIR Map.get key must be String")
+            for existing_key, item in source.entries:
+                if existing_key == key:
+                    values[instruction.target] = item
+                    return
+            values[instruction.target] = _ErrorValue(
+                f"Map anahtarı bulunamadı: {key}"
+            )
+            return
+        if isinstance(instruction, MirMapSet):
+            source = self._map_value(values, instruction.object)
+            key = self._value(values, instruction.key)
+            if not isinstance(key, str):
+                raise MirNativeRuntimeError("MIR Map.set key must be String")
+            value = self._value(values, instruction.value)
+            updated = list(source.entries)
+            for index, (existing_key, _) in enumerate(updated):
+                if existing_key == key:
+                    updated[index] = (key, value)
+                    break
+            else:
+                updated.append((key, value))
+            values[instruction.target] = _MapValue(tuple(updated))
+            return
+        if isinstance(instruction, MirMapKeys):
+            source = self._map_value(values, instruction.object)
+            values[instruction.target] = tuple(key for key, _ in source.entries)
+            return
+        if isinstance(instruction, MirMapContains):
+            source = self._map_value(values, instruction.object)
+            key = self._value(values, instruction.key)
+            if not isinstance(key, str):
+                raise MirNativeRuntimeError("MIR Map.contains key must be String")
+            values[instruction.target] = any(
+                existing_key == key for existing_key, _ in source.entries
+            )
+            return
         if isinstance(instruction, MirStructNew):
             if len(set(instruction.required_fields)) != len(instruction.required_fields):
                 raise MirNativeRuntimeError("duplicate field in sealed struct contract")
@@ -603,6 +652,13 @@ class _MirExecutor:
                     raise MirNativeRuntimeError("Err expects one argument")
                 return EnumValue("Result", "Err", arguments[0])
         raise MirNativeRuntimeError("MIR call target is not callable")
+
+    @staticmethod
+    def _map_value(values: dict[int, Any], value_id: int) -> _MapValue:
+        value = _MirExecutor._value(values, value_id)
+        if not isinstance(value, _MapValue):
+            raise MirNativeRuntimeError("invalid MIR Map value")
+        return value
 
     @staticmethod
     def _map_builder(values: dict[int, Any], value_id: int) -> _MapBuilder:
