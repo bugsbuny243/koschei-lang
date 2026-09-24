@@ -21,7 +21,15 @@ from .mir_container_staging_v1 import (
     MirStructNew,
     MirStructSet,
 )
-from .mir_extension_instructions_v4 import MirUnit, MirVariantIs, MirVariantPayload
+from .mir_extension_instructions_v4 import (
+    MirMapContains,
+    MirMapGet,
+    MirMapKeys,
+    MirMapSet,
+    MirUnit,
+    MirVariantIs,
+    MirVariantPayload,
+)
 from .mir_ir import (
     MirAstFallback, MirBinary, MirBind, MirBranch, MirCall, MirConst,
     MirIterHasNext, MirIterInit, MirIterNext, MirJump, MirList, MirLoad,
@@ -255,6 +263,34 @@ class MirExecutorV1:
             return
         if isinstance(instruction, MirMapFinish):
             values[instruction.target] = self.primitives.map_finish(values[instruction.source], instruction.location)
+            return
+        if isinstance(instruction, MirMapGet):
+            values[instruction.target] = self.primitives.map_get(
+                values[instruction.object],
+                values[instruction.key],
+                instruction.location,
+            )
+            return
+        if isinstance(instruction, MirMapSet):
+            values[instruction.target] = self.primitives.map_set(
+                values[instruction.object],
+                values[instruction.key],
+                values[instruction.value],
+                instruction.location,
+            )
+            return
+        if isinstance(instruction, MirMapKeys):
+            values[instruction.target] = self.primitives.map_keys(
+                values[instruction.object],
+                instruction.location,
+            )
+            return
+        if isinstance(instruction, MirMapContains):
+            values[instruction.target] = self.primitives.map_contains(
+                values[instruction.object],
+                values[instruction.key],
+                instruction.location,
+            )
             return
         if isinstance(instruction, MirStructNew):
             values[instruction.target] = self.primitives.struct_builder(instruction.type_name, instruction.location)
