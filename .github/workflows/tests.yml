@@ -1,9 +1,16 @@
 name: Koschei Compiler Tests
 
-# GitHub-hosted Actions are not part of the canonical validation boundary for
-# this repository. Keep this workflow as a manual reproducibility recipe only;
-# the authority remains `ks-local-validate --profile full` plus retained receipt.
+# GitHub-hosted Actions are bootstrap validation evidence, not language authority.
+# The canonical semantic authority remains the sealed Koschei compiler/runtime
+# contract. This workflow automatically executes the canonical full validator so
+# every candidate head has reproducible executable evidence.
 on:
+  push:
+    branches:
+      - production/runtime-variant-parity-v1
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
