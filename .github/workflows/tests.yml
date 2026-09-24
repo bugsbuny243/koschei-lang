@@ -35,8 +35,12 @@ jobs:
           # remains the language/module floor, not the acquisition build pin.
           go-version: "1.24"
 
-      - name: Install local validator dependency
-        run: python -m pip install pytest
+      - name: Install package and local validator dependency
+        run: |
+          python -m pip install -e . pytest
+          # Editable installation creates local build metadata. The validator
+          # requires the candidate checkout itself to remain byte-clean.
+          git clean -fdx
 
       - name: Bind bootstrap metadata to exact commit
         run: |
