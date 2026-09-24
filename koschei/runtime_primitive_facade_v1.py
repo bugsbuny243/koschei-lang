@@ -10,7 +10,14 @@ from dataclasses import dataclass
 from typing import Any
 
 from .ast_nodes import FunctionDeclaration, Program, SourceLocation
-from .container_runtime_v1 import MapBuilderV1, StructBuilderV1
+from .container_runtime_v1 import (
+    MapBuilderV1,
+    StructBuilderV1,
+    map_contains_v1,
+    map_get_v1,
+    map_keys_v1,
+    map_set_v1,
+)
 from .interpreter import (
     DiskCaps,
     DiskReadCaps,
@@ -208,6 +215,30 @@ class RuntimePrimitiveFacadeV1:
                 "KS5002", "Geçersiz MIR Map builder.", location
             )
         return builder.finish()
+
+    def map_get(self, value: Any, key: Any, location: SourceLocation) -> Any:
+        return map_get_v1(value, key, location)
+
+    def map_set(
+        self,
+        value: Any,
+        key: Any,
+        item: Any,
+        location: SourceLocation,
+    ) -> dict[str, Any]:
+        return map_set_v1(
+            value,
+            key,
+            item,
+            contains_capability=self.contains_capability,
+            location=location,
+        )
+
+    def map_keys(self, value: Any, location: SourceLocation) -> list[str]:
+        return map_keys_v1(value, location)
+
+    def map_contains(self, value: Any, key: Any, location: SourceLocation) -> bool:
+        return map_contains_v1(value, key, location)
 
     def struct_builder(self, type_name: str, location: SourceLocation) -> StructBuilderV1:
         declaration = self._runtime.structs.get(type_name)
