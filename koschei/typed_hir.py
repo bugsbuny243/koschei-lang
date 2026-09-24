@@ -122,6 +122,13 @@ class TypedMapLiteralResolution:
 
 
 @dataclass(frozen=True, slots=True)
+class TypedMapMethodResolution:
+    expression: Expression
+    receiver_type: TypeNode
+    method: str
+
+
+@dataclass(frozen=True, slots=True)
 class TypedHIRReport:
     bindings: tuple[TypedBinding, ...]
     expressions: tuple[TypedExpression, ...]
@@ -129,6 +136,7 @@ class TypedHIRReport:
     match_resolutions: tuple[TypedMatchResolution, ...] = ()
     struct_literal_resolutions: tuple[TypedStructLiteralResolution, ...] = ()
     map_literal_resolutions: tuple[TypedMapLiteralResolution, ...] = ()
+    map_method_resolutions: tuple[TypedMapMethodResolution, ...] = ()
 
     def binding_types(self, name: str) -> tuple[TypeNode, ...]:
         return tuple(item.type for item in self.bindings if item.name == name)
@@ -149,6 +157,12 @@ class TypedHIRReport:
 
     def map_literal_resolution_of(self, expression) -> TypedMapLiteralResolution | None:
         for item in self.map_literal_resolutions:
+            if item.expression is expression:
+                return item
+        return None
+
+    def map_method_resolution_of(self, expression) -> TypedMapMethodResolution | None:
+        for item in self.map_method_resolutions:
             if item.expression is expression:
                 return item
         return None
@@ -183,6 +197,7 @@ class TypedHIRChecker:
         self.match_resolutions: list[TypedMatchResolution] = []
         self.struct_literal_resolutions: list[TypedStructLiteralResolution] = []
         self.map_literal_resolutions: list[TypedMapLiteralResolution] = []
+        self.map_method_resolutions: list[TypedMapMethodResolution] = []
         self.collections = 0
         self.current_function = None
         self.contracts = TypeContractValidator(program, self.imports)
@@ -211,12 +226,27 @@ class TypedHIRChecker:
             tuple(self.match_resolutions),
             tuple(self.struct_literal_resolutions),
             tuple(self.map_literal_resolutions),
+            tuple(self.map_method_resolutions),
         )
 
     def record_map_literal_resolution(self, expression: Expression) -> None:
         self.map_literal_resolutions.append(
             TypedMapLiteralResolution(expression, STRING, "reject")
         )
+
+    def record_map_method_resolution(
+        self,
+        expression: Expression,
+        receiver_type: TypeNode,
+        method: str,
+    ) -> None:
+        if (
+            isinstance(receiver_type, GenericType)
+            and receiver_type.name == "Map"
+        ) or is_named(receiver_type, "Map"):
+            self.map_method_resolutions.append(
+                TypedMapMethodResolution(expression, receiver_type, method)
+            )
 
     def declare(
         self, name: str, type_node: TypeNode, location: SourceLocation, role: str
