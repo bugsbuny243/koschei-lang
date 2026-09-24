@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from ._typed_ops import binary_type, method_type
+from .semantic import SemanticError
 from .ast_nodes import (
     AssignmentExpression,
     BinaryExpression,
@@ -156,10 +157,26 @@ def infer_expression(checker, expression):
         return checker.record(expression, generic("List", item_type))
 
     if isinstance(expression, MapLiteral):
+        from .type_contracts import require_assignable
+
         checker.collections += 1
-        values = union_type(*(checker.infer(value) for _, value in expression.entries))
-        for key, _ in expression.entries:
-            checker.infer(key)
+        literal_keys: set[str] = set()
+        value_types = []
+        for key, value in expression.entries:
+            key_type = checker.infer(key)
+            require_assignable(STRING, key_type, "Map anahtarı", key.location)
+            if isinstance(key, Literal) and isinstance(key.value, str):
+                if key.value in literal_keys:
+                    raise SemanticError(
+                        "KS1501",
+                        f"Map literalinde '{key.value}' anahtarı birden fazla yazılmış.",
+                        key.location,
+                    )
+                literal_keys.add(key.value)
+            value_types.append(checker.infer(value))
+
+        checker.record_map_literal_resolution(expression)
+        values = union_type(*value_types)
         return checker.record(expression, generic("Map", STRING, values))
 
     if isinstance(expression, StructLiteral):
