@@ -57,7 +57,7 @@ def _docker_pip_packages(text: str) -> tuple[str, ...]:
 
     normalized = _normalize_docker_run(text)
     packages: list[str] = []
-    for match in re.finditer(r"python -m pip install\s+(.+?)(?=\s+&&|$)", normalized):
+    for match in re.finditer(r"python -m pip install\s+(.+?)(?=\s+&&|\n|$)", normalized):
         tokens = match.group(1).strip().split()
         skip_next = False
         for token in tokens:
@@ -78,7 +78,7 @@ def _docker_pip_packages(text: str) -> tuple[str, ...]:
 def _docker_requirement_files(text: str) -> tuple[str, ...]:
     normalized = _normalize_docker_run(text)
     files: list[str] = []
-    for match in re.finditer(r"python -m pip install\s+(.+?)(?=\s+&&|$)", normalized):
+    for match in re.finditer(r"python -m pip install\s+(.+?)(?=\s+&&|\n|$)", normalized):
         tokens = match.group(1).strip().split()
         for index, token in enumerate(tokens):
             if token in {"-r", "--requirement"} and index + 1 < len(tokens):
