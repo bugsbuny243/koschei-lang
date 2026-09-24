@@ -46,7 +46,7 @@ from .mir_ir import (
     MirStore,
     _FunctionLowerer,
 )
-from .type_system import BOOL, VOID, GenericType, TypeNode, UnknownType
+from .type_system import BOOL, STRING, VOID, GenericType, TypeNode, UnknownType
 from .typed_hir import iterable_success_item_type
 
 
@@ -287,6 +287,11 @@ class _OrReturnFunctionLowerer(_FunctionLowerer):
 
     def _lower_map_literal(self, expression: MapLiteral) -> int:
         result_type = self._type_of(expression)
+        resolution = self.typed_report.map_literal_resolution_of(expression)
+        if resolution is None:
+            raise ValueError("map literal requires canonical Typed-HIR resolution")
+        if resolution.key_type != STRING or resolution.duplicate_policy != "reject":
+            raise ValueError("unsupported canonical Map literal contract")
         builder = self._new_value()
         self._emit(MirMapNew(builder, result_type, expression.location))
         result_name = self._new_internal_binding_name("map_result")
