@@ -219,6 +219,12 @@ def infer_expression(checker, expression):
             result = module_result if module_result is not None else method_type(
                 receiver, expression.callee.member, arguments, expression.location
             )
+            if module_result is None:
+                checker.record_map_method_resolution(
+                    expression,
+                    receiver,
+                    expression.callee.member,
+                )
             return checker.record(expression, result)
         if isinstance(expression.callee, Identifier):
             return checker.record(
