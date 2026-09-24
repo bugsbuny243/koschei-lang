@@ -25,6 +25,7 @@ class ContainerRuntimeError(KoscheiRuntimeError):
 @dataclass(slots=True)
 class MapBuilderV1:
     entries: dict[str, Any]
+    consumed: bool = False
 
     @classmethod
     def empty(cls) -> "MapBuilderV1":
@@ -39,6 +40,10 @@ class MapBuilderV1:
         runtime_type_name: RuntimeTypeName,
         location: SourceLocation,
     ) -> None:
+        if self.consumed:
+            raise ContainerRuntimeError(
+                "KS5002", "Consumed MIR Map builder cannot accept inserts.", location
+            )
         if not isinstance(key, str):
             raise ContainerRuntimeError(
                 "KS3401",
@@ -59,8 +64,13 @@ class MapBuilderV1:
             )
         self.entries[key] = value
 
-    def finish(self) -> dict[str, Any]:
-        return self.entries
+    def finish(self, location: SourceLocation) -> dict[str, Any]:
+        if self.consumed:
+            raise ContainerRuntimeError(
+                "KS5002", "MIR Map builder may be finished exactly once.", location
+            )
+        self.consumed = True
+        return dict(self.entries)
 
 
 def _require_map_value(value: Any, location: SourceLocation) -> dict[str, Any]:
@@ -137,11 +147,29 @@ def map_contains_v1(value: Any, key: Any, location: SourceLocation) -> bool:
 @dataclass(slots=True)
 class StructBuilderV1:
     declaration: StructDeclaration
+    required_fields: tuple[str, ...]
     fields: dict[str, Any]
+    consumed: bool = False
 
     @classmethod
-    def empty(cls, declaration: StructDeclaration) -> "StructBuilderV1":
-        return cls(declaration, {})
+    def empty(
+        cls,
+        declaration: StructDeclaration,
+        required_fields: tuple[str, ...],
+        location: SourceLocation,
+    ) -> "StructBuilderV1":
+        declared = tuple(field.name for field in declaration.fields)
+        if len(required_fields) != len(set(required_fields)):
+            raise ContainerRuntimeError(
+                "KS5002", "Sealed MIR Struct required_fields contains duplicates.", location
+            )
+        if set(required_fields) != set(declared):
+            raise ContainerRuntimeError(
+                "KS5002",
+                "Sealed MIR Struct required_fields disagrees with checked declaration.",
+                location,
+            )
+        return cls(declaration, required_fields, {})
 
     def set_field(
         self,
@@ -153,6 +181,22 @@ class StructBuilderV1:
         runtime_type_name: RuntimeTypeName,
         location: SourceLocation,
     ) -> None:
+        if self.consumed:
+            raise ContainerRuntimeError(
+                "KS5002", "Consumed MIR Struct builder cannot accept fields.", location
+            )
+        if name not in self.required_fields:
+            raise ContainerRuntimeError(
+                "KS5002",
+                f"Sealed MIR Struct did not admit field '{name}'.",
+                location,
+            )
+        if name in self.fields:
+            raise ContainerRuntimeError(
+                "KS5002",
+                f"Sealed MIR Struct field '{name}' was assigned more than once.",
+                location,
+            )
         expected = {field.name: field for field in self.declaration.fields}
         field = expected.get(name)
         if field is None:
@@ -175,8 +219,12 @@ class StructBuilderV1:
             )
         self.fields[name] = value
 
-    def finish(self) -> StructValue:
-        expected_names = {field.name for field in self.declaration.fields}
+    def finish(self, location: SourceLocation) -> StructValue:
+        if self.consumed:
+            raise ContainerRuntimeError(
+                "KS5002", "MIR Struct builder may be finished exactly once.", location
+            )
+        expected_names = set(self.required_fields)
         actual_names = set(self.fields)
         if actual_names != expected_names:
             missing = sorted(expected_names - actual_names)
@@ -189,6 +237,8 @@ class StructBuilderV1:
             raise ContainerRuntimeError(
                 "KS3101",
                 f"'{self.declaration.name}' struct alan sözleşmesi tamamlanmadı ({'; '.join(detail)}).",
-                self.declaration.location,
+                location,
             )
-        return StructValue(self.declaration.name, dict(self.fields))
+        self.consumed = True
+        ordered = {name: self.fields[name] for name in self.required_fields}
+        return StructValue(self.declaration.name, ordered)
