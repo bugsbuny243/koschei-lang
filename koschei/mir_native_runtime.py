@@ -14,6 +14,11 @@ from typing import Any
 from .interpreter import EnumValue
 from .mir import MirFunction, MirGraph
 from .mir_extension_instructions_v4 import (
+    MirFallibleIsSuccess,
+    MirFalliblePayload,
+    MirInterpolate,
+    MirIsRuntimeError,
+    MirUnit,
     MirMapContains,
     MirMapFinish,
     MirMapGet,
@@ -235,6 +240,11 @@ def inspect_native_mir_support(mir: MirGraph) -> MirNativeSupport:
         MirCall,
         MirVariantIs,
         MirVariantPayload,
+        MirUnit,
+        MirIsRuntimeError,
+        MirFallibleIsSuccess,
+        MirFalliblePayload,
+        MirInterpolate,
         MirMapNew,
         MirMapInsert,
         MirMapFinish,
@@ -495,6 +505,33 @@ class _MirExecutor:
             right = self._value(values, instruction.right)
             values[instruction.target] = _binary(instruction.operator, left, right)
             return
+        if isinstance(instruction, MirUnit):
+            values[instruction.target] = _UNIT
+            return
+        if isinstance(instruction, MirIsRuntimeError):
+            source = self._value(values, instruction.source)
+            values[instruction.target] = isinstance(source, _ErrorValue)
+            return
+        if isinstance(instruction, MirFallibleIsSuccess):
+            source = self._value(values, instruction.source)
+            success, _ = _unwrap_fallible_value(source)
+            values[instruction.target] = success
+            return
+        if isinstance(instruction, MirFalliblePayload):
+            source = self._value(values, instruction.source)
+            success, payload = _unwrap_fallible_value(source)
+            if not success:
+                raise MirNativeRuntimeError(
+                    "fallible payload reached without a success proof"
+                )
+            values[instruction.target] = payload
+            return
+        if isinstance(instruction, MirInterpolate):
+            values[instruction.target] = "".join(
+                _to_string(self._value(values, item))
+                for item in instruction.items
+            )
+            return
         if isinstance(instruction, MirVariantIs):
             source = self._value(values, instruction.source)
             try:
@@ -740,6 +777,23 @@ class _MirExecutor:
         if not isinstance(value, _ListIterator):
             raise MirNativeRuntimeError("MIR iterator value has invalid runtime shape")
         return value
+
+
+def _unwrap_fallible_value(value: Any) -> tuple[bool, Any]:
+    if isinstance(value, _ErrorValue):
+        return False, value
+    if isinstance(value, EnumValue):
+        if value.enum_name == "Option":
+            if value.variant == "Some":
+                return True, value.payload
+            if value.variant == "None":
+                return False, value
+        if value.enum_name == "Result":
+            if value.variant == "Ok":
+                return True, value.payload
+            if value.variant == "Err":
+                return False, value
+    return True, value
 
 
 def _unary(operator: str, operand: Any) -> Any:
