@@ -34,6 +34,7 @@ from .type_contracts import (
 )
 from .type_system import (
     ERROR,
+    STRING,
     UNKNOWN,
     VOID,
     GenericType,
@@ -114,12 +115,20 @@ class TypedStructLiteralResolution:
 
 
 @dataclass(frozen=True, slots=True)
+class TypedMapLiteralResolution:
+    expression: Expression
+    key_type: TypeNode
+    duplicate_policy: str
+
+
+@dataclass(frozen=True, slots=True)
 class TypedHIRReport:
     bindings: tuple[TypedBinding, ...]
     expressions: tuple[TypedExpression, ...]
     collections: int
     match_resolutions: tuple[TypedMatchResolution, ...] = ()
     struct_literal_resolutions: tuple[TypedStructLiteralResolution, ...] = ()
+    map_literal_resolutions: tuple[TypedMapLiteralResolution, ...] = ()
 
     def binding_types(self, name: str) -> tuple[TypeNode, ...]:
         return tuple(item.type for item in self.bindings if item.name == name)
@@ -134,6 +143,12 @@ class TypedHIRReport:
 
     def struct_literal_resolution_of(self, expression) -> TypedStructLiteralResolution | None:
         for item in self.struct_literal_resolutions:
+            if item.expression is expression:
+                return item
+        return None
+
+    def map_literal_resolution_of(self, expression) -> TypedMapLiteralResolution | None:
+        for item in self.map_literal_resolutions:
             if item.expression is expression:
                 return item
         return None
@@ -167,6 +182,7 @@ class TypedHIRChecker:
         self.expressions: list[TypedExpression] = []
         self.match_resolutions: list[TypedMatchResolution] = []
         self.struct_literal_resolutions: list[TypedStructLiteralResolution] = []
+        self.map_literal_resolutions: list[TypedMapLiteralResolution] = []
         self.collections = 0
         self.current_function = None
         self.contracts = TypeContractValidator(program, self.imports)
@@ -194,6 +210,12 @@ class TypedHIRChecker:
             self.collections,
             tuple(self.match_resolutions),
             tuple(self.struct_literal_resolutions),
+            tuple(self.map_literal_resolutions),
+        )
+
+    def record_map_literal_resolution(self, expression: Expression) -> None:
+        self.map_literal_resolutions.append(
+            TypedMapLiteralResolution(expression, STRING, "reject")
         )
 
     def declare(
