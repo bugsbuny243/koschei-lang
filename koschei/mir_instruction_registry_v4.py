@@ -17,13 +17,18 @@ from .mir_extension_instructions_v4 import (
     MirFalliblePayload,
     MirInterpolate,
     MirIsRuntimeError,
+    MirMapContains,
     MirMapFinish,
+    MirMapGet,
     MirMapInsert,
+    MirMapKeys,
     MirMapNew,
+    MirMapSet,
     MirStructFinish,
     MirStructNew,
     MirStructSet,
     MirUnit,
+    MirVariantConstruct,
     MirVariantIs,
     MirVariantPayload,
 )
@@ -52,11 +57,16 @@ MirInstructionV4: TypeAlias = (
     | MirFalliblePayload
     | MirInterpolate
     | MirIsRuntimeError
+    | MirVariantConstruct
     | MirVariantIs
     | MirVariantPayload
     | MirMapNew
     | MirMapInsert
     | MirMapFinish
+    | MirMapGet
+    | MirMapSet
+    | MirMapKeys
+    | MirMapContains
     | MirStructNew
     | MirStructSet
     | MirStructFinish

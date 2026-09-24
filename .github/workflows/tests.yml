@@ -1,10 +1,18 @@
 name: Koschei Compiler Tests
 
-# GitHub-hosted Actions are not part of the canonical validation boundary for
-# this repository. Keep this workflow as a manual reproducibility recipe only;
-# the authority remains `ks-local-validate --profile full` plus retained receipt.
+# GitHub-hosted Actions are bootstrap validation evidence, not language authority.
+# The canonical semantic authority remains the sealed Koschei compiler/runtime
+# contract. This workflow automatically executes the canonical full validator so
+# every candidate head has reproducible executable evidence.
 on:
+  push:
+    branches:
+      - production/runtime-variant-parity-v1
   workflow_dispatch:
+
+concurrency:
+  group: koschei-production-validation-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -28,28 +36,23 @@ jobs:
           # remains the language/module floor, not the acquisition build pin.
           go-version: "1.24"
 
-      - name: Install package and local validator dependencies
-        run: python -m pip install -e . pytest
-
-      - name: Bind validation evidence to exact commit
+      - name: Install package and local validator dependency
         run: |
-          mkdir -p /tmp/koschei-validation-evidence
-          git rev-parse HEAD > /tmp/koschei-validation-evidence/candidate-commit.txt
-          python --version > /tmp/koschei-validation-evidence/python-version.txt 2>&1
-          go version > /tmp/koschei-validation-evidence/go-version.txt 2>&1
+          python -m pip install -e . pytest
+          # Editable installation creates local build metadata. The validator
+          # requires the candidate checkout itself to remain byte-clean.
+          git clean -fdx
 
-      - name: Generate acquisition SBOM snapshot
+      - name: Bind bootstrap metadata to exact commit
         run: |
-          python tools/acquisition_sbom_v1.py \
-            --output /tmp/koschei-acquisition-sbom.json
-          sha256sum /tmp/koschei-acquisition-sbom.json \
-            > /tmp/koschei-validation-evidence/acquisition-sbom.sha256
-          cp /tmp/koschei-acquisition-sbom.json \
-            /tmp/koschei-validation-evidence/acquisition-sbom.json
+          mkdir -p /tmp/koschei-bootstrap-metadata
+          git rev-parse HEAD > /tmp/koschei-bootstrap-metadata/candidate-commit.txt
+          python --version > /tmp/koschei-bootstrap-metadata/python-version.txt 2>&1
+          go version > /tmp/koschei-bootstrap-metadata/go-version.txt 2>&1
 
       - name: Run canonical full validation recipe
         run: |
-          ks-local-validate \
+          python -m koschei.local_validation_cli \
             --profile full \
             --output /tmp/koschei-local-validation.json \
             --evidence-dir /tmp/koschei-validation-evidence
@@ -58,7 +61,7 @@ jobs:
         if: always()
         run: |
           if [ -f /tmp/koschei-local-validation.json ]; then
-            sha256sum /tmp/koschei-local-validation.json > /tmp/koschei-validation-evidence/validation-receipt.sha256
+            sha256sum /tmp/koschei-local-validation.json > /tmp/koschei-bootstrap-metadata/validation-receipt.sha256
           fi
 
       - name: Upload sealed validation receipt
@@ -69,4 +72,5 @@ jobs:
           path: |
             /tmp/koschei-local-validation.json
             /tmp/koschei-validation-evidence
+            /tmp/koschei-bootstrap-metadata
           if-no-files-found: warn

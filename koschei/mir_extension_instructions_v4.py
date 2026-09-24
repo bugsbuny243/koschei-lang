@@ -55,6 +55,17 @@ class MirIsRuntimeError:
 
 
 @dataclass(frozen=True, slots=True)
+class MirVariantConstruct:
+    """Construct one value with an exact compiler-selected ``Owner::Variant`` identity."""
+
+    target: int
+    variant: str
+    source: int | None
+    type: TypeNode
+    location: SourceLocation
+
+
+@dataclass(frozen=True, slots=True)
 class MirVariantIs:
     """Compare one checked value against one compiler-selected variant identity."""
 
@@ -102,9 +113,46 @@ class MirMapFinish:
 
 
 @dataclass(frozen=True, slots=True)
+class MirMapGet:
+    target: int
+    object: int
+    key: int
+    type: TypeNode
+    location: SourceLocation
+
+
+@dataclass(frozen=True, slots=True)
+class MirMapSet:
+    target: int
+    object: int
+    key: int
+    value: int
+    type: TypeNode
+    location: SourceLocation
+
+
+@dataclass(frozen=True, slots=True)
+class MirMapKeys:
+    target: int
+    object: int
+    type: TypeNode
+    location: SourceLocation
+
+
+@dataclass(frozen=True, slots=True)
+class MirMapContains:
+    target: int
+    object: int
+    key: int
+    type: TypeNode
+    location: SourceLocation
+
+
+@dataclass(frozen=True, slots=True)
 class MirStructNew:
     target: int
     type_name: str
+    required_fields: tuple[str, ...]
     type: TypeNode
     location: SourceLocation
 
@@ -134,11 +182,16 @@ MIR_V4_EXTENSION_INSTRUCTION_TYPES = (
     MirFalliblePayload,
     MirInterpolate,
     MirIsRuntimeError,
+    MirVariantConstruct,
     MirVariantIs,
     MirVariantPayload,
     MirMapNew,
     MirMapInsert,
     MirMapFinish,
+    MirMapGet,
+    MirMapSet,
+    MirMapKeys,
+    MirMapContains,
     MirStructNew,
     MirStructSet,
     MirStructFinish,

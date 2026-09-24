@@ -21,6 +21,9 @@ DISK_READ = "disk.read"
 DISK_WRITE = "disk.write"
 ENV_READ = "env.read"
 PROCESS_EXEC = "process.exec"
+PERSIST_READ = "persist.read"
+PERSIST_WRITE = "persist.write"
+SERVE_EXCHANGE = "serve.exchange"
 
 POWER_DOMAIN_IDENTITY = "identity"
 POWER_DOMAIN_AUTHORITY = "authority"
@@ -48,6 +51,8 @@ _SYSTEM_CAPABILITY_MEMBERS = {
     "disk": "DiskRoot",
     "env": "EnvRoot",
     "process": "ProcessRoot",
+    "persist": "PersistRoot",
+    "serve": "ServeRoot",
 }
 
 _ROOT_NARROWING = {
@@ -55,6 +60,8 @@ _ROOT_NARROWING = {
     "DiskRoot": {"allow": "DiskCaps", "allow_read_only": "DiskReadCaps"},
     "EnvRoot": {"allow": "EnvCaps"},
     "ProcessRoot": {"allow": "ProcessCaps"},
+    "PersistRoot": {"allow": "PersistCaps"},
+    "ServeRoot": {"allow": "ServeCaps"},
 }
 
 _NARROWED_OPERATIONS = {
@@ -63,6 +70,8 @@ _NARROWED_OPERATIONS = {
     "DiskReadCaps": {"read", "list", "read_file"},
     "EnvCaps": {"get"},
     "ProcessCaps": {"run", "spawn"},
+    "PersistCaps": {"load", "commit"},
+    "ServeCaps": {"exchange"},
 }
 
 _CAPABILITY_METHOD_EFFECTS = {
@@ -73,6 +82,8 @@ _CAPABILITY_METHOD_EFFECTS = {
     },
     "EnvRoot": {"allow": AUTHORITY_DERIVE},
     "ProcessRoot": {"allow": AUTHORITY_DERIVE},
+    "PersistRoot": {"allow": AUTHORITY_DERIVE},
+    "ServeRoot": {"allow": AUTHORITY_DERIVE},
     "NetCaps": {
         "get": NET_IO,
         "post": NET_IO,
@@ -95,6 +106,8 @@ _CAPABILITY_METHOD_EFFECTS = {
     },
     "EnvCaps": {"get": ENV_READ},
     "ProcessCaps": {"run": PROCESS_EXEC, "spawn": PROCESS_EXEC},
+    "PersistCaps": {"load": PERSIST_READ, "commit": PERSIST_WRITE},
+    "ServeCaps": {"exchange": SERVE_EXCHANGE},
 }
 
 # Power domains classify existing capability/effect semantics. They are not a
@@ -112,6 +125,10 @@ _CAPABILITY_POWER_DOMAINS = {
     "EnvCaps": POWER_DOMAIN_DATA,
     "ProcessRoot": POWER_DOMAIN_COMPUTE,
     "ProcessCaps": POWER_DOMAIN_COMPUTE,
+    "PersistRoot": POWER_DOMAIN_CONTINUITY,
+    "PersistCaps": POWER_DOMAIN_CONTINUITY,
+    "ServeRoot": POWER_DOMAIN_NETWORK,
+    "ServeCaps": POWER_DOMAIN_NETWORK,
 }
 
 _EFFECT_POWER_DOMAINS = {
@@ -120,6 +137,9 @@ _EFFECT_POWER_DOMAINS = {
     DISK_WRITE: POWER_DOMAIN_DATA,
     ENV_READ: POWER_DOMAIN_DATA,
     PROCESS_EXEC: POWER_DOMAIN_COMPUTE,
+    PERSIST_READ: POWER_DOMAIN_CONTINUITY,
+    PERSIST_WRITE: POWER_DOMAIN_CONTINUITY,
+    SERVE_EXCHANGE: POWER_DOMAIN_NETWORK,
 }
 
 SYSTEM_CAPABILITY_MEMBERS: Mapping[str, str] = MappingProxyType(

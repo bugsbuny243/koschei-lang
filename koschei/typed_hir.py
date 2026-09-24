@@ -34,6 +34,7 @@ from .type_contracts import (
 )
 from .type_system import (
     ERROR,
+    STRING,
     UNKNOWN,
     VOID,
     GenericType,
@@ -107,11 +108,35 @@ class TypedMatchResolution:
 
 
 @dataclass(frozen=True, slots=True)
+class TypedStructLiteralResolution:
+    expression: Expression
+    type_name: str
+    required_fields: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class TypedMapLiteralResolution:
+    expression: Expression
+    key_type: TypeNode
+    duplicate_policy: str
+
+
+@dataclass(frozen=True, slots=True)
+class TypedMapMethodResolution:
+    expression: Expression
+    receiver_type: TypeNode
+    method: str
+
+
+@dataclass(frozen=True, slots=True)
 class TypedHIRReport:
     bindings: tuple[TypedBinding, ...]
     expressions: tuple[TypedExpression, ...]
     collections: int
     match_resolutions: tuple[TypedMatchResolution, ...] = ()
+    struct_literal_resolutions: tuple[TypedStructLiteralResolution, ...] = ()
+    map_literal_resolutions: tuple[TypedMapLiteralResolution, ...] = ()
+    map_method_resolutions: tuple[TypedMapMethodResolution, ...] = ()
 
     def binding_types(self, name: str) -> tuple[TypeNode, ...]:
         return tuple(item.type for item in self.bindings if item.name == name)
@@ -120,6 +145,24 @@ class TypedHIRReport:
         self, expression: MatchExpression
     ) -> TypedMatchResolution | None:
         for item in self.match_resolutions:
+            if item.expression is expression:
+                return item
+        return None
+
+    def struct_literal_resolution_of(self, expression) -> TypedStructLiteralResolution | None:
+        for item in self.struct_literal_resolutions:
+            if item.expression is expression:
+                return item
+        return None
+
+    def map_literal_resolution_of(self, expression) -> TypedMapLiteralResolution | None:
+        for item in self.map_literal_resolutions:
+            if item.expression is expression:
+                return item
+        return None
+
+    def map_method_resolution_of(self, expression) -> TypedMapMethodResolution | None:
+        for item in self.map_method_resolutions:
             if item.expression is expression:
                 return item
         return None
@@ -152,6 +195,9 @@ class TypedHIRChecker:
         self.bindings: list[TypedBinding] = []
         self.expressions: list[TypedExpression] = []
         self.match_resolutions: list[TypedMatchResolution] = []
+        self.struct_literal_resolutions: list[TypedStructLiteralResolution] = []
+        self.map_literal_resolutions: list[TypedMapLiteralResolution] = []
+        self.map_method_resolutions: list[TypedMapMethodResolution] = []
         self.collections = 0
         self.current_function = None
         self.contracts = TypeContractValidator(program, self.imports)
@@ -178,7 +224,31 @@ class TypedHIRChecker:
             tuple(self.expressions),
             self.collections,
             tuple(self.match_resolutions),
+            tuple(self.struct_literal_resolutions),
+            tuple(self.map_literal_resolutions),
+            tuple(self.map_method_resolutions),
         )
+
+    def record_map_literal_resolution(self, expression: Expression) -> None:
+        self.map_literal_resolutions.append(
+            TypedMapLiteralResolution(expression, STRING, "reject")
+        )
+
+    def record_map_method_resolution(
+        self,
+        expression: Expression,
+        receiver_type: TypeNode,
+        method: str,
+    ) -> None:
+        if method not in {"get", "set", "keys", "contains"}:
+            return
+        if (
+            isinstance(receiver_type, GenericType)
+            and receiver_type.name == "Map"
+        ) or is_named(receiver_type, "Map"):
+            self.map_method_resolutions.append(
+                TypedMapMethodResolution(expression, receiver_type, method)
+            )
 
     def declare(
         self, name: str, type_node: TypeNode, location: SourceLocation, role: str
@@ -376,6 +446,10 @@ class TypedHIRChecker:
             return NamedType(expression.type_name)
 
         expected_fields = {field.name: field for field in declaration.fields}
+        required_fields = tuple(field.name for field in declaration.fields)
+        self.struct_literal_resolutions.append(
+            TypedStructLiteralResolution(expression, declaration.name, required_fields)
+        )
         supplied: dict[str, object] = {}
         for name, value in expression.fields:
             if name in supplied:

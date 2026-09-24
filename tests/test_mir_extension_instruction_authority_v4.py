@@ -8,8 +8,13 @@ from koschei.mir_extension_instructions_v4 import (
     MirFallibleIsSuccess,
     MirInterpolate,
     MirIsRuntimeError,
+    MirMapContains,
+    MirMapGet,
     MirMapInsert,
+    MirMapKeys,
+    MirMapSet,
     MirUnit,
+    MirVariantConstruct,
     MirVariantIs,
     MirVariantPayload,
 )
@@ -22,7 +27,7 @@ from koschei.mir_or_return_normalization_v1 import (
     MirFallibleIsSuccess as CompatMirFallibleIsSuccess,
     MirInterpolate as CompatMirInterpolate,
 )
-from koschei.type_system import BOOL, STRING, VOID
+from koschei.type_system import BOOL, INT, STRING, VOID
 
 
 def test_compatibility_modules_reexport_exact_canonical_class_objects():
@@ -41,11 +46,16 @@ def test_extension_instruction_authority_has_no_duplicate_class_names():
         "MirFalliblePayload",
         "MirInterpolate",
         "MirIsRuntimeError",
+        "MirVariantConstruct",
         "MirVariantIs",
         "MirVariantPayload",
         "MirMapNew",
         "MirMapInsert",
         "MirMapFinish",
+        "MirMapGet",
+        "MirMapSet",
+        "MirMapKeys",
+        "MirMapContains",
         "MirStructNew",
         "MirStructSet",
         "MirStructFinish",
@@ -60,10 +70,13 @@ def test_v4_registry_reuses_extension_authority_instead_of_copying_it():
     )
     assert is_mir_v4_extension_instruction(MirUnit(4, VOID, location))
     assert is_mir_v4_extension_instruction(
-        MirVariantIs(5, 4, "Option::Some", BOOL, location)
+        MirVariantConstruct(5, "Option::Some", 4, INT, location)
     )
     assert is_mir_v4_extension_instruction(
-        MirVariantPayload(6, 4, "Option::Some", STRING, location)
+        MirVariantIs(6, 5, "Option::Some", BOOL, location)
+    )
+    assert is_mir_v4_extension_instruction(
+        MirVariantPayload(7, 5, "Option::Some", STRING, location)
     )
 
 
@@ -75,6 +88,20 @@ def test_unit_instruction_contract_is_canonical_and_host_opaque():
         "column": 6,
         "target": 8,
         "type": "Void",
+    }
+
+
+def test_variant_construct_contract_seals_exact_identity_and_payload_ssa():
+    location = SourceLocation(6, 2)
+    instruction = MirVariantConstruct(10, "State::Ready", 9, INT, location)
+    assert instruction_contract(instruction) == {
+        "kind": "variantconstruct",
+        "line": 6,
+        "column": 2,
+        "target": 10,
+        "variant": "State::Ready",
+        "source": 9,
+        "type": "Int",
     }
 
 
@@ -110,3 +137,18 @@ def test_container_extension_fields_participate_in_canonical_ssa_validator():
         assert "43" in message
     else:
         raise AssertionError("canonical validator must reject undefined extension SSA uses")
+
+
+def test_variant_construct_payload_participates_in_canonical_ssa_validator():
+    location = SourceLocation(1, 1)
+    block = MirBasicBlock(
+        0,
+        (MirVariantConstruct(1, "State::Ready", 99, INT, location),),
+        MirReturn(1),
+    )
+    try:
+        validate_blocks((block,))
+    except ValueError as error:
+        assert "99" in str(error)
+    else:
+        raise AssertionError("variant constructor must not consume undefined payload SSA")

@@ -7,7 +7,7 @@ shape.
 """
 from __future__ import annotations
 
-from .ast_nodes import MatchExpression
+from .ast_nodes import Block, MatchExpression
 from .mir_extension_instructions_v4 import MirVariantIs, MirVariantPayload
 from .mir_ir import MirBind, MirBranch, MirJump, MirLoad, MirUnreachable
 from .mir_match_plan_v1 import MirMatchPlanError, build_mir_match_plan_v1
@@ -18,9 +18,10 @@ def lower_match_expression_v1(lowerer, expression: MatchExpression) -> int:
     """Lower one compiler-resolved match into explicit test/payload/result CFG.
 
     Required lowerer surface is the canonical internal MIR lowerer surface:
-    ``_lower_expression``, ``_new_value``, ``_new_block``, ``_emit``,
-    ``_terminate``, ``_new_binding_name``, ``_new_internal_binding_name``,
-    ``_type_of``, plus ``current``, ``blocks`` and ``scopes``.
+    ``_lower_expression``, ``_lower_value_block``, ``_supports_value_block``,
+    ``_new_value``, ``_new_block``, ``_emit``, ``_terminate``,
+    ``_new_binding_name``, ``_new_internal_binding_name``, ``_type_of``, plus
+    ``current``, ``blocks`` and ``scopes``.
     """
 
     plan = build_mir_match_plan_v1(lowerer.typed_report, expression)
@@ -81,21 +82,37 @@ def lower_match_expression_v1(lowerer, expression: MatchExpression) -> int:
                     )
                 )
 
-            arm_value = lowerer._lower_expression(source_arm.body)
-            if lowerer.blocks[lowerer.current].terminator is not None:
-                raise MirMatchPlanError(
-                    "match arm expression unexpectedly terminated control flow"
-                )
-            lowerer._emit(
-                MirBind(
-                    result_name,
-                    arm_value,
-                    False,
-                    result_type,
+            if isinstance(source_arm.body, Block):
+                if not lowerer._supports_value_block(source_arm.body):
+                    raise MirMatchPlanError(
+                        "match block arm is not admitted by canonical value-block lowering"
+                    )
+                arm_value = lowerer._lower_value_block(
+                    source_arm.body,
                     source_arm.location,
+                    result_type,
                 )
-            )
-            lowerer._terminate(MirJump(join_block))
+            else:
+                arm_value = lowerer._lower_expression(source_arm.body)
+
+            # A value-block arm is allowed to terminate the current path itself,
+            # for example with ``return``. Only paths that continue to the match
+            # join are permitted to manufacture the match result binding.
+            if lowerer.blocks[lowerer.current].terminator is None:
+                if arm_value is None:
+                    raise MirMatchPlanError(
+                        "continuing match arm produced no canonical result value"
+                    )
+                lowerer._emit(
+                    MirBind(
+                        result_name,
+                        arm_value,
+                        False,
+                        result_type,
+                        source_arm.location,
+                    )
+                )
+                lowerer._terminate(MirJump(join_block))
         finally:
             lowerer.scopes.pop()
 

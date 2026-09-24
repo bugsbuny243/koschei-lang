@@ -122,3 +122,33 @@ Local effect completion is represented by `EffectExecutionReceiptV1` and
 External finality now additionally requires `ProviderNativeVerificationReceiptV1`,
 which binds raw provider response bytes and the exact callback-returned external
 reference before verdict/finality provenance is admitted.
+
+
+## EXTERNAL ACTION DETERMINABILITY GATE — 2026-09-19
+
+The proof stack MUST preserve four distinct facts for an external action:
+
+1. **authorization** — the exact authority/policy revision admitted the request;
+2. **enforcement** — the runtime made the exact bound decision;
+3. **execution** — the bound operation was actually attempted/executed;
+4. **effect** — independently verifiable evidence describes the resulting external state.
+
+No earlier fact implies a later fact. In particular, an authenticated request, manifest,
+scope declaration, authorization decision, execution permit, or consumed permit MUST
+NOT be relabeled as proof of the executed target or resulting effect.
+
+For external effects, a higher-layer receipt MUST bind the exact governing revision
+that was current at decision time, the material resolved target/action, and effect
+evidence sufficient for the relevant verifier to recompute or independently resolve
+the claimed result.
+
+A declared field compared only with another declared field is consistency evidence,
+not evidence that the real resolved/executed target matched. Where a claim depends on
+referenced evidence, evidence that is unavailable/unresolvable at verification time
+MUST fail closed for that claim; verification may not silently degrade to unchecked.
+
+These rules strengthen the existing terminal separation:
+`permit-consumed != effect-completed != provider-final`.
+
+External protocol participation, registry presence, DID/agent identity, discovery
+metadata, or entitlement evidence never creates Koschei authority.

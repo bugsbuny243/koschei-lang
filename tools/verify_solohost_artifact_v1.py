@@ -290,12 +290,154 @@ def _verify_release_integrity(root: Path, trusted_public_key: Path) -> list[str]
     return failures
 
 
-def verify_artifact(root: Path, *, trusted_public_key: Path | None = None) -> list[str]:
+def _load_manifest(root: Path, failures: list[str]) -> dict[str, object] | None:
+    try:
+        _, manifest = _load_release_manifest(root)
+    except ArtifactPolicyError as exc:
+        failures.append(str(exc))
+        return None
+    return manifest
+
+
+def _verify_manifest(
+    root: Path,
+    manifest: dict[str, object],
+    failures: list[str],
+    *,
+    allow_unsigned_staging: bool,
+    public_key: Path | None,
+) -> None:
+    try:
+        entrypoint = _simple_artifact_name(manifest.get("entrypoint"), field="entrypoint")
+    except ArtifactPolicyError as exc:
+        failures.append(str(exc))
+        return
+
+    artifact = manifest.get("artifact")
+    if not isinstance(artifact, dict):
+        failures.append("release manifest artifact section is missing")
+        return
+    try:
+        artifact_name = _simple_artifact_name(artifact.get("path"), field="artifact.path")
+    except ArtifactPolicyError as exc:
+        failures.append(str(exc))
+        return
+    if artifact_name != entrypoint:
+        failures.append("release manifest entrypoint and artifact.path do not match")
+
+    executable = root / artifact_name
+    if not executable.is_file():
+        failures.append(f"manifest-bound executable is missing: {artifact_name}")
+    else:
+        expected_sha = artifact.get("sha256")
+        if not isinstance(expected_sha, str) or SHA256_RE.fullmatch(expected_sha) is None:
+            failures.append("manifest artifact.sha256 must be a lowercase SHA-256 digest")
+        elif _sha256(executable) != expected_sha:
+            failures.append("manifest artifact sha256 does not match executable bytes")
+
+        expected_size = artifact.get("size_bytes")
+        if not isinstance(expected_size, int) or isinstance(expected_size, bool) or expected_size < 0:
+            failures.append("manifest artifact.size_bytes must be a non-negative integer")
+        elif executable.stat().st_size != expected_size:
+            failures.append("manifest artifact size_bytes does not match executable bytes")
+
+    signature = manifest.get("signature")
+    if not isinstance(signature, dict):
+        failures.append("release manifest signature section is missing")
+        return
+    status = signature.get("status")
+    if status == "UNSIGNED-STAGING":
+        if not allow_unsigned_staging:
+            failures.append("unsigned staging; publication is blocked")
+        return
+    if status != "SIGNED":
+        failures.append("release manifest is not marked SIGNED")
+        return
+
+    if signature.get("scheme") != SIGNATURE_SCHEME:
+        failures.append(f"release signature scheme must be {SIGNATURE_SCHEME}")
+
+    key_id = signature.get("key_id")
+    if not isinstance(key_id, str) or not key_id.startswith(KEY_ID_PREFIX):
+        failures.append("release manifest signature.key_id is invalid")
+        key_id = None
+
+    try:
+        signature_name = _simple_artifact_name(
+            signature.get("signature_file"), field="signature.signature_file"
+        )
+    except ArtifactPolicyError as exc:
+        failures.append(str(exc))
+        signature_name = ""
+    if signature_name and signature_name != REQUIRED_SIGNATURE:
+        failures.append(f"release signature file must be {REQUIRED_SIGNATURE}")
+    signature_path = root / signature_name if signature_name else None
+    if signature_path is None or not signature_path.is_file():
+        failures.append("detached release signature is missing")
+        return
+
+    if public_key is None:
+        failures.append(
+            "missing independent trusted public key; artifact-bundled keys are not trust anchors"
+        )
+        return
+
+    try:
+        supplied_key_id = _trusted_key_id(public_key.resolve())
+    except ArtifactPolicyError as exc:
+        failures.append(str(exc))
+        return
+    if key_id is not None and supplied_key_id != key_id:
+        failures.append(
+            "release signature key_id does not match supplied public key "
+            "(does not match independently trusted key)"
+        )
+        return
+
+    result = _run_openssl([
+        "openssl",
+        "pkeyutl",
+        "-verify",
+        "-rawin",
+        "-in",
+        str(root / REQUIRED_MANIFEST),
+        "-pubin",
+        "-inkey",
+        str(public_key.resolve()),
+        "-sigfile",
+        str(signature_path),
+    ])
+    if result.returncode != 0:
+        failures.append("Ed25519 signature verification failed")
+
+
+def verify_artifact(
+    root: Path,
+    *,
+    trusted_public_key: Path | None = None,
+    allow_unsigned_staging: bool = False,
+    public_key: Path | None = None,
+) -> list[str]:
+    """Verify one source-free SoloHost artifact.
+
+    Unsigned staging validation checks transport/integrity only and never makes
+    an artifact publishable. Signed publication requires an independently
+    supplied key. public_key remains the v1 CLI alias; trusted_public_key is the
+    canonical API spelling.
+    """
+
+    if trusted_public_key is not None and public_key is not None:
+        if trusted_public_key.resolve() != public_key.resolve():
+            return ["conflicting independently supplied release public keys"]
+    trust_key = trusted_public_key if trusted_public_key is not None else public_key
+
     policy = _load_policy()
     forbidden_path_names = _as_string_set(policy, "forbidden_path_names")
     forbidden_suffixes = _as_string_set(policy, "forbidden_suffixes")
     forbidden_file_names = _as_string_set(policy, "forbidden_file_names")
-    secret_markers = {item.lower() for item in _as_string_set(policy, "secret_name_markers")}
+    secret_markers = {
+        item.lower() for item in _as_string_set(policy, "secret_name_markers")
+    }
 
     failures: list[str] = []
     if not root.exists():
@@ -303,11 +445,11 @@ def verify_artifact(root: Path, *, trusted_public_key: Path | None = None) -> li
     if not root.is_dir():
         return [f"artifact path is not a directory: {root}"]
 
-    files = [path for path in root.rglob("*") if path.is_file()]
+    files = [item for item in root.rglob("*") if item.is_file()]
     if not files:
         return ["artifact directory is empty"]
 
-    if not any(path.name in EXECUTABLE_CANDIDATES for path in files):
+    if not any(item.name in EXECUTABLE_CANDIDATES for item in files):
         failures.append("missing Koschei executable entrypoint (ks/koschei)")
 
     manifest = _load_manifest(root, failures)
@@ -317,30 +459,29 @@ def verify_artifact(root: Path, *, trusted_public_key: Path | None = None) -> li
             manifest,
             failures,
             allow_unsigned_staging=allow_unsigned_staging,
-            public_key=public_key,
+            public_key=trust_key,
         )
 
-    for path in files:
-        rel = path.relative_to(root)
+    for item in files:
+        rel = item.relative_to(root)
         parts = set(rel.parts)
         blocked_parts = sorted(parts.intersection(forbidden_path_names))
         if blocked_parts:
-            failures.append(f"forbidden private/source path component {blocked_parts!r}: {rel}")
-        if path.name in forbidden_file_names:
+            failures.append(
+                f"forbidden private/source path component {blocked_parts!r}: {rel}"
+            )
+        if item.name in forbidden_file_names:
             failures.append(f"forbidden source/build file: {rel}")
-        if path.suffix.lower() in forbidden_suffixes:
-            failures.append(f"forbidden source suffix {path.suffix}: {rel}")
-        lower_name = path.name.lower()
-        matched_markers = sorted(marker for marker in secret_markers if marker in lower_name)
-        if matched_markers:
-            failures.append(f"secret-like filename marker {matched_markers!r}: {rel}")
-
-    if trusted_public_key is None:
-        failures.append(
-            "missing independent trusted public key; artifact-bundled keys are not trust anchors"
+        if item.suffix.lower() in forbidden_suffixes:
+            failures.append(f"forbidden source suffix {item.suffix}: {rel}")
+        lower_name = item.name.lower()
+        matched_markers = sorted(
+            marker for marker in secret_markers if marker in lower_name
         )
-    else:
-        failures.extend(_verify_release_integrity(root, trusted_public_key))
+        if matched_markers:
+            failures.append(
+                f"secret-like filename marker {matched_markers!r}: {rel}"
+            )
 
     return failures
 
@@ -349,13 +490,19 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("artifact_directory", type=Path)
     parser.add_argument(
-        "--trusted-public-key",
-        required=True,
+        "--allow-unsigned-staging",
+        action="store_true",
+        help="validate an UNSIGNED-STAGING artifact without making it publishable",
+    )
+    parser.add_argument(
+        "--public-key",
         type=Path,
-        help=(
-            "independently pinned Ed25519 release public key; do not point this at "
-            "a key learned only from inside the artifact being verified"
-        ),
+        help="v1 alias for an independently supplied Ed25519 release public key",
+    )
+    parser.add_argument(
+        "--trusted-public-key",
+        type=Path,
+        help="independently pinned Ed25519 release public key",
     )
     return parser
 
@@ -364,7 +511,12 @@ def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     root = args.artifact_directory.resolve()
     try:
-        failures = verify_artifact(root, trusted_public_key=args.trusted_public_key.resolve())
+        failures = verify_artifact(
+            root,
+            trusted_public_key=args.trusted_public_key,
+            public_key=args.public_key,
+            allow_unsigned_staging=args.allow_unsigned_staging,
+        )
     except ArtifactPolicyError as exc:
         print(f"SOLOHOST ARTIFACT POLICY ERROR: {exc}", file=sys.stderr)
         return 2
@@ -377,7 +529,11 @@ def main(argv: list[str] | None = None) -> int:
 
     print("KOSCHEI SOLOHOST ARTIFACT: PASS")
     print(f"root: {root}")
-    print("source-leak, artifact digest, signer identity, and detached-signature checks passed")
+    if args.allow_unsigned_staging:
+        print("staging integrity: PASS — NOT PUBLISHABLE UNTIL SIGNED")
+    else:
+        print("signed publication gate: PASS")
+    print("source-leak, artifact digest, signer identity, and signature checks passed")
     return 0
 
 

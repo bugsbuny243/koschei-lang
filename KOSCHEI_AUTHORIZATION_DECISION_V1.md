@@ -151,3 +151,53 @@ Create the machine-verifiable **Proof Envelope** that commits the complete linea
 
 Then move permit replay state and decision/permit key custody from Python bootstrap
 objects into a runtime-owned monotonic/transactional boundary.
+
+
+## IDENTITY CANONICALIZATION AND DELEGATION CONTINUITY GATE — 2026-09-19
+
+Authorization identity is a semantic contract before it is a byte/digest contract.
+
+A canonical serialization or matching digest MUST NOT by itself establish that two
+security-critical identifiers denote the same subject, namespace, unit, schema, or
+authority domain. The identity contract that gives those bytes meaning must already
+be explicit and admitted.
+
+Security-critical identifiers MUST NOT pass through a lossy host-number
+representation. If an external identifier cannot be represented without loss under
+the admitted identity/schema contract, the bridge MUST reject it rather than hash a
+silently rounded/colliding representation.
+
+For delegated external authority, provenance alone is insufficient. A valid chain
+A -> B -> C proves where a delegation claim came from; it does not prove that C
+remained inside A's original authority. Every admitted hop MUST preserve or attenuate
+the preceding scope and lifetime. No hop may widen operation, subject, resource,
+epoch/lifetime, or other authority dimension.
+
+These requirements apply before external evidence is allowed to participate in the
+canonical authority bridge. They do not grant external identity systems authority
+over Koschei's native Khar/compiler enforcement.
+
+
+## PROTOCOL NEGOTIATION / DOWNGRADE GATE — 2026-09-19
+
+External protocol discovery and negotiation are pre-admission observations, not
+authority.
+
+When an external adapter relies on negotiated agent/authentication protocol state,
+the admitted evidence MUST bind the exact protocol identity, version and all
+security-relevant negotiated parameters. The later authorization/session path MUST
+verify that binding rather than re-negotiate or infer a compatible profile.
+
+If peers have no intersection that satisfies Koschei's required identity, evidence,
+freshness, revocation, authority-scope and effect-verification guarantees, admission
+MUST fail closed. A compatibility fallback may preserve or strengthen those
+requirements; it MUST NOT weaken them.
+
+A negotiation transcript/hash can provide binding evidence but does not create
+authority. Likewise, external trust-domain or issuer metadata is evidence describing
+a claimed trust relationship. Conflicting, ambiguous, stale or unresolved trust
+paths MUST NOT be collapsed into an allow decision.
+
+No negotiated protocol, fallback, issuer relationship or cross-domain metadata may
+widen the operation/subject/resource/lifetime admitted by the canonical native
+authority basis.

@@ -11,7 +11,27 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from .interpreter import EnumValue
 from .mir import MirFunction, MirGraph
+from .mir_extension_instructions_v4 import (
+    MirFallibleIsSuccess,
+    MirFalliblePayload,
+    MirInterpolate,
+    MirIsRuntimeError,
+    MirUnit,
+    MirMapContains,
+    MirMapFinish,
+    MirMapGet,
+    MirMapInsert,
+    MirMapKeys,
+    MirMapNew,
+    MirMapSet,
+    MirStructFinish,
+    MirStructNew,
+    MirStructSet,
+    MirVariantIs,
+    MirVariantPayload,
+)
 from .mir_ir import (
     MirAstFallback,
     MirBinary,
@@ -31,10 +51,16 @@ from .mir_ir import (
     MirUnary,
     MirUnreachable,
 )
+from .mir_variant_runtime_v1 import (
+    MirVariantRuntimeError,
+    variant_is_v1,
+    variant_payload_v1,
+)
+from .type_system import GenericType, NamedType
 
 _SUPPORTED_BINARY = frozenset({"+", "-", "*", "==", "!=", "<", "<=", ">", ">="})
 _SUPPORTED_UNARY = frozenset({"!", "-", "+"})
-_BUILTINS = frozenset({"print", "println", "Error"})
+_BUILTINS = frozenset({"print", "println", "Error", "Some", "None", "Ok", "Err"})
 _MAX_CALL_DEPTH = 512
 _DEFAULT_MAX_STEPS = 1_000_000
 
@@ -87,6 +113,31 @@ class _ErrorValue:
 
 
 @dataclass(slots=True)
+class _MapBuilder:
+    entries: list[tuple[str, Any]]
+    consumed: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class _MapValue:
+    entries: tuple[tuple[str, Any], ...]
+
+
+@dataclass(slots=True)
+class _StructBuilder:
+    type_name: str
+    required_fields: tuple[str, ...]
+    fields: dict[str, Any]
+    consumed: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class _StructValue:
+    type_name: str
+    fields: tuple[tuple[str, Any], ...]
+
+
+@dataclass(slots=True)
 class _ListIterator:
     items: tuple[Any, ...]
     index: int = 0
@@ -121,6 +172,46 @@ def _is_direct_module_member(mir: MirGraph, module_key: str, function: MirFuncti
     return any(candidate.name == instruction.member for candidate in target.functions)
 
 
+def _receiver_type_name(function: MirFunction, value_id: int) -> str | None:
+    source = _definitions(function).get(value_id)
+    type_node = getattr(source, "type", None)
+    if isinstance(type_node, GenericType):
+        return type_node.name
+    if isinstance(type_node, NamedType):
+        return type_node.name
+    return None
+
+
+def _is_checked_struct_field_member(
+    mir: MirGraph,
+    module_key: str,
+    function: MirFunction,
+    instruction: MirMember,
+) -> bool:
+    type_name = _receiver_type_name(function, instruction.object)
+    if type_name is None:
+        return False
+
+    candidates = []
+    module = mir.module_of(module_key)
+    candidates.extend(
+        declaration
+        for declaration in module.program.structs
+        if declaration.name == type_name
+    )
+    for target_key in module.imports.values():
+        target = mir.module_of(target_key)
+        candidates.extend(
+            declaration
+            for declaration in target.program.structs
+            if declaration.name == type_name
+        )
+    if len(candidates) != 1:
+        return False
+    declaration = candidates[0]
+    return any(field.name == instruction.member for field in declaration.fields)
+
+
 def inspect_native_mir_support(mir: MirGraph) -> MirNativeSupport:
     """Return deterministic reasons why a graph is not native-MIR executable yet."""
 
@@ -147,10 +238,25 @@ def inspect_native_mir_support(mir: MirGraph) -> MirNativeSupport:
         MirIterNext,
         MirMember,
         MirCall,
+        MirVariantIs,
+        MirVariantPayload,
+        MirUnit,
+        MirIsRuntimeError,
+        MirFallibleIsSuccess,
+        MirFalliblePayload,
+        MirInterpolate,
+        MirMapNew,
+        MirMapInsert,
+        MirMapFinish,
+        MirMapGet,
+        MirMapSet,
+        MirMapKeys,
+        MirMapContains,
+        MirStructNew,
+        MirStructSet,
+        MirStructFinish,
     )
     for module in mir.in_dependency_order():
-        if module.program.structs:
-            reasons.append(f"{module.name}: native MIR v1 does not execute structs yet")
         if module.program.enums:
             reasons.append(f"{module.name}: native MIR v1 does not execute enums yet")
         for function in module.functions:
@@ -162,8 +268,13 @@ def inspect_native_mir_support(mir: MirGraph) -> MirNativeSupport:
                             f"{label}: AST fallback remains for {instruction.node_kind}"
                         )
                     elif isinstance(instruction, MirMember):
-                        if not _is_direct_module_member(
-                            mir, module.key, function, instruction
+                        if not (
+                            _is_direct_module_member(
+                                mir, module.key, function, instruction
+                            )
+                            or _is_checked_struct_field_member(
+                                mir, module.key, function, instruction
+                            )
                         ):
                             reasons.append(
                                 f"{label}: member access is not native-MIR yet"
@@ -394,6 +505,146 @@ class _MirExecutor:
             right = self._value(values, instruction.right)
             values[instruction.target] = _binary(instruction.operator, left, right)
             return
+        if isinstance(instruction, MirUnit):
+            values[instruction.target] = _UNIT
+            return
+        if isinstance(instruction, MirIsRuntimeError):
+            source = self._value(values, instruction.source)
+            values[instruction.target] = isinstance(source, _ErrorValue)
+            return
+        if isinstance(instruction, MirFallibleIsSuccess):
+            source = self._value(values, instruction.source)
+            success, _ = _unwrap_fallible_value(source)
+            values[instruction.target] = success
+            return
+        if isinstance(instruction, MirFalliblePayload):
+            source = self._value(values, instruction.source)
+            success, payload = _unwrap_fallible_value(source)
+            if not success:
+                raise MirNativeRuntimeError(
+                    "fallible payload reached without a success proof"
+                )
+            values[instruction.target] = payload
+            return
+        if isinstance(instruction, MirInterpolate):
+            values[instruction.target] = "".join(
+                _to_string(self._value(values, item))
+                for item in instruction.items
+            )
+            return
+        if isinstance(instruction, MirVariantIs):
+            source = self._value(values, instruction.source)
+            try:
+                values[instruction.target] = variant_is_v1(source, instruction.variant)
+            except MirVariantRuntimeError as exc:
+                raise MirNativeRuntimeError(
+                    f"MIR variant comparison failed closed: {exc}"
+                ) from exc
+            return
+        if isinstance(instruction, MirVariantPayload):
+            source = self._value(values, instruction.source)
+            try:
+                values[instruction.target] = variant_payload_v1(
+                    source, instruction.variant
+                )
+            except MirVariantRuntimeError as exc:
+                raise MirNativeRuntimeError(
+                    f"MIR variant payload extraction failed closed: {exc}"
+                ) from exc
+            return
+        if isinstance(instruction, MirMapNew):
+            values[instruction.target] = _MapBuilder([])
+            return
+        if isinstance(instruction, MirMapInsert):
+            builder = self._map_builder(values, instruction.object)
+            if builder.consumed:
+                raise MirNativeRuntimeError("map builder already consumed")
+            if len(instruction.arguments) != 2:
+                raise MirNativeRuntimeError("MIR map insert requires key and value")
+            key = self._value(values, instruction.arguments[0])
+            if not isinstance(key, str):
+                raise MirNativeRuntimeError("MIR Map key must be String")
+            if any(existing_key == key for existing_key, _ in builder.entries):
+                raise MirNativeRuntimeError("duplicate Map key insertion")
+            value = self._value(values, instruction.arguments[1])
+            builder.entries.append((key, value))
+            return
+        if isinstance(instruction, MirMapFinish):
+            builder = self._map_builder(values, instruction.source)
+            if builder.consumed:
+                raise MirNativeRuntimeError("map builder already consumed")
+            builder.consumed = True
+            values[instruction.target] = _MapValue(tuple(builder.entries))
+            return
+        if isinstance(instruction, MirMapGet):
+            source = self._map_value(values, instruction.object)
+            key = self._value(values, instruction.key)
+            if not isinstance(key, str):
+                raise MirNativeRuntimeError("MIR Map.get key must be String")
+            for existing_key, item in source.entries:
+                if existing_key == key:
+                    values[instruction.target] = item
+                    return
+            values[instruction.target] = _ErrorValue(
+                f"Map anahtarı bulunamadı: {key}"
+            )
+            return
+        if isinstance(instruction, MirMapSet):
+            source = self._map_value(values, instruction.object)
+            key = self._value(values, instruction.key)
+            if not isinstance(key, str):
+                raise MirNativeRuntimeError("MIR Map.set key must be String")
+            value = self._value(values, instruction.value)
+            updated = list(source.entries)
+            for index, (existing_key, _) in enumerate(updated):
+                if existing_key == key:
+                    updated[index] = (key, value)
+                    break
+            else:
+                updated.append((key, value))
+            values[instruction.target] = _MapValue(tuple(updated))
+            return
+        if isinstance(instruction, MirMapKeys):
+            source = self._map_value(values, instruction.object)
+            values[instruction.target] = tuple(key for key, _ in source.entries)
+            return
+        if isinstance(instruction, MirMapContains):
+            source = self._map_value(values, instruction.object)
+            key = self._value(values, instruction.key)
+            if not isinstance(key, str):
+                raise MirNativeRuntimeError("MIR Map.contains key must be String")
+            values[instruction.target] = any(
+                existing_key == key for existing_key, _ in source.entries
+            )
+            return
+        if isinstance(instruction, MirStructNew):
+            if len(set(instruction.required_fields)) != len(instruction.required_fields):
+                raise MirNativeRuntimeError("duplicate field in sealed struct contract")
+            values[instruction.target] = _StructBuilder(instruction.type_name, instruction.required_fields, {})
+            return
+        if isinstance(instruction, MirStructSet):
+            builder = self._struct_builder(values, instruction.object)
+            if builder.consumed:
+                raise MirNativeRuntimeError("struct builder already consumed")
+            if instruction.field not in builder.required_fields:
+                raise MirNativeRuntimeError("struct field outside sealed contract")
+            if instruction.field in builder.fields:
+                raise MirNativeRuntimeError("duplicate struct field assignment")
+            builder.fields[instruction.field] = self._value(values, instruction.source)
+            return
+        if isinstance(instruction, MirStructFinish):
+            builder = self._struct_builder(values, instruction.source)
+            if builder.consumed:
+                raise MirNativeRuntimeError("struct builder already consumed")
+            missing = tuple(f for f in builder.required_fields if f not in builder.fields)
+            if missing:
+                raise MirNativeRuntimeError("missing required struct fields: " + ", ".join(missing))
+            builder.consumed = True
+            values[instruction.target] = _StructValue(
+                builder.type_name,
+                tuple((f, builder.fields[f]) for f in builder.required_fields),
+            )
+            return
         if isinstance(instruction, MirList):
             values[instruction.target] = tuple(
                 self._value(values, item) for item in instruction.items
@@ -418,23 +669,31 @@ class _MirExecutor:
             return
         if isinstance(instruction, MirMember):
             receiver = self._value(values, instruction.object)
-            if not isinstance(receiver, _ModuleRef):
+            if isinstance(receiver, _StructValue):
+                for field, item in receiver.fields:
+                    if field == instruction.member:
+                        values[instruction.target] = item
+                        return
                 raise MirNativeRuntimeError(
-                    "native MIR member access currently requires a module import"
+                    f"struct has no sealed field {instruction.member!r}"
                 )
-            functions = self.functions_by_module.get(receiver.key)
-            if functions is None:
-                raise MirNativeRuntimeError(
-                    f"member access targets unknown MIR module {receiver.key!r}"
+            if isinstance(receiver, _ModuleRef):
+                functions = self.functions_by_module.get(receiver.key)
+                if functions is None:
+                    raise MirNativeRuntimeError(
+                        f"member access targets unknown MIR module {receiver.key!r}"
+                    )
+                if instruction.member not in functions:
+                    raise MirNativeRuntimeError(
+                        f"module has no MIR function {instruction.member!r}"
+                    )
+                values[instruction.target] = _FunctionRef(
+                    instruction.member, receiver.key
                 )
-            if instruction.member not in functions:
-                raise MirNativeRuntimeError(
-                    f"module has no MIR function {instruction.member!r}"
-                )
-            values[instruction.target] = _FunctionRef(
-                instruction.member, receiver.key
+                return
+            raise MirNativeRuntimeError(
+                "native MIR member receiver has unsupported sealed shape"
             )
-            return
         if isinstance(instruction, MirCall):
             callee = self._value(values, instruction.callee)
             arguments = [self._value(values, item) for item in instruction.arguments]
@@ -467,7 +726,44 @@ class _MirExecutor:
                 if len(arguments) != 1:
                     raise MirNativeRuntimeError("Error expects one argument")
                 return _ErrorValue(_to_string(arguments[0]))
+            if callee.name == "Some":
+                if len(arguments) != 1:
+                    raise MirNativeRuntimeError("Some expects one argument")
+                return EnumValue("Option", "Some", arguments[0])
+            if callee.name == "None":
+                if arguments:
+                    raise MirNativeRuntimeError("None expects zero arguments")
+                return EnumValue("Option", "None")
+            if callee.name == "Ok":
+                if len(arguments) != 1:
+                    raise MirNativeRuntimeError("Ok expects one argument")
+                return EnumValue("Result", "Ok", arguments[0])
+            if callee.name == "Err":
+                if len(arguments) != 1:
+                    raise MirNativeRuntimeError("Err expects one argument")
+                return EnumValue("Result", "Err", arguments[0])
         raise MirNativeRuntimeError("MIR call target is not callable")
+
+    @staticmethod
+    def _map_value(values: dict[int, Any], value_id: int) -> _MapValue:
+        value = _MirExecutor._value(values, value_id)
+        if not isinstance(value, _MapValue):
+            raise MirNativeRuntimeError("invalid MIR Map value")
+        return value
+
+    @staticmethod
+    def _map_builder(values: dict[int, Any], value_id: int) -> _MapBuilder:
+        value = _MirExecutor._value(values, value_id)
+        if not isinstance(value, _MapBuilder):
+            raise MirNativeRuntimeError("invalid MIR map builder")
+        return value
+
+    @staticmethod
+    def _struct_builder(values: dict[int, Any], value_id: int) -> _StructBuilder:
+        value = _MirExecutor._value(values, value_id)
+        if not isinstance(value, _StructBuilder):
+            raise MirNativeRuntimeError("invalid MIR struct builder")
+        return value
 
     @staticmethod
     def _value(values: dict[int, Any], value_id: int) -> Any:
@@ -481,6 +777,23 @@ class _MirExecutor:
         if not isinstance(value, _ListIterator):
             raise MirNativeRuntimeError("MIR iterator value has invalid runtime shape")
         return value
+
+
+def _unwrap_fallible_value(value: Any) -> tuple[bool, Any]:
+    if isinstance(value, _ErrorValue):
+        return False, value
+    if isinstance(value, EnumValue):
+        if value.enum_name == "Option":
+            if value.variant == "Some":
+                return True, value.payload
+            if value.variant == "None":
+                return False, value
+        if value.enum_name == "Result":
+            if value.variant == "Ok":
+                return True, value.payload
+            if value.variant == "Err":
+                return False, value
+    return True, value
 
 
 def _unary(operator: str, operand: Any) -> Any:
@@ -521,6 +834,16 @@ def _binary(operator: str, left: Any, right: Any) -> Any:
     raise MirNativeRuntimeError(f"unsupported binary operator {operator!r}")
 
 
+def _to_container_repr(value: Any) -> str:
+    if isinstance(value, str):
+        return f'"{value}"'
+    return _to_string(value)
+
+
+def _to_map_repr(value: Any) -> str:
+    return _to_container_repr(value)
+
+
 def _to_string(value: Any) -> str:
     if value is _UNIT:
         return "unit"
@@ -532,7 +855,12 @@ def _to_string(value: Any) -> str:
             text += ".0"
         return text
     if isinstance(value, tuple):
-        return "[" + ", ".join(_to_string(item) for item in value) + "]"
+        return "[" + ", ".join(_to_container_repr(item) for item in value) + "]"
+    if isinstance(value, _MapValue):
+        inner = ", ".join(
+            f'"{key}": {_to_map_repr(item)}' for key, item in value.entries
+        )
+        return "{" + inner + "}"
     if isinstance(value, _ErrorValue):
         return value.message
     return str(value)

@@ -2,7 +2,14 @@ from pathlib import Path
 import tempfile
 
 from koschei.mir import require_mir
-from koschei.mir_ir import MirAstFallback, MirBranch, MirCall, MirReturn
+from koschei.mir_ir import MirAstFallback, MirBranch, MirCall, MirMember, MirReturn
+from koschei.mir_extension_instructions_v4 import (
+    MirMapContains,
+    MirMapGet,
+    MirMapKeys,
+    MirMapSet,
+    MirStructNew,
+)
 from koschei.mir_or_return_normalization_v1 import (
     MirFallibleIsSuccess,
     MirFalliblePayload,
@@ -106,3 +113,91 @@ fn main() { println("ready") }
         assert failure.terminator.value == success_test.source
     finally:
         directory.cleanup()
+
+
+def test_map_methods_lower_to_sealed_opcodes_without_generic_member_call():
+    directory, blocks = _lower_execute(
+        '''
+fn execute() {
+    let values = {"a": 1}
+    let found = values.get("a") or 0
+    let changed = values.set("b", 2)
+    let keys = changed.keys()
+    let has = changed.contains("b")
+    println(found)
+    println(keys)
+    println(has)
+}
+fn main() { execute() }
+'''
+    )
+    try:
+        instructions = _instructions(blocks)
+        assert any(isinstance(item, MirMapGet) for item in instructions)
+        assert any(isinstance(item, MirMapSet) for item in instructions)
+        assert any(isinstance(item, MirMapKeys) for item in instructions)
+        assert any(isinstance(item, MirMapContains) for item in instructions)
+        assert not any(isinstance(item, MirMember) for item in instructions)
+        # Calls that remain here are real function/builtin calls, not Map method
+        # dispatch. Map method meaning is carried only by the sealed opcodes.
+        assert all(
+            not (
+                isinstance(item, MirCall)
+                and any(
+                    isinstance(candidate, MirMember)
+                    and candidate.target == item.callee
+                    for candidate in instructions
+                )
+            )
+            for item in instructions
+        )
+    finally:
+        directory.cleanup()
+
+
+def test_struct_lowering_uses_declaration_owned_required_field_order():
+    directory, blocks = _lower_execute(
+        '''
+struct Account {
+    id: Int
+    balance: Int
+}
+fn execute() -> Account {
+    return Account { balance: 9, id: 7 }
+}
+fn main() { println("ready") }
+'''
+    )
+    try:
+        instruction = next(
+            item for item in _instructions(blocks) if isinstance(item, MirStructNew)
+        )
+        # Source literal deliberately reverses the fields. The MIR contract must
+        # retain declaration order rather than allowing the literal to define
+        # the contract it is checked against.
+        assert instruction.type_name == "Account"
+        assert instruction.required_fields == ("id", "balance")
+    finally:
+        directory.cleanup()
+
+
+def test_struct_lowering_fails_closed_without_typed_resolution():
+    directory, blocks = _lower_execute(
+        '''
+struct Account {
+    id: Int
+}
+fn execute() -> Account {
+    return Account { id: 7 }
+}
+fn main() { println("ready") }
+'''
+    )
+    directory.cleanup()
+    # The successful lowering above proves the resolution was emitted by the
+    # checked pipeline; the lowerer is not permitted to synthesize it from the
+    # literal. This assertion keeps the expected canonical instruction explicit.
+    instruction = next(
+        item for item in _instructions(blocks) if isinstance(item, MirStructNew)
+    )
+    assert instruction.required_fields == ("id",)

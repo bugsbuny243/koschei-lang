@@ -46,10 +46,22 @@ def _int_env(name: str, default: str, low: int, high: int) -> int:
     return value
 
 
+def _port() -> int:
+    """Return the bounded Railway/public listener port."""
+
+    return _int_env("PORT", "8876", 1, 65535)
+
+
+def _ttl() -> int:
+    """Return the bounded remote-observer envelope lifetime."""
+
+    return _int_env("KOSCHEI_UNIVERSE_TTL_SECONDS", "60", 5, 300)
+
+
 def build_envelope_provider_v1():
     project_path = Path(_env_required("KOSCHEI_UNIVERSE_PROJECT")).resolve()
     signing_key = _key_hex("KOSCHEI_UNIVERSE_OBSERVER_SIGNING_KEY_HEX")
-    ttl = _int_env("KOSCHEI_UNIVERSE_TTL_SECONDS", "60", 5, 300)
+    ttl = _ttl()
     if not project_path.is_file() or project_path.suffix != ".ks":
         raise UniverseRemoteAppError("KOSCHEI_UNIVERSE_PROJECT must point to an existing .ks file")
 
@@ -73,7 +85,7 @@ def main() -> int:
         session_key=_key_hex("KOSCHEI_UNIVERSE_SESSION_KEY_HEX"),
         signing_key=signing_key,
         host=os.environ.get("KOSCHEI_UNIVERSE_HOST", "0.0.0.0"),
-        port=_int_env("PORT", "8876", 1, 65535),
+        port=_port(),
         session_ttl_seconds=_int_env("KOSCHEI_UNIVERSE_SESSION_TTL_SECONDS", "1800", 60, 86400),
     )
     return 0

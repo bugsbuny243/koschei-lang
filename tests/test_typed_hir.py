@@ -80,5 +80,42 @@ fn main() {
         self.assertEqual(raised.exception.code, "KS1306")
 
 
+    def test_map_contract_is_owned_by_typed_hir(self) -> None:
+        program = parse('fn main() { let values = {"name": 1} }')
+        expression = program.declarations[0].body.statements[0].value
+        report = check_typed_hir(program)
+        resolution = report.map_literal_resolution_of(expression)
+        self.assertIsNotNone(resolution)
+        assert resolution is not None
+        self.assertEqual(resolution.key_type, NamedType("String"))
+        self.assertEqual(resolution.duplicate_policy, "reject")
+
+    def test_map_method_identity_is_owned_by_typed_hir(self) -> None:
+        program = parse(
+            'fn main() { let values = {"a": 1} let x = values.contains("a") }'
+        )
+        call = program.declarations[0].body.statements[1].value
+        report = check_typed_hir(program)
+        resolution = report.map_method_resolution_of(call)
+        self.assertIsNotNone(resolution)
+        assert resolution is not None
+        self.assertEqual(resolution.method, "contains")
+        self.assertEqual(resolution.receiver_type, GenericType("Map", (NamedType("String"), NamedType("Int"))))
+
+    def test_typed_hir_rejects_non_string_map_key(self) -> None:
+        program = parse('fn main() { let values = {1: "bad"} }')
+        with self.assertRaises(SemanticError) as raised:
+            check_typed_hir(program)
+        self.assertEqual(raised.exception.code, "KS1301")
+
+    def test_typed_hir_rejects_duplicate_literal_map_key(self) -> None:
+        program = parse(
+            'fn main() { let values = {"name": "Ali", "name": "Veli"} }'
+        )
+        with self.assertRaises(SemanticError) as raised:
+            check_typed_hir(program)
+        self.assertEqual(raised.exception.code, "KS1501")
+
+
 if __name__ == "__main__":
     unittest.main()
