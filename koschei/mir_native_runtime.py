@@ -51,6 +51,7 @@ from .mir_variant_runtime_v1 import (
     variant_is_v1,
     variant_payload_v1,
 )
+from .type_system import GenericType, NamedType
 
 _SUPPORTED_BINARY = frozenset({"+", "-", "*", "==", "!=", "<", "<=", ">", ">="})
 _SUPPORTED_UNARY = frozenset({"!", "-", "+"})
@@ -166,6 +167,46 @@ def _is_direct_module_member(mir: MirGraph, module_key: str, function: MirFuncti
     return any(candidate.name == instruction.member for candidate in target.functions)
 
 
+def _receiver_type_name(function: MirFunction, value_id: int) -> str | None:
+    source = _definitions(function).get(value_id)
+    type_node = getattr(source, "type", None)
+    if isinstance(type_node, GenericType):
+        return type_node.name
+    if isinstance(type_node, NamedType):
+        return type_node.name
+    return None
+
+
+def _is_checked_struct_field_member(
+    mir: MirGraph,
+    module_key: str,
+    function: MirFunction,
+    instruction: MirMember,
+) -> bool:
+    type_name = _receiver_type_name(function, instruction.object)
+    if type_name is None:
+        return False
+
+    candidates = []
+    module = mir.module_of(module_key)
+    candidates.extend(
+        declaration
+        for declaration in module.program.structs
+        if declaration.name == type_name
+    )
+    for target_key in module.imports.values():
+        target = mir.module_of(target_key)
+        candidates.extend(
+            declaration
+            for declaration in target.program.structs
+            if declaration.name == type_name
+        )
+    if len(candidates) != 1:
+        return False
+    declaration = candidates[0]
+    return any(field.name == instruction.member for field in declaration.fields)
+
+
 def inspect_native_mir_support(mir: MirGraph) -> MirNativeSupport:
     """Return deterministic reasons why a graph is not native-MIR executable yet."""
 
@@ -217,8 +258,13 @@ def inspect_native_mir_support(mir: MirGraph) -> MirNativeSupport:
                             f"{label}: AST fallback remains for {instruction.node_kind}"
                         )
                     elif isinstance(instruction, MirMember):
-                        if not _is_direct_module_member(
-                            mir, module.key, function, instruction
+                        if not (
+                            _is_direct_module_member(
+                                mir, module.key, function, instruction
+                            )
+                            or _is_checked_struct_field_member(
+                                mir, module.key, function, instruction
+                            )
                         ):
                             reasons.append(
                                 f"{label}: member access is not native-MIR yet"
@@ -586,23 +632,31 @@ class _MirExecutor:
             return
         if isinstance(instruction, MirMember):
             receiver = self._value(values, instruction.object)
-            if not isinstance(receiver, _ModuleRef):
+            if isinstance(receiver, _StructValue):
+                for field, item in receiver.fields:
+                    if field == instruction.member:
+                        values[instruction.target] = item
+                        return
                 raise MirNativeRuntimeError(
-                    "native MIR member access currently requires a module import"
+                    f"struct has no sealed field {instruction.member!r}"
                 )
-            functions = self.functions_by_module.get(receiver.key)
-            if functions is None:
-                raise MirNativeRuntimeError(
-                    f"member access targets unknown MIR module {receiver.key!r}"
+            if isinstance(receiver, _ModuleRef):
+                functions = self.functions_by_module.get(receiver.key)
+                if functions is None:
+                    raise MirNativeRuntimeError(
+                        f"member access targets unknown MIR module {receiver.key!r}"
+                    )
+                if instruction.member not in functions:
+                    raise MirNativeRuntimeError(
+                        f"module has no MIR function {instruction.member!r}"
+                    )
+                values[instruction.target] = _FunctionRef(
+                    instruction.member, receiver.key
                 )
-            if instruction.member not in functions:
-                raise MirNativeRuntimeError(
-                    f"module has no MIR function {instruction.member!r}"
-                )
-            values[instruction.target] = _FunctionRef(
-                instruction.member, receiver.key
+                return
+            raise MirNativeRuntimeError(
+                "native MIR member receiver has unsupported sealed shape"
             )
-            return
         if isinstance(instruction, MirCall):
             callee = self._value(values, instruction.callee)
             arguments = [self._value(values, item) for item in instruction.arguments]
