@@ -90,6 +90,18 @@ fn main() {
         self.assertEqual(resolution.key_type, NamedType("String"))
         self.assertEqual(resolution.duplicate_policy, "reject")
 
+    def test_map_method_identity_is_owned_by_typed_hir(self) -> None:
+        program = parse(
+            'fn main() { let values = {"a": 1} let x = values.contains("a") }'
+        )
+        call = program.declarations[0].body.statements[1].value
+        report = check_typed_hir(program)
+        resolution = report.map_method_resolution_of(call)
+        self.assertIsNotNone(resolution)
+        assert resolution is not None
+        self.assertEqual(resolution.method, "contains")
+        self.assertEqual(resolution.receiver_type, GenericType("Map", (NamedType("String"), NamedType("Int"))))
+
     def test_typed_hir_rejects_non_string_map_key(self) -> None:
         program = parse('fn main() { let values = {1: "bad"} }')
         with self.assertRaises(SemanticError) as raised:
