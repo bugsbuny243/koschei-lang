@@ -63,6 +63,77 @@ class MapBuilderV1:
         return self.entries
 
 
+def _require_map_value(value: Any, location: SourceLocation) -> dict[str, Any]:
+    if not isinstance(value, dict) or any(not isinstance(key, str) for key in value):
+        raise ContainerRuntimeError(
+            "KS5002",
+            "Sealed MIR Map value has invalid runtime shape.",
+            location,
+        )
+    return value
+
+
+def map_get_v1(value: Any, key: Any, location: SourceLocation) -> Any:
+    entries = _require_map_value(value, location)
+    if not isinstance(key, str):
+        raise ContainerRuntimeError(
+            "KS5002", "Sealed MIR Map.get key must be String.", location
+        )
+    if key not in entries:
+        from .interpreter import KsError
+        return KsError(f"Map anahtarı bulunamadı: {key}")
+    return entries[key]
+
+
+def map_set_v1(
+    value: Any,
+    key: Any,
+    item: Any,
+    *,
+    contains_capability: ContainsCapability,
+    location: SourceLocation,
+) -> dict[str, Any]:
+    entries = _require_map_value(value, location)
+    if not isinstance(key, str):
+        raise ContainerRuntimeError(
+            "KS5002", "Sealed MIR Map.set key must be String.", location
+        )
+    if contains_capability(item):
+        raise ContainerRuntimeError(
+            "KS3401",
+            "Capability taşıyan değerler ordinary Map içine konamaz; runtime type-laundering girişimini reddetti.",
+            location,
+        )
+
+    # Replacement position is a Koschei rule, not host-dict overwrite semantics:
+    # an existing key keeps its position; a new key is appended.
+    updated: dict[str, Any] = {}
+    replaced = False
+    for existing_key, existing_value in entries.items():
+        if existing_key == key:
+            updated[existing_key] = item
+            replaced = True
+        else:
+            updated[existing_key] = existing_value
+    if not replaced:
+        updated[key] = item
+    return updated
+
+
+def map_keys_v1(value: Any, location: SourceLocation) -> list[str]:
+    entries = _require_map_value(value, location)
+    return [key for key in entries]
+
+
+def map_contains_v1(value: Any, key: Any, location: SourceLocation) -> bool:
+    entries = _require_map_value(value, location)
+    if not isinstance(key, str):
+        raise ContainerRuntimeError(
+            "KS5002", "Sealed MIR Map.contains key must be String.", location
+        )
+    return key in entries
+
+
 @dataclass(slots=True)
 class StructBuilderV1:
     declaration: StructDeclaration
