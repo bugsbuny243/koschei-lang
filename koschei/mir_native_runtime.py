@@ -834,10 +834,14 @@ def _binary(operator: str, left: Any, right: Any) -> Any:
     raise MirNativeRuntimeError(f"unsupported binary operator {operator!r}")
 
 
-def _to_map_repr(value: Any) -> str:
+def _to_container_repr(value: Any) -> str:
     if isinstance(value, str):
         return f'"{value}"'
     return _to_string(value)
+
+
+def _to_map_repr(value: Any) -> str:
+    return _to_container_repr(value)
 
 
 def _to_string(value: Any) -> str:
@@ -851,7 +855,7 @@ def _to_string(value: Any) -> str:
             text += ".0"
         return text
     if isinstance(value, tuple):
-        return "[" + ", ".join(_to_string(item) for item in value) + "]"
+        return "[" + ", ".join(_to_container_repr(item) for item in value) + "]"
     if isinstance(value, _MapValue):
         inner = ", ".join(
             f'"{key}": {_to_map_repr(item)}' for key, item in value.entries
