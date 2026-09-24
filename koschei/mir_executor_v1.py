@@ -293,7 +293,11 @@ class MirExecutorV1:
             )
             return
         if isinstance(instruction, MirStructNew):
-            values[instruction.target] = self.primitives.struct_builder(instruction.type_name, instruction.location)
+            values[instruction.target] = self.primitives.struct_builder(
+                instruction.type_name,
+                instruction.required_fields,
+                instruction.location,
+            )
             return
         if isinstance(instruction, MirStructSet):
             self.primitives.struct_set(values[instruction.object], instruction.field, values[instruction.source], instruction.location)
