@@ -263,7 +263,20 @@ def _emit_function(function: MirFunction) -> list[str]:
                     raise MirGoUnsupported(f"invalid sealed store {instruction.name!r}")
                 lines.append(f"            {name} = {_value_name(instruction.source)}")
             elif isinstance(instruction, MirBinary):
-                lines.append(f"            {_value_name(instruction.target)} = {_value_name(instruction.left)}.({{'+' : 'int64', '-' : 'int64', '*' : 'int64'}.get(instruction.operator, 'any')}) {instruction.operator} {_value_name(instruction.right)}.({{'+' : 'int64', '-' : 'int64', '*' : 'int64'}.get(instruction.operator, 'any')})" if instruction.operator in {"+", "-", "*"} else f"            {_value_name(instruction.target)} = fmt.Sprint({_value_name(instruction.left)}) {instruction.operator} fmt.Sprint({_value_name(instruction.right)})")
+                if instruction.operator in {"+", "-", "*"}:
+                    lines.append(
+                        f"            {_value_name(instruction.target)} = "
+                        f"{_value_name(instruction.left)}.(int64) "
+                        f"{instruction.operator} "
+                        f"{_value_name(instruction.right)}.(int64)"
+                    )
+                else:
+                    lines.append(
+                        f"            {_value_name(instruction.target)} = "
+                        f"fmt.Sprint({_value_name(instruction.left)}) "
+                        f"{instruction.operator} "
+                        f"fmt.Sprint({_value_name(instruction.right)})"
+                    )
             elif isinstance(instruction, MirUnary):
                 if instruction.operator == "!": lines.append(f"            {_value_name(instruction.target)} = !{_value_name(instruction.operand)}.(bool)")
                 else: lines.append(f"            {_value_name(instruction.target)} = {instruction.operator}{_value_name(instruction.operand)}.(int64)")
