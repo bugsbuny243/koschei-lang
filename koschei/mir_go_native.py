@@ -178,7 +178,12 @@ def inspect_mir_go_support(mir: MirGraph) -> MirGoSupport:
                 f"{render_type(function.return_type)}"
             )
         parameter_names: set[str] = set()
-        binding_names: set[str] = set()
+        binding_names = {
+            instruction.name
+            for block in function.blocks
+            for instruction in block.instructions
+            if isinstance(instruction, MirBind)
+        }
         for parameter in function.parameters:
             if parameter.name in parameter_names:
                 reasons.append(
@@ -205,7 +210,6 @@ def inspect_mir_go_support(mir: MirGraph) -> MirGoSupport:
                     )
                     continue
                 if isinstance(instruction, MirBind):
-                    binding_names.add(instruction.name)
                     if not _type_supported(
                         instruction.type, enum_names, allow_void=True
                     ):
@@ -499,23 +503,19 @@ def _emit_instruction(
     if isinstance(instruction, MirVariantIs):
         owner, variant = split_canonical_variant_v1(instruction.variant)
         temp = f"_ks_variant_{instruction.target}"
-        ok = f"_ks_variant_ok_{instruction.target}"
         return [
-            f"{prefix}{temp}, {ok} := "
-            f"_ks_v_{instruction.source}.({_ENUM_GO_TYPE})",
+            f"{prefix}{temp} := _ks_v_{instruction.source}",
             f"{prefix}_ks_v_{instruction.target} = "
-            f"{ok} && {temp}.owner == {json.dumps(owner)} && "
+            f"{temp}.owner == {json.dumps(owner)} && "
             f"{temp}.variant == {json.dumps(variant)}",
         ]
     if isinstance(instruction, MirVariantPayload):
         owner, variant = split_canonical_variant_v1(instruction.variant)
         temp = f"_ks_variant_{instruction.target}"
-        ok = f"_ks_variant_ok_{instruction.target}"
         target_type = _require_go_type(instruction.type)
         return [
-            f"{prefix}{temp}, {ok} := "
-            f"_ks_v_{instruction.source}.({_ENUM_GO_TYPE})",
-            f"{prefix}if !{ok} || {temp}.owner != {json.dumps(owner)} || "
+            f"{prefix}{temp} := _ks_v_{instruction.source}",
+            f"{prefix}if {temp}.owner != {json.dumps(owner)} || "
             f"{temp}.variant != {json.dumps(variant)} || !{temp}.hasPayload {{",
             f'{prefix}\tpanic("canonical variant payload proof mismatch")',
             f"{prefix}}}",
