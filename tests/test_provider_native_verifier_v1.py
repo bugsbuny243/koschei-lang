@@ -20,7 +20,7 @@ from koschei.verified_ir_build_input_v1 import derive_verified_ir_build_input_v1
 from koschei.verifier_build_provenance_v1 import attest_verifier_build_from_verified_ir_v1,measure_verifier_artifact_v1
 from koschei.verifier_reproducible_admission_v1 import admit_reproducible_verifier_artifact_v1
 from koschei.verifier_reproducible_build_v1 import attest_builder_observation_v1,seal_reproducible_build_receipt_v1
-_RESULT_CTX=b"koschei.effect-result-measurement/v1\x00"; _SOURCE="""ka treasury;\nvor verifier;\nshi evidence;\nthal recovery;\nnur visibility;\n"""
+_RESULT_CTX=b"koschei.effect-result-measurement/v1\x00"; _SOURCE="""ka verifier;\nvor verifier;\nshi verifier;\nthal verifier;\nnur verifier;\n"""
 def h(tag): return hashlib.sha256(tag.encode()).hexdigest()
 def verifier_ir():
     mir=lower_native_sigils(parse(_SOURCE)); plan=expand_native_sigil_mir(mir).library_plan
