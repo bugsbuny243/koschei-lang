@@ -231,9 +231,10 @@ def build_sbom(root: Path) -> dict[str, object]:
         if exact is None or exact.group(2) != locked["version"]:
             mutable_roots.append(f"python-build-version-drift:{req}")
     for package in docker_pip_packages:
-        name = _requirement_name(package)
-        if name not in locked_by_name:
-            mutable_roots.append(f"docker-pip:{package}")
+        # An inline Docker pip install is not consumed through the repository's
+        # --require-hashes lock path. Merely naming the same distribution in a
+        # lock file does not authenticate these install bytes.
+        mutable_roots.append(f"docker-pip:{package}")
     for lock_name in PYTHON_LOCKS:
         if lock_name not in docker_requirement_files:
             mutable_roots.append(f"docker-python-lock-not-consumed:{lock_name}")
