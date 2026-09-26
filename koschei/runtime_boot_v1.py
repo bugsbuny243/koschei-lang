@@ -37,10 +37,14 @@ def require_runtime_ready(runtime: ModuleType) -> RuntimeCapabilityRegistry:
     """Validate, bind and seal canonical runtime contracts before execution."""
 
     try:
+        # Runtime bootstrap fields are compatibility carriers, not authority.
+        # Rebind the canonical immutable network policy before validating the
+        # implementation so stale/mutated bootstrap state cannot become a
+        # second policy authority.
+        bind_canonical_network_policy(runtime)
         registry = validate_runtime_module(runtime)
         install_canonical_authority_bridge(runtime)
         require_runtime_bridge_sealed(runtime)
-        bind_canonical_network_policy(runtime)
         require_canonical_network_policy(runtime)
     except (
         RuntimeError,
