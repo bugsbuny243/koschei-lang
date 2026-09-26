@@ -31,7 +31,7 @@ def d(tag: str) -> str:
 
 
 def build():
-    mir = lower_native_sigils(parse("ka treasury; vor withdrawal; shi evidence; thal recovery; nur visibility;"))
+    mir = lower_native_sigils(parse("ka withdrawal; vor withdrawal; shi withdrawal; thal withdrawal; nur withdrawal;"))
     plan = expand_native_sigil_mir(mir).library_plan
     proof = seal_native_sigil_proof(
         mir,
