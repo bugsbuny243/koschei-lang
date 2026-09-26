@@ -18,6 +18,11 @@ from .container_runtime_v1 import (
     map_keys_v1,
     map_set_v1,
 )
+from . import interpreter as runtime_module
+from .runtime_capability_registry_v1 import (
+    canonical_runtime_registry,
+    capability_type_name_for_value,
+)
 from .interpreter import (
     DiskCaps,
     DiskReadCaps,
@@ -67,8 +72,14 @@ class RuntimePrimitiveFacadeV1:
     _STRING_MEMBERS = frozenset(
         {"length", "to_int", "to_float", "contains", "trim", "split", "join"}
     )
-    _LIST_MEMBERS = frozenset({"length", "get", "push", "contains", "sort", "filter"})
-    _MAP_MEMBERS = frozenset({"get", "set", "keys", "contains"})
+    _LIST_MEMBERS = frozenset({
+        "length", "get", "push", "contains", "sort", "filter",
+        "take", "find", "first_difference", "sum", "min", "max",
+        "unique", "flatten", "chunks", "map", "any", "partition", "scan",
+    })
+    _MAP_MEMBERS = frozenset({
+        "get", "set", "keys", "contains", "keys_sorted_by_value", "merge", "add",
+    })
     _TYPED_MEMBER_ALLOWLIST = {
         NetRoot: frozenset({"allow"}),
         DiskRoot: frozenset({"allow", "allow_read_only"}),
@@ -125,6 +136,12 @@ class RuntimePrimitiveFacadeV1:
             return name in cls._LIST_MEMBERS
         if isinstance(receiver, dict):
             return name in cls._MAP_MEMBERS
+
+        capability_type = capability_type_name_for_value(runtime_module, receiver)
+        if capability_type is not None and capability_type != "SystemCaps":
+            spec = canonical_runtime_registry().capabilities.get(capability_type)
+            return spec is not None and name in spec.methods
+
         for receiver_type, members in cls._TYPED_MEMBER_ALLOWLIST.items():
             if isinstance(receiver, receiver_type):
                 return name in members
