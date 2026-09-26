@@ -572,7 +572,8 @@ CATALOG: tuple[Family, ...] = (
 )
 
 
-def validate_catalog(catalog: Sequence[Family] = CATALOG) -> None:
+def validate_catalog(catalog: Sequence[Family] | None = None) -> None:
+    catalog = CATALOG if catalog is None else catalog
     family_names: set[str] = set()
     for family in catalog:
         if family.name in family_names:
@@ -613,7 +614,8 @@ def validate_catalog(catalog: Sequence[Family] = CATALOG) -> None:
                 )
 
 
-def document(catalog: Sequence[Family] = CATALOG) -> dict[str, object]:
+def document(catalog: Sequence[Family] | None = None) -> dict[str, object]:
+    catalog = CATALOG if catalog is None else catalog
     validate_catalog(catalog)
     operations = [operation for family in catalog for operation in family.operations]
     counts = {
