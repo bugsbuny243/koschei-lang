@@ -151,11 +151,12 @@ def inspect_mir_go_support(mir: MirGraph) -> MirGoSupport:
 
     mir.assert_sealed()
     reasons: list[str] = []
-    if len(mir.modules) != 1:
-        reasons.append("MIR-Go v1 requires a single module")
     root = mir.root_module
-    if root.imports:
-        reasons.append("MIR-Go v1 does not compile imports yet")
+    # A checked dependency graph is not itself an execution feature. Unused
+    # imports may remain in the sealed graph and fingerprint without forcing the
+    # host projection to materialize dead modules. If source code actually
+    # references an import alias, the existing static-load/member checks below
+    # reject that path fail-closed until module-call projection is sealed.
     if root.program.structs:
         reasons.append("MIR-Go v1 does not compile structs yet")
 
