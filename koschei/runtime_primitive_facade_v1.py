@@ -68,7 +68,16 @@ class RuntimePrimitiveFacadeV1:
 
     __slots__ = ("_runtime",)
 
-    _BUILTIN_CALLS = frozenset({"print", "println", "Error"})
+    _BUILTIN_CALLS = frozenset({
+        "print",
+        "println",
+        "Error",
+        "bounded_queue",
+        "queue_try_send",
+        "queue_try_recv",
+        "queue_len",
+        "queue_capacity",
+    })
     _STRING_MEMBERS = frozenset(
         {"length", "to_int", "to_float", "contains", "trim", "split", "join"}
     )
