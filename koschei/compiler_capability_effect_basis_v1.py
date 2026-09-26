@@ -26,6 +26,7 @@ from .capability_effect_contract_v1 import (
     require_capability_method_same_power_domain,
 )
 from .mir import MirGraph
+from .mir_ir import MirLoad
 from .mir_capability_callsite_v1 import derive_mir_capability_callsites_v1
 from .type_system import NamedType
 
@@ -225,7 +226,7 @@ class CompilerCapabilityEffectBasisV1:
         )
         if derived != self:
             raise CompilerCapabilityEffectBasisV1Error(
-                "compiler capability-effect basis differs from sealed MIR"
+                "compiler capability-effect basis seal mismatch: basis differs from sealed MIR"
             )
 
 
@@ -321,6 +322,18 @@ def derive_compiler_capability_effect_basis_v1(
     if function.calls:
         raise CompilerCapabilityEffectBasisV1Error(
             "compiler capability basis v1 requires a leaf function without local calls"
+        )
+
+    imported_aliases = frozenset(module.imports)
+    imported_loads = {
+        instruction.name
+        for block in function.blocks
+        for instruction in block.instructions
+        if isinstance(instruction, MirLoad) and instruction.name in imported_aliases
+    }
+    if imported_loads:
+        raise CompilerCapabilityEffectBasisV1Error(
+            "compiler capability basis v1 requires a leaf function without imported calls"
         )
 
     sites = derive_mir_capability_callsites_v1(
