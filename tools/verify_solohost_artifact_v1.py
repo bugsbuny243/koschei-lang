@@ -333,13 +333,13 @@ def _verify_manifest(
         if not isinstance(expected_sha, str) or SHA256_RE.fullmatch(expected_sha) is None:
             failures.append("manifest artifact.sha256 must be a lowercase SHA-256 digest")
         elif _sha256(executable) != expected_sha:
-            failures.append("manifest artifact sha256 does not match executable bytes")
+            failures.append("artifact SHA-256 mismatch: manifest sha256 does not match executable bytes")
 
         expected_size = artifact.get("size_bytes")
         if not isinstance(expected_size, int) or isinstance(expected_size, bool) or expected_size < 0:
             failures.append("manifest artifact.size_bytes must be a non-negative integer")
         elif executable.stat().st_size != expected_size:
-            failures.append("manifest artifact size_bytes does not match executable bytes")
+            failures.append("artifact size mismatch: manifest size_bytes does not match executable bytes")
 
     signature = manifest.get("signature")
     if not isinstance(signature, dict):
@@ -348,7 +348,7 @@ def _verify_manifest(
     status = signature.get("status")
     if status == "UNSIGNED-STAGING":
         if not allow_unsigned_staging:
-            failures.append("unsigned staging; publication is blocked")
+            failures.append("release manifest is not marked SIGNED; unsigned staging; publication is blocked")
         return
     if status != "SIGNED":
         failures.append("release manifest is not marked SIGNED")
