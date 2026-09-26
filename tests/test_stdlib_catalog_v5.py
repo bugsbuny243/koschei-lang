@@ -49,6 +49,7 @@ EXPECTED_FAMILIES = {
     "compress",
     "dns",
     "websocket",
+    "persist",
 }
 
 
@@ -68,7 +69,7 @@ class StandardLibraryCatalogTests(unittest.TestCase):
         payload = document()
         self.assertEqual(SCHEMA, "koschei.stdlib/v2")
         self.assertEqual(payload["schema"], SCHEMA)
-        self.assertEqual(payload["summary"]["families"], 32)
+        self.assertEqual(payload["summary"]["families"], 33)
         self.assertEqual({family.name for family in CATALOG}, EXPECTED_FAMILIES)
 
     def test_supported_never_means_one_backend_only(self) -> None:
@@ -156,7 +157,10 @@ class StandardLibraryCatalogTests(unittest.TestCase):
     def test_partial_enforcement_is_visible_without_claiming_support(self) -> None:
         get = operation("request", "get")
         self.assertEqual(get.status, "reserved")
-        self.assertEqual(set(get.enforced_budgets), {"deadline", "redirects"})
+        self.assertEqual(
+            set(get.enforced_budgets),
+            {"deadline", "response_bytes", "redirects"},
+        )
         self.assertEqual(
             set(get.required_budgets),
             {"deadline", "response_bytes", "redirects"},
@@ -202,7 +206,7 @@ class StandardLibraryCatalogTests(unittest.TestCase):
         self.assertEqual(first.getvalue(), second.getvalue())
         parsed = json.loads(first.getvalue())
         self.assertEqual(parsed["schema"], SCHEMA)
-        self.assertEqual(parsed["summary"]["families"], 32)
+        self.assertEqual(parsed["summary"]["families"], 33)
         self.assertIn("fully_bounded_supported", parsed["summary"])
         request_get = next(
             item
@@ -213,7 +217,7 @@ class StandardLibraryCatalogTests(unittest.TestCase):
         )
         self.assertEqual(request_get["status"], "reserved")
         self.assertIn("response_bytes", request_get["required_budgets"])
-        self.assertNotIn("response_bytes", request_get["enforced_budgets"])
+        self.assertIn("response_bytes", request_get["enforced_budgets"])
 
     def test_human_report_names_security_counts(self) -> None:
         output = io.StringIO()
