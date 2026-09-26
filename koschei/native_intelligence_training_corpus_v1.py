@@ -82,12 +82,13 @@ def _token(stage: str, family: str, index: int) -> str:
 
 
 def _source(token: str) -> str:
+    subject = f"withdrawalx{token}"
     return (
-        f"ka treasuryx{token};\n"
-        f"vor withdrawalx{token};\n"
-        f"shi evidencex{token};\n"
-        f"thal recoveryx{token};\n"
-        f"nur visibilityx{token};\n"
+        f"ka {subject};\n"
+        f"vor {subject};\n"
+        f"shi {subject};\n"
+        f"thal {subject};\n"
+        f"nur {subject};\n"
     )
 
 
