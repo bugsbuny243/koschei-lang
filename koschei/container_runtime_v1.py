@@ -155,10 +155,16 @@ class StructBuilderV1:
     def empty(
         cls,
         declaration: StructDeclaration,
-        required_fields: tuple[str, ...],
-        location: SourceLocation,
+        required_fields: tuple[str, ...] | None = None,
+        location: SourceLocation | None = None,
     ) -> "StructBuilderV1":
         declared = tuple(field.name for field in declaration.fields)
+        # Direct container tests and internal callers without a sealed MIR
+        # instruction still receive declaration-owned field identity. Public MIR
+        # execution passes required_fields explicitly and therefore remains bound
+        # to the compiler product.
+        required_fields = declared if required_fields is None else required_fields
+        location = declaration.location if location is None else location
         if len(required_fields) != len(set(required_fields)):
             raise ContainerRuntimeError(
                 "KS5002", "Sealed MIR Struct required_fields contains duplicates.", location
