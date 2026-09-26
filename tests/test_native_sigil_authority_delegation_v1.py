@@ -15,7 +15,7 @@ from koschei.parser import parse
 
 class AuthorityDelegationTests(unittest.TestCase):
     def _mir(self):
-        return lower_native_sigils(parse("ka treasury; vor deploy; shi proof; thal recovery; nur view;"))
+        return lower_native_sigils(parse("ka deploy; vor deploy; shi deploy; thal deploy; nur deploy;"))
 
     def _root(self, mir, **overrides):
         fields = dict(
