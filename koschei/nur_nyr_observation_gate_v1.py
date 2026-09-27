@@ -14,7 +14,10 @@ authoritative observation path.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from .continuity_epoch_authority_v1 import ContinuityEpochAuthorityV1
+from .continuity_epoch_authority_v1 import (
+    ContinuityEpochAuthorityV1,
+    ContinuityEpochAuthorityV1Error,
+)
 from .galaxy_identity_v1 import VeyraIdentity
 from .library_adaptive_visibility_v0 import AdaptiveVisibilityEnvelopeV0
 from .native_sigil_mir_v1 import NativeSigilMir
@@ -55,7 +58,10 @@ class NyrObservationGateV1:
     def render(self, surface: NyrSurfaceV2) -> str:
         """Render observer-visible data only after live projection verification."""
 
-        current_epoch = self.continuity.current_epoch()
+        try:
+            current_epoch = self.continuity.current_epoch()
+        except ContinuityEpochAuthorityV1Error as error:
+            raise NyrObservationGateV1Error(str(error)) from error
 
         require_live_nyr_surface_v2(
             surface,
