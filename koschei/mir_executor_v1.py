@@ -37,7 +37,7 @@ from .mir_ir import (
 )
 from .mir_or_return_normalization_v1 import MirFallibleIsSuccess, MirFalliblePayload, MirInterpolate
 from .mir_variant_runtime_v1 import MirVariantRuntimeError, variant_is_v1, variant_payload_v1
-from .runtime_primitive_facade_v1 import RuntimePrimitiveFacadeV1
+from .runtime_primitive_facade_v1 import KoscheiFunctionRefV1, RuntimePrimitiveFacadeV1
 from .semantic import INT_MAX, INT_MIN
 from .type_system import alternatives, render_type
 
@@ -48,12 +48,6 @@ class MirExecutionError(KoscheiRuntimeError):
 
 def _runtime_names(type_node) -> tuple[str, ...]:
     return tuple(render_type(item) for item in alternatives(type_node))
-
-
-@dataclass(frozen=True, slots=True)
-class _MirFunctionRef:
-    module_key: str
-    function_name: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,6 +77,7 @@ class MirExecutorV1:
             root.program, self.argv,
             namespaces=mir.namespaces(), imports=dict(root.imports), enums=mir.enums(),
             module_imports=mir.module_imports(), structs=mir.structs(),
+            invoke_function=self._invoke_function_ref,
         )
         self.depth = 0
 
@@ -102,6 +97,13 @@ class MirExecutorV1:
                 main.declaration.location,
             )
         return self._call(root.key, main.name, arguments)
+
+    def _invoke_function_ref(
+        self,
+        ref: KoscheiFunctionRefV1,
+        arguments: list[Any],
+    ) -> Any:
+        return self._call(ref.module_key, ref.function_name, arguments)
 
     def _module_function(self, module_key: str, function_name: str):
         module = self.mir.module_of(module_key)
@@ -164,12 +166,13 @@ class MirExecutorV1:
             return bindings[name][0]
         module = self.mir.module_of(module_key)
         if any(function.name == name for function in module.functions):
-            return _MirFunctionRef(module_key, name)
+            return self.primitives.function_ref(module_key, name)
         constructor = self.primitives.constructor(name)
         if constructor is not None:
             return constructor
-        if name in {"print", "println", "Error"}:
-            return name
+        builtin = self.primitives.builtin(name)
+        if builtin is not None:
+            return builtin
         imported_key = module.imports.get(name)
         if imported_key is not None:
             return _MirModuleRef(imported_key)
@@ -325,14 +328,20 @@ class MirExecutorV1:
         if isinstance(instruction, MirMember):
             receiver = values[instruction.object]
             if isinstance(receiver, _MirModuleRef):
-                values[instruction.target] = _MirFunctionRef(receiver.module_key, instruction.member)
+                values[instruction.target] = self.primitives.function_ref(
+                    receiver.module_key, instruction.member
+                )
             else:
                 values[instruction.target] = self.primitives.member(receiver, instruction.member, instruction.location)
             return
         if isinstance(instruction, MirCall):
             callee = values[instruction.callee]
             arguments = [values[item] for item in instruction.arguments]
-            result = self._call(callee.module_key, callee.function_name, arguments) if isinstance(callee, _MirFunctionRef) else self.primitives.invoke_primitive(callee, arguments, instruction.location)
+            result = (
+                self._invoke_function_ref(callee, arguments)
+                if isinstance(callee, KoscheiFunctionRefV1)
+                else self.primitives.invoke_primitive(callee, arguments, instruction.location)
+            )
             values[instruction.target] = result
             return
         if isinstance(instruction, MirFallibleIsSuccess):
