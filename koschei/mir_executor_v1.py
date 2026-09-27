@@ -117,9 +117,26 @@ class MirExecutorV1:
         module, function = self._module_function(module_key, function_name)
         if len(arguments) != len(function.parameters):
             raise MirExecutionError("KS3101", f"'{function.name}' için {len(function.parameters)} argüman bekleniyor, {len(arguments)} verildi.", function.declaration.location)
+        type_parameters = frozenset(
+            getattr(function.declaration, "type_parameters", ())
+        )
+        type_bindings: dict[str, str] = {}
         for parameter, value in zip(function.parameters, arguments):
             expected = _runtime_names(parameter.type)
-            if not self.primitives.matches_type(value, expected):
+            if not self.primitives.matches_type(
+                value,
+                expected,
+                type_parameters=type_parameters,
+                type_bindings=type_bindings,
+            ):
+                if type_parameters:
+                    raise MirExecutionError(
+                        "KS3106",
+                        f"'{function.name}' MIR generic çağrısında "
+                        f"'{parameter.name}: {' or '.join(expected)}' için çelişkili "
+                        "runtime tip kanıtı bulundu; bu bir capability ihlali değildir.",
+                        function.declaration.location,
+                    )
                 raise MirExecutionError("KS3401", f"'{function.name}' MIR çağrısında '{parameter.name}: {' or '.join(expected)}' sözleşmesi ihlal edildi.", function.declaration.location)
         if self.depth >= self.MAX_CALL_DEPTH:
             raise MirExecutionError("KS3105", f"Çağrı derinliği sınırı aşıldı ({self.MAX_CALL_DEPTH}).", function.declaration.location)
@@ -140,7 +157,20 @@ class MirExecutorV1:
                 if isinstance(terminator, MirReturn):
                     result = KsUnit if terminator.value is None else values[terminator.value]
                     expected_return = _runtime_names(function.return_type)
-                    if not self.primitives.matches_type(result, expected_return):
+                    if not self.primitives.matches_type(
+                        result,
+                        expected_return,
+                        type_parameters=type_parameters,
+                        type_bindings=type_bindings,
+                    ):
+                        if type_parameters:
+                            raise MirExecutionError(
+                                "KS3106",
+                                f"'{function.name}' MIR generic dönüş sözleşmesi "
+                                f"{' or '.join(expected_return)} ile runtime sonucu "
+                                "çelişiyor; bu bir capability ihlali değildir.",
+                                function.declaration.location,
+                            )
                         raise MirExecutionError("KS3401", f"'{function.name}' MIR dönüş sözleşmesi {' or '.join(expected_return)} beklerken {self.primitives.runtime_type_name(result)} döndürdü.", function.declaration.location)
                     return result
                 if isinstance(terminator, MirJump):
