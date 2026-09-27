@@ -88,6 +88,21 @@ class MirVariantPayload:
 
 
 @dataclass(frozen=True, slots=True)
+class MirCapabilityCall:
+    """Exact compiler-selected capability operation and effect identity."""
+
+    target: int
+    object: int
+    arguments: tuple[int, ...]
+    capability_type: str
+    method: str
+    canonical_effect: str
+    power_domain: str
+    type: TypeNode
+    location: SourceLocation
+
+
+@dataclass(frozen=True, slots=True)
 class MirMapNew:
     target: int
     type: TypeNode
@@ -185,6 +200,7 @@ MIR_V4_EXTENSION_INSTRUCTION_TYPES = (
     MirVariantConstruct,
     MirVariantIs,
     MirVariantPayload,
+    MirCapabilityCall,
     MirMapNew,
     MirMapInsert,
     MirMapFinish,

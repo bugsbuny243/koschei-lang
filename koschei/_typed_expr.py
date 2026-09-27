@@ -225,6 +225,11 @@ def infer_expression(checker, expression):
                     receiver,
                     expression.callee.member,
                 )
+                checker.record_capability_call_resolution(
+                    expression,
+                    receiver,
+                    expression.callee.member,
+                )
             return checker.record(expression, result)
         if isinstance(expression.callee, Identifier):
             return checker.record(

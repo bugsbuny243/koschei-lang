@@ -21,6 +21,7 @@ from .ast_nodes import (
     Statement,
     WhileStatement,
 )
+from .capability_effect_contract_v1 import effect_for, require_capability_method_same_power_domain
 from .semantic import ImportedModule, SemanticError
 from .type_contracts import (
     TypeContractValidator,
@@ -129,6 +130,16 @@ class TypedMapMethodResolution:
 
 
 @dataclass(frozen=True, slots=True)
+class TypedCapabilityCallResolution:
+    expression: Expression
+    receiver_type: TypeNode
+    capability_type: str
+    method: str
+    canonical_effect: str
+    power_domain: str
+
+
+@dataclass(frozen=True, slots=True)
 class TypedHIRReport:
     bindings: tuple[TypedBinding, ...]
     expressions: tuple[TypedExpression, ...]
@@ -137,6 +148,7 @@ class TypedHIRReport:
     struct_literal_resolutions: tuple[TypedStructLiteralResolution, ...] = ()
     map_literal_resolutions: tuple[TypedMapLiteralResolution, ...] = ()
     map_method_resolutions: tuple[TypedMapMethodResolution, ...] = ()
+    capability_call_resolutions: tuple[TypedCapabilityCallResolution, ...] = ()
 
     def binding_types(self, name: str) -> tuple[TypeNode, ...]:
         return tuple(item.type for item in self.bindings if item.name == name)
@@ -163,6 +175,14 @@ class TypedHIRReport:
 
     def map_method_resolution_of(self, expression) -> TypedMapMethodResolution | None:
         for item in self.map_method_resolutions:
+            if item.expression is expression:
+                return item
+        return None
+
+    def capability_call_resolution_of(
+        self, expression
+    ) -> TypedCapabilityCallResolution | None:
+        for item in self.capability_call_resolutions:
             if item.expression is expression:
                 return item
         return None
@@ -198,6 +218,7 @@ class TypedHIRChecker:
         self.struct_literal_resolutions: list[TypedStructLiteralResolution] = []
         self.map_literal_resolutions: list[TypedMapLiteralResolution] = []
         self.map_method_resolutions: list[TypedMapMethodResolution] = []
+        self.capability_call_resolutions: list[TypedCapabilityCallResolution] = []
         self.collections = 0
         self.current_function = None
         self.contracts = TypeContractValidator(program, self.imports)
@@ -227,6 +248,7 @@ class TypedHIRChecker:
             tuple(self.struct_literal_resolutions),
             tuple(self.map_literal_resolutions),
             tuple(self.map_method_resolutions),
+            tuple(self.capability_call_resolutions),
         )
 
     def record_map_literal_resolution(self, expression: Expression) -> None:
@@ -249,6 +271,38 @@ class TypedHIRChecker:
             self.map_method_resolutions.append(
                 TypedMapMethodResolution(expression, receiver_type, method)
             )
+
+    def record_capability_call_resolution(
+        self,
+        expression: Expression,
+        receiver_type: TypeNode,
+        method: str,
+    ) -> None:
+        if not isinstance(receiver_type, NamedType):
+            return
+        canonical_effect = effect_for(receiver_type.name, method)
+        if canonical_effect is None:
+            return
+        expected_effect, power_domain = require_capability_method_same_power_domain(
+            receiver_type.name,
+            method,
+        )
+        if canonical_effect != expected_effect:
+            raise SemanticError(
+                "KS5002",
+                "Typed HIR capability call disagrees with canonical effect contract.",
+                expression.location,
+            )
+        self.capability_call_resolutions.append(
+            TypedCapabilityCallResolution(
+                expression,
+                receiver_type,
+                receiver_type.name,
+                method,
+                canonical_effect,
+                power_domain,
+            )
+        )
 
     def declare(
         self, name: str, type_node: TypeNode, location: SourceLocation, role: str
