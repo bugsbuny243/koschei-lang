@@ -19,6 +19,9 @@ from .container_runtime_v1 import (
     map_set_v1,
 )
 from . import interpreter as runtime_module
+from .bounded_queue import BoundedQueueValue
+from .structured_tasks import TASK_CANCELLED, TASK_RUNNING, StructuredTaskError, TaskScopeValue
+from .type_system import NamedType
 from .runtime_capability_registry_v1 import (
     canonical_runtime_registry,
     capability_type_name_for_value,
@@ -342,6 +345,131 @@ class RuntimePrimitiveFacadeV1:
             "KS5002", f"Unsupported List callback transition: {name}.", location
         )
 
+    @staticmethod
+    def _share_safe_task_value(value: Any) -> bool:
+        if type(value) in {bool, int, float, str}:
+            return True
+        if isinstance(value, BoundedQueueValue):
+            item_type = value.item_type
+            return isinstance(item_type, NamedType) and item_type.name in {
+                "Bool", "Int", "Float", "String"
+            }
+        return False
+
+    def _invoke_parallel_map(
+        self,
+        arguments: list[Any],
+        location: SourceLocation,
+    ) -> Any:
+        self._runtime._require_arity("parallel_map", arguments, 3, location)
+        values, worker, max_workers = arguments
+        if not isinstance(values, list):
+            return KsError("KS3921: parallel_map expects List<scalar>")
+        if not isinstance(worker, KoscheiFunctionRefV1):
+            return KsError("KS3921: parallel_map expects a direct unary worker")
+        if (
+            type(max_workers) is not int
+            or max_workers < 1
+            or max_workers > 64
+        ):
+            return KsError("KS3920: parallel_map max_workers must be between 1 and 64")
+        if any(
+            type(item) not in {bool, int, float, str} or _contains_capability(item)
+            for item in values
+        ):
+            return KsError("KS3921: parallel_map input items must be share-safe scalars")
+
+        out: list[Any] = []
+        for item in values:
+            mapped = self._invoke_function(worker, [item])
+            if isinstance(mapped, KsError):
+                return mapped
+            if type(mapped) not in {bool, int, float, str} or _contains_capability(mapped):
+                return KsError("KS3923: parallel worker returned a non-scalar value")
+            out.append(mapped)
+        return out
+
+    def _invoke_task_builtin(
+        self,
+        name: str,
+        arguments: list[Any],
+        location: SourceLocation,
+    ) -> Any:
+        expected = {
+            "task_scope": 1,
+            "task_spawn": 3,
+            "task_join_all": 1,
+            "task_pending": 1,
+            "task_capacity": 1,
+            "task_closed": 1,
+            "task_cancel": 2,
+            "task_cancel_all": 1,
+        }[name]
+        self._runtime._require_arity(name, arguments, expected, location)
+
+        if name == "task_scope":
+            try:
+                return TaskScopeValue(arguments[0])
+            except StructuredTaskError as error:
+                return KsError(str(error))
+
+        scope = arguments[0]
+        if not isinstance(scope, TaskScopeValue):
+            return KsError(f"KS3915: {name} expects TaskScope")
+
+        if name == "task_spawn":
+            worker, argument = arguments[1], arguments[2]
+            if not isinstance(worker, KoscheiFunctionRefV1):
+                return KsError("KS3914: task worker must be unary named function")
+            if _contains_capability(argument):
+                return KsError("KS3914: task arguments cannot carry capabilities in v1")
+            if not self._share_safe_task_value(argument):
+                return KsError(
+                    "KS3917: task argument is not share-safe in structured task v1"
+                )
+            try:
+                return scope.spawn(worker, argument)
+            except StructuredTaskError as error:
+                return KsError(str(error))
+
+        if name == "task_join_all":
+            if scope.join_result is not None:
+                return scope.join_result
+            scope.closed = True
+            first_failure: KsError | None = None
+            for record in scope.records():
+                if record.state == TASK_CANCELLED:
+                    continue
+                record.state = TASK_RUNNING
+                try:
+                    result = self._invoke_function(record.worker, [record.argument])
+                    failure = result if isinstance(result, KsError) else None
+                    if failure is None and result is not KsUnit:
+                        failure = KsError("KS3914: task worker must return Void")
+                except KoscheiRuntimeError as error:
+                    failure = KsError(f"{error.code}: {error.message}")
+                scope.mark_terminal(record, failure)
+                if first_failure is None and failure is not None:
+                    first_failure = failure
+            scope.join_result = first_failure if first_failure is not None else KsUnit
+            return scope.join_result
+
+        if name == "task_pending":
+            return scope.pending
+        if name == "task_capacity":
+            return scope.capacity
+        if name == "task_closed":
+            return scope.closed
+        if name == "task_cancel":
+            try:
+                return scope.cancel(arguments[1])
+            except StructuredTaskError as error:
+                return KsError(str(error))
+        try:
+            return scope.cancel_all()
+        except StructuredTaskError as error:
+            return KsError(str(error))
+
     def invoke_primitive(
         self,
         callee: Any,
@@ -355,6 +483,13 @@ class RuntimePrimitiveFacadeV1:
                 location,
             )
         if isinstance(callee, str) and callee in self._BUILTIN_CALLS:
+            if callee == "parallel_map":
+                return self._invoke_parallel_map(arguments, location)
+            if callee in {
+                "task_scope", "task_spawn", "task_join_all", "task_pending",
+                "task_capacity", "task_closed", "task_cancel", "task_cancel_all",
+            }:
+                return self._invoke_task_builtin(callee, arguments, location)
             return self._runtime._invoke(callee, arguments, location)
         if isinstance(callee, _PrimitiveConstructorRefV1):
             return self._runtime._invoke(callee.raw, arguments, location)
