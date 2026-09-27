@@ -212,12 +212,16 @@ def require_live_nyr_surface_v2(
     rotation instead of treating integrity as equivalent to liveness.
     """
 
-    if not isinstance(current_visibility_epoch, int) or current_visibility_epoch < 0:
+    if (
+        not isinstance(current_visibility_epoch, int)
+        or isinstance(current_visibility_epoch, bool)
+        or current_visibility_epoch < 0
+    ):
         raise NyrProjectionV2Error("current visibility epoch must be a non-negative integer")
     require_nyr_surface_v2(surface, mir, veyra, envelope, veil_key=veil_key)
     if surface.expires_before_epoch != surface.visibility_epoch + 1:
         raise NyrProjectionV2Error("Nyr v2 surface carries an invalid expiry boundary")
     if current_visibility_epoch != surface.visibility_epoch:
         if current_visibility_epoch >= surface.expires_before_epoch:
-            raise NyrProjectionV2Error("Nyr v2 surface has expired and cannot be replayed")
+            raise NyrProjectionV2ReplayError("Nyr v2 surface has expired and cannot be replayed")
         raise NyrProjectionV2Error("Nyr v2 surface is not valid for the current visibility epoch")
