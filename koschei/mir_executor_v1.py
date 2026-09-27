@@ -267,6 +267,17 @@ class MirExecutorV1:
         if isinstance(instruction, MirMapFinish):
             values[instruction.target] = self.primitives.map_finish(values[instruction.source], instruction.location)
             return
+        if isinstance(instruction, MirCapabilityCall):
+            values[instruction.target] = self.primitives.invoke_capability_call(
+                values[instruction.object],
+                [values[item] for item in instruction.arguments],
+                capability_type=instruction.capability_type,
+                method=instruction.method,
+                canonical_effect=instruction.canonical_effect,
+                power_domain=instruction.power_domain,
+                location=instruction.location,
+            )
+            return
         if isinstance(instruction, MirMapGet):
             values[instruction.target] = self.primitives.map_get(
                 values[instruction.object],

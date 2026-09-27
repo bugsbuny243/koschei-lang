@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from .capability_effect_contract_v1 import require_capability_method_same_power_domain
 from .ast_nodes import FunctionDeclaration, Program, SourceLocation
 from .container_runtime_v1 import (
     MapBuilderV1,
@@ -25,6 +26,7 @@ from .type_system import NamedType
 from .runtime_capability_registry_v1 import (
     canonical_runtime_registry,
     capability_type_name_for_value,
+    value_matches_capability_type,
 )
 from .interpreter import (
     DiskCaps,
@@ -191,6 +193,42 @@ class RuntimePrimitiveFacadeV1:
             if isinstance(receiver, receiver_type):
                 return name in members
         return False
+
+    def invoke_capability_call(
+        self,
+        receiver: Any,
+        arguments: list[Any],
+        *,
+        capability_type: str,
+        method: str,
+        canonical_effect: str,
+        power_domain: str,
+        location: SourceLocation,
+    ) -> Any:
+        expected_effect, expected_domain = require_capability_method_same_power_domain(
+            capability_type,
+            method,
+        )
+        if canonical_effect != expected_effect or power_domain != expected_domain:
+            raise RuntimePrimitiveFacadeError(
+                "KS5002",
+                "Sealed MIR capability identity disagrees with canonical contract.",
+                location,
+            )
+        if not value_matches_capability_type(runtime_module, receiver, capability_type):
+            raise RuntimePrimitiveFacadeError(
+                "KS3401",
+                f"Sealed MIR expected {capability_type} receiver for {method}.",
+                location,
+            )
+        member = self.member(receiver, method, location)
+        if not isinstance(member, _PrimitiveMemberRefV1):
+            raise RuntimePrimitiveFacadeError(
+                "KS5002",
+                "Canonical capability operation did not resolve to an opaque member.",
+                location,
+            )
+        return self.invoke_primitive(member, arguments, location)
 
     def member(self, receiver: Any, name: str, location: SourceLocation) -> Any:
         result = self._runtime._member(receiver, name, location)
