@@ -468,10 +468,16 @@ class SemanticChecker:
 
         if isinstance(statement, ForStatement):
             iterable_type = self._check_expression(statement.iterable)
-            if iterable_type is not None and iterable_type != "List":
+            success_type = self._success_type(iterable_type)
+            success_base = (
+                self._generic_type(success_type)[0]
+                if success_type is not None
+                else None
+            )
+            if success_type is not None and success_base != "List":
                 raise SemanticError(
                     "KS1301",
-                    f"'for ... in' yalnızca List üzerinde çalışır, "
+                    f"'for ... in' yalnızca List veya List ... or Error üzerinde çalışır, "
                     f"{iterable_type} bulundu.",
                     statement.location,
                 )
