@@ -25,6 +25,7 @@ from .ast_nodes import (
     WhileStatement,
 )
 from .mir_extension_instructions_v4 import (
+    MirCapabilityCall,
     MirFallibleIsSuccess,
     MirFalliblePayload,
     MirInterpolate,
@@ -318,6 +319,32 @@ class _OrReturnFunctionLowerer(_FunctionLowerer):
         self.current = final_join
         target = self._new_value()
         self._emit(MirLoad(target, result_name, result_type, expression.location))
+        return target
+
+    def _lower_capability_call(self, expression: CallExpression) -> int | None:
+        if not isinstance(expression.callee, MemberExpression):
+            return None
+        resolution = self.typed_report.capability_call_resolution_of(expression)
+        if resolution is None:
+            return None
+        receiver = self._lower_expression(expression.callee.object)
+        arguments = tuple(
+            self._lower_expression(argument) for argument in expression.arguments
+        )
+        target = self._new_value()
+        self._emit(
+            MirCapabilityCall(
+                target,
+                receiver,
+                arguments,
+                resolution.capability_type,
+                resolution.method,
+                resolution.canonical_effect,
+                resolution.power_domain,
+                self._type_of(expression),
+                expression.location,
+            )
+        )
         return target
 
     def _lower_map_method_call(self, expression: CallExpression) -> int | None:
@@ -743,6 +770,9 @@ class _OrReturnFunctionLowerer(_FunctionLowerer):
 
     def _lower_expression(self, expression: Expression) -> int:
         if isinstance(expression, CallExpression):
+            lowered_capability_call = self._lower_capability_call(expression)
+            if lowered_capability_call is not None:
+                return lowered_capability_call
             lowered_map_call = self._lower_map_method_call(expression)
             if lowered_map_call is not None:
                 return lowered_map_call

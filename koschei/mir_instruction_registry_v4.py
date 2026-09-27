@@ -13,6 +13,7 @@ from typing import TypeAlias
 
 from .mir_extension_instructions_v4 import (
     MIR_V4_EXTENSION_INSTRUCTION_TYPES,
+    MirCapabilityCall,
     MirFallibleIsSuccess,
     MirFalliblePayload,
     MirInterpolate,
@@ -60,6 +61,7 @@ MirInstructionV4: TypeAlias = (
     | MirVariantConstruct
     | MirVariantIs
     | MirVariantPayload
+    | MirCapabilityCall
     | MirMapNew
     | MirMapInsert
     | MirMapFinish
