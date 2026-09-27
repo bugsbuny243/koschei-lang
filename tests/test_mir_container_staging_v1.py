@@ -34,7 +34,7 @@ def test_map_staging_uses_existing_object_arguments_source_ssa_contract() -> Non
 def test_struct_staging_uses_existing_object_source_ssa_contract() -> None:
     location = SourceLocation(4, 5)
     struct_type = UnknownType()
-    create = MirStructNew(0, "Profile", struct_type, location)
+    create = MirStructNew(0, "Profile", ("name",), struct_type, location)
     assign = MirStructSet(0, "name", 1, struct_type, location)
     finish = MirStructFinish(2, 0, struct_type, location)
 
@@ -74,7 +74,7 @@ def test_staged_container_nodes_have_no_authority_or_ast_payload_fields() -> Non
         MirMapNew(0, UnknownType(), location),
         MirMapInsert(0, (1, 2), UnknownType(), location),
         MirMapFinish(3, 0, UnknownType(), location),
-        MirStructNew(0, "Profile", UnknownType(), location),
+        MirStructNew(0, "Profile", ("name",), UnknownType(), location),
         MirStructSet(0, "name", 3, UnknownType(), location),
         MirStructFinish(4, 0, UnknownType(), location),
     )

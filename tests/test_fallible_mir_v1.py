@@ -6,7 +6,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from koschei.fallible_mir_v1 import MirFallibleIsSuccess, MirFallibleUnwrap
+from koschei.mir_extension_instructions_v4 import MirFallibleIsSuccess, MirFalliblePayload
 from koschei.mir import require_mir
 from koschei.mir_ir import MirAstFallback
 from koschei.mir_native_runtime import (
@@ -52,7 +52,7 @@ fn main() {
         )
         instructions = self.instructions(mir)
         self.assertTrue(any(isinstance(item, MirFallibleIsSuccess) for item in instructions))
-        self.assertTrue(any(isinstance(item, MirFallibleUnwrap) for item in instructions))
+        self.assertTrue(any(isinstance(item, MirFalliblePayload) for item in instructions))
         self.assertFalse(
             any(
                 isinstance(item, MirAstFallback)
