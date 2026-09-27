@@ -569,7 +569,11 @@ def _n2_validation(index: int) -> NativeTrainingExampleV1:
     return _rejecting_example(
         stage="N2", family=family, split="validation", index=index,
         task="Reject five Khar axes as zero rather than partial critical authority.",
-        input_value={"axes": [row.axis for row in witnesses], "result_if_partial": "ZERO"},
+        input_value={
+            "axes": [row.axis for row in witnesses],
+            "event": witnesses[0].event_digest,
+            "result_if_partial": "ZERO",
+        },
         oracle="khar_sathra_v1.seal_sathra",
         action=lambda: seal_sathra(witnesses),
     )
@@ -582,7 +586,12 @@ def _n2_test(index: int) -> NativeTrainingExampleV1:
     return _rejecting_example(
         stage="N2", family=family, split="test", index=index,
         task="Reject six witnesses collected from different events as one Sathra.",
-        input_value={"axes": [row.axis for row in witnesses], "foreign_axis": "esh"},
+        input_value={
+            "axes": [row.axis for row in witnesses],
+            "event": witnesses[0].event_digest,
+            "foreign_event": next(row.event_digest for row in witnesses if row.axis == "esh"),
+            "foreign_axis": "esh",
+        },
         oracle="khar_sathra_v1.seal_sathra",
         action=lambda: seal_sathra(witnesses),
     )
