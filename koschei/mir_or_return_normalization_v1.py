@@ -5,7 +5,9 @@ from ._typed_expr import checked_block_normal_type
 from .ast_nodes import (
     BinaryExpression,
     Block,
+    BreakStatement,
     CallExpression,
+    ContinueStatement,
     Expression,
     ExpressionStatement,
     ForStatement,
@@ -499,7 +501,10 @@ class _OrReturnFunctionLowerer(_FunctionLowerer):
         for statement in block.statements:
             if isinstance(statement, ReturnStatement):
                 return True
-            if isinstance(statement, (ExpressionStatement, LetStatement)):
+            if isinstance(
+                statement,
+                (ExpressionStatement, LetStatement, BreakStatement, ContinueStatement),
+            ):
                 continue
             if isinstance(statement, IfStatement) and cls._supports_value_if(statement):
                 continue
@@ -690,6 +695,9 @@ class _OrReturnFunctionLowerer(_FunctionLowerer):
                 self._lower_statement(tail)
                 return self._emit_unit(tail.location)
             if isinstance(tail, ReturnStatement):
+                self._lower_statement(tail)
+                return None
+            if isinstance(tail, (BreakStatement, ContinueStatement)):
                 self._lower_statement(tail)
                 return None
             if isinstance(tail, IfStatement):
