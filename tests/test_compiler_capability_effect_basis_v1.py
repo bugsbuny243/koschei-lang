@@ -10,6 +10,8 @@ from koschei.compiler_capability_effect_basis_v1 import (
     derive_compiler_capability_effect_basis_v1,
 )
 from koschei.mir import require_mir
+from koschei.mir_extension_instructions_v4 import MirCapabilityCall
+from koschei.mir_ir import MirCall, MirMember
 from koschei.modules import check_graph, load_graph
 
 
@@ -40,6 +42,26 @@ fn main() { println("ready") }
         )
         execute = next(item for item in mir.root_module.functions if item.name == "execute")
         assert execute.resources.ast_fallbacks == 0
+        instructions = [
+            instruction
+            for block in execute.blocks
+            for instruction in block.instructions
+        ]
+        capability_calls = [
+            instruction
+            for instruction in instructions
+            if isinstance(instruction, MirCapabilityCall)
+        ]
+        assert len(capability_calls) == 1
+        assert capability_calls[0].capability_type == "NetCaps"
+        assert capability_calls[0].method == "get"
+        assert capability_calls[0].canonical_effect == NET_IO
+        assert not any(isinstance(item, MirMember) for item in instructions)
+        assert not any(
+            isinstance(item, MirCall)
+            and item.target == capability_calls[0].target
+            for item in instructions
+        )
         assert basis.mir_fingerprint == mir.fingerprint
         assert basis.capability_type == "NetCaps"
         assert basis.capability_method == "get"
