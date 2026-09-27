@@ -114,11 +114,12 @@ def _fixture():
         instance_digest="6" * 64,
         birth_epoch=7,
     )
+    subjects = {binding.sigil: binding.subject for binding in mir.bindings}
     aevra_a = birth_aevra(
         veyra_a,
         mir,
         sigil="ka",
-        subject="treasury",
+        subject=subjects["ka"],
         birth_evidence_digest="5" * 64,
         birth_epoch=7,
     )
@@ -126,7 +127,7 @@ def _fixture():
         veyra_a,
         mir,
         sigil="vor",
-        subject="withdrawal",
+        subject=subjects["vor"],
         birth_evidence_digest="a" * 64,
         birth_epoch=7,
     )
