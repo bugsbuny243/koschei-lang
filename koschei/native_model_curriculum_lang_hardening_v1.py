@@ -38,11 +38,11 @@ from .parser import Parser
 
 _CTX = b"koschei.lang-native-curriculum-hardening/v1\x00"
 _CANONICAL_SOURCE = (
-    "ka treasury;\n"
+    "ka withdrawal;\n"
     "vor withdrawal;\n"
-    "shi evidence;\n"
-    "thal recovery;\n"
-    "nur visibility;\n"
+    "shi withdrawal;\n"
+    "thal withdrawal;\n"
+    "nur withdrawal;\n"
 )
 REQUIRED_HARDENING_CASE_IDS = (
     "n3-hara-cannot-transfer-across-aevra",
