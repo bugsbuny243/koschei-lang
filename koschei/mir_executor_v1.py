@@ -22,6 +22,7 @@ from .mir_container_staging_v1 import (
     MirStructSet,
 )
 from .mir_extension_instructions_v4 import (
+    MirCapabilityCall,
     MirMapContains,
     MirMapGet,
     MirMapKeys,
