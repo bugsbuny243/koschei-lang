@@ -77,6 +77,20 @@ class RuntimePrimitiveFacadeV1:
         "queue_try_recv",
         "queue_len",
         "queue_capacity",
+        "parallel_map",
+        "decimal",
+        "decimal_add",
+        "decimal_sub",
+        "decimal_cmp",
+        "decimal_text",
+        "task_scope",
+        "task_spawn",
+        "task_join_all",
+        "task_pending",
+        "task_capacity",
+        "task_closed",
+        "task_cancel",
+        "task_cancel_all",
     })
     _STRING_MEMBERS = frozenset(
         {"length", "to_int", "to_float", "contains", "trim", "split", "join"}
