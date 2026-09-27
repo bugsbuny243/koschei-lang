@@ -305,9 +305,50 @@ BORROWED_MANIFEST_WORDS_V1 = frozenset(
     }
 )
 
-# Native surface is empty on purpose. New entries must be consciously registered
-# here in the same change that introduces them.
-NATIVE_KEYWORD_PROVENANCE_V1: Mapping[str, SurfaceProvenance] = {}
+# Native surface must be explicit. These five roots are constitutional semantic
+# vocabulary, not cosmetic aliases for conventional language keywords.
+NATIVE_KEYWORD_PROVENANCE_V1: Mapping[str, SurfaceProvenance] = {
+    "ka": SurfaceProvenance(
+        invariant="temporal-source-identity",
+        rationale=(
+            "Names Koschei admitted existence and genesis identity; recognition "
+            "creates no ambient privilege and is not a constructor alias."
+        ),
+        collision_reviewed=True,
+    ),
+    "vor": SurfaceProvenance(
+        invariant="authority-explicit",
+        rationale=(
+            "Names bounded explicit authority and non-escalating power rather "
+            "than a conventional permission or access modifier."
+        ),
+        collision_reviewed=True,
+    ),
+    "shi": SurfaceProvenance(
+        invariant="verifiable-effects",
+        rationale=(
+            "Names witnessed reality where claims and evidence remain distinct "
+            "and security-critical state requires bound proof."
+        ),
+        collision_reviewed=True,
+    ),
+    "thal": SurfaceProvenance(
+        invariant="event-horizon-isolation",
+        rationale=(
+            "Names bounded survival, containment and evidence-bound recovery "
+            "without manufacturing emergency authority."
+        ),
+        collision_reviewed=True,
+    ),
+    "nur": SurfaceProvenance(
+        invariant="protected-source-reality",
+        rationale=(
+            "Names controlled knowability and observer projection while keeping "
+            "visibility separate from authority and canonical identity."
+        ),
+        collision_reviewed=True,
+    ),
+}
 NATIVE_SYMBOL_PROVENANCE_V1: Mapping[str, SurfaceProvenance] = {}
 NATIVE_SCAFFOLD_PROVENANCE_V1: Mapping[str, SurfaceProvenance] = {}
 NATIVE_MANIFEST_PROVENANCE_V1: Mapping[str, SurfaceProvenance] = {}
