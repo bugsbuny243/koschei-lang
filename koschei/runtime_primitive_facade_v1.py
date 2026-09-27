@@ -7,7 +7,7 @@ raw interpreter callable objects across the MIR/runtime boundary.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 
 from .ast_nodes import FunctionDeclaration, Program, SourceLocation
 from .container_runtime_v1 import (
@@ -29,6 +29,7 @@ from .interpreter import (
     DiskRoot,
     EnvCaps,
     EnvRoot,
+    EnumValue,
     Interpreter,
     KsError,
     KoscheiRuntimeError,
@@ -50,6 +51,14 @@ class RuntimePrimitiveFacadeError(KoscheiRuntimeError):
 
 
 @dataclass(frozen=True, slots=True)
+class KoscheiFunctionRefV1:
+    """Opaque sealed-MIR function identity; never source AST authority."""
+
+    module_key: str
+    function_name: str
+
+
+@dataclass(frozen=True, slots=True)
 class _PrimitiveMemberRefV1:
     """Facade-owned opaque reference to one already-authorized primitive member."""
 
@@ -66,7 +75,7 @@ class _PrimitiveConstructorRefV1:
 class RuntimePrimitiveFacadeV1:
     """AST-opaque primitive surface consumed by ``MirExecutorV1``."""
 
-    __slots__ = ("_runtime",)
+    __slots__ = ("_runtime", "_invoke_function")
 
     _BUILTIN_CALLS = frozenset({
         "print",
@@ -126,7 +135,9 @@ class RuntimePrimitiveFacadeV1:
         enums,
         module_imports,
         structs,
+        invoke_function: Callable[[KoscheiFunctionRefV1, list[Any]], Any],
     ) -> None:
+        self._invoke_function = invoke_function
         self._runtime = Interpreter(
             program,
             argv,
@@ -136,6 +147,14 @@ class RuntimePrimitiveFacadeV1:
             module_imports=module_imports,
             structs=structs,
         )
+
+    @classmethod
+    def builtin(cls, name: str) -> str | None:
+        return name if name in cls._BUILTIN_CALLS else None
+
+    @staticmethod
+    def function_ref(module_key: str, function_name: str) -> KoscheiFunctionRefV1:
+        return KoscheiFunctionRefV1(module_key, function_name)
 
     def constructor(self, name: str):
         raw = self._runtime.constructors.get(name)
@@ -194,6 +213,135 @@ class RuntimePrimitiveFacadeV1:
             )
         return result
 
+    def _require_callback(
+        self,
+        value: Any,
+        *,
+        method: str,
+        location: SourceLocation,
+    ) -> KoscheiFunctionRefV1 | KsError:
+        if isinstance(value, KoscheiFunctionRefV1):
+            return value
+        return KsError(
+            f"List.{method}() yerel, adlandırılmış Koschei fonksiyonu bekler"
+        )
+
+    def _invoke_list_callback_member(
+        self,
+        member: _PrimitiveMemberRefV1,
+        arguments: list[Any],
+    ) -> Any:
+        receiver = member.raw.receiver
+        name = member.raw.name
+        location = member.raw.location
+        if not isinstance(receiver, list):
+            raise RuntimePrimitiveFacadeError(
+                "KS5002", "List callback transition received non-List receiver.", location
+            )
+
+        if name in {"filter", "find", "map", "any", "partition"}:
+            self._runtime._require_arity(name, arguments, 1, location)
+            callback = self._require_callback(arguments[0], method=name, location=location)
+            if isinstance(callback, KsError):
+                return callback
+            if _contains_capability(receiver):
+                raise RuntimePrimitiveFacadeError(
+                    "KS3401",
+                    f"Capability taşıyan List üzerinde {name}() çalıştırılamaz.",
+                    location,
+                )
+
+            if name == "filter":
+                out: list[Any] = []
+                for item in receiver:
+                    decision = self._invoke_function(callback, [item])
+                    if isinstance(decision, KsError):
+                        return decision
+                    if not isinstance(decision, bool):
+                        return KsError("List.filter() predicate'i Bool döndürmelidir")
+                    if decision:
+                        out.append(item)
+                return out
+
+            if name == "find":
+                for item in receiver:
+                    decision = self._invoke_function(callback, [item])
+                    if isinstance(decision, KsError):
+                        return decision
+                    if not isinstance(decision, bool):
+                        return KsError("List.find() predicate'i Bool döndürmelidir")
+                    if decision:
+                        return EnumValue("Option", "Some", item)
+                return EnumValue("Option", "None")
+
+            if name == "map":
+                out: list[Any] = []
+                for item in receiver:
+                    mapped = self._invoke_function(callback, [item])
+                    if isinstance(mapped, KsError):
+                        return mapped
+                    if _contains_capability(mapped):
+                        raise RuntimePrimitiveFacadeError(
+                            "KS3401",
+                            "List.map() callback'i capability döndüremez.",
+                            location,
+                        )
+                    out.append(mapped)
+                return out
+
+            if name == "any":
+                for item in receiver:
+                    decision = self._invoke_function(callback, [item])
+                    if isinstance(decision, KsError):
+                        return decision
+                    if not isinstance(decision, bool):
+                        return KsError("List.any() predicate'i Bool döndürmelidir")
+                    if decision:
+                        return True
+                return False
+
+            matching: list[Any] = []
+            rejected: list[Any] = []
+            for item in receiver:
+                decision = self._invoke_function(callback, [item])
+                if isinstance(decision, KsError):
+                    return decision
+                if not isinstance(decision, bool):
+                    return KsError("List.partition() predicate'i Bool döndürmelidir")
+                (matching if decision else rejected).append(item)
+            return [matching, rejected]
+
+        if name == "scan":
+            self._runtime._require_arity(name, arguments, 2, location)
+            initial, reducer_value = arguments
+            reducer = self._require_callback(reducer_value, method=name, location=location)
+            if isinstance(reducer, KsError):
+                return reducer
+            if _contains_capability(receiver) or _contains_capability(initial):
+                raise RuntimePrimitiveFacadeError(
+                    "KS3401",
+                    "Capability taşıyan List veya başlangıç değeri üzerinde scan() çalıştırılamaz.",
+                    location,
+                )
+            accumulator = initial
+            out: list[Any] = []
+            for item in receiver:
+                accumulator = self._invoke_function(reducer, [accumulator, item])
+                if isinstance(accumulator, KsError):
+                    return accumulator
+                if _contains_capability(accumulator):
+                    raise RuntimePrimitiveFacadeError(
+                        "KS3401",
+                        "List.scan() reducer'ı capability döndüremez.",
+                        location,
+                    )
+                out.append(accumulator)
+            return out
+
+        raise RuntimePrimitiveFacadeError(
+            "KS5002", f"Unsupported List callback transition: {name}.", location
+        )
+
     def invoke_primitive(
         self,
         callee: Any,
@@ -217,6 +365,11 @@ class RuntimePrimitiveFacadeV1:
                     "MIR primitive member ref allowlist doğrulamasını geçemedi.",
                     location,
                 )
+            if (
+                isinstance(callee.raw.receiver, list)
+                and callee.raw.name in {"filter", "find", "map", "any", "partition", "scan"}
+            ):
+                return self._invoke_list_callback_member(callee, arguments)
             return self._runtime._invoke_member(callee.raw, arguments)
         raise RuntimePrimitiveFacadeError(
             "KS5002",
