@@ -37,6 +37,7 @@ from .interpreter import (
     EnumValue,
     Interpreter,
     KsError,
+    KsUnit,
     KoscheiRuntimeError,
     ModuleFunction,
     NetCaps,
