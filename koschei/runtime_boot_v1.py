@@ -10,6 +10,7 @@ from __future__ import annotations
 from types import ModuleType
 from typing import Any
 
+from .capability_effect_contract_v1 import NET_ORIGIN_SCHEMES
 from .runtime_bridge_seal_v1 import (
     RuntimeBridgeSealError,
     require_runtime_bridge_sealed,
@@ -38,9 +39,13 @@ def require_runtime_ready(runtime: ModuleType) -> RuntimeCapabilityRegistry:
 
     try:
         # Runtime bootstrap fields are compatibility carriers, not authority.
-        # Rebind the canonical immutable network policy before validating the
-        # implementation so stale/mutated bootstrap state cannot become a
-        # second policy authority.
+        # Drift must be detected before canonical rebinding; silently overwriting
+        # a mutated value would erase evidence of a compromised bootstrap.
+        observed_network_policy = getattr(runtime, "ALLOWED_NET_SCHEMES", None)
+        if observed_network_policy != NET_ORIGIN_SCHEMES:
+            raise RuntimeNetworkPolicyError(
+                "runtime network policy drifted from the canonical contract"
+            )
         bind_canonical_network_policy(runtime)
         registry = validate_runtime_module(runtime)
         install_canonical_authority_bridge(runtime)
