@@ -349,6 +349,9 @@ def _verify_manifest(
     if status == "UNSIGNED-STAGING":
         if not allow_unsigned_staging:
             failures.append("release manifest is not marked SIGNED; unsigned staging; publication is blocked")
+            failures.append(
+                f"release signature scheme must be {SIGNATURE_SCHEME} before publication"
+            )
         return
     if status != "SIGNED":
         failures.append("release manifest is not marked SIGNED")
