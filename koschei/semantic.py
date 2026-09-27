@@ -230,6 +230,7 @@ class SemanticChecker:
         self.scopes: list[dict[str, Symbol]] = []
         self.variable_count = 0
         self.capability_count = 0
+        self.loop_depth = 0
         self.current_function: FunctionDeclaration | None = None
 
     def check(self) -> SemanticReport:
@@ -440,7 +441,7 @@ class SemanticChecker:
 
         if isinstance(statement, ExpressionStatement):
             self._check_expression(statement.expression)
-            if self._is_fallible_call(statement.expression):
+            if self._is_fallible_call(statement.expression) and self.loop_depth == 0:
                 raise SemanticError(
                     "KS1401",
                     "Hata dönebilen çağrının sonucu ele alınmalıdır "
@@ -452,7 +453,11 @@ class SemanticChecker:
 
         if isinstance(statement, IfStatement):
             condition_type = self._check_expression(statement.condition)
-            self._require_bool(condition_type, "if koşulu", statement.location)
+            self._require_bool(
+                self._success_type(condition_type),
+                "if koşulu",
+                statement.location,
+            )
             self._check_block(statement.then_block)
             if isinstance(statement.else_branch, Block):
                 self._check_block(statement.else_branch)
@@ -462,8 +467,16 @@ class SemanticChecker:
 
         if isinstance(statement, WhileStatement):
             condition_type = self._check_expression(statement.condition)
-            self._require_bool(condition_type, "while koşulu", statement.location)
-            self._check_block(statement.body)
+            self._require_bool(
+                self._success_type(condition_type),
+                "while koşulu",
+                statement.location,
+            )
+            self.loop_depth += 1
+            try:
+                self._check_block(statement.body)
+            finally:
+                self.loop_depth -= 1
             return
 
         if isinstance(statement, ForStatement):
@@ -482,6 +495,7 @@ class SemanticChecker:
                     statement.location,
                 )
             self.scopes.append({})
+            self.loop_depth += 1
             try:
                 self._declare(
                     Symbol(statement.variable, None, False, statement.location)
@@ -489,6 +503,7 @@ class SemanticChecker:
                 self.variable_count += 1
                 self._check_statements(statement.body)
             finally:
+                self.loop_depth -= 1
                 self.scopes.pop()
             return
 
