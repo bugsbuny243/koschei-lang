@@ -7,6 +7,7 @@ import unittest
 
 from koschei.ast_nodes import SourceLocation
 from koschei.mir import MirIntegrityError, require_mir, to_dict
+from koschei.mir_extension_instructions_v4 import MirVariantIs, MirVariantPayload
 from koschei.mir_ir import (
     MirAstFallback,
     MirBasicBlock,
@@ -201,7 +202,7 @@ class MirFallbackBoundaryTests(MirCfgTestCase):
         self.assertEqual(function.blocks[2].terminator, MirJump(1))
         self.assertIsInstance(function.blocks[3].terminator, MirReturn)
 
-    def test_aggregate_and_match_fallbacks_are_visible_not_erased(self) -> None:
+    def test_aggregate_and_match_are_normalized_without_ast_fallback(self) -> None:
         _, function = self.main_function(
             """
             enum Maybe<T> {
@@ -220,13 +221,14 @@ class MirFallbackBoundaryTests(MirCfgTestCase):
             """
         )
 
-        node_kinds = {
-            instruction.node_kind
+        instructions = [
+            instruction
             for block in function.blocks
             for instruction in block.instructions
-            if isinstance(instruction, MirAstFallback)
-        }
-        self.assertIn("MatchExpression", node_kinds)
+        ]
+        self.assertTrue(any(isinstance(item, MirVariantIs) for item in instructions))
+        self.assertTrue(any(isinstance(item, MirVariantPayload) for item in instructions))
+        self.assertFalse(any(isinstance(item, MirAstFallback) for item in instructions))
 
     def test_json_reports_normalized_for_cfg_without_fallbacks(self) -> None:
         mir = self.checked_mir(
