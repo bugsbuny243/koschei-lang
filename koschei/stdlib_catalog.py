@@ -569,6 +569,34 @@ CATALOG: tuple[Family, ...] = (
             security_sensitive=True,
         ),
     ),
+    _family(
+        "persist",
+        "partial",
+        "v1",
+        "Exact-object persistent state with bounded payloads and descriptor anchoring.",
+        _reserved(
+            "allow",
+            capability="PersistRoot",
+            security_sensitive=True,
+            note="Exact-object authority exists, but release promotion remains evidence-gated.",
+        ),
+        _reserved(
+            "load",
+            capability="PersistCaps",
+            required=("bytes", "deadline"),
+            enforced=("bytes",),
+            security_sensitive=True,
+            note="Byte bounds are enforced; syscall-preemptive deadline parity is not yet proven.",
+        ),
+        _reserved(
+            "commit",
+            capability="PersistCaps",
+            required=("bytes", "deadline"),
+            enforced=("bytes",),
+            security_sensitive=True,
+            note="Atomic replace and fsync semantics exist; deadline parity remains reserved.",
+        ),
+    ),
 )
 
 
