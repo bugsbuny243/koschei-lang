@@ -652,8 +652,20 @@ class RuntimePrimitiveFacadeV1:
     def unwrap_fallible(self, value: Any) -> tuple[bool, Any]:
         return self._runtime._unwrap_fallible(value)
 
-    def matches_type(self, value: Any, expected_names) -> bool:
-        return self._runtime._runtime_matches_type(value, expected_names)
+    def matches_type(
+        self,
+        value: Any,
+        expected_names,
+        *,
+        type_parameters: frozenset[str] = frozenset(),
+        type_bindings: dict[str, str] | None = None,
+    ) -> bool:
+        return self._runtime._runtime_matches_type(
+            value,
+            expected_names,
+            type_parameters=type_parameters,
+            type_bindings=type_bindings,
+        )
 
     def runtime_type_name(self, value: Any) -> str:
         return self._runtime._runtime_type_name(value)
