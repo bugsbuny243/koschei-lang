@@ -70,6 +70,8 @@ CAPABILITY_MEMBERS = {
     "disk": "DiskRoot",
     "env": "EnvRoot",
     "process": "ProcessRoot",
+    "serve": "ServeRoot",
+    "persist": "PersistRoot",
 }
 
 ROOT_METHODS: dict[str, dict[str, str]] = {
@@ -77,6 +79,8 @@ ROOT_METHODS: dict[str, dict[str, str]] = {
     "DiskRoot": {"allow": "DiskCaps", "allow_read_only": "DiskReadCaps"},
     "EnvRoot": {"allow": "EnvCaps"},
     "ProcessRoot": {"allow": "ProcessCaps"},
+    "ServeRoot": {"allow": "ServeCaps"},
+    "PersistRoot": {"allow": "PersistCaps"},
 }
 
 NARROWED_METHODS: dict[str, set[str]] = {
@@ -85,6 +89,8 @@ NARROWED_METHODS: dict[str, set[str]] = {
     "DiskReadCaps": {"read", "list", "read_file"},
     "EnvCaps": {"get"},
     "ProcessCaps": {"run", "spawn"},
+    "ServeCaps": {"exchange"},
+    "PersistCaps": {"load", "commit"},
 }
 
 NARROWING_METHODS = {"allow", "allow_read_only"}
