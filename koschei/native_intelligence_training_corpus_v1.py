@@ -474,9 +474,10 @@ def _n1_validation(index: int) -> NativeTrainingExampleV1:
     source, _, mir = _native_fixture(token)
     epoch = 20 + index
     veyra = _veyra(token, instance="a", epoch=epoch)
-    subject = f"treasuryx{token}"
+    ka_binding = next(item for item in mir.bindings if item.sigil == "ka")
+    subject = ka_binding.subject
     aevra = birth_aevra(
-        veyra, mir, sigil="ka", subject=subject,
+        veyra, mir, sigil=ka_binding.sigil, subject=subject,
         birth_evidence_digest=_sha(f"birth|{token}"), birth_epoch=epoch,
     )
     aevra.assert_sealed(veyra, mir)
@@ -502,9 +503,10 @@ def _n1_test(index: int) -> NativeTrainingExampleV1:
     epoch = 30 + index
     a = _veyra(token, instance="a", epoch=epoch)
     b = _veyra(token, instance="b", epoch=epoch)
-    subject = f"treasuryx{token}"
+    ka_binding = next(item for item in mir.bindings if item.sigil == "ka")
+    subject = ka_binding.subject
     aevra = birth_aevra(
-        a, mir, sigil="ka", subject=subject,
+        a, mir, sigil=ka_binding.sigil, subject=subject,
         birth_evidence_digest=_sha(f"birth|{token}"), birth_epoch=epoch,
     )
     return _rejecting_example(
