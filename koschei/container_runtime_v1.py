@@ -225,7 +225,8 @@ class StructBuilderV1:
             )
         self.fields[name] = value
 
-    def finish(self, location: SourceLocation) -> StructValue:
+    def finish(self, location: SourceLocation | None = None) -> StructValue:
+        location = self.declaration.location if location is None else location
         if self.consumed:
             raise ContainerRuntimeError(
                 "KS5002", "MIR Struct builder may be finished exactly once.", location
