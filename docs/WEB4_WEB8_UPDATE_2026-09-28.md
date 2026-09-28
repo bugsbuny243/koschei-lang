@@ -26,3 +26,40 @@ Source: https://datatracker.ietf.org/doc/draft-ietf-hpke-hpke/05/
 
 ## Web7 / Web8
 No accepted Web7/Web8 standards identified; keep as internal future-research labels.
+
+## Additional authorization-language watch
+
+### AAuth Protocol v11
+
+AAuth separates agent identity, person identity, mission/governance context, resource authorization and key-bound signed requests.
+
+Lang implication:
+- keep identity types, authorization grants, mission scope and resource capabilities as separate semantic objects;
+- a valid identity proof must not erase an unresolved authorization state;
+- session/resource tokens should be represented as bounded capabilities rather than ambient authority.
+
+Source:
+https://datatracker.ietf.org/doc/html/draft-hardt-oauth-aauth-protocol-11
+
+### Agent Execution Protocol (AEP)
+
+AEP places a governing enforcement component between the agent reasoning loop and governed resources, with authorization policy and tamper-evident transition records.
+
+Lang implication:
+- useful comparison for making policy evaluation and execution authority host-independent and explicit;
+- policy proof should be able to say DENY or UNRESOLVED without falling through to execution.
+
+Source:
+https://datatracker.ietf.org/doc/draft-sato-soos-aep/
+
+### MCP proposal watch
+
+Track proposal-stage MCP work on signed capability declarations, tamper-evident audit records, asynchronous tool-call approval and structured authorization denials.
+
+Lang implication:
+- potential future adapter vocabulary for signed capability types, denial reason codes, approval transitions and audit receipts;
+- do not import proposal semantics into the core language until compatibility and ownership boundaries are proven.
+
+Sources:
+https://github.com/modelcontextprotocol/modelcontextprotocol/pulls
+https://plan.modelcontextprotocol.io/seps
