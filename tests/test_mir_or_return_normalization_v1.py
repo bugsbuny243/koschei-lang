@@ -4,6 +4,7 @@ import tempfile
 from koschei.mir import require_mir
 from koschei.mir_ir import MirAstFallback, MirBranch, MirCall, MirMember, MirReturn
 from koschei.mir_extension_instructions_v4 import (
+    MirCapabilityCall,
     MirMapContains,
     MirMapGet,
     MirMapKeys,
@@ -51,7 +52,8 @@ fn main() { println("ready") }
             and item.node_kind == "OrReturnExpression"
             for item in instructions
         )
-        assert sum(isinstance(item, MirCall) for item in instructions) == 2
+        assert sum(isinstance(item, MirCapabilityCall) for item in instructions) == 1
+        assert sum(isinstance(item, MirCall) for item in instructions) == 1
         assert sum(isinstance(item, MirFallibleIsSuccess) for item in instructions) == 1
         assert sum(isinstance(item, MirFalliblePayload) for item in instructions) == 1
         assert any(isinstance(block.terminator, MirBranch) for block in blocks)
@@ -73,10 +75,13 @@ fn main() { println("ready") }
     try:
         instructions = _instructions(blocks)
         calls = [item for item in instructions if isinstance(item, MirCall)]
-        # One call is net.get(url), the other is Error("replacement").  The
-        # capability call itself appears once: normalization never re-lowers
-        # expression.value on either branch.
-        assert len(calls) == 2
+        capability_calls = [
+            item for item in instructions if isinstance(item, MirCapabilityCall)
+        ]
+        # net.get(url) is one sealed capability opcode. Error("replacement")
+        # remains one ordinary call. Normalization never re-lowers either path.
+        assert len(capability_calls) == 1
+        assert len(calls) == 1
         success_tests = [
             item for item in instructions if isinstance(item, MirFallibleIsSuccess)
         ]
