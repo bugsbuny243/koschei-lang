@@ -85,8 +85,11 @@ class NativeTrainingLaunchSpecV1:
     ) -> None:
         if self.version != 1:
             raise NativeTrainingLaunchError("unsupported native training launch version")
-        plan.assert_sealed()
-        rows = _manifest_rows(manifest)
+        try:
+            plan.assert_sealed()
+            rows = _manifest_rows(manifest)
+        except ValueError as error:
+            raise NativeTrainingLaunchError(str(error)) from error
         if self.plan_digest != plan.digest:
             raise NativeTrainingLaunchError("training launch belongs to a different plan")
         if self.training_export_digest != manifest.digest:
