@@ -577,10 +577,28 @@ def audit_scaffold_surface(
             continue
         normalized.append(value)
 
+    normalized_set = set(normalized)
+    native_only_surface = (
+        bool(normalized_set)
+        and normalized_set.isdisjoint(LEGACY_SCAFFOLD_PATH_DEBT_V1)
+        and normalized_set <= set(provenance)
+    )
     surface = _audit_surface(
         normalized,
-        legacy=LEGACY_SCAFFOLD_PATH_DEBT_V1,
-        retired=RETIRED_LEGACY_SCAFFOLD_PATHS_V1,
+        # A fully provenance-registered alternate native scaffold (for example
+        # Object Space k0/k1) is not the legacy ks-new scaffold and therefore
+        # does not inherit its presence debt. Mixed/legacy surfaces keep the
+        # retirement ratchet exactly as before.
+        legacy=(
+            frozenset()
+            if native_only_surface
+            else LEGACY_SCAFFOLD_PATH_DEBT_V1
+        ),
+        retired=(
+            frozenset()
+            if native_only_surface
+            else RETIRED_LEGACY_SCAFFOLD_PATHS_V1
+        ),
         blocked=frozenset(),
         provenance=provenance,
         subject_kind="scaffold path",
