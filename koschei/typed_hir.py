@@ -54,19 +54,29 @@ def iterable_success_item_type(type_node: TypeNode) -> TypeNode | None:
     """Project the checked List item type for a for-loop success path.
 
     A top-level Error alternative is control-flow evidence, not an iterable
-    shape. Typed HIR owns this projection so MIR/runtime consumers never need
-    to rediscover or guess it. Any other ambiguous union remains fail-closed.
+    shape. Multiple success alternatives are admitted only when every one is a
+    List shape; their element evidence is structurally unioned. A non-List
+    alternative remains fail-closed.
     """
 
-    success_options = tuple(option for option in alternatives(type_node) if option != ERROR)
-    if len(success_options) != 1:
+    success_options = tuple(
+        option for option in alternatives(type_node) if option != ERROR
+    )
+    if not success_options:
         return None
-    success = success_options[0]
-    if isinstance(success, GenericType) and success.name == "List":
-        return success.arguments[0] if success.arguments else UNKNOWN
-    if is_named(success, "List") or isinstance(success, UnknownType):
-        return UNKNOWN
-    return None
+
+    items: list[TypeNode] = []
+    for success in success_options:
+        if isinstance(success, GenericType) and success.name == "List":
+            items.append(
+                success.arguments[0] if success.arguments else UNKNOWN
+            )
+            continue
+        if is_named(success, "List") or isinstance(success, UnknownType):
+            items.append(UNKNOWN)
+            continue
+        return None
+    return union_type(*items)
 
 
 @dataclass(frozen=True, slots=True)
