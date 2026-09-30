@@ -4,6 +4,7 @@ import hashlib
 
 from koschei.native_sigil_authority_delegation_v1 import (
     AuthorityDelegationError,
+    _grant_digest,
     delegate_grant,
     issue_root_grant,
     require_request_authority,
@@ -26,8 +27,23 @@ class AuthorityDelegationTests(unittest.TestCase):
         return issue_root_grant(mir, **fields)
 
     def test_valid_v1_seal_is_unchanged(self) -> None:
-        root = self._root(self._mir())
-        self.assertEqual(root.digest, "2d93d24345dd09f3b44cabbab99e64ea29674ade08ec308a133ef35a7a212fd2")
+        # Pin the wire encoder itself, not a live MIR fingerprint that is
+        # expected to change when the compiler/native semantic graph evolves.
+        digest = _grant_digest(
+            "root-1",
+            "deploy",
+            "operator",
+            7,
+            ("code.write", "deploy.execute"),
+            "f" * 64,
+            "u" * 64,
+            "ROOT",
+            0,
+        )
+        self.assertEqual(
+            digest,
+            "bb73a708e08a2d65d93f2efb1c87c27e59ec476a45370f3ffa11394bd38c845d",
+        )
 
     def test_comma_operation_cannot_alias_two_granted_operations(self) -> None:
         # In the previous v1 encoder these distinct operation sets had the same
