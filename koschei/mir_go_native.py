@@ -46,7 +46,7 @@ _SCALAR_TYPES = {
     "String": "string",
     "Void": "",
 }
-_BINARY = frozenset({"+", "-", "*", "==", "!=", "<", "<=", ">", ">="})
+_BINARY = frozenset({"+", "-", "*", "%", "==", "!=", "<", "<=", ">", ">="})
 _UNARY = frozenset({"!", "-", "+"})
 _PRINT_BUILTINS = frozenset({"print", "println"})
 _GO_IDENTIFIER = re.compile(r"[^A-Za-z0-9_]")
