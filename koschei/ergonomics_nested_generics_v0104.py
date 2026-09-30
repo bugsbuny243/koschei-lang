@@ -129,6 +129,7 @@ def _statement(self, statement):
         item_type = _fallback_item_type(self, statement.iterable)
 
     self._v010_loop_depth = getattr(self, "_v010_loop_depth", 0) + 1
+    self.loop_depth += 1
     self.scopes.append({})
     try:
         self._declare(
@@ -143,6 +144,7 @@ def _statement(self, statement):
         self._check_statements(statement.body)
     finally:
         self.scopes.pop()
+        self.loop_depth -= 1
         self._v010_loop_depth -= 1
     return None
 
