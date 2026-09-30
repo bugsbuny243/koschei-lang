@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .ast_nodes import SourceLocation
-from .interpreter import KsError, KsUnit, KoscheiRuntimeError, SystemCaps
+from .interpreter import EnumValue, KsError, KsUnit, KoscheiRuntimeError, SystemCaps
 from .mir import MIR_VERSION, MirGraph, MirIntegrityError
 from .mir_container_staging_v1 import (
     MirIsRuntimeError,
@@ -28,6 +28,7 @@ from .mir_extension_instructions_v4 import (
     MirMapKeys,
     MirMapSet,
     MirUnit,
+    MirVariantConstruct,
     MirVariantIs,
     MirVariantPayload,
 )
@@ -37,7 +38,7 @@ from .mir_ir import (
     MirMember, MirReturn, MirStore, MirUnary, MirUnreachable,
 )
 from .mir_or_return_normalization_v1 import MirFallibleIsSuccess, MirFalliblePayload, MirInterpolate
-from .mir_variant_runtime_v1 import MirVariantRuntimeError, variant_is_v1, variant_payload_v1
+from .mir_variant_runtime_v1 import MirVariantRuntimeError, split_canonical_variant_v1, variant_is_v1, variant_payload_v1
 from .runtime_primitive_facade_v1 import KoscheiFunctionRefV1, RuntimePrimitiveFacadeV1
 from .semantic import INT_MAX, INT_MIN
 from .type_system import alternatives, render_type
@@ -263,6 +264,22 @@ class MirExecutorV1:
             return
         if isinstance(instruction, MirIsRuntimeError):
             values[instruction.target] = self.primitives.is_runtime_error(values[instruction.source])
+            return
+        if isinstance(instruction, MirVariantConstruct):
+            try:
+                owner, variant = split_canonical_variant_v1(instruction.variant)
+            except MirVariantRuntimeError as error:
+                raise MirExecutionError(
+                    "KS5002",
+                    f"Canonical MIR variant construction failed closed: {error}",
+                    instruction.location,
+                ) from error
+            if instruction.source is None:
+                values[instruction.target] = EnumValue(owner, variant)
+            else:
+                values[instruction.target] = EnumValue(
+                    owner, variant, values[instruction.source]
+                )
             return
         if isinstance(instruction, MirVariantIs):
             try:
