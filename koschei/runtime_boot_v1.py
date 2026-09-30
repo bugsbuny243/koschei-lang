@@ -10,6 +10,7 @@ from __future__ import annotations
 from types import ModuleType
 from typing import Any
 
+from .capability_effect_contract_v1 import NET_ORIGIN_SCHEMES
 from .runtime_bridge_seal_v1 import (
     RuntimeBridgeSealError,
     require_runtime_bridge_sealed,
@@ -38,9 +39,15 @@ def require_runtime_ready(runtime: ModuleType) -> RuntimeCapabilityRegistry:
 
     try:
         # Runtime bootstrap fields are compatibility carriers, not authority.
-        # Rebind the canonical immutable network policy before validating the
-        # implementation so stale/mutated bootstrap state cannot become a
-        # second policy authority.
+        # A stale/equivalent or narrower carrier is rebound before use. An
+        # attempted widening (canonical schemes plus extra origins) is explicit
+        # authority drift and fails closed rather than being silently erased.
+        observed_network_policy = getattr(runtime, "ALLOWED_NET_SCHEMES", None)
+        if isinstance(observed_network_policy, (set, frozenset)):
+            if NET_ORIGIN_SCHEMES < frozenset(observed_network_policy):
+                raise RuntimeNetworkPolicyError(
+                    "runtime network policy attempted to widen canonical origin schemes"
+                )
         bind_canonical_network_policy(runtime)
         registry = validate_runtime_module(runtime)
         install_canonical_authority_bridge(runtime)
