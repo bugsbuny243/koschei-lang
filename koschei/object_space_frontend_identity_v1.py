@@ -19,7 +19,7 @@ import struct
 from typing import Mapping
 
 from .modules import Module, ModuleGraph, check_graph
-from .native_kernel_v1 import NativeKernelCheck, check_native_kernel
+from .native_kernel_v1 import NativeKernelCheck, NativeKernelError, check_native_kernel
 from .object_space_graph_v1 import check_object_space_graph as _legacy_check_object_space_graph
 from .object_space_v1 import MAX_GRAPH_SECRET_BYTES, MAX_OBJECTS, ObjectSpaceError, ObjectSpaceProject
 
@@ -132,9 +132,14 @@ def encode_authenticated_frontend_graph_secret(
     records: list[FrontendObjectRecordV1] = []
     for object_id, payload in canonical:
         frontend_id = _require_supported_frontend(frontend_by_object[object_id])
-        # Parse/check now, before metadata is admitted.  There is no catch-and-try-
+        # Parse/check now, before metadata is admitted. There is no catch-and-try-
         # legacy path here: native identity makes native admission mandatory.
-        check_native_kernel(_native_source(payload))
+        try:
+            check_native_kernel(_native_source(payload))
+        except NativeKernelError as error:
+            raise ObjectSpaceFrontendIdentityError(
+                f"native frontend payload failed canonical admission: {error}"
+            ) from error
         records.append(
             FrontendObjectRecordV1(
                 object_id=object_id,
