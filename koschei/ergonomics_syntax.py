@@ -42,7 +42,15 @@ def _factor(self):
     return expression
 
 def _match_expression(self, token):
-    value = self._expression()
+    if (
+        self._check(lexer.TokenType.TYPE)
+        and self.current + 1 < len(self.tokens)
+        and self.tokens[self.current + 1].type is lexer.TokenType.LEFT_BRACE
+    ):
+        scrutinee = self._advance()
+        value = ast.Identifier(scrutinee.value, self._location(scrutinee))
+    else:
+        value = self._expression()
     self._consume(lexer.TokenType.LEFT_BRACE, "match değerinden sonra '{' bekleniyordu.")
     arms = []
     while not self._check(lexer.TokenType.RIGHT_BRACE) and not self._is_at_end():
