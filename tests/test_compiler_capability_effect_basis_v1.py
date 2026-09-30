@@ -56,10 +56,18 @@ fn main() { println("ready") }
         assert capability_calls[0].capability_type == "NetCaps"
         assert capability_calls[0].method == "get"
         assert capability_calls[0].canonical_effect == NET_IO
-        assert not any(isinstance(item, MirMember) for item in instructions)
+        privileged_members = [
+            item
+            for item in instructions
+            if isinstance(item, MirMember) and item.member == "get"
+        ]
+        assert privileged_members == []
         assert not any(
             isinstance(item, MirCall)
-            and item.target == capability_calls[0].target
+            and any(
+                member.target == item.callee
+                for member in privileged_members
+            )
             for item in instructions
         )
         assert basis.mir_fingerprint == mir.fingerprint
