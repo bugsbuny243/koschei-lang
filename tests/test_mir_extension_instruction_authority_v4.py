@@ -49,6 +49,7 @@ def test_extension_instruction_authority_has_no_duplicate_class_names():
         "MirVariantConstruct",
         "MirVariantIs",
         "MirVariantPayload",
+        "MirCapabilityCall",
         "MirMapNew",
         "MirMapInsert",
         "MirMapFinish",
