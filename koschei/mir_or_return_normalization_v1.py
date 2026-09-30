@@ -60,6 +60,16 @@ from .typed_hir import iterable_success_item_type
 
 
 class _OrReturnFunctionLowerer(_FunctionLowerer):
+    def _lower_statement(self, statement) -> None:
+        # The bootstrap base dispatcher only recognizes a plain List<T> before
+        # calling _lower_for. MIR v4 also admits List<T> or Error by consuming
+        # Typed-HIR's success projection, so route that case here first.
+        if isinstance(statement, ForStatement):
+            if iterable_success_item_type(self._type_of(statement.iterable)) is not None:
+                self._lower_for(statement)
+                return
+        super()._lower_statement(statement)
+
     def _new_internal_binding_name(self, purpose: str) -> str:
         while True:
             name = f"$mir_{purpose}_{self.next_binding}"
