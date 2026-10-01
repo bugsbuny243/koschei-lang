@@ -358,6 +358,7 @@ class MirExecutorV1:
             values[instruction.target] = self.primitives.struct_builder(
                 instruction.type_name,
                 instruction.required_fields,
+                instruction.type,
                 instruction.location,
             )
             return
