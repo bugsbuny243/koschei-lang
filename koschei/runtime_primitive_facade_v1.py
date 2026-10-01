@@ -22,7 +22,7 @@ from .container_runtime_v1 import (
 from . import interpreter as runtime_module
 from .bounded_queue import BoundedQueueValue
 from .structured_tasks import TASK_CANCELLED, TASK_RUNNING, StructuredTaskError, TaskScopeValue
-from .type_system import NamedType
+from .type_system import NamedType, TypeNode
 from .runtime_capability_registry_v1 import (
     canonical_runtime_registry,
     capability_type_name_for_value,
@@ -611,6 +611,7 @@ class RuntimePrimitiveFacadeV1:
         self,
         type_name: str,
         required_fields: tuple[str, ...],
+        concrete_type: TypeNode,
         location: SourceLocation,
     ) -> StructBuilderV1:
         declaration = self._runtime.structs.get(type_name)
@@ -620,7 +621,12 @@ class RuntimePrimitiveFacadeV1:
                 f"MIR Struct declaration bulunamadı: '{type_name}'.",
                 location,
             )
-        return StructBuilderV1.empty(declaration, required_fields, location)
+        return StructBuilderV1.empty(
+            declaration,
+            required_fields,
+            location,
+            concrete_type=concrete_type,
+        )
 
     def struct_set(
         self,
