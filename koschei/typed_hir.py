@@ -47,6 +47,7 @@ from .type_system import (
     is_named,
     parse_type_ref,
     substitute_type,
+    union_type,
 )
 
 
