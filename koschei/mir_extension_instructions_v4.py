@@ -191,6 +191,18 @@ class MirStructFinish:
     location: SourceLocation
 
 
+@dataclass(frozen=True, slots=True)
+class MirStructFieldSet:
+    """Mutate one checked field on an already-constructed ordinary Struct value."""
+
+    target: int
+    object: int
+    field: str
+    source: int
+    type: TypeNode
+    location: SourceLocation
+
+
 MIR_V4_EXTENSION_INSTRUCTION_TYPES = (
     MirUnit,
     MirFallibleIsSuccess,
@@ -211,4 +223,5 @@ MIR_V4_EXTENSION_INSTRUCTION_TYPES = (
     MirStructNew,
     MirStructSet,
     MirStructFinish,
+    MirStructFieldSet,
 )
