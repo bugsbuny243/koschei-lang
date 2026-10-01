@@ -25,6 +25,7 @@ from .mir_extension_instructions_v4 import (
     MirMapKeys,
     MirMapNew,
     MirMapSet,
+    MirStructFieldSet,
     MirStructFinish,
     MirStructNew,
     MirStructSet,
@@ -72,6 +73,7 @@ MirInstructionV4: TypeAlias = (
     | MirStructNew
     | MirStructSet
     | MirStructFinish
+    | MirStructFieldSet
 )
 
 
