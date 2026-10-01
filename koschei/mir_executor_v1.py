@@ -121,7 +121,7 @@ class MirExecutorV1:
         type_parameters = frozenset(
             getattr(function.declaration, "type_parameters", ())
         )
-        type_bindings: dict[str, str] = {}
+        type_bindings: dict[str, str] | None = {} if type_parameters else None
         for parameter, value in zip(function.parameters, arguments):
             expected = _runtime_names(parameter.type)
             if not self.primitives.matches_type(
