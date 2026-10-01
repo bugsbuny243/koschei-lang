@@ -239,8 +239,16 @@ def load_authenticated_native_kernel(project: ObjectSpaceProject) -> NativeKerne
     record = records[0]
     if record.frontend_id != NATIVE_WITNESS_FRONTEND_V1:
         _fail("authenticated object is not bound to native witness frontend v1")
-    # No parser fallback.  Native metadata commits this object to native admission.
-    return check_native_kernel(_native_source(project.object_payloads[record.object_id]))
+    # No parser fallback. Native metadata commits this object to native admission,
+    # and this authenticated frontend boundary owns lower-level native rejection.
+    try:
+        return check_native_kernel(
+            _native_source(project.object_payloads[record.object_id])
+        )
+    except NativeKernelError as error:
+        raise ObjectSpaceFrontendIdentityError(
+            f"native frontend payload failed canonical admission: {error}"
+        ) from error
 
 
 def load_authenticated_frontend_module_graph(project: ObjectSpaceProject) -> ModuleGraph:
