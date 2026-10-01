@@ -41,7 +41,7 @@ from .mir_or_return_normalization_v1 import MirFallibleIsSuccess, MirFalliblePay
 from .mir_variant_runtime_v1 import MirVariantRuntimeError, split_canonical_variant_v1, variant_is_v1, variant_payload_v1
 from .runtime_primitive_facade_v1 import KoscheiFunctionRefV1, RuntimePrimitiveFacadeV1
 from .semantic import INT_MAX, INT_MIN
-from .type_system import alternatives, render_type
+from .type_system import GenericType, NamedType, alternatives, render_type
 
 
 class MirExecutionError(KoscheiRuntimeError):
@@ -274,11 +274,43 @@ class MirExecutorV1:
                     f"Canonical MIR variant construction failed closed: {error}",
                     instruction.location,
                 ) from error
+            concrete = tuple(
+                option
+                for option in alternatives(instruction.type)
+                if isinstance(option, (NamedType, GenericType))
+                and option.name == owner
+            )
+            if len(concrete) != 1:
+                raise MirExecutionError(
+                    "KS5002",
+                    "Canonical MIR variant type does not identify exactly one checked owner instance.",
+                    instruction.location,
+                )
+            selected = concrete[0]
+            type_arguments = (
+                tuple(render_type(item) for item in selected.arguments)
+                if isinstance(selected, GenericType)
+                else ()
+            )
             if instruction.source is None:
-                values[instruction.target] = EnumValue(owner, variant)
-            else:
                 values[instruction.target] = EnumValue(
-                    owner, variant, values[instruction.source]
+                    owner,
+                    variant,
+                    type_arguments=type_arguments,
+                )
+            else:
+                payload = values[instruction.source]
+                if self.primitives.contains_capability(payload):
+                    raise MirExecutionError(
+                        "KS3401",
+                        "Capability taşıyan değer sealed MIR enum payload'ına konamaz.",
+                        instruction.location,
+                    )
+                values[instruction.target] = EnumValue(
+                    owner,
+                    variant,
+                    payload,
+                    type_arguments,
                 )
             return
         if isinstance(instruction, MirVariantIs):
