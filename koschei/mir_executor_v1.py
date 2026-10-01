@@ -441,7 +441,15 @@ class MirExecutorV1:
         if op == "+": return left + right
         if op == "-": return left - right
         if op == "*": return left * right
-        if op == "/": return KsError("Sıfıra bölme") if right == 0 else left / right
+        if op == "/":
+            if right == 0:
+                return KsError("Sıfıra bölme")
+            if type(left) is int and type(right) is int:
+                if left == INT_MIN and right == -1:
+                    return KsError("KS3501: Int taşması: '/'")
+                quotient = abs(left) // abs(right)
+                return -quotient if (left < 0) != (right < 0) else quotient
+            return left / right
         if op == "%" and type(left) is int and type(right) is int:
             if right == 0:
                 return KsError("Sıfıra bölme")
