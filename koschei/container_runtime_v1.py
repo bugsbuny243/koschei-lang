@@ -11,6 +11,8 @@ from typing import Any, Callable
 
 from .ast_nodes import SourceLocation, StructDeclaration
 from .interpreter import KoscheiRuntimeError, StructValue
+from .type_contracts import declaration_type
+from .type_system import GenericType, NamedType, TypeNode, alternatives, render_type, substitute_type
 
 
 ContainsCapability = Callable[[Any], bool]
@@ -149,6 +151,7 @@ class StructBuilderV1:
     declaration: StructDeclaration
     required_fields: tuple[str, ...]
     fields: dict[str, Any]
+    concrete_arguments: tuple[TypeNode, ...] | None = None
     consumed: bool = False
 
     @classmethod
@@ -157,6 +160,7 @@ class StructBuilderV1:
         declaration: StructDeclaration,
         required_fields: tuple[str, ...] | None = None,
         location: SourceLocation | None = None,
+        concrete_type: TypeNode | None = None,
     ) -> "StructBuilderV1":
         declared = tuple(field.name for field in declaration.fields)
         # Direct container tests and internal callers without a sealed MIR
@@ -175,7 +179,35 @@ class StructBuilderV1:
                 "Sealed MIR Struct required_fields disagrees with checked declaration.",
                 location,
             )
-        return cls(declaration, required_fields, {})
+        concrete_arguments: tuple[TypeNode, ...] | None = None
+        if concrete_type is not None:
+            candidates = tuple(
+                option
+                for option in alternatives(concrete_type)
+                if isinstance(option, (NamedType, GenericType))
+                and option.name == declaration.name
+            )
+            if len(candidates) != 1:
+                raise ContainerRuntimeError(
+                    "KS5002",
+                    "Sealed MIR Struct concrete type does not identify exactly one checked declaration instance.",
+                    location,
+                )
+            selected = candidates[0]
+            concrete_arguments = selected.arguments if isinstance(selected, GenericType) else ()
+            parameters = tuple(getattr(declaration, "type_parameters", ()))
+            if len(concrete_arguments) != len(parameters):
+                raise ContainerRuntimeError(
+                    "KS5002",
+                    "Sealed MIR Struct generic arity disagrees with checked declaration.",
+                    location,
+                )
+        return cls(
+            declaration,
+            required_fields,
+            {},
+            concrete_arguments=concrete_arguments,
+        )
 
     def set_field(
         self,
@@ -217,10 +249,19 @@ class StructBuilderV1:
                 "Capability taşıyan değerler ordinary Struct içine konamaz; runtime type-laundering girişimini reddetti.",
                 location,
             )
-        if not matches_type(value, field.type_ref.names):
+        expected_names = field.type_ref.names
+        if self.concrete_arguments is not None:
+            parameters = tuple(getattr(self.declaration, "type_parameters", ()))
+            mapping = dict(zip(parameters, self.concrete_arguments))
+            expected_type = substitute_type(
+                declaration_type(self.declaration, field.type_ref),
+                mapping,
+            )
+            expected_names = (render_type(expected_type),)
+        if not matches_type(value, expected_names):
             raise ContainerRuntimeError(
                 "KS3401",
-                f"'{self.declaration.name}.{name}' alanı {field.type_ref} beklerken {runtime_type_name(value)} aldı.",
+                f"'{self.declaration.name}.{name}' alanı {' or '.join(expected_names)} beklerken {runtime_type_name(value)} aldı.",
                 location,
             )
         self.fields[name] = value
@@ -248,4 +289,9 @@ class StructBuilderV1:
             )
         self.consumed = True
         ordered = {name: self.fields[name] for name in self.required_fields}
-        return StructValue(self.declaration.name, ordered)
+        type_arguments = (
+            tuple(render_type(item) for item in self.concrete_arguments)
+            if self.concrete_arguments is not None
+            else ()
+        )
+        return StructValue(self.declaration.name, ordered, type_arguments)
