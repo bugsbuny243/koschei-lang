@@ -323,3 +323,64 @@ Koschei Lang owns the canonical security semantics and must not depend on any on
 ---
 
 Future meaningful Web4/Web5 and agent-protocol findings should be appended to this file as dated entries. Repeated announcements that do not alter the provider-independent security model should not be added.
+
+
+## 2026-10-02 — Post-quantum durability of agent identity/delegation evidence
+
+### New signal
+
+A new IETF Internet-Draft published 28 September 2026, `draft-uppalapati-wimse-pq-agent-identity-00`, focuses specifically on post-quantum requirements for software and AI-agent identity. The architecturally important point for Koschei Lang is not a new credential carrier: it is the distinction between verifying a delegation **now** and preserving the ability to verify historical delegation evidence **years later** after signing algorithms or keys have weakened or been retired.
+
+The draft argues that an archived delegation signature proves who signed, not when it was signed. Long-lived evidence therefore needs trusted-time anchoring plus renewal/re-anchoring before the cryptographic protection becomes weak. A timestamp anchor is itself cryptographically protected, so long-term evidence durability must account for the security of the anchor rather than treating a timestamp as timeless truth.
+
+### Koschei Lang primitive impact
+
+Add a provider-independent long-term evidence layer rather than embedding post-quantum policy into DID, VC, JWT, X.509, MCP, A2A, ERC-8004, or any one signature suite.
+
+Candidate primitives:
+
+```text
+EvidenceTimeAnchor
+CryptoProtectionEpoch
+EvidenceRenewal
+VerificationHorizon
+AlgorithmSecurityState
+LongTermVerificationProof
+```
+
+Required separations:
+
+```text
+SIGNATURE_VALID_NOW != EVIDENCE_VERIFIABLE_LATER
+SIGNER_IDENTITY != TRUSTED_SIGNING_TIME
+TIMESTAMP_PRESENT != TIMESTAMP_DURABLE
+CREDENTIAL_FORMAT != CRYPTOGRAPHIC_LONGEVITY_POLICY
+KEY_ROTATION != EVIDENCE_RENEWAL
+```
+
+Candidate evidence lifecycle:
+
+```text
+DelegationEvidence
+  -> SignatureVerification
+  -> EvidenceTimeAnchor
+  -> CryptoProtectionEpoch
+  -> EvidenceRenewal[n]
+  -> LongTermVerificationProof
+```
+
+Provider-independent invariant:
+
+```text
+PAST_EVIDENCE MUST REMAIN VERIFIABLE
+WITHOUT REQUIRING THE ORIGINAL SIGNATURE ALGORITHM
+TO REMAIN SECURE FOREVER.
+```
+
+This extends the existing Koschei rule that authority state is mutable while execution history is append-only: append-only history is insufficient if its cryptographic evidence becomes unverifiable over time.
+
+### Status / caution
+
+This is an individual Informational Internet-Draft, not an adopted IETF standard. Treat it as an emerging architecture signal. The useful Lang change is the generic separation of current authorization validity from long-term evidentiary durability; the draft's particular cryptographic profiles should remain adapter/policy choices.
+
+Source: IETF, `draft-uppalapati-wimse-pq-agent-identity-00`, published 2026-09-28.
