@@ -301,4 +301,8 @@ from .struct_field_mir_runtime_v1 import install_struct_field_mir_runtime_v1
 
 install_struct_field_mir_runtime_v1()
 
+from .canonical_mir_budget_runtime_v1 import install_canonical_mir_budget_runtime_v1
+
+install_canonical_mir_budget_runtime_v1()
+
 __all__ = ["main"]
