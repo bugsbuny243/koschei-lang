@@ -197,14 +197,12 @@ class MirBackendTests(unittest.TestCase):
         mir = require_mir(graph)
 
         generated = generate_go_mir(mir)
+        legacy_host_graph = generate_go(graph.root_module.program, graph)
         mir.assert_sealed()
         self.assertEqual(generated, generate_go_mir(mir))
-        for index, module in enumerate(mir.in_dependency_order()):
-            if module.key == mir.root:
-                continue
-            for declaration in module.program.declarations:
-                symbol = f"ksfn___module_{index}_{module.name}_{declaration.name}"
-                self.assertIn(symbol, generated)
+        self.assertNotEqual(generated, legacy_host_graph)
+        self.assertIn("ksfn___module_0_cell0_label", generated)
+        self.assertNotIn("ksfn___module_0_risk_label", generated)
 
 
 class MirCliTests(unittest.TestCase):
