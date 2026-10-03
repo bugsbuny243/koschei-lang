@@ -8,7 +8,15 @@ Typed-HIR result type rather than runtime/backend name lookup.
 """
 from __future__ import annotations
 
-from .ast_nodes import CallExpression, Expression, Identifier, MatchExpression
+from .ast_nodes import (
+    AssignmentExpression,
+    CallExpression,
+    Expression,
+    Identifier,
+    MatchExpression,
+    MemberExpression,
+)
+from .mir_extension_instructions_v4 import MirStructFieldSet
 from .mir_match_lowering_v1 import lower_match_expression_v1
 from .mir_or_return_normalization_v1 import _OrReturnFunctionLowerer
 from .mir_variant_constructor_lowering_v1 import (
@@ -29,6 +37,25 @@ class _CanonicalFunctionLowererV1(_OrReturnFunctionLowerer):
             constructed = lower_payload_free_variant_v1(self, expression)
             if constructed is not None:
                 return constructed
+        if (
+            isinstance(expression, AssignmentExpression)
+            and isinstance(expression.target, MemberExpression)
+            and isinstance(expression.target.object, Identifier)
+        ):
+            receiver = self._lower_expression(expression.target.object)
+            source = self._lower_expression(expression.value)
+            target = self._new_value()
+            self._emit(
+                MirStructFieldSet(
+                    target=target,
+                    object=receiver,
+                    field=expression.target.member,
+                    source=source,
+                    type=self._type_of(expression),
+                    location=expression.location,
+                )
+            )
+            return target
         return super()._lower_expression(expression)
 
 
