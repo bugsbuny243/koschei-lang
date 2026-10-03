@@ -191,15 +191,20 @@ class MirBackendTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(output.getvalue(), "Koschei\n1\n")
 
-    def test_native_adapter_matches_existing_checked_codegen(self) -> None:
+    def test_native_adapter_uses_sealed_module_identity(self) -> None:
         graph = load_graph(EXAMPLES / "app.ks")
         check_graph(graph)
         mir = require_mir(graph)
 
-        self.assertEqual(
-            generate_go_mir(mir),
-            generate_go(graph.root_module.program, graph),
-        )
+        generated = generate_go_mir(mir)
+        mir.assert_sealed()
+        self.assertEqual(generated, generate_go_mir(mir))
+        for index, module in enumerate(mir.in_dependency_order()):
+            if module.key == mir.root:
+                continue
+            for declaration in module.program.declarations:
+                symbol = f"ksfn___module_{index}_{module.name}_{declaration.name}"
+                self.assertIn(symbol, generated)
 
 
 class MirCliTests(unittest.TestCase):
