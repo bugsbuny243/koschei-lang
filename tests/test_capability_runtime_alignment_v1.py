@@ -15,10 +15,16 @@ from koschei.semantic import NET_ORIGIN_SCHEMES as SEMANTIC_NET_ORIGIN_SCHEMES
 
 class CapabilityRuntimeAlignmentTests(unittest.TestCase):
     def test_system_caps_surface_matches_canonical_contract(self) -> None:
-        self.assertEqual(
-            frozenset(interpreter.SystemCaps.__slots__),
-            frozenset(SYSTEM_CAPABILITY_MEMBERS),
+        runtime_slots = frozenset(
+            slot
+            for cls in interpreter.SystemCaps.__mro__
+            for slot in (
+                (getattr(cls, "__slots__", ()),)
+                if isinstance(getattr(cls, "__slots__", ()), str)
+                else getattr(cls, "__slots__", ())
+            )
         )
+        self.assertEqual(runtime_slots, frozenset(SYSTEM_CAPABILITY_MEMBERS))
         for member, root_type in SYSTEM_CAPABILITY_MEMBERS.items():
             self.assertTrue(hasattr(interpreter, root_type), (member, root_type))
 

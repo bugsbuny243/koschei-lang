@@ -305,9 +305,50 @@ BORROWED_MANIFEST_WORDS_V1 = frozenset(
     }
 )
 
-# Native surface is empty on purpose. New entries must be consciously registered
-# here in the same change that introduces them.
-NATIVE_KEYWORD_PROVENANCE_V1: Mapping[str, SurfaceProvenance] = {}
+# Native surface must be explicit. These five roots are constitutional semantic
+# vocabulary, not cosmetic aliases for conventional language keywords.
+NATIVE_KEYWORD_PROVENANCE_V1: Mapping[str, SurfaceProvenance] = {
+    "ka": SurfaceProvenance(
+        invariant="temporal-source-identity",
+        rationale=(
+            "Names Koschei admitted existence and genesis identity; recognition "
+            "creates no ambient privilege and is not a constructor alias."
+        ),
+        collision_reviewed=True,
+    ),
+    "vor": SurfaceProvenance(
+        invariant="authority-explicit",
+        rationale=(
+            "Names bounded explicit authority and non-escalating power rather "
+            "than a conventional permission or access modifier."
+        ),
+        collision_reviewed=True,
+    ),
+    "shi": SurfaceProvenance(
+        invariant="verifiable-effects",
+        rationale=(
+            "Names witnessed reality where claims and evidence remain distinct "
+            "and security-critical state requires bound proof."
+        ),
+        collision_reviewed=True,
+    ),
+    "thal": SurfaceProvenance(
+        invariant="event-horizon-isolation",
+        rationale=(
+            "Names bounded survival, containment and evidence-bound recovery "
+            "without manufacturing emergency authority."
+        ),
+        collision_reviewed=True,
+    ),
+    "nur": SurfaceProvenance(
+        invariant="protected-source-reality",
+        rationale=(
+            "Names controlled knowability and observer projection while keeping "
+            "visibility separate from authority and canonical identity."
+        ),
+        collision_reviewed=True,
+    ),
+}
 NATIVE_SYMBOL_PROVENANCE_V1: Mapping[str, SurfaceProvenance] = {}
 NATIVE_SCAFFOLD_PROVENANCE_V1: Mapping[str, SurfaceProvenance] = {}
 NATIVE_MANIFEST_PROVENANCE_V1: Mapping[str, SurfaceProvenance] = {}
@@ -536,10 +577,28 @@ def audit_scaffold_surface(
             continue
         normalized.append(value)
 
+    normalized_set = set(normalized)
+    native_only_surface = (
+        bool(normalized_set)
+        and normalized_set.isdisjoint(LEGACY_SCAFFOLD_PATH_DEBT_V1)
+        and normalized_set <= set(provenance)
+    )
     surface = _audit_surface(
         normalized,
-        legacy=LEGACY_SCAFFOLD_PATH_DEBT_V1,
-        retired=RETIRED_LEGACY_SCAFFOLD_PATHS_V1,
+        # A fully provenance-registered alternate native scaffold (for example
+        # Object Space k0/k1) is not the legacy ks-new scaffold and therefore
+        # does not inherit its presence debt. Mixed/legacy surfaces keep the
+        # retirement ratchet exactly as before.
+        legacy=(
+            frozenset()
+            if native_only_surface
+            else LEGACY_SCAFFOLD_PATH_DEBT_V1
+        ),
+        retired=(
+            frozenset()
+            if native_only_surface
+            else RETIRED_LEGACY_SCAFFOLD_PATHS_V1
+        ),
         blocked=frozenset(),
         provenance=provenance,
         subject_kind="scaffold path",

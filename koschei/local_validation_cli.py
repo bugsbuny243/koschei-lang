@@ -63,7 +63,7 @@ def _command_version(command: tuple[str, ...]) -> str:
     return output.splitlines()[0] if output else f"exit-{proc.returncode}"
 
 
-def _steps(profile: str, candidate: str, adversarial_json: Path) -> tuple[tuple[str, tuple[str, ...]], ...]:
+def _steps(profile: str, candidate: str, adversarial_json: Path, sbom_json: Path) -> tuple[tuple[str, tuple[str, ...]], ...]:
     steps: list[tuple[str, tuple[str, ...]]] = [
         (
             "python-import-preflight",
@@ -71,6 +71,16 @@ def _steps(profile: str, candidate: str, adversarial_json: Path) -> tuple[tuple[
                 sys.executable,
                 "-c",
                 "import koschei, pytest; print('koschei+pytest import: PASS')",
+            ),
+        ),
+        (
+            "pytest-suite",
+            (
+                sys.executable,
+                "-m",
+                "pytest",
+                "-q",
+                "tests",
             ),
         ),
         (
@@ -103,6 +113,16 @@ def _steps(profile: str, candidate: str, adversarial_json: Path) -> tuple[tuple[
     if profile == "full":
         steps.extend(
             [
+                (
+                    "reproducible-sbom",
+                    (
+                        sys.executable,
+                        "tools/acquisition_sbom_v1.py",
+                        "--output",
+                        str(sbom_json),
+                        "--require-reproducible",
+                    ),
+                ),
                 ("ceremony", ("bash", "bench/ceremony/check.sh")),
                 ("vscode-extension-syntax", ("node", "--check", "editors/vscode/extension.js")),
                 (
@@ -195,9 +215,10 @@ def main(argv: list[str] | None = None) -> int:
 
         evidence_dir.mkdir(parents=True, exist_ok=False)
         adversarial_json = evidence_dir / "adversarial-lab-report.json"
+        sbom_json = evidence_dir / "acquisition-sbom.json"
         step_results = []
         for index, (step_id, command) in enumerate(
-            _steps(args.profile, source_commit, adversarial_json),
+            _steps(args.profile, source_commit, adversarial_json, sbom_json),
             start=1,
         ):
             print(f"[{index}] {step_id}: {' '.join(command)}", flush=True)

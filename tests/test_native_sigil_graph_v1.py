@@ -17,11 +17,11 @@ class NativeSigilGraphIntegrationTests(unittest.TestCase):
 
     def test_check_graph_attaches_native_sigil_mir(self) -> None:
         graph = self._graph(
-            "ka treasury;\n"
+            "ka withdrawal;\n"
             "vor withdrawal;\n"
-            "shi evidence;\n"
-            "thal recovery;\n"
-            "nur visibility;\n"
+            "shi withdrawal;\n"
+            "thal withdrawal;\n"
+            "nur withdrawal;\n"
             "fn main() { return }\n"
         )
         check_graph(graph)
@@ -42,7 +42,7 @@ class NativeSigilGraphIntegrationTests(unittest.TestCase):
 
     def test_failed_recheck_clears_both_compiler_products(self) -> None:
         graph = self._graph(
-            "ka treasury;\n"
+            "ka withdrawal;\n"
             "vor withdrawal;\n"
             "fn main() { return }\n"
         )

@@ -13,17 +13,24 @@ from typing import TypeAlias
 
 from .mir_extension_instructions_v4 import (
     MIR_V4_EXTENSION_INSTRUCTION_TYPES,
+    MirCapabilityCall,
     MirFallibleIsSuccess,
     MirFalliblePayload,
     MirInterpolate,
     MirIsRuntimeError,
+    MirMapContains,
     MirMapFinish,
+    MirMapGet,
     MirMapInsert,
+    MirMapKeys,
     MirMapNew,
+    MirMapSet,
+    MirStructFieldSet,
     MirStructFinish,
     MirStructNew,
     MirStructSet,
     MirUnit,
+    MirVariantConstruct,
     MirVariantIs,
     MirVariantPayload,
 )
@@ -52,14 +59,21 @@ MirInstructionV4: TypeAlias = (
     | MirFalliblePayload
     | MirInterpolate
     | MirIsRuntimeError
+    | MirVariantConstruct
     | MirVariantIs
     | MirVariantPayload
+    | MirCapabilityCall
     | MirMapNew
     | MirMapInsert
     | MirMapFinish
+    | MirMapGet
+    | MirMapSet
+    | MirMapKeys
+    | MirMapContains
     | MirStructNew
     | MirStructSet
     | MirStructFinish
+    | MirStructFieldSet
 )
 
 

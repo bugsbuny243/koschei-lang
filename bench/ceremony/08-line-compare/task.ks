@@ -3,6 +3,7 @@ fn main() {
     let right = ["alpha", "BETA", "gamma"]
     match left.first_difference(right) {
         Some(index) => println("difference at {index}"),
-        None => {},
+        None => {
+        }
     }
 }

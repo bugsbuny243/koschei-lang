@@ -20,8 +20,7 @@ from .capability_effect_contract_v1 import (
     require_capability_method_same_power_domain,
 )
 from .mir import MirGraph, MirIntegrityError
-from .mir_ir import MirCall, MirMember
-from .type_system import NamedType
+from .mir_extension_instructions_v4 import MirCapabilityCall
 
 _CTX = b"koschei.mir-capability-callsite/v1\x00"
 
@@ -199,7 +198,7 @@ def derive_mir_capability_callsites_v1(
     module_name: str,
     function_name: str,
 ) -> tuple[MirCapabilityCallSiteV1, ...]:
-    """Derive direct canonical capability calls only from normalized MIR values."""
+    """Read exact capability call identities carried by sealed MIR itself."""
 
     module, function = _select_function(
         mir,
@@ -207,71 +206,54 @@ def derive_mir_capability_callsites_v1(
         function_name=function_name,
     )
 
-    definitions: dict[int, object] = {}
-    instruction_blocks: dict[int, int] = {}
-    calls: list[MirCall] = []
+    result: list[MirCapabilityCallSiteV1] = []
     for block in function.blocks:
         for instruction in block.instructions:
-            target = getattr(instruction, "target", None)
-            if isinstance(target, int):
-                definitions[target] = instruction
-                instruction_blocks[target] = block.id
-            if isinstance(instruction, MirCall):
-                calls.append(instruction)
-
-    result: list[MirCapabilityCallSiteV1] = []
-    for call in calls:
-        callee = definitions.get(call.callee)
-        if not isinstance(callee, MirMember):
-            continue
-        receiver = definitions.get(callee.object)
-        receiver_type = getattr(receiver, "type", None)
-        capability_type = (
-            receiver_type.name if isinstance(receiver_type, NamedType) else ""
-        )
-        canonical_effect = effect_for(capability_type, callee.member)
-        if canonical_effect is None:
-            continue
-        expected_effect, power_domain = require_capability_method_same_power_domain(
-            capability_type,
-            callee.member,
-        )
-        if canonical_effect != expected_effect:
-            raise MirCapabilityCallSiteV1Error(
-                "normalized MIR capability call disagrees with canonical effect contract"
+            if not isinstance(instruction, MirCapabilityCall):
+                continue
+            expected_effect, expected_domain = require_capability_method_same_power_domain(
+                instruction.capability_type,
+                instruction.method,
             )
-        site = MirCapabilityCallSiteV1(
-            mir_fingerprint=mir.fingerprint,
-            module_name=module.name,
-            function_name=function.name,
-            block_id=instruction_blocks[call.target],
-            call_target=call.target,
-            capability_type=capability_type,
-            capability_method=callee.member,
-            canonical_effect=canonical_effect,
-            power_domain=power_domain,
-            source_line=call.location.line,
-            source_column=call.location.column,
-            digest="",
-        )
-        object.__setattr__(
-            site,
-            "digest",
-            _digest(
-                mir_fingerprint=site.mir_fingerprint,
-                module_name=site.module_name,
-                function_name=site.function_name,
-                block_id=site.block_id,
-                call_target=site.call_target,
-                capability_type=site.capability_type,
-                capability_method=site.capability_method,
-                canonical_effect=site.canonical_effect,
-                power_domain=site.power_domain,
-                source_line=site.source_line,
-                source_column=site.source_column,
-            ),
-        )
-        site.assert_sealed()
-        result.append(site)
+            if (
+                instruction.canonical_effect != expected_effect
+                or instruction.power_domain != expected_domain
+            ):
+                raise MirCapabilityCallSiteV1Error(
+                    "sealed MIR capability call disagrees with canonical effect contract"
+                )
+            item = MirCapabilityCallSiteV1(
+                mir_fingerprint=mir.fingerprint,
+                module_name=module.name,
+                function_name=function.name,
+                block_id=block.id,
+                call_target=instruction.target,
+                capability_type=instruction.capability_type,
+                capability_method=instruction.method,
+                canonical_effect=instruction.canonical_effect,
+                power_domain=instruction.power_domain,
+                source_line=instruction.location.line,
+                source_column=instruction.location.column,
+                digest="",
+            )
+            object.__setattr__(
+                item,
+                "digest",
+                _digest(
+                    mir_fingerprint=item.mir_fingerprint,
+                    module_name=item.module_name,
+                    function_name=item.function_name,
+                    block_id=item.block_id,
+                    call_target=item.call_target,
+                    capability_type=item.capability_type,
+                    capability_method=item.capability_method,
+                    canonical_effect=item.canonical_effect,
+                    power_domain=item.power_domain,
+                    source_line=item.source_line,
+                    source_column=item.source_column,
+                ),
+            )
+            item.assert_sealed()
+            result.append(item)
 
     return tuple(result)

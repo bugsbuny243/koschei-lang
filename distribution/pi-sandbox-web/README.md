@@ -44,7 +44,7 @@ The browser bundle MUST NOT contain:
 - Pi API keys;
 - app-wallet secret seed/private keys;
 - Koschei release signing private keys;
-- payment approval/completion credentials;
+- payment approval or finalization credentials;
 - compiler source.
 
 ## Payments

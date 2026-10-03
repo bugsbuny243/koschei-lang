@@ -39,6 +39,7 @@ from .type_system import (
 _INSTALLED = False
 _ORIGINAL_EVALUATE = None
 _ORIGINAL_INVOKE = None
+_ORIGINAL_MATCHES_TYPE = None
 
 
 def _expected_type(expected_names) -> TypeNode:
@@ -174,7 +175,27 @@ def _matches_node(value: Any, expected: TypeNode) -> bool:
     return False
 
 
-def _runtime_matches_type(self, value: Any, expected_names) -> bool:
+def _runtime_matches_type(
+    self,
+    value: Any,
+    expected_names,
+    *,
+    type_parameters: frozenset[str] = frozenset(),
+    type_bindings: dict[str, str] | None = None,
+) -> bool:
+    # Generic binding is compiler-owned and now lives in the canonical
+    # interpreter matcher. This compatibility bridge must not re-infer or erase
+    # that context. Non-generic legacy calls retain the structural v5 bridge.
+    if type_parameters or type_bindings is not None:
+        if _ORIGINAL_MATCHES_TYPE is None:
+            raise RuntimeError("canonical runtime matcher is unavailable")
+        return _ORIGINAL_MATCHES_TYPE(
+            self,
+            value,
+            expected_names,
+            type_parameters=type_parameters,
+            type_bindings=type_bindings,
+        )
     return _matches_node(value, _expected_type(expected_names))
 
 
@@ -655,11 +676,12 @@ def _register_diagnostic() -> None:
 
 
 def install_runtime_alignment() -> None:
-    global _INSTALLED, _ORIGINAL_EVALUATE, _ORIGINAL_INVOKE
+    global _INSTALLED, _ORIGINAL_EVALUATE, _ORIGINAL_INVOKE, _ORIGINAL_MATCHES_TYPE
     if _INSTALLED:
         return
     _ORIGINAL_EVALUATE = _runtime.Interpreter._evaluate
     _ORIGINAL_INVOKE = _runtime.Interpreter._invoke
+    _ORIGINAL_MATCHES_TYPE = _runtime.Interpreter._runtime_matches_type
     _runtime.Interpreter._runtime_matches_type = _runtime_matches_type
     _runtime.Interpreter._runtime_type_name = classmethod(_runtime_type_name)
     _runtime.Interpreter._raise_runtime_contract_error = _raise_runtime_contract_error

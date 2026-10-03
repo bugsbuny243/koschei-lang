@@ -1,0 +1,20 @@
+{
+  "schema": "koschei.production-container-lock/v1",
+  "platform": "linux/amd64",
+  "images": {
+    "go_toolchain": "golang:1.24-bookworm@sha256:1a6d4452c65dea36aac2e2d606b01b4a029ec90cc1ae53890540ce6173ea77ac",
+    "python_builder": "python:3.12-bookworm@sha256:581429e3df12d76e6af4be5ab7d0e7fc2013eb57dc23d2de691411c8efdbb970",
+    "python_runtime": "python:3.12-slim-bookworm@sha256:782412e85d0f0984994c290652577d4018aff08145c85b262bb63dc0c7522254"
+  },
+  "debian_snapshot": {
+    "timestamp": "20260901T000000Z",
+    "suite": "bookworm",
+    "security_suite": "bookworm-security"
+  },
+  "evidence": {
+    "go_image": "Docker Official Image golang:1.24-bookworm index digest verified 2026-09-14",
+    "python_builder_image": "Docker Official Image python:3.12-bookworm index digest verified 2026-09-14",
+    "python_runtime_image": "Docker Official Image python:3.12-slim-bookworm index digest verified 2026-09-14",
+    "debian_snapshot_policy": "snapshot.debian.org dated repository; exact resolution must be proven by the release build receipt"
+  }
+}

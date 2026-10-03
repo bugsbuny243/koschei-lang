@@ -153,8 +153,13 @@ class Parser(_ParserV09):
             fields.append(
                 StructField(field_name.value, type_ref, self._location(field_name))
             )
-            if not self._match(TokenType.COMMA):
+            if self._match(TokenType.COMMA):
+                continue
+            if self._check(TokenType.RIGHT_BRACE):
                 break
+            if self._check(TokenType.IDENTIFIER):
+                continue
+            break
 
         self._consume(TokenType.RIGHT_BRACE, "Struct sonunda '}' bekleniyordu.")
         return GenericStructDeclaration(

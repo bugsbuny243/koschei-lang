@@ -3,7 +3,7 @@
 The ledger is an additive, secret-redacted observation plane for the Koschei
 reality fabric.  It does not grant execution authority and it cannot change
 compiler/runtime truth.  Instead it binds already-completed canonical actions to
-an append-only hash chain that Sentinel or another observer can inspect.
+an append-only hash chain that an independent observer can inspect.
 
 This module deliberately provides *tamper evidence*, not magical tamper
 prevention.  Durable anchoring/signing belongs to an external trust plane.
@@ -60,7 +60,7 @@ class RealityEvidenceLedgerV1:
 
 
 @dataclass(frozen=True, slots=True)
-class SentinelEvidenceViewV1:
+class ObserverEvidenceViewV1:
     """Read-only evidence projection.  It intentionally carries no capability."""
 
     sequence: int
@@ -212,12 +212,12 @@ def verify_reality_evidence_ledger_v1(ledger: RealityEvidenceLedgerV1) -> None:
         previous = record.record_digest
 
 
-def sentinel_evidence_view_v1(ledger: RealityEvidenceLedgerV1) -> tuple[SentinelEvidenceViewV1, ...]:
+def observer_evidence_view_v1(ledger: RealityEvidenceLedgerV1) -> tuple[ObserverEvidenceViewV1, ...]:
     """Expose only non-secret, non-authorizing facts to the observer plane."""
 
     verify_reality_evidence_ledger_v1(ledger)
     return tuple(
-        SentinelEvidenceViewV1(
+        ObserverEvidenceViewV1(
             sequence=record.sequence,
             project_commitment=record.project_commitment,
             epoch=record.epoch,

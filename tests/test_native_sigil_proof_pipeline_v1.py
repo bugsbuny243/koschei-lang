@@ -15,11 +15,11 @@ from koschei.parser import parse
 
 
 SOURCE = """
-ka treasury;
+ka withdrawal;
 vor withdrawal;
-shi evidence;
-thal recovery;
-nur visibility;
+shi withdrawal;
+thal withdrawal;
+nur withdrawal;
 """
 
 
@@ -75,7 +75,7 @@ class NativeSigilProofPipelineTests(unittest.TestCase):
     def test_bundle_cannot_be_rebound_to_other_compiler_product(self) -> None:
         mir = _mir()
         bundle = seal_native_sigil_proof(mir, _successful_receipts(mir))
-        other = lower_native_sigils(parse("ka vault;\nvor withdrawal;\nshi evidence;\nthal recovery;\nnur visibility;"))
+        other = lower_native_sigils(parse("ka vault;\nvor vault;\nshi vault;\nthal vault;\nnur vault;"))
         with self.assertRaises(NativeSigilProofPipelineError):
             require_native_sigil_proof(other, bundle)
 

@@ -68,7 +68,7 @@ from koschei.request_capability_domain_constraint_v1 import (
 from koschei.sathra_request_binding_v1 import bind_sathra_to_request
 from koschei.universe_state_machine_v1 import initial_universe_state
 
-SOURCE = "ka treasury; vor withdrawal; shi evidence; thal recovery; nur visibility;"
+SOURCE = "ka withdrawal; vor withdrawal; shi withdrawal; thal withdrawal; nur withdrawal;"
 COMPILER_SOURCE = '''
 fn execute(net: NetCaps, url: String) -> String or Error {
     let response = net.get(url) or return Error("network")

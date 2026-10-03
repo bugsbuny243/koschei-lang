@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import patch
 
 from koschei.capability_effect_contract_v1 import ENV_READ, NET_IO
-from koschei.mir import MirIntegrityError, require_mir, to_dict
+from koschei.mir import MIR_VERSION, MirIntegrityError, require_mir, to_dict
 from koschei.modules import check_graph, load_graph
 
 
@@ -62,7 +62,7 @@ fn main() { println("safe") }
             payload = to_dict(mir)
             inspect = next(item for item in payload['modules'][0]['functions'] if item['name'] == 'inspect')
             self.assertEqual(inspect['effects'], [ENV_READ])
-            self.assertEqual(payload['version'], 3)
+            self.assertEqual(payload['version'], MIR_VERSION)
         finally:
             directory.cleanup()
 
