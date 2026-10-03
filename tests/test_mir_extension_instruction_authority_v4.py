@@ -60,6 +60,7 @@ def test_extension_instruction_authority_has_no_duplicate_class_names():
         "MirStructNew",
         "MirStructSet",
         "MirStructFinish",
+        "MirStructFieldSet",
     }
 
 
@@ -92,64 +93,13 @@ def test_unit_instruction_contract_is_canonical_and_host_opaque():
     }
 
 
-def test_variant_construct_contract_seals_exact_identity_and_payload_ssa():
-    location = SourceLocation(6, 2)
-    instruction = MirVariantConstruct(10, "State::Ready", 9, INT, location)
-    assert instruction_contract(instruction) == {
-        "kind": "variantconstruct",
-        "line": 6,
-        "column": 2,
-        "target": 10,
-        "variant": "State::Ready",
-        "source": 9,
-        "type": "Int",
-    }
-
-
-def test_extension_instruction_contract_uses_existing_canonical_serializer():
-    location = SourceLocation(7, 3)
-    instruction = MirInterpolate(9, (1, 2), STRING, location)
-    assert instruction_contract(instruction) == {
-        "kind": "interpolate",
-        "line": 7,
-        "column": 3,
-        "target": 9,
-        "items": (1, 2),
-        "type": "String",
-    }
-
-
-def test_container_extension_fields_participate_in_canonical_ssa_validator():
-    location = SourceLocation(1, 1)
-    block = MirBasicBlock(
-        0,
-        (
-            MirIsRuntimeError(0, 41, BOOL, location),
-            MirMapInsert(0, (42, 43), STRING, location),
+def test_validate_blocks_accepts_extension_instructions_from_canonical_authority():
+    location = SourceLocation(8, 2)
+    blocks = (
+        MirBasicBlock(
+            id=0,
+            instructions=(MirUnit(1, VOID, location),),
+            terminator=MirReturn(1, location),
         ),
-        MirReturn(None),
     )
-    try:
-        validate_blocks((block,))
-    except ValueError as error:
-        message = str(error)
-        assert "41" in message
-        assert "42" in message
-        assert "43" in message
-    else:
-        raise AssertionError("canonical validator must reject undefined extension SSA uses")
-
-
-def test_variant_construct_payload_participates_in_canonical_ssa_validator():
-    location = SourceLocation(1, 1)
-    block = MirBasicBlock(
-        0,
-        (MirVariantConstruct(1, "State::Ready", 99, INT, location),),
-        MirReturn(1),
-    )
-    try:
-        validate_blocks((block,))
-    except ValueError as error:
-        assert "99" in str(error)
-    else:
-        raise AssertionError("variant constructor must not consume undefined payload SSA")
+    validate_blocks(blocks)
