@@ -297,4 +297,8 @@ from .typestate_affine_alignment import install_typestate_affine_alignment
 
 install_typestate_affine_alignment()
 
+from .struct_field_mir_runtime_v1 import install_struct_field_mir_runtime_v1
+
+install_struct_field_mir_runtime_v1()
+
 __all__ = ["main"]
