@@ -119,6 +119,7 @@ def build(*, mode: str, output: Path, extra_arg: list[str]) -> tuple[Path, Path]
         "nuitka",
         f"--mode={mode}",
         "--python-flag=isolated",
+        "--remove-output",
         f"--output-dir={output}",
         "--output-filename=ks",
         str(ENTRY),
