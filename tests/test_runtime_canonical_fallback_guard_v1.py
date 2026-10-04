@@ -2,12 +2,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-import pytest
-
 from koschei.ast_nodes import SourceLocation
-from koschei.interpreter import KoscheiRuntimeError
 from koschei.mir_extension_instructions_v4 import MirVariantIs
-from koschei.runtime_budget import run_mir_with_budget
 from koschei.type_system import BOOL
 
 
@@ -18,10 +14,12 @@ def _graph_with(instruction):
     return SimpleNamespace(
         assert_sealed=lambda: None,
         in_dependency_order=lambda: [module],
+        modules={"root": module},
     )
 
 
-def test_canonical_variant_fact_may_not_fall_back_to_ast(monkeypatch) -> None:
+def test_canonical_variant_fact_routes_to_budgeted_canonical_mir_not_ast(monkeypatch) -> None:
+    import koschei.canonical_mir_budget_runtime_v1 as canonical_runtime
     import koschei.runtime_budget as runtime_budget
 
     loc = SourceLocation(1, 1)
@@ -32,19 +30,33 @@ def test_canonical_variant_fact_may_not_fall_back_to_ast(monkeypatch) -> None:
         "runtime_execution_mode",
         lambda _graph: "ast_compat_v1",
     )
+
+    observed = {}
+
+    def fake_canonical_run(mir_graph, argv, budget):
+        observed["graph"] = mir_graph
+        observed["argv"] = list(argv or [])
+        observed["max_steps"] = budget.max_steps
+        observed["max_call_depth"] = budget.max_call_depth
+        return 23
+
     monkeypatch.setattr(
-        runtime_budget,
-        "inspect_native_mir_support",
-        lambda _graph: SimpleNamespace(reasons=("synthetic native blocker",)),
-    )
-    monkeypatch.setattr(
-        runtime_budget,
-        "inspect_mir_scope_safety",
-        lambda _graph: SimpleNamespace(safe=True, reasons=()),
+        canonical_runtime,
+        "_run_budgeted_canonical_mir",
+        fake_canonical_run,
     )
 
-    with pytest.raises(
-        KoscheiRuntimeError,
-        match="AST compatibility fallback is forbidden",
-    ):
-        run_mir_with_budget(graph)
+    result = runtime_budget.run_mir_with_budget(
+        graph,
+        ["arg"],
+        max_steps=17,
+        max_call_depth=3,
+    )
+
+    assert result == 23
+    assert observed == {
+        "graph": graph,
+        "argv": ["arg"],
+        "max_steps": 17,
+        "max_call_depth": 3,
+    }
