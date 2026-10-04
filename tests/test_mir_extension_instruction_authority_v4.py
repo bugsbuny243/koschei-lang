@@ -99,7 +99,7 @@ def test_validate_blocks_accepts_extension_instructions_from_canonical_authority
         MirBasicBlock(
             id=0,
             instructions=(MirUnit(1, VOID, location),),
-            terminator=MirReturn(1, location),
+            terminator=MirReturn(1),
         ),
     )
     validate_blocks(blocks)
