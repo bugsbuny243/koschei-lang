@@ -1,6 +1,6 @@
 {
   "schema_version": "koschei.product-direction.v1",
-  "as_of": "2026-09-10",
+  "as_of": "2026-10-05",
   "product": "koschei-lang",
   "role": "independent-security-programming-language",
   "scope": "general-purpose-software-development-with-cybersecurity-in-the-language-foundation",
@@ -10,6 +10,7 @@
     "standard-library",
     "native-runtime",
     "capability-and-identity-system",
+    "matrix-policy-and-proof",
     "developer-tooling",
     "library-ecosystem"
   ],
@@ -22,6 +23,16 @@
     "status": "unmeasured-development-goal",
     "required_evidence": "defined-threat-model-metrics-and-comparative-tests"
   },
-  "commercial_policy": "Lang-and-Sentinel-in-the-same-packages",
-  "web3_relationship": "independent-language; Web3 is one integration consumer"
+  "commercial_policy": "included-in-koschei-professional-with-web3-arvis-and-sentinel",
+  "professional_entitlement": "shared-commercial-umbrella-independent-release-gates",
+  "official_ecosystem_token": {
+    "symbol": "KOSC",
+    "network": "solana-mainnet",
+    "mint": "7X9V77axASFAV8hKqqn2EfyAz4Qz3tceN8iikfukLqy1",
+    "single_official_token": true,
+    "separate_lang_token": false,
+    "holdings_change_language_authority": false
+  },
+  "web3_relationship": "independent-language; Koschei Web3 Hub is a Professional integration consumer through explicit Fabric contracts",
+  "authority_boundary": "commercial entitlement and KOSC settlement never alter language semantics, capability rules, compiler/runtime behavior, release trust or proof policy"
 }
