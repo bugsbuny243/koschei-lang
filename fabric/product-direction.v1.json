@@ -1,6 +1,6 @@
 {
   "schema_version": "koschei.product-direction.v1",
-  "as_of": "2026-09-10",
+  "as_of": "2026-10-05",
   "product": "koschei-lang",
   "role": "independent-security-programming-language",
   "scope": "general-purpose-software-development-with-cybersecurity-in-the-language-foundation",
@@ -22,6 +22,7 @@
     "status": "unmeasured-development-goal",
     "required_evidence": "defined-threat-model-metrics-and-comparative-tests"
   },
-  "commercial_policy": "Lang-and-Sentinel-in-the-same-packages",
-  "web3_relationship": "independent-language; Web3 is one integration consumer"
+  "commercial_policy": "standalone-product-sold-and-licensed-separately-from-sentinel-and-web3",
+  "sentinel_relationship": "optional-versioned-interoperability-not-shared-entitlement",
+  "web3_relationship": "independent-language; Web3 is one optional integration consumer; no shared entitlement"
 }
