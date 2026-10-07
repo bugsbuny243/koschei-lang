@@ -1,15 +1,23 @@
-"""Fail-closed CFG proof validation for Koschei MIR variant payload access.
+"""Fail-closed CFG proof validation for Koschei MIR variant facts.
 
+`MirVariantConstruct` materializes one already-canonical variant identity.
 `MirVariantIs` observes one compiler-selected canonical variant identity.
 `MirVariantPayload` is legal only on a CFG path where the exact same source SSA
 and variant identity were proven by the true edge of that observation.
 
-This module does not inspect runtime objects, enum declarations, or source AST.
-It validates only sealed MIR-shaped facts.
+This validation hook also requires every instruction to belong to the exact MIR
+v4 registry. That closes the seal boundary against unregistered dataclass-shaped
+opcodes before fingerprinted MIR is accepted for execution.
+
+This module does not inspect runtime objects or source AST.
 """
 from __future__ import annotations
 
-from .mir_extension_instructions_v4 import MirVariantIs, MirVariantPayload
+from .mir_extension_instructions_v4 import (
+    MirVariantConstruct,
+    MirVariantIs,
+    MirVariantPayload,
+)
 from .mir_ir import MirBasicBlock, MirBranch, MirJump
 
 VariantProofV1 = tuple[int, str]
@@ -23,11 +31,25 @@ def _canonical_variant_identity(value: str) -> bool:
     return bool(separator and owner and variant and "::" not in variant)
 
 
+def _require_exact_registry_v4(blocks: tuple[MirBasicBlock, ...]) -> None:
+    # Lazy import avoids the bootstrap cycle: the registry imports core MIR
+    # instruction classes from mir_ir, while mir_ir calls this validator only
+    # after all core classes are defined.
+    from .mir_instruction_registry_v4 import require_mir_v4_instruction
+
+    for block in blocks:
+        for instruction in block.instructions:
+            require_mir_v4_instruction(instruction)
+
+
 def _variant_tests(blocks: tuple[MirBasicBlock, ...]) -> dict[int, VariantTestV1]:
     tests: dict[int, VariantTestV1] = {}
     for block in blocks:
         for instruction in block.instructions:
-            if isinstance(instruction, (MirVariantIs, MirVariantPayload)):
+            if isinstance(
+                instruction,
+                (MirVariantConstruct, MirVariantIs, MirVariantPayload),
+            ):
                 if not _canonical_variant_identity(instruction.variant):
                     raise ValueError(
                         "MIR variant identity must be canonical Owner::Variant"
@@ -42,7 +64,7 @@ def _variant_tests(blocks: tuple[MirBasicBlock, ...]) -> dict[int, VariantTestV1
 
 
 def validate_variant_proofs_v1(blocks: tuple[MirBasicBlock, ...]) -> None:
-    """Require exact true-edge proof before every `MirVariantPayload`.
+    """Require exact registry membership and true-edge payload proof.
 
     Proofs propagate across jumps and are intersected at CFG joins. A
     `MirVariantIs` creates a positive proof only when the branch consuming its
@@ -53,6 +75,8 @@ def validate_variant_proofs_v1(blocks: tuple[MirBasicBlock, ...]) -> None:
 
     if not blocks:
         raise ValueError("MIR variant proof validation requires block 0")
+
+    _require_exact_registry_v4(blocks)
 
     by_id = {block.id: block for block in blocks}
     if 0 not in by_id:

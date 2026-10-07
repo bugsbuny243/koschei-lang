@@ -15,11 +15,11 @@ from koschei.parser import parse
 
 
 SOURCE = """
-ka treasury;
+ka withdrawal;
 vor withdrawal;
-shi evidence;
-thal recovery;
-nur visibility;
+shi withdrawal;
+thal withdrawal;
+nur withdrawal;
 """
 
 

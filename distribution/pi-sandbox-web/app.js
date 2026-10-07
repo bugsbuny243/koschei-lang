@@ -15,7 +15,7 @@
   }
 
   function onIncompletePaymentFound(payment) {
-    // V1 intentionally does not mutate/complete payments from the browser.
+    // V1 intentionally does not mutate or finalize payments from the browser.
     // The production backend will resolve incomplete payments using Pi Platform API.
     console.warn('Pi sandbox found an incomplete payment:', payment?.identifier || 'unknown');
   }

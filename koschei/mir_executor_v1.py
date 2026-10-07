@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .ast_nodes import SourceLocation
-from .interpreter import KsError, KsUnit, KoscheiRuntimeError, SystemCaps
+from .interpreter import EnumValue, KsError, KsUnit, KoscheiRuntimeError, SystemCaps
 from .mir import MIR_VERSION, MirGraph, MirIntegrityError
 from .mir_container_staging_v1 import (
     MirIsRuntimeError,
@@ -21,17 +21,27 @@ from .mir_container_staging_v1 import (
     MirStructNew,
     MirStructSet,
 )
-from .mir_extension_instructions_v4 import MirUnit, MirVariantIs, MirVariantPayload
+from .mir_extension_instructions_v4 import (
+    MirCapabilityCall,
+    MirMapContains,
+    MirMapGet,
+    MirMapKeys,
+    MirMapSet,
+    MirUnit,
+    MirVariantConstruct,
+    MirVariantIs,
+    MirVariantPayload,
+)
 from .mir_ir import (
     MirAstFallback, MirBinary, MirBind, MirBranch, MirCall, MirConst,
     MirIterHasNext, MirIterInit, MirIterNext, MirJump, MirList, MirLoad,
     MirMember, MirReturn, MirStore, MirUnary, MirUnreachable,
 )
 from .mir_or_return_normalization_v1 import MirFallibleIsSuccess, MirFalliblePayload, MirInterpolate
-from .mir_variant_runtime_v1 import MirVariantRuntimeError, variant_is_v1, variant_payload_v1
-from .runtime_primitive_facade_v1 import RuntimePrimitiveFacadeV1
+from .mir_variant_runtime_v1 import MirVariantRuntimeError, split_canonical_variant_v1, variant_is_v1, variant_payload_v1
+from .runtime_primitive_facade_v1 import KoscheiFunctionRefV1, RuntimePrimitiveFacadeV1
 from .semantic import INT_MAX, INT_MIN
-from .type_system import alternatives, render_type
+from .type_system import GenericType, NamedType, alternatives, render_type
 
 
 class MirExecutionError(KoscheiRuntimeError):
@@ -40,12 +50,6 @@ class MirExecutionError(KoscheiRuntimeError):
 
 def _runtime_names(type_node) -> tuple[str, ...]:
     return tuple(render_type(item) for item in alternatives(type_node))
-
-
-@dataclass(frozen=True, slots=True)
-class _MirFunctionRef:
-    module_key: str
-    function_name: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,6 +79,7 @@ class MirExecutorV1:
             root.program, self.argv,
             namespaces=mir.namespaces(), imports=dict(root.imports), enums=mir.enums(),
             module_imports=mir.module_imports(), structs=mir.structs(),
+            invoke_function=self._invoke_function_ref,
         )
         self.depth = 0
 
@@ -95,6 +100,13 @@ class MirExecutorV1:
             )
         return self._call(root.key, main.name, arguments)
 
+    def _invoke_function_ref(
+        self,
+        ref: KoscheiFunctionRefV1,
+        arguments: list[Any],
+    ) -> Any:
+        return self._call(ref.module_key, ref.function_name, arguments)
+
     def _module_function(self, module_key: str, function_name: str):
         module = self.mir.module_of(module_key)
         function = next((item for item in module.functions if item.name == function_name), None)
@@ -106,9 +118,26 @@ class MirExecutorV1:
         module, function = self._module_function(module_key, function_name)
         if len(arguments) != len(function.parameters):
             raise MirExecutionError("KS3101", f"'{function.name}' için {len(function.parameters)} argüman bekleniyor, {len(arguments)} verildi.", function.declaration.location)
+        type_parameters = frozenset(
+            getattr(function.declaration, "type_parameters", ())
+        )
+        type_bindings: dict[str, str] | None = {} if type_parameters else None
         for parameter, value in zip(function.parameters, arguments):
             expected = _runtime_names(parameter.type)
-            if not self.primitives.matches_type(value, expected):
+            if not self.primitives.matches_type(
+                value,
+                expected,
+                type_parameters=type_parameters,
+                type_bindings=type_bindings,
+            ):
+                if type_parameters:
+                    raise MirExecutionError(
+                        "KS3106",
+                        f"'{function.name}' MIR generic çağrısında "
+                        f"'{parameter.name}: {' or '.join(expected)}' için çelişkili "
+                        "runtime tip kanıtı bulundu; bu bir capability ihlali değildir.",
+                        function.declaration.location,
+                    )
                 raise MirExecutionError("KS3401", f"'{function.name}' MIR çağrısında '{parameter.name}: {' or '.join(expected)}' sözleşmesi ihlal edildi.", function.declaration.location)
         if self.depth >= self.MAX_CALL_DEPTH:
             raise MirExecutionError("KS3105", f"Çağrı derinliği sınırı aşıldı ({self.MAX_CALL_DEPTH}).", function.declaration.location)
@@ -129,7 +158,20 @@ class MirExecutorV1:
                 if isinstance(terminator, MirReturn):
                     result = KsUnit if terminator.value is None else values[terminator.value]
                     expected_return = _runtime_names(function.return_type)
-                    if not self.primitives.matches_type(result, expected_return):
+                    if not self.primitives.matches_type(
+                        result,
+                        expected_return,
+                        type_parameters=type_parameters,
+                        type_bindings=type_bindings,
+                    ):
+                        if type_parameters:
+                            raise MirExecutionError(
+                                "KS3106",
+                                f"'{function.name}' MIR generic dönüş sözleşmesi "
+                                f"{' or '.join(expected_return)} ile runtime sonucu "
+                                "çelişiyor; bu bir capability ihlali değildir.",
+                                function.declaration.location,
+                            )
                         raise MirExecutionError("KS3401", f"'{function.name}' MIR dönüş sözleşmesi {' or '.join(expected_return)} beklerken {self.primitives.runtime_type_name(result)} döndürdü.", function.declaration.location)
                     return result
                 if isinstance(terminator, MirJump):
@@ -156,12 +198,13 @@ class MirExecutorV1:
             return bindings[name][0]
         module = self.mir.module_of(module_key)
         if any(function.name == name for function in module.functions):
-            return _MirFunctionRef(module_key, name)
+            return self.primitives.function_ref(module_key, name)
         constructor = self.primitives.constructor(name)
         if constructor is not None:
             return constructor
-        if name in {"print", "println", "Error"}:
-            return name
+        builtin = self.primitives.builtin(name)
+        if builtin is not None:
+            return builtin
         imported_key = module.imports.get(name)
         if imported_key is not None:
             return _MirModuleRef(imported_key)
@@ -222,6 +265,54 @@ class MirExecutorV1:
         if isinstance(instruction, MirIsRuntimeError):
             values[instruction.target] = self.primitives.is_runtime_error(values[instruction.source])
             return
+        if isinstance(instruction, MirVariantConstruct):
+            try:
+                owner, variant = split_canonical_variant_v1(instruction.variant)
+            except MirVariantRuntimeError as error:
+                raise MirExecutionError(
+                    "KS5002",
+                    f"Canonical MIR variant construction failed closed: {error}",
+                    instruction.location,
+                ) from error
+            concrete = tuple(
+                option
+                for option in alternatives(instruction.type)
+                if isinstance(option, (NamedType, GenericType))
+                and option.name == owner
+            )
+            if len(concrete) != 1:
+                raise MirExecutionError(
+                    "KS5002",
+                    "Canonical MIR variant type does not identify exactly one checked owner instance.",
+                    instruction.location,
+                )
+            selected = concrete[0]
+            type_arguments = (
+                tuple(render_type(item) for item in selected.arguments)
+                if isinstance(selected, GenericType)
+                else ()
+            )
+            if instruction.source is None:
+                values[instruction.target] = EnumValue(
+                    owner,
+                    variant,
+                    type_arguments=type_arguments,
+                )
+            else:
+                payload = values[instruction.source]
+                if self.primitives.contains_capability(payload):
+                    raise MirExecutionError(
+                        "KS3401",
+                        "Capability taşıyan değer sealed MIR enum payload'ına konamaz.",
+                        instruction.location,
+                    )
+                values[instruction.target] = EnumValue(
+                    owner,
+                    variant,
+                    payload,
+                    type_arguments,
+                )
+            return
         if isinstance(instruction, MirVariantIs):
             try:
                 values[instruction.target] = variant_is_v1(
@@ -256,8 +347,52 @@ class MirExecutorV1:
         if isinstance(instruction, MirMapFinish):
             values[instruction.target] = self.primitives.map_finish(values[instruction.source], instruction.location)
             return
+        if isinstance(instruction, MirCapabilityCall):
+            values[instruction.target] = self.primitives.invoke_capability_call(
+                values[instruction.object],
+                [values[item] for item in instruction.arguments],
+                capability_type=instruction.capability_type,
+                method=instruction.method,
+                canonical_effect=instruction.canonical_effect,
+                power_domain=instruction.power_domain,
+                location=instruction.location,
+            )
+            return
+        if isinstance(instruction, MirMapGet):
+            values[instruction.target] = self.primitives.map_get(
+                values[instruction.object],
+                values[instruction.key],
+                instruction.location,
+            )
+            return
+        if isinstance(instruction, MirMapSet):
+            values[instruction.target] = self.primitives.map_set(
+                values[instruction.object],
+                values[instruction.key],
+                values[instruction.value],
+                instruction.location,
+            )
+            return
+        if isinstance(instruction, MirMapKeys):
+            values[instruction.target] = self.primitives.map_keys(
+                values[instruction.object],
+                instruction.location,
+            )
+            return
+        if isinstance(instruction, MirMapContains):
+            values[instruction.target] = self.primitives.map_contains(
+                values[instruction.object],
+                values[instruction.key],
+                instruction.location,
+            )
+            return
         if isinstance(instruction, MirStructNew):
-            values[instruction.target] = self.primitives.struct_builder(instruction.type_name, instruction.location)
+            values[instruction.target] = self.primitives.struct_builder(
+                instruction.type_name,
+                instruction.required_fields,
+                instruction.type,
+                instruction.location,
+            )
             return
         if isinstance(instruction, MirStructSet):
             self.primitives.struct_set(values[instruction.object], instruction.field, values[instruction.source], instruction.location)
@@ -285,14 +420,20 @@ class MirExecutorV1:
         if isinstance(instruction, MirMember):
             receiver = values[instruction.object]
             if isinstance(receiver, _MirModuleRef):
-                values[instruction.target] = _MirFunctionRef(receiver.module_key, instruction.member)
+                values[instruction.target] = self.primitives.function_ref(
+                    receiver.module_key, instruction.member
+                )
             else:
                 values[instruction.target] = self.primitives.member(receiver, instruction.member, instruction.location)
             return
         if isinstance(instruction, MirCall):
             callee = values[instruction.callee]
             arguments = [values[item] for item in instruction.arguments]
-            result = self._call(callee.module_key, callee.function_name, arguments) if isinstance(callee, _MirFunctionRef) else self.primitives.invoke_primitive(callee, arguments, instruction.location)
+            result = (
+                self._invoke_function_ref(callee, arguments)
+                if isinstance(callee, KoscheiFunctionRefV1)
+                else self.primitives.invoke_primitive(callee, arguments, instruction.location)
+            )
             values[instruction.target] = result
             return
         if isinstance(instruction, MirFallibleIsSuccess):
@@ -333,7 +474,22 @@ class MirExecutorV1:
         if op == "+": return left + right
         if op == "-": return left - right
         if op == "*": return left * right
-        if op == "/": return KsError("Sıfıra bölme") if right == 0 else left / right
+        if op == "/":
+            if right == 0:
+                return KsError("Sıfıra bölme")
+            if type(left) is int and type(right) is int:
+                if left == INT_MIN and right == -1:
+                    return KsError("KS3501: Int taşması: '/'")
+                quotient = abs(left) // abs(right)
+                return -quotient if (left < 0) != (right < 0) else quotient
+            return left / right
+        if op == "%" and type(left) is int and type(right) is int:
+            if right == 0:
+                return KsError("Sıfıra bölme")
+            quotient = abs(left) // abs(right)
+            if (left < 0) != (right < 0):
+                quotient = -quotient
+            return left - quotient * right
         if op == "==": return left == right
         if op == "!=": return left != right
         if op == "<": return left < right

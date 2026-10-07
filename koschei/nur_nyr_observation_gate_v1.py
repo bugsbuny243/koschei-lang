@@ -14,19 +14,15 @@ authoritative observation path.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable
-
+from .continuity_epoch_authority_v1 import ContinuityEpochAuthorityV1, ContinuityEpochAuthorityV1Error
 from .galaxy_identity_v1 import VeyraIdentity
 from .library_adaptive_visibility_v0 import AdaptiveVisibilityEnvelopeV0
 from .native_sigil_mir_v1 import NativeSigilMir
 from .nur_nyr_projection_v2 import NyrSurfaceV2, require_live_nyr_surface_v2
 
 
-class NyrObservationGateV1Error(ValueError):
+class NyrObservationGateV1Error(ContinuityEpochAuthorityV1Error):
     pass
-
-
-EpochSource = Callable[[], int]
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,7 +33,7 @@ class NyrObservationGateV1:
     veyra: VeyraIdentity
     envelope: AdaptiveVisibilityEnvelopeV0
     veil_key: bytes
-    epoch_source: EpochSource
+    continuity: ContinuityEpochAuthorityV1
 
     def __post_init__(self) -> None:
         self.mir.assert_sealed()
@@ -50,18 +46,19 @@ class NyrObservationGateV1:
             raise NyrObservationGateV1Error("contained Nur envelope cannot open observation gate")
         if not isinstance(self.veil_key, bytes) or len(self.veil_key) < 32:
             raise NyrObservationGateV1Error("observation gate veil key must contain at least 32 bytes")
-        if not callable(self.epoch_source):
-            raise NyrObservationGateV1Error("trusted epoch source must be callable")
+        if not isinstance(self.continuity, ContinuityEpochAuthorityV1):
+            raise NyrObservationGateV1Error(
+                "shared Continuity epoch authority is required"
+            )
+        self.continuity.assert_sealed()
 
     def render(self, surface: NyrSurfaceV2) -> str:
         """Render observer-visible data only after live projection verification."""
 
         try:
-            current_epoch = self.epoch_source()
-        except Exception as exc:  # trusted boundary failure is always deny
-            raise NyrObservationGateV1Error("trusted epoch source failed closed") from exc
-        if not isinstance(current_epoch, int) or isinstance(current_epoch, bool) or current_epoch < 0:
-            raise NyrObservationGateV1Error("trusted epoch source returned an invalid epoch")
+            current_epoch = self.continuity.current_epoch()
+        except ContinuityEpochAuthorityV1Error as error:
+            raise NyrObservationGateV1Error(str(error)) from error
 
         require_live_nyr_surface_v2(
             surface,

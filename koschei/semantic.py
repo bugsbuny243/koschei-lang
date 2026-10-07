@@ -70,6 +70,8 @@ CAPABILITY_MEMBERS = {
     "disk": "DiskRoot",
     "env": "EnvRoot",
     "process": "ProcessRoot",
+    "serve": "ServeRoot",
+    "persist": "PersistRoot",
 }
 
 ROOT_METHODS: dict[str, dict[str, str]] = {
@@ -77,6 +79,8 @@ ROOT_METHODS: dict[str, dict[str, str]] = {
     "DiskRoot": {"allow": "DiskCaps", "allow_read_only": "DiskReadCaps"},
     "EnvRoot": {"allow": "EnvCaps"},
     "ProcessRoot": {"allow": "ProcessCaps"},
+    "ServeRoot": {"allow": "ServeCaps"},
+    "PersistRoot": {"allow": "PersistCaps"},
 }
 
 NARROWED_METHODS: dict[str, set[str]] = {
@@ -85,6 +89,8 @@ NARROWED_METHODS: dict[str, set[str]] = {
     "DiskReadCaps": {"read", "list", "read_file"},
     "EnvCaps": {"get"},
     "ProcessCaps": {"run", "spawn"},
+    "ServeCaps": {"exchange"},
+    "PersistCaps": {"load", "commit"},
 }
 
 NARROWING_METHODS = {"allow", "allow_read_only"}
@@ -230,6 +236,7 @@ class SemanticChecker:
         self.scopes: list[dict[str, Symbol]] = []
         self.variable_count = 0
         self.capability_count = 0
+        self.loop_depth = 0
         self.current_function: FunctionDeclaration | None = None
 
     def check(self) -> SemanticReport:
@@ -440,7 +447,7 @@ class SemanticChecker:
 
         if isinstance(statement, ExpressionStatement):
             self._check_expression(statement.expression)
-            if self._is_fallible_call(statement.expression):
+            if self._is_fallible_call(statement.expression) and self.loop_depth == 0:
                 raise SemanticError(
                     "KS1401",
                     "Hata dönebilen çağrının sonucu ele alınmalıdır "
@@ -452,7 +459,11 @@ class SemanticChecker:
 
         if isinstance(statement, IfStatement):
             condition_type = self._check_expression(statement.condition)
-            self._require_bool(condition_type, "if koşulu", statement.location)
+            self._require_bool(
+                self._success_type(condition_type),
+                "if koşulu",
+                statement.location,
+            )
             self._check_block(statement.then_block)
             if isinstance(statement.else_branch, Block):
                 self._check_block(statement.else_branch)
@@ -462,20 +473,35 @@ class SemanticChecker:
 
         if isinstance(statement, WhileStatement):
             condition_type = self._check_expression(statement.condition)
-            self._require_bool(condition_type, "while koşulu", statement.location)
-            self._check_block(statement.body)
+            self._require_bool(
+                self._success_type(condition_type),
+                "while koşulu",
+                statement.location,
+            )
+            self.loop_depth += 1
+            try:
+                self._check_block(statement.body)
+            finally:
+                self.loop_depth -= 1
             return
 
         if isinstance(statement, ForStatement):
             iterable_type = self._check_expression(statement.iterable)
-            if iterable_type is not None and iterable_type != "List":
+            success_type = self._success_type(iterable_type)
+            success_base = (
+                self._generic_type(success_type)[0]
+                if success_type is not None
+                else None
+            )
+            if success_type is not None and success_base != "List":
                 raise SemanticError(
                     "KS1301",
-                    f"'for ... in' yalnızca List üzerinde çalışır, "
+                    f"'for ... in' yalnızca List veya List ... or Error üzerinde çalışır, "
                     f"{iterable_type} bulundu.",
                     statement.location,
                 )
             self.scopes.append({})
+            self.loop_depth += 1
             try:
                 self._declare(
                     Symbol(statement.variable, None, False, statement.location)
@@ -483,6 +509,7 @@ class SemanticChecker:
                 self.variable_count += 1
                 self._check_statements(statement.body)
             finally:
+                self.loop_depth -= 1
                 self.scopes.pop()
             return
 

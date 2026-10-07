@@ -24,7 +24,7 @@ def d(text: str) -> str:
 
 def mir():
     return lower_native_sigils(
-        parse("ka treasury; vor withdrawal; shi evidence; thal recovery; nur visibility;")
+        parse("ka withdrawal; vor withdrawal; shi withdrawal; thal withdrawal; nur withdrawal;")
     )
 
 
@@ -153,7 +153,7 @@ def test_sathra_cannot_cross_epoch_or_reality():
         bind_sathra_to_request(m, v, a, req_next, s)
 
     other_mir = lower_native_sigils(
-        parse("ka treasury; vor withdrawal; shi evidence; thal recovery; nur observer;")
+        parse("ka observer; vor observer; shi observer; thal observer; nur observer;")
     )
     with pytest.raises(SathraRequestBindingError):
         bind_sathra_to_request(other_mir, v, a, req, s)

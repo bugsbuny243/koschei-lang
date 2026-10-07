@@ -82,12 +82,13 @@ def _token(stage: str, family: str, index: int) -> str:
 
 
 def _source(token: str) -> str:
+    subject = f"withdrawalx{token}"
     return (
-        f"ka treasuryx{token};\n"
-        f"vor withdrawalx{token};\n"
-        f"shi evidencex{token};\n"
-        f"thal recoveryx{token};\n"
-        f"nur visibilityx{token};\n"
+        f"ka {subject};\n"
+        f"vor {subject};\n"
+        f"shi {subject};\n"
+        f"thal {subject};\n"
+        f"nur {subject};\n"
     )
 
 
@@ -473,9 +474,10 @@ def _n1_validation(index: int) -> NativeTrainingExampleV1:
     source, _, mir = _native_fixture(token)
     epoch = 20 + index
     veyra = _veyra(token, instance="a", epoch=epoch)
-    subject = f"treasuryx{token}"
+    ka_binding = next(item for item in mir.bindings if item.sigil == "ka")
+    subject = ka_binding.subject
     aevra = birth_aevra(
-        veyra, mir, sigil="ka", subject=subject,
+        veyra, mir, sigil=ka_binding.sigil, subject=subject,
         birth_evidence_digest=_sha(f"birth|{token}"), birth_epoch=epoch,
     )
     aevra.assert_sealed(veyra, mir)
@@ -501,9 +503,10 @@ def _n1_test(index: int) -> NativeTrainingExampleV1:
     epoch = 30 + index
     a = _veyra(token, instance="a", epoch=epoch)
     b = _veyra(token, instance="b", epoch=epoch)
-    subject = f"treasuryx{token}"
+    ka_binding = next(item for item in mir.bindings if item.sigil == "ka")
+    subject = ka_binding.subject
     aevra = birth_aevra(
-        a, mir, sigil="ka", subject=subject,
+        a, mir, sigil=ka_binding.sigil, subject=subject,
         birth_evidence_digest=_sha(f"birth|{token}"), birth_epoch=epoch,
     )
     return _rejecting_example(
@@ -566,7 +569,11 @@ def _n2_validation(index: int) -> NativeTrainingExampleV1:
     return _rejecting_example(
         stage="N2", family=family, split="validation", index=index,
         task="Reject five Khar axes as zero rather than partial critical authority.",
-        input_value={"axes": [row.axis for row in witnesses], "result_if_partial": "ZERO"},
+        input_value={
+            "axes": [row.axis for row in witnesses],
+            "event": witnesses[0].event_digest,
+            "result_if_partial": "ZERO",
+        },
         oracle="khar_sathra_v1.seal_sathra",
         action=lambda: seal_sathra(witnesses),
     )
@@ -579,7 +586,12 @@ def _n2_test(index: int) -> NativeTrainingExampleV1:
     return _rejecting_example(
         stage="N2", family=family, split="test", index=index,
         task="Reject six witnesses collected from different events as one Sathra.",
-        input_value={"axes": [row.axis for row in witnesses], "foreign_axis": "esh"},
+        input_value={
+            "axes": [row.axis for row in witnesses],
+            "event": witnesses[0].event_digest,
+            "foreign_event": next(row.event_digest for row in witnesses if row.axis == "esh"),
+            "foreign_axis": "esh",
+        },
         oracle="khar_sathra_v1.seal_sathra",
         action=lambda: seal_sathra(witnesses),
     )

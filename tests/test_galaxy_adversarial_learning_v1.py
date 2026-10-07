@@ -23,11 +23,11 @@ def h64(tag: str) -> str:
 
 
 MIR = lower_native_sigils(
-    parse("ka treasury; vor withdrawal; shi evidence; thal recovery; nur visibility;")
+    parse("ka treasury; vor treasury; shi treasury; thal treasury; nur treasury;")
 )
 POLICY = VisibilityPolicyV0(32, 8, 2, 64, 12, 2, 10, True, False)
 VEIL = b"galaxy-adversarial-corpus-veil!!"  # >=32 bytes
-SUBJECTS = ("treasury", "withdrawal", "evidence", "recovery", "visibility")
+SUBJECTS = ("treasury",)
 SIGILS = ("ka", "vor", "shi", "thal", "nur")
 
 

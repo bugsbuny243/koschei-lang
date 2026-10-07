@@ -95,8 +95,11 @@ class NativeTrainingRunStartV1:
     ) -> None:
         if self.version != 1:
             raise NativeTrainingExecutionError("unsupported native training run-start version")
-        plan.assert_sealed()
-        launch.assert_for(plan, manifest)
+        try:
+            plan.assert_sealed()
+            launch.assert_for(plan, manifest)
+        except ValueError as error:
+            raise NativeTrainingExecutionError(str(error)) from error
         if self.plan_digest != plan.digest:
             raise NativeTrainingExecutionError("training run start belongs to a different plan")
         if self.launch_digest != launch.digest:
@@ -155,10 +158,13 @@ class NativeTrainingExecutionReceiptV1:
     ) -> None:
         if self.version != 1:
             raise NativeTrainingExecutionError("unsupported native training execution receipt version")
-        plan.assert_sealed()
-        launch.assert_for(plan, manifest)
-        run_start.assert_for(plan, launch, manifest)
-        artifact_receipt.assert_for(plan)
+        try:
+            plan.assert_sealed()
+            launch.assert_for(plan, manifest)
+            run_start.assert_for(plan, launch, manifest)
+            artifact_receipt.assert_for(plan)
+        except ValueError as error:
+            raise NativeTrainingExecutionError(str(error)) from error
         if self.plan_digest != plan.digest:
             raise NativeTrainingExecutionError("training execution belongs to a different plan")
         if self.launch_digest != launch.digest:

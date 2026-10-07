@@ -29,7 +29,7 @@ def _active_state(epoch: int = 7):
 
 
 def _mir():
-    return lower_native_sigils(parse("ka treasury; vor withdrawal; shi evidence; thal recovery; nur visibility;"))
+    return lower_native_sigils(parse("ka withdrawal; vor withdrawal; shi withdrawal; thal withdrawal; nur withdrawal;"))
 
 
 def _request(epoch: int, nonce: str):

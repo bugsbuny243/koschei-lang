@@ -65,8 +65,8 @@ def _parse_step(value: object, index: int) -> LocalValidationStepV1:
     _require_exact_keys(value, _STEP_KEYS, f"validation step {index}")
 
     command = value["command"]
-    if not isinstance(command, list) or not command or not all(isinstance(item, str) for item in command):
-        raise LocalValidationError(f"validation step {index} command must be a non-empty string list")
+    if not isinstance(command, (list, tuple)) or not command or not all(isinstance(item, str) for item in command):
+        raise LocalValidationError(f"validation step {index} command must be a non-empty string sequence")
     returncode = value["returncode"]
     if isinstance(returncode, bool) or not isinstance(returncode, int):
         raise LocalValidationError(f"validation step {index} returncode must be an integer")
@@ -102,8 +102,8 @@ def parse_local_validation_receipt_v1(value: object) -> LocalValidationReceiptV1
     _require_exact_keys(value, _RECEIPT_KEYS, "local validation receipt")
 
     steps_value = value["steps"]
-    if not isinstance(steps_value, list) or not steps_value:
-        raise LocalValidationError("local validation receipt steps must be a non-empty list")
+    if not isinstance(steps_value, (list, tuple)) or not steps_value:
+        raise LocalValidationError("local validation receipt steps must be a non-empty sequence")
     steps = tuple(_parse_step(step, index) for index, step in enumerate(steps_value))
 
     checkout_clean = value["checkout_clean"]
