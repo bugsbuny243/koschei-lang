@@ -21,11 +21,11 @@ from koschei.native_sigil_request_binding_v1 import bind_proof_to_request, seal_
 from koschei.parser import parse
 
 SOURCE = """
-ka treasury;
+ka withdrawal;
 vor withdrawal;
-shi evidence;
-thal recovery;
-nur visibility;
+shi withdrawal;
+thal withdrawal;
+nur withdrawal;
 """
 
 

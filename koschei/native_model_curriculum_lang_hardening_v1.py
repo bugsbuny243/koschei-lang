@@ -38,11 +38,11 @@ from .parser import Parser
 
 _CTX = b"koschei.lang-native-curriculum-hardening/v1\x00"
 _CANONICAL_SOURCE = (
-    "ka treasury;\n"
+    "ka withdrawal;\n"
     "vor withdrawal;\n"
-    "shi evidence;\n"
-    "thal recovery;\n"
-    "nur visibility;\n"
+    "shi withdrawal;\n"
+    "thal withdrawal;\n"
+    "nur withdrawal;\n"
 )
 REQUIRED_HARDENING_CASE_IDS = (
     "n3-hara-cannot-transfer-across-aevra",
@@ -114,11 +114,12 @@ def _fixture():
         instance_digest="6" * 64,
         birth_epoch=7,
     )
+    subjects = {binding.sigil: binding.subject for binding in mir.bindings}
     aevra_a = birth_aevra(
         veyra_a,
         mir,
         sigil="ka",
-        subject="treasury",
+        subject=subjects["ka"],
         birth_evidence_digest="5" * 64,
         birth_epoch=7,
     )
@@ -126,7 +127,7 @@ def _fixture():
         veyra_a,
         mir,
         sigil="vor",
-        subject="withdrawal",
+        subject=subjects["vor"],
         birth_evidence_digest="a" * 64,
         birth_epoch=7,
     )

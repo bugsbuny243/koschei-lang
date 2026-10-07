@@ -116,18 +116,11 @@ class FoundationExportProvenanceTests(unittest.TestCase):
                 capture_output=True,
                 text=True,
             ).stdout.strip()
-            symbolic_ref = subprocess.run(
-                ["git", "symbolic-ref", "HEAD"],
-                cwd=root,
-                check=True,
-                capture_output=True,
-                text=True,
-            ).stdout.strip()
-            subprocess.run(
-                ["git", "update-ref", symbolic_ref, tree],
-                cwd=root,
-                check=True,
-            )
+            # Modern Git rejects updating a branch ref to a tree object before
+            # the exporter can observe the malformed checkout. Write a detached
+            # HEAD object id directly so the production verifier still receives
+            # the intended non-commit trust-root condition.
+            (root / ".git" / "HEAD").write_text(tree + "\n", encoding="ascii")
             with self.assertRaisesRegex(FoundationExportError, "readable commit"):
                 build_foundation_corpus(root, source_commit=tree)
 

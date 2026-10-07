@@ -171,7 +171,7 @@ def issue_external_provider_finality_verdict_v1(
         raise ExternalFinalityAttestationV1Error("unknown external provider finality state")
     if effect_envelope.authority or effect_envelope.terminal_state != "effect-completed":
         raise ExternalFinalityAttestationV1Error(
-            "provider finality verification requires a non-authoritative effect-completed envelope"
+            "provider finality verification requires a non-authoritative, locally completed effect-completed envelope"
         )
     if epoch < effect_envelope.epoch:
         raise ExternalFinalityAttestationV1Error("provider finality observation predates effect epoch")

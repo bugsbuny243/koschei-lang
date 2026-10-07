@@ -86,7 +86,7 @@ def confirm_recovery_effect_v0(*,receipt:RecoveryEffectReceiptV0,observations:tu
         exact=(rd==expected_receipt and op==expected_op and ev==expected_evidence and obs.observed)
         if exact:
             accepted.append(obs)
-        elif rd==expected_receipt or op==expected_op:
+        elif obs.observed and (rd==expected_receipt or op==expected_op):
             rejected_conflicts.append(obs.observer_id)
 
     if rejected_conflicts:

@@ -122,8 +122,16 @@ class Parser:
             fields.append(
                 StructField(field_name.value, type_ref, self._location(field_name))
             )
-            if not self._match(TokenType.COMMA):
+            if self._match(TokenType.COMMA):
+                continue
+            if self._check(TokenType.RIGHT_BRACE):
                 break
+            # Struct declarations have an unambiguous field grammar, so the
+            # established multiline surface may separate fields by whitespace/
+            # newline without forcing a comma.
+            if self._check(TokenType.IDENTIFIER):
+                continue
+            break
 
         self._consume(TokenType.RIGHT_BRACE, "Struct sonunda '}' bekleniyordu.")
         return StructDeclaration(
@@ -486,7 +494,15 @@ class Parser:
         self._error(self._peek(), "İfade bekleniyordu.")
 
     def _match_expression(self, match_token: Token) -> MatchExpression:
-        value = self._expression()
+        if (
+            self._check(TokenType.TYPE)
+            and self.current + 1 < len(self.tokens)
+            and self.tokens[self.current + 1].type is TokenType.LEFT_BRACE
+        ):
+            token = self._advance()
+            value = Identifier(token.value, self._location(token))
+        else:
+            value = self._expression()
         self._consume(TokenType.LEFT_BRACE, "match değerinden sonra '{' bekleniyordu.")
         arms: list[MatchArm] = []
 

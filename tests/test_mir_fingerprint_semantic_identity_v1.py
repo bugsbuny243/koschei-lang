@@ -74,12 +74,12 @@ def test_block_contract_preserves_exact_canonical_variant_identity() -> None:
     variant_instructions = [
         item
         for item in contract["instructions"]
-        if item["kind"] in {"MirVariantIs", "MirVariantPayload"}
+        if item["kind"] in {"variantis", "variantpayload"}
     ]
 
     assert [item["kind"] for item in variant_instructions] == [
-        "MirVariantIs",
-        "MirVariantPayload",
+        "variantis",
+        "variantpayload",
     ]
     assert [item["variant"] for item in variant_instructions] == [
         "Alpha::Ready",

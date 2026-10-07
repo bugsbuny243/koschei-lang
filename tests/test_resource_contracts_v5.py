@@ -37,8 +37,8 @@ class ResourceContractsV5Tests(unittest.TestCase):
         self.addCleanup(directory.cleanup)
         return graph
 
-    def test_mir_schema_is_v3(self):
-        self.assertEqual(MIR_VERSION, 3)
+    def test_mir_schema_is_v4(self):
+        self.assertEqual(MIR_VERSION, 4)
 
     def test_resource_contract_is_visible(self):
         payload = to_dict(require_mir(self.graph()))

@@ -90,7 +90,14 @@ def install_canonical_authority_bridge(runtime: ModuleType) -> None:
             return runtime._BoundMember(receiver, name, location)
         return original_member(self, receiver, name, location)
 
-    def canonical_matches(self, value: Any, expected_names: Any) -> bool:
+    def canonical_matches(
+        self,
+        value: Any,
+        expected_names: Any,
+        *,
+        type_parameters: frozenset[str] = frozenset(),
+        type_bindings: dict[str, str] | None = None,
+    ) -> bool:
         expected = tuple(expected_names)
         capability_names = tuple(name for name in expected if name in CAPABILITY_TYPES)
         ordinary_names = tuple(name for name in expected if name not in CAPABILITY_TYPES)
@@ -103,9 +110,16 @@ def install_canonical_authority_bridge(runtime: ModuleType) -> None:
 
         # Critical migration rule: canonical capability expectations are never
         # delegated back to the interpreter's legacy hard-coded capability ladder.
-        # Only non-capability union members may use the old general type matcher.
+        # Generic/non-capability members still consume the compiler-bound runtime
+        # type context so T/List<T>/Map<T>/Option<T>/Result<T> retain one contract.
         if ordinary_names:
-            return original_matches(self, value, ordinary_names)
+            return original_matches(
+                self,
+                value,
+                ordinary_names,
+                type_parameters=type_parameters,
+                type_bindings=type_bindings,
+            )
         return False
 
     def canonical_type_name(value: Any) -> str:

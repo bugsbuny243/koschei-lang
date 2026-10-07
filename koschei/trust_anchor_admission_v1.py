@@ -38,14 +38,14 @@ def _manifest_payload(**v)->bytes:
 @dataclass(frozen=True,slots=True)
 class TrustAnchorManifestV1:
     anchor_id:str; generation:int; attestation_verifier_abi_digest:str; verifier_implementation_digest:str; allowed_trust_root_ids:tuple[str,...]; revoked_trust_root_ids:tuple[str,...]; valid_from_epoch:int; expires_before_epoch:int; revoked_verifier:bool; manifest_digest:str; authority:bool=False; version:int=1
-    def assert_authenticated(self,*,root_signing_key:bytes,abi:AttestationVerifierAbiV1,current_epoch:int)->None:
+    def assert_authenticated(self,*,root_signing_key:bytes,abi:AttestationVerifierAbiV1,current_epoch:int,allow_revoked:bool=False)->None:
         key=_key(root_signing_key,"root_signing_key"); abi.assert_sealed(); current=_epoch(current_epoch); generation=_generation(self.generation)
         if self.authority: raise TrustAnchorAdmissionV1Error("trust-anchor manifest cannot carry ambient authority")
         if self.attestation_verifier_abi_digest!=abi.abi_digest or self.verifier_implementation_digest!=abi.verifier_implementation_digest: raise TrustAnchorAdmissionV1Error("trust-anchor verifier binding mismatch")
         start=_epoch(self.valid_from_epoch); end=_epoch(self.expires_before_epoch)
         if end<=start: raise TrustAnchorAdmissionV1Error("trust-anchor expiry must be after valid-from epoch")
         if current<start or current>=end: raise TrustAnchorAdmissionV1Error("trust-anchor manifest is not live")
-        if self.revoked_verifier: raise TrustAnchorAdmissionV1Error("attestation verifier is revoked")
+        if self.revoked_verifier and not allow_revoked: raise TrustAnchorAdmissionV1Error("attestation verifier is revoked")
         allowed=_norm(self.allowed_trust_root_ids,"allowed_trust_root_ids"); revoked=_norm(self.revoked_trust_root_ids,"revoked_trust_root_ids")
         if not allowed: raise TrustAnchorAdmissionV1Error("at least one trust root must be allowed")
         if set(allowed)&set(revoked): raise TrustAnchorAdmissionV1Error("trust root cannot be both allowed and revoked")
@@ -87,7 +87,7 @@ def seal_trust_anchor_manifest_v1(*,anchor_id:str,generation:int,abi:Attestation
     if set(allowed)&set(revoked): raise TrustAnchorAdmissionV1Error("trust root cannot be both allowed and revoked")
     result=TrustAnchorManifestV1(_text(anchor_id,"anchor_id"),gen,abi.abi_digest,abi.verifier_implementation_digest,allowed,revoked,start,end,bool(revoked_verifier),"")
     object.__setattr__(result,"manifest_digest",hmac.new(key,_manifest_payload(anchor_id=result.anchor_id,generation=result.generation,abi_digest=result.attestation_verifier_abi_digest,implementation_digest=result.verifier_implementation_digest,allowed_roots=result.allowed_trust_root_ids,revoked_roots=result.revoked_trust_root_ids,valid_from=result.valid_from_epoch,expires_before=result.expires_before_epoch,revoked_verifier=result.revoked_verifier),hashlib.sha256).hexdigest())
-    result.assert_authenticated(root_signing_key=key,abi=abi,current_epoch=start)
+    result.assert_authenticated(root_signing_key=key,abi=abi,current_epoch=start,allow_revoked=True)
     return result
 
 def _admission_payload(manifest_digest,generation,abi_digest,implementation_digest,epoch):

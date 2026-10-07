@@ -32,7 +32,7 @@ def dhex(tag: str) -> str:
 
 def mir():
     return lower_native_sigils(
-        parse("ka treasury; vor withdrawal; shi evidence; thal recovery; nur visibility;")
+        parse("ka withdrawal; vor withdrawal; shi withdrawal; thal withdrawal; nur withdrawal;")
     )
 
 

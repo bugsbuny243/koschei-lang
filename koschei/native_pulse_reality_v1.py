@@ -61,7 +61,12 @@ def evaluate_native_pulse_reality_v1(
     frames: Sequence[PulseFrameV1],
 ) -> PulseTraceV1:
     """Resolve one immutable reality across a bounded authenticated time sequence."""
-    parse_native_signal_reality_v1(source)
+    try:
+        parse_native_signal_reality_v1(source)
+    except NativeSignalRealityError as error:
+        raise NativePulseRealityError(
+            error.code, error.message, error.line, error.column
+        ) from error
     if not isinstance(frames, Sequence) or isinstance(frames, (str, bytes, bytearray)):
         _fail("KPUL1200", "pulse frames must be a canonical sequence")
     if not frames:

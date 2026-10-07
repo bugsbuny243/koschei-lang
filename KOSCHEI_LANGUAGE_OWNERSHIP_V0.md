@@ -6,6 +6,8 @@ This document answers one question: for each user-visible Koschei language featu
 
 The goal is to prevent a feature from being governed by multiple hidden authorities without an explicit migration plan.
 
+**Native-execution boundary:** `KOSCHEI_NATIVE_EXECUTION_BOUNDARY_V1.md` is mandatory for every backend/runtime change. Host implementations (including Go/Python/container tooling) are bootstrap or conformance machinery only and may not become Koschei semantic authority.
+
 ## Canonical pipeline today
 
 `source -> lexer -> parser -> AST -> integrity -> Typed HIR -> typestate -> affine ownership -> effect contracts -> legacy generic bridge -> legacy semantic checker -> sealed MIR -> reference interpreter`
@@ -26,7 +28,7 @@ That pipeline means Koschei currently has **one compilation path but more than o
 | `Option` / `Result` | inherited parser + AST | `type_system.py` | Typed HIR/type contracts plus legacy semantic compatibility | MIR/interpreter | **dual authority** |
 | `or return` / `or {}` / fallback `or` | `parser.py` + inherited parser precedence | AST nodes | `_typed_expr.py`, `typed_hir.py`, legacy semantic | MIR lowering / interpreter | **dual authority** |
 | `if` / `while` / `for` control flow | `_parser_v09.py` | `ast_nodes.py` | `integrity.py`, `typed_hir.py`, legacy semantic | `mir_ir.py`; AST fallback where lowering incomplete | **multiple validators** |
-| `match` / enum exhaustiveness | parser + AST | generic/base enum nodes + type system | Typed HIR + legacy semantic | MIR/interpreter | **dual authority** |
+| `match` / enum exhaustiveness | parser + AST | generic/base enum nodes + type system | Typed HIR + legacy semantic | sealed MIR contract; host adapters are parity-only | **dual authority being consolidated** |
 | Modules/imports | parser import declaration | `modules.py` graph | `modules.py` + imported semantic/type/effect propagation | MIR module graph | medium |
 | Capability types and narrowing | source types/method calls | `semantic.py` constants + `type_system.py` representation | `semantic.py`, `_typed_ops.py`, affine checker, effect contracts | MIR effects + interpreter capability operations | **highest dual-authority risk** |
 | `pure fn` | `parser.py` (`PURE`) | declaration flag | `effect_contracts_v1.py`; legacy semantic still validates surrounding calls/types | MIR effect seal | medium |
@@ -101,8 +103,9 @@ These are architectural rules for future changes:
 5. **Generic meaning:** V5 structural types are canonical; `legacy_generics.py` / `legacy_types.py` are one-way compatibility bridges only.
 6. **Effect promise ownership:** `effect_contracts_v1.py`; MIR effect inference is a consistency seal, not an alternate source language definition.
 7. **Ownership/resource semantics:** `affine_resources_v1.py` and `typestate_resources_v1.py` are compiler-semantic passes and remain language core until their rules are represented in a unified typed semantic IR.
-8. **Executable contract:** sealed MIR is the backend boundary. Native backends and adapters may not reinterpret source semantics.
-9. **Reference execution:** `interpreter.py` remains the semantic oracle only for behavior not yet fully normalized into MIR; the end-state is execution directly from complete MIR semantics.
+8. **Executable contract:** sealed MIR is the backend boundary. Native backends and adapters may not reinterpret source semantics. Host backends are conformance adapters only; `KOSCHEI_NATIVE_EXECUTION_BOUNDARY_V1.md` defines this boundary.
+9. **Reference execution:** `interpreter.py` remains the semantic oracle only for behavior not yet fully normalized into MIR; the end-state is execution directly from complete Koschei MIR semantics.
+10. **Native terminology:** architecture/production claims use "Koschei-native" only for execution whose meaning is owned by the sealed Koschei execution contract; implementation in a host language does not make a path Koschei-native.
 
 ## Consolidation order
 
@@ -154,6 +157,8 @@ Until consolidation is complete:
 - do not add a third effect inference table;
 - do not add capability methods in only one checker;
 - do not let a backend accept AST/source that bypasses `check_graph` + sealed MIR;
+- do not allow a host backend to resolve or manufacture a compiler-owned Koschei fact;
+- do not call a Go/Python/container implementation Koschei-native merely because it executes or packages sealed data;
 - do not delete legacy bridges until parity evidence exists;
 - do not count platform/security modules as evidence that the language itself became more expressive.
 

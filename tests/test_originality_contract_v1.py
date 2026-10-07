@@ -14,6 +14,7 @@ from koschei.originality_contract_v1 import (
     LEGACY_KEYWORD_DEBT_V1,
     LEGACY_MANIFEST_VOCABULARY_DEBT_V1,
     LEGACY_SCAFFOLD_PATH_DEBT_V1,
+    NATIVE_KEYWORD_PROVENANCE_V1,
     LEGACY_SYMBOL_DEBT_V1,
     SurfaceProvenance,
     active_legacy_debt_v1,
@@ -97,15 +98,18 @@ def _manifest_vocabulary(path: Path) -> frozenset[str]:
 
 
 class LiveOriginalityRatchetTests(unittest.TestCase):
-    def test_python_keyword_surface_is_exactly_frozen_legacy_debt(self) -> None:
+    def test_python_keyword_surface_is_legacy_debt_plus_registered_native_roots(self) -> None:
         current = frozenset(Lexer.KEYWORDS)
-        self.assertEqual(current, LEGACY_KEYWORD_DEBT_V1)
+        expected = LEGACY_KEYWORD_DEBT_V1 | frozenset(NATIVE_KEYWORD_PROVENANCE_V1)
+        self.assertEqual(current, expected)
         self.assertEqual(audit_keyword_surface(current), ())
 
-    def test_native_keyword_surface_matches_python_oracle_and_debt(self) -> None:
+    def test_native_keyword_surface_matches_python_oracle_and_registered_roots(self) -> None:
         native = _native_keyword_surface()
+        expected = LEGACY_KEYWORD_DEBT_V1 | frozenset(NATIVE_KEYWORD_PROVENANCE_V1)
         self.assertEqual(native, frozenset(Lexer.KEYWORDS))
-        self.assertEqual(native, LEGACY_KEYWORD_DEBT_V1)
+        self.assertEqual(native, expected)
+        self.assertEqual(audit_keyword_surface(native), ())
 
     def test_atomic_symbol_surface_is_exactly_frozen_legacy_debt(self) -> None:
         current = _discover_atomic_ascii_symbols()

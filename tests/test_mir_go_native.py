@@ -38,7 +38,7 @@ class MirGoNativeTests(unittest.TestCase):
         self.assertEqual(native_build_mode(mir), "mir_go_v1")
 
         source = generate_go_mir_native(mir)
-        self.assertIn("Code generated from sealed Koschei MIR v3", source)
+        self.assertIn("Code generated from sealed Koschei MIR v4", source)
         self.assertIn("switch _ks_pc", source)
         self.assertIn("fmt.Println", source)
 
@@ -145,6 +145,71 @@ fn main() {
         self.assertIn("_ks_pc =", go_source)
         self.assertIn("continue", go_source)
         self.assertNotIn("MirAstFallback", go_source)
+
+    def test_user_enum_match_is_supported_from_sealed_mir(self) -> None:
+        _, mir = self.checked_mir(
+            """
+enum State {
+    Ready(Int),
+    Idle,
+}
+
+fn main() {
+    println(match Ready(99) {
+        Ready(value) => value,
+        Idle => 0,
+    })
+}
+"""
+        )
+        support = inspect_mir_go_support(mir)
+        self.assertTrue(support.supported, support.reasons)
+        self.assertEqual(native_build_mode(mir), "mir_go_v1")
+        go_source = generate_go_mir_native(mir)
+        self.assertIn("type _ksEnumValue struct", go_source)
+        self.assertIn('owner: "State", variant: "Ready"', go_source)
+        self.assertIn('owner == "State"', go_source)
+        self.assertIn('variant == "Ready"', go_source)
+        self.assertIn("canonical variant payload proof mismatch", go_source)
+        self.assertNotIn("MirAstFallback", go_source)
+
+    @unittest.skipUnless(shutil.which("go"), "Go toolchain is required")
+    def test_public_build_executes_user_enum_match_from_mir_go(self) -> None:
+        source, mir = self.checked_mir(
+            """
+enum State {
+    Ready(Int),
+    Idle,
+}
+
+fn main() {
+    println(match Ready(99) {
+        Ready(value) => value,
+        Idle => 0,
+    })
+}
+"""
+        )
+        support = inspect_mir_go_support(mir)
+        self.assertTrue(support.supported, support.reasons)
+
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "enum-native"
+            with patch.object(
+                legacy_cli,
+                "command_build",
+                side_effect=AssertionError("legacy AST-Go path must not run"),
+            ):
+                code = cli_main(["build", str(source), "-o", str(target)])
+            self.assertEqual(code, 0)
+            completed = subprocess.run(
+                [str(target)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(completed.returncode, 0)
+            self.assertEqual(completed.stdout, "99\n")
 
 
 if __name__ == "__main__":

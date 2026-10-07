@@ -55,6 +55,17 @@ class MirIsRuntimeError:
 
 
 @dataclass(frozen=True, slots=True)
+class MirVariantConstruct:
+    """Construct one value with an exact compiler-selected ``Owner::Variant`` identity."""
+
+    target: int
+    variant: str
+    source: int | None
+    type: TypeNode
+    location: SourceLocation
+
+
+@dataclass(frozen=True, slots=True)
 class MirVariantIs:
     """Compare one checked value against one compiler-selected variant identity."""
 
@@ -72,6 +83,21 @@ class MirVariantPayload:
     target: int
     source: int
     variant: str
+    type: TypeNode
+    location: SourceLocation
+
+
+@dataclass(frozen=True, slots=True)
+class MirCapabilityCall:
+    """Exact compiler-selected capability operation and effect identity."""
+
+    target: int
+    object: int
+    arguments: tuple[int, ...]
+    capability_type: str
+    method: str
+    canonical_effect: str
+    power_domain: str
     type: TypeNode
     location: SourceLocation
 
@@ -102,9 +128,46 @@ class MirMapFinish:
 
 
 @dataclass(frozen=True, slots=True)
+class MirMapGet:
+    target: int
+    object: int
+    key: int
+    type: TypeNode
+    location: SourceLocation
+
+
+@dataclass(frozen=True, slots=True)
+class MirMapSet:
+    target: int
+    object: int
+    key: int
+    value: int
+    type: TypeNode
+    location: SourceLocation
+
+
+@dataclass(frozen=True, slots=True)
+class MirMapKeys:
+    target: int
+    object: int
+    type: TypeNode
+    location: SourceLocation
+
+
+@dataclass(frozen=True, slots=True)
+class MirMapContains:
+    target: int
+    object: int
+    key: int
+    type: TypeNode
+    location: SourceLocation
+
+
+@dataclass(frozen=True, slots=True)
 class MirStructNew:
     target: int
     type_name: str
+    required_fields: tuple[str, ...]
     type: TypeNode
     location: SourceLocation
 
@@ -128,18 +191,37 @@ class MirStructFinish:
     location: SourceLocation
 
 
+@dataclass(frozen=True, slots=True)
+class MirStructFieldSet:
+    """Mutate one checked field on an already-constructed ordinary Struct value."""
+
+    target: int
+    object: int
+    field: str
+    source: int
+    type: TypeNode
+    location: SourceLocation
+
+
 MIR_V4_EXTENSION_INSTRUCTION_TYPES = (
     MirUnit,
     MirFallibleIsSuccess,
     MirFalliblePayload,
     MirInterpolate,
     MirIsRuntimeError,
+    MirVariantConstruct,
     MirVariantIs,
     MirVariantPayload,
+    MirCapabilityCall,
     MirMapNew,
     MirMapInsert,
     MirMapFinish,
+    MirMapGet,
+    MirMapSet,
+    MirMapKeys,
+    MirMapContains,
     MirStructNew,
     MirStructSet,
     MirStructFinish,
+    MirStructFieldSet,
 )

@@ -75,14 +75,32 @@ def _validate_extra_args(extra_arg: list[str]) -> None:
             )
 
 
-def _candidate_binaries(output: Path) -> list[Path]:
-    return sorted(
-        path.resolve()
-        for path in output.rglob("*")
-        if path.is_file()
-        and path.name in EXECUTABLE_NAMES
-        and not any(part.endswith(".build") for part in path.parts)
-    )
+def _candidate_binaries(output: Path, *, mode: str) -> list[Path]:
+    """Return only customer-facing executables for the selected Nuitka mode.
+
+    Nuitka onefile builds can leave an internal ``*.dist/ks.bin`` helper next to
+    the real root-level ``ks`` executable. Treating that helper as a second
+    customer binary makes a valid fail-closed build look ambiguous. Standalone
+    builds, in contrast, intentionally place their entrypoint directly inside a
+    ``*.dist`` directory. Keep the two layouts explicit instead of accepting
+    arbitrary executable-looking files recursively.
+    """
+    output = output.resolve()
+    if mode == "onefile":
+        return sorted(
+            path.resolve()
+            for path in output.iterdir()
+            if path.is_file() and path.name in EXECUTABLE_NAMES
+        )
+    if mode == "standalone":
+        return sorted(
+            path.resolve()
+            for dist_dir in output.iterdir()
+            if dist_dir.is_dir() and dist_dir.name.endswith(".dist")
+            for path in dist_dir.iterdir()
+            if path.is_file() and path.name in EXECUTABLE_NAMES
+        )
+    raise SoloHostBinaryBuildError("mode must be standalone or onefile")
 
 
 def build(*, mode: str, output: Path, extra_arg: list[str]) -> tuple[Path, Path]:
@@ -101,6 +119,7 @@ def build(*, mode: str, output: Path, extra_arg: list[str]) -> tuple[Path, Path]
         "nuitka",
         f"--mode={mode}",
         "--python-flag=isolated",
+        "--remove-output",
         f"--output-dir={output}",
         "--output-filename=ks",
         str(ENTRY),
@@ -114,7 +133,7 @@ def build(*, mode: str, output: Path, extra_arg: list[str]) -> tuple[Path, Path]
         detail = (result.stderr or result.stdout).strip()
         raise SoloHostBinaryBuildError(f"Nuitka build failed: {detail}")
 
-    candidates = _candidate_binaries(output)
+    candidates = _candidate_binaries(output, mode=mode)
     if len(candidates) != 1:
         rendered = ", ".join(str(path.relative_to(output)) for path in candidates) or "none"
         raise SoloHostBinaryBuildError(f"expected exactly one customer executable, found: {rendered}")

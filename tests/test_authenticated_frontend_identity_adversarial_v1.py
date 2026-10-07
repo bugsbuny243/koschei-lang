@@ -60,7 +60,7 @@ class AuthenticatedFrontendIdentityAdversarialV1Tests(unittest.TestCase):
             "koschei.object_space_graph_v1.parse",
             side_effect=AssertionError("legacy parser must not be attempted"),
         ):
-            with self.assertRaises(NativeKernelError):
+            with self.assertRaises(ObjectSpaceFrontendIdentityError):
                 encode_authenticated_frontend_graph_secret(
                     project_id=self.project_id,
                     root_object_id=self.root_id,
@@ -194,7 +194,7 @@ class AuthenticatedFrontendIdentityAdversarialV1Tests(unittest.TestCase):
                 "koschei.object_space_graph_v1.parse",
                 side_effect=AssertionError("legacy fallback reached"),
             ):
-                with self.assertRaises(NativeKernelError):
+                with self.assertRaises(ObjectSpaceFrontendIdentityError):
                     check_object_space_graph_by_authenticated_frontend(forged)
 
     def test_legacy_schema_with_native_looking_source_does_not_auto_upgrade(self) -> None:

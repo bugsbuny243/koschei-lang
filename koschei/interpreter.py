@@ -870,8 +870,23 @@ class Interpreter:
                 function.location,
             )
 
+        type_parameters = frozenset(getattr(function, "type_parameters", ()))
+        type_bindings: dict[str, str] = {}
         for parameter, value in zip(function.parameters, arguments):
-            if not self._runtime_matches_type(value, parameter.type_ref.names):
+            if not self._runtime_matches_type(
+                value,
+                parameter.type_ref.names,
+                type_parameters=type_parameters,
+                type_bindings=type_bindings,
+            ):
+                if type_parameters:
+                    raise KoscheiRuntimeError(
+                        "KS3106",
+                        f"'{function.name}' generic runtime sözleşmesinde "
+                        f"'{parameter.name}: {parameter.type_ref}' için çelişkili "
+                        f"tip kanıtı bulundu; bu bir capability ihlali değildir.",
+                        parameter.location,
+                    )
                 raise KoscheiRuntimeError(
                     "KS3401",
                     f"'{function.name}' çağrısında '{parameter.name}: "
@@ -910,14 +925,22 @@ class Interpreter:
                 and not self._runtime_matches_type(
                     result,
                     function.return_type.names,
+                    type_parameters=type_parameters,
+                    type_bindings=type_bindings,
                 )
             ):
-                raise KoscheiRuntimeError(
-                    "KS3401",
-                    f"'{function.name}' dönüş sözleşmesi {function.return_type} "
-                    f"beklerken {self._runtime_type_name(result)} döndürdü.",
-                    function.location,
+                code = "KS3106" if type_parameters else "KS3401"
+                message = (
+                    f"'{function.name}' generic dönüş sözleşmesi "
+                    f"{function.return_type} ile runtime sonucu çelişiyor; "
+                    "bu bir capability ihlali değildir."
+                    if type_parameters
+                    else (
+                        f"'{function.name}' dönüş sözleşmesi {function.return_type} "
+                        f"beklerken {self._runtime_type_name(result)} döndürdü."
+                    )
                 )
+                raise KoscheiRuntimeError(code, message, function.location)
             return result
         finally:
             self._depth -= 1
@@ -1085,6 +1108,12 @@ class Interpreter:
                 if declaration is not None
                 else {}
             )
+            type_parameters = frozenset(
+                getattr(declaration, "type_parameters", ())
+                if declaration is not None
+                else ()
+            )
+            type_bindings: dict[str, str] = {}
             for name, value_expression in expression.fields:
                 value = self._evaluate(value_expression)
                 if isinstance(value, KsError):
@@ -1092,17 +1121,31 @@ class Interpreter:
                 field = expected.get(name)
                 if (
                     field is not None
-                    and not self._runtime_matches_type(value, field.type_ref.names)
-                ):
-                    raise KoscheiRuntimeError(
-                        "KS3401",
-                        f"'{expression.type_name}.{name}' alanı "
-                        f"{field.type_ref} beklerken "
-                        f"{self._runtime_type_name(value)} aldı.",
-                        value_expression.location,
+                    and not self._runtime_matches_type(
+                        value,
+                        field.type_ref.names,
+                        type_parameters=type_parameters,
+                        type_bindings=type_bindings,
                     )
+                ):
+                    code = "KS3106" if type_parameters else "KS3401"
+                    message = (
+                        f"'{expression.type_name}' generic alan kanıtları "
+                        f"'{name}' üzerinde çelişiyor; bu bir capability ihlali değildir."
+                        if type_parameters
+                        else (
+                            f"'{expression.type_name}.{name}' alanı "
+                            f"{field.type_ref} beklerken "
+                            f"{self._runtime_type_name(value)} aldı."
+                        )
+                    )
+                    raise KoscheiRuntimeError(code, message, value_expression.location)
                 fields[name] = value
-            return StructValue(expression.type_name, fields)
+            type_arguments = tuple(
+                type_bindings.get(name, "_")
+                for name in getattr(declaration, "type_parameters", ())
+            ) if declaration is not None else ()
+            return StructValue(expression.type_name, fields, type_arguments)
 
         if isinstance(expression, MemberExpression):
             receiver = self._evaluate(expression.object)
@@ -1357,8 +1400,14 @@ class Interpreter:
         if isinstance(callee, _EnumConstructor):
             expected = 0 if callee.payload_type is None else 1
             self._require_arity(callee.variant, arguments, expected, location)
+            type_parameters = frozenset(callee.type_parameters)
+            type_bindings: dict[str, str] = {}
             if callee.payload_type is None:
-                return EnumValue(callee.enum_name, callee.variant)
+                return EnumValue(
+                    callee.enum_name,
+                    callee.variant,
+                    type_arguments=tuple("_" for _ in callee.type_parameters),
+                )
             payload = arguments[0]
             if _contains_capability(payload):
                 raise KoscheiRuntimeError(
@@ -1366,15 +1415,30 @@ class Interpreter:
                     "Capability taşıyan değerler enum/Option/Result payload'ına konamaz.",
                     location,
                 )
-            if not self._runtime_matches_type(payload, callee.payload_type):
-                raise KoscheiRuntimeError(
-                    "KS3401",
-                    f"'{callee.variant}' payload sözleşmesi "
-                    f"{' or '.join(callee.payload_type)} beklerken "
-                    f"{self._runtime_type_name(payload)} aldı.",
-                    location,
+            if not self._runtime_matches_type(
+                payload,
+                callee.payload_type,
+                type_parameters=type_parameters,
+                type_bindings=type_bindings,
+            ):
+                code = "KS3106" if type_parameters else "KS3401"
+                message = (
+                    f"'{callee.variant}' generic payload kanıtı çelişkili; "
+                    "bu bir capability ihlali değildir."
+                    if type_parameters
+                    else (
+                        f"'{callee.variant}' payload sözleşmesi "
+                        f"{' or '.join(callee.payload_type)} beklerken "
+                        f"{self._runtime_type_name(payload)} aldı."
+                    )
                 )
-            return EnumValue(callee.enum_name, callee.variant, payload)
+                raise KoscheiRuntimeError(code, message, location)
+            return EnumValue(
+                callee.enum_name,
+                callee.variant,
+                payload,
+                tuple(type_bindings.get(name, "_") for name in callee.type_parameters),
+            )
         if callee == "println":
             self._require_arity("println", arguments, 1, location)
             print(ks_to_string(arguments[0]))
@@ -1579,66 +1643,232 @@ class Interpreter:
                     return False, value
         return True, value
 
+    def _runtime_match_type_name(
+        self,
+        actual: str,
+        expected: str,
+        *,
+        type_parameters: frozenset[str],
+        type_bindings: dict[str, str],
+    ) -> bool:
+        if expected == "_":
+            return True
+        expected_base, expected_arguments = self._generic_type(expected)
+        if not expected_arguments and expected_base in type_parameters:
+            previous = type_bindings.get(expected_base)
+            if previous is None:
+                type_bindings[expected_base] = actual
+                return True
+            return previous == actual
+
+        actual_base, actual_arguments = self._generic_type(actual)
+        if expected_arguments:
+            if actual_base != expected_base:
+                return False
+            if actual_arguments and len(actual_arguments) == len(expected_arguments):
+                for actual_item, expected_item in zip(actual_arguments, expected_arguments):
+                    if actual_item == "_":
+                        continue
+                    if not self._runtime_match_type_name(
+                        actual_item,
+                        expected_item,
+                        type_parameters=type_parameters,
+                        type_bindings=type_bindings,
+                    ):
+                        return False
+            return True
+        return actual == expected or actual_base == expected_base
+
+    def _runtime_match_pattern(
+        self,
+        value: Any,
+        expected: str,
+        *,
+        type_parameters: frozenset[str],
+        type_bindings: dict[str, str],
+    ) -> bool:
+        if expected == "_":
+            return True
+
+        base, arguments = self._generic_type(expected)
+        if not arguments and base in type_parameters:
+            if _contains_capability(value):
+                raise KoscheiRuntimeError(
+                    "KS3401",
+                    f"Capability taşıyan değer generic '{base}' parametresine bağlanamaz.",
+                    SourceLocation(1, 1),
+                )
+            actual = self._runtime_type_name(value)
+            previous = type_bindings.get(base)
+            if previous is None:
+                type_bindings[base] = actual
+                return True
+            return self._runtime_match_type_name(
+                actual,
+                previous,
+                type_parameters=frozenset(),
+                type_bindings={},
+            )
+
+        if base == "List" and len(arguments) == 1:
+            if not isinstance(value, list):
+                return False
+            for item in value:
+                if not self._runtime_match_pattern(
+                    item,
+                    arguments[0],
+                    type_parameters=type_parameters,
+                    type_bindings=type_bindings,
+                ):
+                    return False
+            return True
+
+        if base == "Map" and len(arguments) == 2:
+            if not isinstance(value, dict):
+                return False
+            for key, item in value.items():
+                if not self._runtime_match_pattern(
+                    key,
+                    arguments[0],
+                    type_parameters=type_parameters,
+                    type_bindings=type_bindings,
+                ):
+                    return False
+                if not self._runtime_match_pattern(
+                    item,
+                    arguments[1],
+                    type_parameters=type_parameters,
+                    type_bindings=type_bindings,
+                ):
+                    return False
+            return True
+
+        if base == "Option" and len(arguments) == 1:
+            if not isinstance(value, EnumValue) or value.enum_name != "Option":
+                return False
+            if value.variant == "None":
+                return True
+            return (
+                value.variant == "Some"
+                and value.payload is not _NO_PAYLOAD
+                and self._runtime_match_pattern(
+                    value.payload,
+                    arguments[0],
+                    type_parameters=type_parameters,
+                    type_bindings=type_bindings,
+                )
+            )
+
+        if base == "Result" and len(arguments) == 2:
+            if not isinstance(value, EnumValue) or value.enum_name != "Result":
+                return False
+            if value.variant == "Ok" and value.payload is not _NO_PAYLOAD:
+                return self._runtime_match_pattern(
+                    value.payload,
+                    arguments[0],
+                    type_parameters=type_parameters,
+                    type_bindings=type_bindings,
+                )
+            if value.variant == "Err" and value.payload is not _NO_PAYLOAD:
+                return self._runtime_match_pattern(
+                    value.payload,
+                    arguments[1],
+                    type_parameters=type_parameters,
+                    type_bindings=type_bindings,
+                )
+            return False
+
+        if isinstance(value, StructValue) and value.type_name == base:
+            if not arguments:
+                return True
+            if value.type_arguments and len(value.type_arguments) == len(arguments):
+                for actual_item, expected_item in zip(value.type_arguments, arguments):
+                    if actual_item == "_":
+                        continue
+                    if not self._runtime_match_type_name(
+                        actual_item,
+                        expected_item,
+                        type_parameters=type_parameters,
+                        type_bindings=type_bindings,
+                    ):
+                        return False
+            return True
+
+        if isinstance(value, EnumValue) and value.enum_name == base:
+            if not arguments:
+                return True
+            if value.type_arguments and len(value.type_arguments) == len(arguments):
+                for actual_item, expected_item in zip(value.type_arguments, arguments):
+                    if actual_item == "_":
+                        continue
+                    if not self._runtime_match_type_name(
+                        actual_item,
+                        expected_item,
+                        type_parameters=type_parameters,
+                        type_bindings=type_bindings,
+                    ):
+                        return False
+            return True
+
+        if base == "SystemCaps" and isinstance(value, SystemCaps):
+            return True
+        if base == "NetRoot" and isinstance(value, NetRoot):
+            return True
+        if base == "DiskRoot" and isinstance(value, DiskRoot):
+            return True
+        if base == "EnvRoot" and isinstance(value, EnvRoot):
+            return True
+        if base == "ProcessRoot" and isinstance(value, ProcessRoot):
+            return True
+        if base == "NetCaps" and isinstance(value, NetCaps):
+            return True
+        if base == "DiskCaps" and isinstance(value, DiskCaps):
+            return True
+        if base == "DiskReadCaps" and isinstance(value, DiskReadCaps):
+            return True
+        if base == "EnvCaps" and isinstance(value, EnvCaps):
+            return True
+        if base == "ProcessCaps" and isinstance(value, ProcessCaps):
+            return True
+        if base == "Response" and isinstance(value, Response):
+            return True
+        if base == "Error" and isinstance(value, KsError):
+            return True
+        if base == "Void" and value is KsUnit:
+            return True
+        if base == "String" and isinstance(value, str):
+            return True
+        if base == "Bool" and isinstance(value, bool):
+            return True
+        if base == "Int" and isinstance(value, int) and not isinstance(value, bool):
+            return True
+        if base == "Float" and isinstance(value, float):
+            return True
+        if base == "List" and isinstance(value, list):
+            return True
+        if base == "Map" and isinstance(value, dict):
+            return True
+        return False
+
     def _runtime_matches_type(
         self,
         value: Any,
         expected_names,
+        *,
+        type_parameters: frozenset[str] = frozenset(),
+        type_bindings: dict[str, str] | None = None,
     ) -> bool:
+        bindings = type_bindings if type_bindings is not None else {}
         for name in expected_names:
-            if name == "_":
-                return True
-            base, arguments = self._generic_type(name)
-            if base == "Option" and len(arguments) == 1 and isinstance(value, EnumValue) and value.enum_name == "Option":
-                if value.variant == "None":
-                    return True
-                if value.variant == "Some" and value.payload is not _NO_PAYLOAD:
-                    return self._runtime_matches_type(value.payload, (arguments[0],))
-            if base == "Result" and len(arguments) == 2 and isinstance(value, EnumValue) and value.enum_name == "Result":
-                if value.variant == "Ok" and value.payload is not _NO_PAYLOAD:
-                    return self._runtime_matches_type(value.payload, (arguments[0],))
-                if value.variant == "Err" and value.payload is not _NO_PAYLOAD:
-                    return self._runtime_matches_type(value.payload, (arguments[1],))
-            if isinstance(value, EnumValue) and value.enum_name == name:
-                return True
-            if name == "SystemCaps" and isinstance(value, SystemCaps):
-                return True
-            if name == "NetRoot" and isinstance(value, NetRoot):
-                return True
-            if name == "DiskRoot" and isinstance(value, DiskRoot):
-                return True
-            if name == "EnvRoot" and isinstance(value, EnvRoot):
-                return True
-            if name == "ProcessRoot" and isinstance(value, ProcessRoot):
-                return True
-            if name == "NetCaps" and isinstance(value, NetCaps):
-                return True
-            if name == "DiskCaps" and isinstance(value, DiskCaps):
-                return True
-            if name == "DiskReadCaps" and isinstance(value, DiskReadCaps):
-                return True
-            if name == "EnvCaps" and isinstance(value, EnvCaps):
-                return True
-            if name == "ProcessCaps" and isinstance(value, ProcessCaps):
-                return True
-            if name == "Response" and isinstance(value, Response):
-                return True
-            if name == "Error" and isinstance(value, KsError):
-                return True
-            if name == "Void" and value is KsUnit:
-                return True
-            if name == "String" and isinstance(value, str):
-                return True
-            if name == "Bool" and isinstance(value, bool):
-                return True
-            if name == "Int" and isinstance(value, int) and not isinstance(value, bool):
-                return True
-            if name == "Float" and isinstance(value, float):
-                return True
-            if name == "List" and isinstance(value, list):
-                return True
-            if name == "Map" and isinstance(value, dict):
-                return True
-            if isinstance(value, StructValue) and value.type_name == name:
+            trial = dict(bindings)
+            if self._runtime_match_pattern(
+                value,
+                name,
+                type_parameters=type_parameters,
+                type_bindings=trial,
+            ):
+                bindings.clear()
+                bindings.update(trial)
                 return True
         return False
 
@@ -1647,6 +1877,8 @@ class Interpreter:
         if value is KsUnit:
             return "Void"
         if isinstance(value, StructValue):
+            if value.type_arguments:
+                return f"{value.type_name}<{', '.join(value.type_arguments)}>"
             return value.type_name
         if isinstance(value, EnumValue):
             if value.enum_name == "Option":
@@ -1655,9 +1887,25 @@ class Interpreter:
             if value.enum_name == "Result":
                 inner = "_" if value.payload is _NO_PAYLOAD else Interpreter._runtime_type_name(value.payload)
                 return f"Result<{inner}>"
+            if value.type_arguments:
+                return f"{value.enum_name}<{', '.join(value.type_arguments)}>"
             return value.enum_name
         if isinstance(value, KsError):
             return "Error"
+        if isinstance(value, list):
+            if not value:
+                return "List<_>"
+            item_types = tuple(dict.fromkeys(Interpreter._runtime_type_name(item) for item in value))
+            inner = item_types[0] if len(item_types) == 1 else "_"
+            return f"List<{inner}>"
+        if isinstance(value, dict):
+            if not value:
+                return "Map<_, _>"
+            key_types = tuple(dict.fromkeys(Interpreter._runtime_type_name(item) for item in value.keys()))
+            value_types = tuple(dict.fromkeys(Interpreter._runtime_type_name(item) for item in value.values()))
+            key_name = key_types[0] if len(key_types) == 1 else "_"
+            value_name = value_types[0] if len(value_types) == 1 else "_"
+            return f"Map<{key_name}, {value_name}>"
         mapping = (
             (SystemCaps, "SystemCaps"),
             (NetRoot, "NetRoot"),
@@ -1674,8 +1922,6 @@ class Interpreter:
             (str, "String"),
             (float, "Float"),
             (int, "Int"),
-            (list, "List"),
-            (dict, "Map"),
         )
         for runtime_type, name in mapping:
             if isinstance(value, runtime_type):

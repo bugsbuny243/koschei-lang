@@ -83,7 +83,7 @@ fn main() {}
         directory.cleanup()
 
 
-def test_branch_runtime_error_does_not_become_implicit_function_return():
+def test_branch_runtime_error_matches_interpreter_statement_continuation():
     directory, mir = _compiler_mir(
         '''
 fn main() -> Int {
@@ -93,14 +93,14 @@ fn main() -> Int {
 '''
     )
     try:
-        # Current source semantics makes the Error the if-statement result, then
-        # the enclosing block continues to the explicit return.
+        # An Error-valued if condition completes that statement; the enclosing
+        # block then continues to the explicit return. Canonical MIR now
+        # normalizes this path instead of exposing the raw Error as a branch
+        # condition, so executor and interpreter must agree.
         assert Interpreter(mir.root_module.program).execute_main() == 7
-
-        # MIR has not yet normalized that statement-result error continuation.
-        # Fail closed instead of silently upgrading the Error into a function return.
-        with pytest.raises(MirExecutionError, match="statement-result error continuation"):
-            execute_mir_v1(mir)
+        assert execute_mir_v1(mir) == 7
+        main = next(item for item in mir.root_module.functions if item.name == "main")
+        assert main.resources.ast_fallbacks == 0
     finally:
         directory.cleanup()
 
