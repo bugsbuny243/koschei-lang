@@ -90,3 +90,4 @@ The important new layer is **current operational eligibility**. An agent can hav
 ## Other watched lines
 
 No newer MCP/A2A, DID/VC or ERC-8004 change found in this scan materially alters the canonical provider-independent security model beyond the distinctions above. Protocol-specific developments remain adapter-layer concerns unless they introduce a new security invariant.
+
