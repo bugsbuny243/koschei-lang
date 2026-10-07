@@ -100,3 +100,4 @@ W3C VC Data Model v2.1: https://www.w3.org/TR/vc-data-model-2.1/
 Architecture impact: **meaningful**.
 
 New canonical concern: **runtime containment as a security primitive independent of identity, authority, and revocation**.
+
