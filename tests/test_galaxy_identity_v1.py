@@ -17,7 +17,7 @@ def _d(text: str) -> str:
 
 
 def _mir(subject: str = "withdrawal"):
-    return lower_native_sigils(parse(f"ka treasury; vor {subject}; shi evidence;"))
+    return lower_native_sigils(parse(f"ka {subject}; vor {subject}; shi {subject};"))
 
 
 def _veyra(instance: str = "bank-a"):

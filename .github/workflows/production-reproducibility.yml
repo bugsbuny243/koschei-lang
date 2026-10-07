@@ -1,0 +1,172 @@
+name: Production Reproducibility Evidence
+
+on:
+  push:
+    branches:
+      - production/runtime-variant-parity-v1
+    paths:
+      - '.github/workflows/production-reproducibility.yml'
+      - 'Dockerfile.production'
+      - 'production-build-bootstrap.txt'
+      - 'production-build-requirements.txt'
+      - 'production-container-lock.json'
+      - 'tools/build_solohost_binary_v1.py'
+      - 'tools/smoke_solohost_binary_v1.py'
+      - 'tools/assemble_solohost_staging_v1.py'
+      - 'tools/deterministic_release_zip_v1.py'
+      - 'tools/reproducible_artifact_receipt_v1.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: koschei-production-reproducibility-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-a:
+    name: independent-build-a
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bind checkout to candidate
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          git status --porcelain=v1 --untracked-files=all
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+      - name: Clean production build A
+        shell: bash
+        run: |
+          docker build \
+            --no-cache \
+            --build-arg RELEASE_GIT_COMMIT_SHA="${GITHUB_SHA}" \
+            --file Dockerfile.production \
+            --tag koschei-production:build-a \
+            .
+      - name: Extract candidate A
+        shell: bash
+        run: |
+          mkdir -p out
+          CID="$(docker create koschei-production:build-a)"
+          trap 'docker rm -f "$CID" >/dev/null 2>&1 || true' EXIT
+          docker cp "$CID:/srv/." out/
+          ZIP="$(find out -maxdepth 1 -type f -name 'koschei-lang-*-linux-x86_64.zip' -print -quit)"
+          test -n "$ZIP"
+          cp "$ZIP" out/candidate.zip
+          sha256sum out/candidate.zip > out/candidate.sha256
+          {
+            echo "source_commit=${GITHUB_SHA}"
+            echo "runner_name=${RUNNER_NAME}"
+            echo "runner_os=${RUNNER_OS}"
+            echo "runner_arch=${RUNNER_ARCH}"
+            docker version --format 'docker_client={{.Client.Version}} docker_server={{.Server.Version}}'
+          } > out/build-environment.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: production-build-a-${{ github.sha }}
+          path: |
+            out/candidate.zip
+            out/candidate.sha256
+            out/build-environment.txt
+          if-no-files-found: error
+          retention-days: 90
+
+  build-b:
+    name: independent-build-b
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bind checkout to candidate
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          git status --porcelain=v1 --untracked-files=all
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+      - name: Clean production build B
+        shell: bash
+        run: |
+          docker build \
+            --no-cache \
+            --build-arg RELEASE_GIT_COMMIT_SHA="${GITHUB_SHA}" \
+            --file Dockerfile.production \
+            --tag koschei-production:build-b \
+            .
+      - name: Extract candidate B
+        shell: bash
+        run: |
+          mkdir -p out
+          CID="$(docker create koschei-production:build-b)"
+          trap 'docker rm -f "$CID" >/dev/null 2>&1 || true' EXIT
+          docker cp "$CID:/srv/." out/
+          ZIP="$(find out -maxdepth 1 -type f -name 'koschei-lang-*-linux-x86_64.zip' -print -quit)"
+          test -n "$ZIP"
+          cp "$ZIP" out/candidate.zip
+          sha256sum out/candidate.zip > out/candidate.sha256
+          {
+            echo "source_commit=${GITHUB_SHA}"
+            echo "runner_name=${RUNNER_NAME}"
+            echo "runner_os=${RUNNER_OS}"
+            echo "runner_arch=${RUNNER_ARCH}"
+            docker version --format 'docker_client={{.Client.Version}} docker_server={{.Server.Version}}'
+          } > out/build-environment.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: production-build-b-${{ github.sha }}
+          path: |
+            out/candidate.zip
+            out/candidate.sha256
+            out/build-environment.txt
+          if-no-files-found: error
+          retention-days: 90
+
+  compare:
+    name: byte-identical-receipt
+    runs-on: ubuntu-latest
+    needs:
+      - build-a
+      - build-b
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Bind checkout to candidate
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+      - uses: actions/download-artifact@v4
+        with:
+          name: production-build-a-${{ github.sha }}
+          path: evidence/build-a
+      - uses: actions/download-artifact@v4
+        with:
+          name: production-build-b-${{ github.sha }}
+          path: evidence/build-b
+      - name: Require byte-identical independent artifacts
+        shell: bash
+        run: |
+          cmp --silent evidence/build-a/candidate.zip evidence/build-b/candidate.zip
+          python tools/reproducible_artifact_receipt_v1.py \
+            --first evidence/build-a/candidate.zip \
+            --second evidence/build-b/candidate.zip \
+            --source-commit "${GITHUB_SHA}" \
+            --output evidence/reproducibility-receipt.json
+          sha256sum evidence/reproducibility-receipt.json > evidence/reproducibility-receipt.sha256
+          cat evidence/build-a/candidate.sha256
+          cat evidence/build-b/candidate.sha256
+          cat evidence/reproducibility-receipt.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: production-reproducibility-evidence-${{ github.sha }}
+          path: |
+            evidence/reproducibility-receipt.json
+            evidence/reproducibility-receipt.sha256
+            evidence/build-a/candidate.sha256
+            evidence/build-a/build-environment.txt
+            evidence/build-b/candidate.sha256
+            evidence/build-b/build-environment.txt
+          if-no-files-found: error
+          retention-days: 90

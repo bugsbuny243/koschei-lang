@@ -338,29 +338,11 @@ def _typed_block(checker, block):
 
 
 def _typed_infer(checker, expression):
-    if isinstance(expression, ast.MatchExpression) and any(
-        isinstance(arm.body, ast.Block) for arm in expression.arms
-    ):
-        source = checker.infer(expression.value)
-        results = []
-        for arm in expression.arms:
-            checker.scopes.append({})
-            try:
-                if arm.binding is not None:
-                    checker.declare(
-                        arm.binding,
-                        checker.variant_payload(source, arm.variant),
-                        arm.location,
-                        "match-payload",
-                    )
-                results.append(
-                    _typed_block(checker, arm.body)
-                    if isinstance(arm.body, ast.Block)
-                    else checker.infer(arm.body)
-                )
-            finally:
-                checker.scopes.pop()
-        return checker.record(expression, union_type(*results))
+    # Block-arm Match used to be typed here before core Typed-HIR owned block
+    # result semantics. Keeping that compatibility path would bypass
+    # record_match_resolution() and strip the compiler-owned Owner::Variant
+    # identity required by sealed MIR. Match now always delegates to the
+    # canonical Typed-HIR implementation.
     return _typed_infer.original(checker, expression)
 
 

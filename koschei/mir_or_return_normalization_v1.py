@@ -5,6 +5,9 @@ from ._typed_expr import checked_block_normal_type
 from .ast_nodes import (
     BinaryExpression,
     Block,
+    BreakStatement,
+    CallExpression,
+    ContinueStatement,
     Expression,
     ExpressionStatement,
     ForStatement,
@@ -12,6 +15,7 @@ from .ast_nodes import (
     InterpolatedString,
     LetStatement,
     MapLiteral,
+    MemberExpression,
     OrBlockExpression,
     OrElseExpression,
     OrReturnExpression,
@@ -21,13 +25,18 @@ from .ast_nodes import (
     WhileStatement,
 )
 from .mir_extension_instructions_v4 import (
+    MirCapabilityCall,
     MirFallibleIsSuccess,
     MirFalliblePayload,
     MirInterpolate,
     MirIsRuntimeError,
+    MirMapContains,
     MirMapFinish,
+    MirMapGet,
     MirMapInsert,
+    MirMapKeys,
     MirMapNew,
+    MirMapSet,
     MirStructFinish,
     MirStructNew,
     MirStructSet,
@@ -46,11 +55,21 @@ from .mir_ir import (
     MirStore,
     _FunctionLowerer,
 )
-from .type_system import BOOL, VOID, GenericType, TypeNode, UnknownType
+from .type_system import BOOL, STRING, VOID, GenericType, TypeNode, UnknownType
 from .typed_hir import iterable_success_item_type
 
 
 class _OrReturnFunctionLowerer(_FunctionLowerer):
+    def _lower_statement(self, statement) -> None:
+        # The bootstrap base dispatcher only recognizes a plain List<T> before
+        # calling _lower_for. MIR v4 also admits List<T> or Error by consuming
+        # Typed-HIR's success projection, so route that case here first.
+        if isinstance(statement, ForStatement):
+            if iterable_success_item_type(self._type_of(statement.iterable)) is not None:
+                self._lower_for(statement)
+                return
+        super()._lower_statement(statement)
+
     def _new_internal_binding_name(self, purpose: str) -> str:
         while True:
             name = f"$mir_{purpose}_{self.next_binding}"
@@ -287,6 +306,11 @@ class _OrReturnFunctionLowerer(_FunctionLowerer):
 
     def _lower_map_literal(self, expression: MapLiteral) -> int:
         result_type = self._type_of(expression)
+        resolution = self.typed_report.map_literal_resolution_of(expression)
+        if resolution is None:
+            raise ValueError("map literal requires canonical Typed-HIR resolution")
+        if resolution.key_type != STRING or resolution.duplicate_policy != "reject":
+            raise ValueError("unsupported canonical Map literal contract")
         builder = self._new_value()
         self._emit(MirMapNew(builder, result_type, expression.location))
         result_name = self._new_internal_binding_name("map_result")
@@ -307,17 +331,137 @@ class _OrReturnFunctionLowerer(_FunctionLowerer):
         self._emit(MirLoad(target, result_name, result_type, expression.location))
         return target
 
+    def _lower_capability_call(self, expression: CallExpression) -> int | None:
+        if not isinstance(expression.callee, MemberExpression):
+            return None
+        resolution = self.typed_report.capability_call_resolution_of(expression)
+        if resolution is None:
+            return None
+        receiver = self._lower_expression(expression.callee.object)
+        arguments = tuple(
+            self._lower_expression(argument) for argument in expression.arguments
+        )
+        target = self._new_value()
+        self._emit(
+            MirCapabilityCall(
+                target,
+                receiver,
+                arguments,
+                resolution.capability_type,
+                resolution.method,
+                resolution.canonical_effect,
+                resolution.power_domain,
+                self._type_of(expression),
+                expression.location,
+            )
+        )
+        return target
+
+    def _lower_map_method_call(self, expression: CallExpression) -> int | None:
+        if not isinstance(expression.callee, MemberExpression):
+            return None
+        resolution = self.typed_report.map_method_resolution_of(expression)
+        if resolution is None:
+            return None
+
+        receiver = self._lower_expression(expression.callee.object)
+        arguments = tuple(
+            self._lower_expression(argument) for argument in expression.arguments
+        )
+        target = self._new_value()
+        result_type = self._type_of(expression)
+        method = resolution.method
+
+        if method == "get":
+            if len(arguments) != 1:
+                raise ValueError("canonical Map.get arity drifted")
+            self._emit(
+                MirMapGet(
+                    target,
+                    receiver,
+                    arguments[0],
+                    result_type,
+                    expression.location,
+                )
+            )
+            return target
+        if method == "set":
+            if len(arguments) != 2:
+                raise ValueError("canonical Map.set arity drifted")
+            self._emit(
+                MirMapSet(
+                    target,
+                    receiver,
+                    arguments[0],
+                    arguments[1],
+                    result_type,
+                    expression.location,
+                )
+            )
+            return target
+        if method == "keys":
+            if arguments:
+                raise ValueError("canonical Map.keys arity drifted")
+            self._emit(
+                MirMapKeys(
+                    target,
+                    receiver,
+                    result_type,
+                    expression.location,
+                )
+            )
+            return target
+        if method == "contains":
+            if len(arguments) != 1:
+                raise ValueError("canonical Map.contains arity drifted")
+            self._emit(
+                MirMapContains(
+                    target,
+                    receiver,
+                    arguments[0],
+                    result_type,
+                    expression.location,
+                )
+            )
+            return target
+        raise ValueError(f"unsupported canonical Map method: {method}")
+
     def _lower_struct_literal(self, expression: StructLiteral) -> int:
         result_type = self._type_of(expression)
+        resolution = self.typed_report.struct_literal_resolution_of(expression)
+        if resolution is None:
+            raise ValueError("struct literal requires canonical Typed-HIR resolution")
         builder = self._new_value()
-        self._emit(MirStructNew(builder, expression.type_name, result_type, expression.location))
+        self._emit(
+            MirStructNew(
+                builder,
+                resolution.type_name,
+                resolution.required_fields,
+                result_type,
+                expression.location,
+            )
+        )
         result_name = self._new_internal_binding_name("struct_result")
         self._emit(MirBind(result_name, builder, True, result_type, expression.location))
         final_join = self._new_block()
         for field_name, value_expression in expression.fields:
             value = self._lower_expression(value_expression)
-            self._store_error_or_continue(value, result_name=result_name, result_type=result_type, final_join=final_join, location=value_expression.location)
-            self._emit(MirStructSet(builder, field_name, value, result_type, expression.location))
+            self._store_error_or_continue(
+                value,
+                result_name=result_name,
+                result_type=result_type,
+                final_join=final_join,
+                location=value_expression.location,
+            )
+            self._emit(
+                MirStructSet(
+                    builder,
+                    field_name,
+                    value,
+                    result_type,
+                    expression.location,
+                )
+            )
         finished = self._new_value()
         self._emit(MirStructFinish(finished, builder, result_type, expression.location))
         self._emit(MirStore(result_name, finished, result_type, expression.location))
@@ -394,7 +538,10 @@ class _OrReturnFunctionLowerer(_FunctionLowerer):
         for statement in block.statements:
             if isinstance(statement, ReturnStatement):
                 return True
-            if isinstance(statement, (ExpressionStatement, LetStatement)):
+            if isinstance(
+                statement,
+                (ExpressionStatement, LetStatement, BreakStatement, ContinueStatement),
+            ):
                 continue
             if isinstance(statement, IfStatement) and cls._supports_value_if(statement):
                 continue
@@ -587,6 +734,9 @@ class _OrReturnFunctionLowerer(_FunctionLowerer):
             if isinstance(tail, ReturnStatement):
                 self._lower_statement(tail)
                 return None
+            if isinstance(tail, (BreakStatement, ContinueStatement)):
+                self._lower_statement(tail)
+                return None
             if isinstance(tail, IfStatement):
                 if result_type is None:
                     raise ValueError("value-position if requires canonical result type")
@@ -629,6 +779,13 @@ class _OrReturnFunctionLowerer(_FunctionLowerer):
         return target
 
     def _lower_expression(self, expression: Expression) -> int:
+        if isinstance(expression, CallExpression):
+            lowered_capability_call = self._lower_capability_call(expression)
+            if lowered_capability_call is not None:
+                return lowered_capability_call
+            lowered_map_call = self._lower_map_method_call(expression)
+            if lowered_map_call is not None:
+                return lowered_map_call
         if isinstance(expression, MapLiteral):
             return self._lower_map_literal(expression)
         if isinstance(expression, StructLiteral):

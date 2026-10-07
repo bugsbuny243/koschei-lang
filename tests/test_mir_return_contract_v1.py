@@ -22,15 +22,28 @@ def test_mir_executor_does_not_bypass_return_contract_for_error_values(monkeypat
     directory, executor = _executor(
         '''
 fn helper() -> Error { return Error("boom") }
-fn main() { helper() }
+fn main() { helper() or return }
 '''
     )
     original = RuntimePrimitiveFacadeV1.matches_type
 
-    def reject_error_for_contract_probe(self, value, expected_names):
+    def reject_error_for_contract_probe(
+        self,
+        value,
+        expected_names,
+        *,
+        type_parameters=frozenset(),
+        type_bindings=None,
+    ):
         if self.runtime_type_name(value) == "Error":
             return False
-        return original(self, value, expected_names)
+        return original(
+            self,
+            value,
+            expected_names,
+            type_parameters=type_parameters,
+            type_bindings=type_bindings,
+        )
 
     monkeypatch.setattr(
         RuntimePrimitiveFacadeV1,

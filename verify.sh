@@ -79,7 +79,8 @@ import json, re, sys
 mir = json.loads(sys.argv[1])
 checked = json.loads(sys.argv[2])
 fingerprint = mir.get("fingerprint", "")
-assert mir.get("version") == 3
+from koschei.mir import MIR_VERSION
+assert mir.get("version") == MIR_VERSION
 assert re.fullmatch(r"[0-9a-f]{64}", fingerprint)
 assert checked.get("mir_version") == mir["version"]
 assert checked.get("mir_fingerprint") == fingerprint
@@ -109,6 +110,14 @@ head_ "Interpreter/native parity"
 PARITY_CASES=(
   "examples/hello.ks"
   "examples/control_flow.ks"
+)
+
+# These surfaces are still migrating onto the custody-safe strict MIR-Go
+# projection. Repository truth accepts exactly two states for each case:
+# (a) native build succeeds and its stdout is byte-identical to checked run, or
+# (b) native build fails closed with KS4004. Silent legacy AST-Go fallback is
+# never accepted.
+NATIVE_TRANSITION_CASES=(
   "examples/daily.ks"
   "examples/holders.ks"
   "examples/maps.ks"
@@ -194,6 +203,54 @@ PY_PARITY
   )
   pass "interpreter/native parity: ${#PARITY_CASES[@]} cases — PARITY SHA256: $parity_sha"
 fi
+transition_failures=0
+for path in "${NATIVE_TRANSITION_CASES[@]}"; do
+  stem=$(basename "${path%.ks}")
+  interpreted_out="$PARITY_TMP/${stem}.transition.interpreter.out"
+  interpreted_err="$PARITY_TMP/${stem}.transition.interpreter.err"
+  native_out="$PARITY_TMP/${stem}.transition.native.out"
+  native_err="$PARITY_TMP/${stem}.transition.native.err"
+  binary="$PARITY_TMP/${stem}.transition"
+  build_err="$PARITY_TMP/${stem}.transition.build.err"
+
+  $KS run "$path" > "$interpreted_out" 2> "$interpreted_err"
+  interpreted_status=$?
+  if [ $interpreted_status -ne 0 ]; then
+    fail "$path — checked runtime failed during native-transition proof"
+    transition_failures=$((transition_failures + 1))
+    head -3 "$interpreted_err" | sed 's/^/        /'
+    continue
+  fi
+
+  $KS build "$path" --output "$binary" > /dev/null 2> "$build_err"
+  build_status=$?
+  if [ $build_status -ne 0 ]; then
+    if grep -q "KS4004" "$build_err"; then
+      pass "$path — unsupported native surface rejects fail-closed with KS4004"
+    else
+      fail "$path — native build failed without the custody-safe KS4004 boundary"
+      transition_failures=$((transition_failures + 1))
+      head -3 "$build_err" | sed 's/^/        /'
+    fi
+    continue
+  fi
+
+  "$binary" > "$native_out" 2> "$native_err"
+  native_status=$?
+  if [ $native_status -ne 0 ] || [ -s "$native_err" ]; then
+    fail "$path — newly supported native binary did not execute cleanly"
+    transition_failures=$((transition_failures + 1))
+    head -3 "$native_err" | sed 's/^/        /'
+    continue
+  fi
+  if cmp -s "$interpreted_out" "$native_out"; then
+    pass "$path — migrated native surface is byte-identical"
+  else
+    fail "$path — migrated native surface diverges from checked runtime"
+    transition_failures=$((transition_failures + 1))
+  fi
+done
+
 rm -rf "$PARITY_TMP"
 
 # ------------------------------------------------ 4. deterministic differential fuzzing

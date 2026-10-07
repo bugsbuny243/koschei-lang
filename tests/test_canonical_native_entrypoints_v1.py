@@ -12,6 +12,7 @@ from koschei.canonical_native_entrypoints_v1 import (
 from koschei.native_value_domains_v1 import WHOLE
 from koschei.object_space_frontend_identity_v1 import (
     NATIVE_WITNESS_FRONTEND_V1,
+    ObjectSpaceFrontendIdentityError,
     encode_authenticated_frontend_graph_secret,
 )
 from koschei.object_space_native_ir_dispatch_v1 import ObjectSpaceNativeIrDispatchError
@@ -88,15 +89,14 @@ class CanonicalNativeEntrypointsV1Tests(unittest.TestCase):
             run_canonical_native_v1(project)
 
     def test_filename_and_source_appearance_are_not_dispatch_authority(self) -> None:
-        legacy_looking = _project(
-            b"fn main() {\n  return 42\n}\n",
-        )
         with patch(
             "koschei.object_space_frontend_identity_v1.load_authenticated_frontend_module_graph",
             side_effect=AssertionError("legacy fallback reached"),
         ):
-            with self.assertRaises(ObjectSpaceNativeIrDispatchError):
-                run_canonical_native_v1(legacy_looking)
+            with self.assertRaises(ObjectSpaceFrontendIdentityError):
+                _project(
+                    b"fn main() {\n  return 42\n}\n",
+                )
 
 
 if __name__ == "__main__":

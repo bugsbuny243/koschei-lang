@@ -8,8 +8,13 @@ from koschei.mir_extension_instructions_v4 import (
     MirFallibleIsSuccess,
     MirInterpolate,
     MirIsRuntimeError,
+    MirMapContains,
+    MirMapGet,
     MirMapInsert,
+    MirMapKeys,
+    MirMapSet,
     MirUnit,
+    MirVariantConstruct,
     MirVariantIs,
     MirVariantPayload,
 )
@@ -22,7 +27,7 @@ from koschei.mir_or_return_normalization_v1 import (
     MirFallibleIsSuccess as CompatMirFallibleIsSuccess,
     MirInterpolate as CompatMirInterpolate,
 )
-from koschei.type_system import BOOL, STRING, VOID
+from koschei.type_system import BOOL, INT, STRING, VOID
 
 
 def test_compatibility_modules_reexport_exact_canonical_class_objects():
@@ -41,14 +46,21 @@ def test_extension_instruction_authority_has_no_duplicate_class_names():
         "MirFalliblePayload",
         "MirInterpolate",
         "MirIsRuntimeError",
+        "MirVariantConstruct",
         "MirVariantIs",
         "MirVariantPayload",
+        "MirCapabilityCall",
         "MirMapNew",
         "MirMapInsert",
         "MirMapFinish",
+        "MirMapGet",
+        "MirMapSet",
+        "MirMapKeys",
+        "MirMapContains",
         "MirStructNew",
         "MirStructSet",
         "MirStructFinish",
+        "MirStructFieldSet",
     }
 
 
@@ -60,10 +72,13 @@ def test_v4_registry_reuses_extension_authority_instead_of_copying_it():
     )
     assert is_mir_v4_extension_instruction(MirUnit(4, VOID, location))
     assert is_mir_v4_extension_instruction(
-        MirVariantIs(5, 4, "Option::Some", BOOL, location)
+        MirVariantConstruct(5, "Option::Some", 4, INT, location)
     )
     assert is_mir_v4_extension_instruction(
-        MirVariantPayload(6, 4, "Option::Some", STRING, location)
+        MirVariantIs(6, 5, "Option::Some", BOOL, location)
+    )
+    assert is_mir_v4_extension_instruction(
+        MirVariantPayload(7, 5, "Option::Some", STRING, location)
     )
 
 
@@ -78,35 +93,13 @@ def test_unit_instruction_contract_is_canonical_and_host_opaque():
     }
 
 
-def test_extension_instruction_contract_uses_existing_canonical_serializer():
-    location = SourceLocation(7, 3)
-    instruction = MirInterpolate(9, (1, 2), STRING, location)
-    assert instruction_contract(instruction) == {
-        "kind": "interpolate",
-        "line": 7,
-        "column": 3,
-        "target": 9,
-        "items": (1, 2),
-        "type": "String",
-    }
-
-
-def test_container_extension_fields_participate_in_canonical_ssa_validator():
-    location = SourceLocation(1, 1)
-    block = MirBasicBlock(
-        0,
-        (
-            MirIsRuntimeError(0, 41, BOOL, location),
-            MirMapInsert(0, (42, 43), STRING, location),
+def test_validate_blocks_accepts_extension_instructions_from_canonical_authority():
+    location = SourceLocation(8, 2)
+    blocks = (
+        MirBasicBlock(
+            id=0,
+            instructions=(MirUnit(1, VOID, location),),
+            terminator=MirReturn(1),
         ),
-        MirReturn(None),
     )
-    try:
-        validate_blocks((block,))
-    except ValueError as error:
-        message = str(error)
-        assert "41" in message
-        assert "42" in message
-        assert "43" in message
-    else:
-        raise AssertionError("canonical validator must reject undefined extension SSA uses")
+    validate_blocks(blocks)

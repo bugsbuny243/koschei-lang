@@ -11,7 +11,7 @@ import unittest
 from koschei.cli import main
 from koschei.codegen_go import generate_go, generate_go_mir
 from koschei.interpreter import run_mir
-from koschei.mir import MirGraph, MirIntegrityError, require_mir, to_dict
+from koschei.mir import MIR_VERSION, MirGraph, MirIntegrityError, require_mir, to_dict
 from koschei.modules import check_graph, load_graph
 from koschei.semantic import SemanticError
 
@@ -31,7 +31,7 @@ class MirLoweringTests(unittest.TestCase):
         mir = require_mir(graph)
 
         self.assertIsInstance(mir, MirGraph)
-        self.assertEqual(mir.version, 3)
+        self.assertEqual(mir.version, MIR_VERSION)
         self.assertRegex(mir.fingerprint, r"^[0-9a-f]{64}$")
         self.assertEqual(mir.root_module.name, "hello")
         mir.assert_sealed()
@@ -191,15 +191,18 @@ class MirBackendTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(output.getvalue(), "Koschei\n1\n")
 
-    def test_native_adapter_matches_existing_checked_codegen(self) -> None:
+    def test_native_adapter_uses_sealed_module_identity(self) -> None:
         graph = load_graph(EXAMPLES / "app.ks")
         check_graph(graph)
         mir = require_mir(graph)
 
-        self.assertEqual(
-            generate_go_mir(mir),
-            generate_go(graph.root_module.program, graph),
-        )
+        generated = generate_go_mir(mir)
+        legacy_host_graph = generate_go(graph.root_module.program, graph)
+        mir.assert_sealed()
+        self.assertEqual(generated, generate_go_mir(mir))
+        self.assertNotEqual(generated, legacy_host_graph)
+        self.assertIn("ksfn___module_0_cell0_label", generated)
+        self.assertNotIn("ksfn___module_0_risk_label", generated)
 
 
 class MirCliTests(unittest.TestCase):
@@ -224,7 +227,7 @@ class MirCliTests(unittest.TestCase):
 
         self.assertEqual(code, 0, error)
         payload = json.loads(output)
-        self.assertEqual(payload["version"], 3)
+        self.assertEqual(payload["version"], MIR_VERSION)
         self.assertEqual(payload["root"], "hello")
         self.assertRegex(payload["fingerprint"], r"^[0-9a-f]{64}$")
 
@@ -235,7 +238,7 @@ class MirCliTests(unittest.TestCase):
 
         self.assertEqual(code, 0, error)
         payload = json.loads(output)
-        self.assertEqual(payload["mir_version"], 3)
+        self.assertEqual(payload["mir_version"], MIR_VERSION)
         self.assertRegex(payload["mir_fingerprint"], r"^[0-9a-f]{64}$")
 
     def test_explain_knows_mir_integrity_diagnostic(self) -> None:

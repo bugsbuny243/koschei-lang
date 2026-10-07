@@ -2414,16 +2414,22 @@ def _flatten_module_graph(graph: object) -> Program:
     """
     ordered = graph.in_dependency_order()
     root_key = graph.root
+
+    def semantic_key(module) -> str:
+        key = getattr(module, "key", None)
+        return key if isinstance(key, str) and key else str(module.path)
+
     function_names: dict[str, dict[str, str]] = {}
     for index, module in enumerate(ordered):
-        if str(module.path) == root_key:
-            function_names[str(module.path)] = {
+        key = semantic_key(module)
+        if key == root_key:
+            function_names[key] = {
                 declaration.name: declaration.name
                 for declaration in module.program.declarations
             }
             continue
         prefix = f"__module_{index}_{module.name}_"
-        function_names[str(module.path)] = {
+        function_names[key] = {
             declaration.name: prefix + declaration.name
             for declaration in module.program.declarations
         }
@@ -2434,7 +2440,7 @@ def _flatten_module_graph(graph: object) -> Program:
     seen_enums: dict[str, object] = {}
     declarations = []
     for module in ordered:
-        key = str(module.path)
+        key = semantic_key(module)
         imported = {
             alias: function_names[target]
             for alias, target in module.imports.items()

@@ -13,11 +13,11 @@ from koschei.parser import parse
 
 class NativeSigilLibraryBridgeTests(unittest.TestCase):
     SOURCE = """
-ka treasury;
+ka withdrawal;
 vor withdrawal;
-shi evidence;
-thal recovery;
-nur visibility;
+shi withdrawal;
+thal withdrawal;
+nur withdrawal;
 """
 
     def _mir(self):

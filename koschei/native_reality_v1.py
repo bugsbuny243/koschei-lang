@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import dataclass
+import errno
 import hashlib
 import hmac
 import os
@@ -287,6 +288,10 @@ def _read_regular_at(
     try:
         descriptor = os.open(name, flags, dir_fd=directory_fd)
     except OSError as error:
+        if error.errno == errno.ELOOP:
+            raise NativeRealityError(
+                f"{label} must be a regular non-symlink file"
+            ) from error
         raise NativeRealityError(f"{label} cannot be opened safely: {error}") from error
     try:
         info = os.fstat(descriptor)
