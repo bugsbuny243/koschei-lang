@@ -263,7 +263,39 @@ def canonical_json(value: object) -> str:
     )
 
 
+_MAX_JSON_NESTING = 256
+
+
+def _enforce_json_nesting_limit(text: str) -> None:
+    depth = 0
+    in_string = False
+    escaped = False
+    for character in text:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif character == "\\":
+                escaped = True
+            elif character == '"':
+                in_string = False
+            continue
+        if character == '"':
+            in_string = True
+            continue
+        if character in "[{":
+            depth += 1
+            if depth > _MAX_JSON_NESTING:
+                raise FoundationExportError("foundation corpus is not valid JSON")
+        elif character in "]}":
+            depth -= 1
+            if depth < 0:
+                raise FoundationExportError("foundation corpus is not valid JSON")
+    if in_string or depth != 0:
+        raise FoundationExportError("foundation corpus is not valid JSON")
+
+
 def _strict_json_loads(text: str) -> object:
+    _enforce_json_nesting_limit(text)
     return json.loads(text, object_pairs_hook=_unique_object_pairs)
 
 

@@ -24,7 +24,7 @@ def d(tag: str) -> str:
 
 def context(*, payload="payload-a", matrix_tag="matrix-a"):
     mir = lower_native_sigils(
-        parse("ka treasury; vor withdrawal; shi evidence; thal recovery; nur visibility;")
+        parse("ka withdrawal; vor withdrawal; shi withdrawal; thal withdrawal; nur withdrawal;")
     )
     veyra = birth_veyra(
         profile_digest=d("bank-profile"),

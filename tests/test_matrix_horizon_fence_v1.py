@@ -19,7 +19,7 @@ def d(tag: str) -> str:
 
 
 def world():
-    mir = lower_native_sigils(parse("ka treasury; vor withdrawal; shi evidence;"))
+    mir = lower_native_sigils(parse("ka withdrawal; vor withdrawal; shi withdrawal;"))
     veyra = birth_veyra(
         profile_digest=d("bank-profile"),
         genesis_digest=d("genesis"),

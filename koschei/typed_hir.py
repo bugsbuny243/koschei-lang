@@ -21,6 +21,7 @@ from .ast_nodes import (
     Statement,
     WhileStatement,
 )
+from .capability_effect_contract_v1 import effect_for, require_capability_method_same_power_domain
 from .semantic import ImportedModule, SemanticError
 from .type_contracts import (
     TypeContractValidator,
@@ -34,6 +35,7 @@ from .type_contracts import (
 )
 from .type_system import (
     ERROR,
+    STRING,
     UNKNOWN,
     VOID,
     GenericType,
@@ -45,6 +47,7 @@ from .type_system import (
     is_named,
     parse_type_ref,
     substitute_type,
+    union_type,
 )
 
 
@@ -52,19 +55,29 @@ def iterable_success_item_type(type_node: TypeNode) -> TypeNode | None:
     """Project the checked List item type for a for-loop success path.
 
     A top-level Error alternative is control-flow evidence, not an iterable
-    shape. Typed HIR owns this projection so MIR/runtime consumers never need
-    to rediscover or guess it. Any other ambiguous union remains fail-closed.
+    shape. Multiple success alternatives are admitted only when every one is a
+    List shape; their element evidence is structurally unioned. A non-List
+    alternative remains fail-closed.
     """
 
-    success_options = tuple(option for option in alternatives(type_node) if option != ERROR)
-    if len(success_options) != 1:
+    success_options = tuple(
+        option for option in alternatives(type_node) if option != ERROR
+    )
+    if not success_options:
         return None
-    success = success_options[0]
-    if isinstance(success, GenericType) and success.name == "List":
-        return success.arguments[0] if success.arguments else UNKNOWN
-    if is_named(success, "List") or isinstance(success, UnknownType):
-        return UNKNOWN
-    return None
+
+    items: list[TypeNode] = []
+    for success in success_options:
+        if isinstance(success, GenericType) and success.name == "List":
+            items.append(
+                success.arguments[0] if success.arguments else UNKNOWN
+            )
+            continue
+        if is_named(success, "List") or isinstance(success, UnknownType):
+            items.append(UNKNOWN)
+            continue
+        return None
+    return union_type(*items)
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,11 +120,46 @@ class TypedMatchResolution:
 
 
 @dataclass(frozen=True, slots=True)
+class TypedStructLiteralResolution:
+    expression: Expression
+    type_name: str
+    required_fields: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class TypedMapLiteralResolution:
+    expression: Expression
+    key_type: TypeNode
+    duplicate_policy: str
+
+
+@dataclass(frozen=True, slots=True)
+class TypedMapMethodResolution:
+    expression: Expression
+    receiver_type: TypeNode
+    method: str
+
+
+@dataclass(frozen=True, slots=True)
+class TypedCapabilityCallResolution:
+    expression: Expression
+    receiver_type: TypeNode
+    capability_type: str
+    method: str
+    canonical_effect: str
+    power_domain: str
+
+
+@dataclass(frozen=True, slots=True)
 class TypedHIRReport:
     bindings: tuple[TypedBinding, ...]
     expressions: tuple[TypedExpression, ...]
     collections: int
     match_resolutions: tuple[TypedMatchResolution, ...] = ()
+    struct_literal_resolutions: tuple[TypedStructLiteralResolution, ...] = ()
+    map_literal_resolutions: tuple[TypedMapLiteralResolution, ...] = ()
+    map_method_resolutions: tuple[TypedMapMethodResolution, ...] = ()
+    capability_call_resolutions: tuple[TypedCapabilityCallResolution, ...] = ()
 
     def binding_types(self, name: str) -> tuple[TypeNode, ...]:
         return tuple(item.type for item in self.bindings if item.name == name)
@@ -120,6 +168,32 @@ class TypedHIRReport:
         self, expression: MatchExpression
     ) -> TypedMatchResolution | None:
         for item in self.match_resolutions:
+            if item.expression is expression:
+                return item
+        return None
+
+    def struct_literal_resolution_of(self, expression) -> TypedStructLiteralResolution | None:
+        for item in self.struct_literal_resolutions:
+            if item.expression is expression:
+                return item
+        return None
+
+    def map_literal_resolution_of(self, expression) -> TypedMapLiteralResolution | None:
+        for item in self.map_literal_resolutions:
+            if item.expression is expression:
+                return item
+        return None
+
+    def map_method_resolution_of(self, expression) -> TypedMapMethodResolution | None:
+        for item in self.map_method_resolutions:
+            if item.expression is expression:
+                return item
+        return None
+
+    def capability_call_resolution_of(
+        self, expression
+    ) -> TypedCapabilityCallResolution | None:
+        for item in self.capability_call_resolutions:
             if item.expression is expression:
                 return item
         return None
@@ -152,6 +226,10 @@ class TypedHIRChecker:
         self.bindings: list[TypedBinding] = []
         self.expressions: list[TypedExpression] = []
         self.match_resolutions: list[TypedMatchResolution] = []
+        self.struct_literal_resolutions: list[TypedStructLiteralResolution] = []
+        self.map_literal_resolutions: list[TypedMapLiteralResolution] = []
+        self.map_method_resolutions: list[TypedMapMethodResolution] = []
+        self.capability_call_resolutions: list[TypedCapabilityCallResolution] = []
         self.collections = 0
         self.current_function = None
         self.contracts = TypeContractValidator(program, self.imports)
@@ -178,6 +256,63 @@ class TypedHIRChecker:
             tuple(self.expressions),
             self.collections,
             tuple(self.match_resolutions),
+            tuple(self.struct_literal_resolutions),
+            tuple(self.map_literal_resolutions),
+            tuple(self.map_method_resolutions),
+            tuple(self.capability_call_resolutions),
+        )
+
+    def record_map_literal_resolution(self, expression: Expression) -> None:
+        self.map_literal_resolutions.append(
+            TypedMapLiteralResolution(expression, STRING, "reject")
+        )
+
+    def record_map_method_resolution(
+        self,
+        expression: Expression,
+        receiver_type: TypeNode,
+        method: str,
+    ) -> None:
+        if method not in {"get", "set", "keys", "contains"}:
+            return
+        if (
+            isinstance(receiver_type, GenericType)
+            and receiver_type.name == "Map"
+        ) or is_named(receiver_type, "Map"):
+            self.map_method_resolutions.append(
+                TypedMapMethodResolution(expression, receiver_type, method)
+            )
+
+    def record_capability_call_resolution(
+        self,
+        expression: Expression,
+        receiver_type: TypeNode,
+        method: str,
+    ) -> None:
+        if not isinstance(receiver_type, NamedType):
+            return
+        canonical_effect = effect_for(receiver_type.name, method)
+        if canonical_effect is None:
+            return
+        expected_effect, power_domain = require_capability_method_same_power_domain(
+            receiver_type.name,
+            method,
+        )
+        if canonical_effect != expected_effect:
+            raise SemanticError(
+                "KS5002",
+                "Typed HIR capability call disagrees with canonical effect contract.",
+                expression.location,
+            )
+        self.capability_call_resolutions.append(
+            TypedCapabilityCallResolution(
+                expression,
+                receiver_type,
+                receiver_type.name,
+                method,
+                canonical_effect,
+                power_domain,
+            )
         )
 
     def declare(
@@ -376,6 +511,10 @@ class TypedHIRChecker:
             return NamedType(expression.type_name)
 
         expected_fields = {field.name: field for field in declaration.fields}
+        required_fields = tuple(field.name for field in declaration.fields)
+        self.struct_literal_resolutions.append(
+            TypedStructLiteralResolution(expression, declaration.name, required_fields)
+        )
         supplied: dict[str, object] = {}
         for name, value in expression.fields:
             if name in supplied:

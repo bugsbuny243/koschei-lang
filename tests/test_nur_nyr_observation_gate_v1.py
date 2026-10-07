@@ -3,6 +3,7 @@ import hashlib
 
 import pytest
 
+from koschei.continuity_epoch_authority_v1 import bind_continuity_epoch_authority_v1
 from koschei.galaxy_identity_v1 import birth_veyra
 from koschei.library_adaptive_visibility_v0 import (
     VisibilityPolicyV0,
@@ -31,7 +32,7 @@ def dhex(tag: str) -> str:
 
 def mir():
     return lower_native_sigils(
-        parse("ka treasury; vor withdrawal; shi evidence; thal recovery; nur visibility;")
+        parse("ka withdrawal; vor withdrawal; shi withdrawal; thal withdrawal; nur withdrawal;")
     )
 
 
@@ -77,7 +78,11 @@ VEIL = b"v" * 32
 
 
 def gate(m, v, e, epoch_source):
-    return NyrObservationGateV1(m, v, e, VEIL, epoch_source)
+    continuity = bind_continuity_epoch_authority_v1(
+        continuity_id="test-continuity",
+        epoch_reader=epoch_source,
+    )
+    return NyrObservationGateV1(m, v, e, VEIL, continuity)
 
 
 def test_gate_renders_only_current_live_surface():

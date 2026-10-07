@@ -16,18 +16,14 @@ capability effect. Ambiguity fails closed.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, fields, is_dataclass
+from dataclasses import dataclass
 import hashlib
-from typing import Any
-
-from .ast_nodes import CallExpression, Identifier, MemberExpression
 from .capability_effect_contract_v1 import (
-    effect_for,
     require_capability_method_same_power_domain,
 )
 from .mir import MirGraph
+from .mir_ir import MirLoad
 from .mir_capability_callsite_v1 import derive_mir_capability_callsites_v1
-from .type_system import NamedType
 
 _CTX = b"koschei.compiler-capability-effect-basis/v1\x00"
 _FALLBACK_CTX = b"koschei.compiler-capability-effect-basis/ast-fallback/v1\x00"
@@ -54,47 +50,6 @@ def _hex_digest(value: str, label: str) -> str:
             f"{label} must be hexadecimal"
         ) from error
     return text
-
-
-def _walk(value: Any):
-    if is_dataclass(value):
-        yield value
-        for field in fields(value):
-            yield from _walk(getattr(value, field.name))
-    elif isinstance(value, (tuple, list)):
-        for item in value:
-            yield from _walk(item)
-    elif isinstance(value, dict):
-        for item in value.values():
-            yield from _walk(item)
-
-
-def _fallback_digest(
-    *,
-    mir_fingerprint: str,
-    module_name: str,
-    function_name: str,
-    capability_type: str,
-    capability_method: str,
-    canonical_effect: str,
-    power_domain: str,
-    source_line: int,
-    source_column: int,
-) -> str:
-    rows = (
-        f"mir={mir_fingerprint}",
-        f"module={module_name}",
-        f"function={function_name}",
-        f"capability-type={capability_type}",
-        f"capability-method={capability_method}",
-        f"canonical-effect={canonical_effect}",
-        f"power-domain={power_domain}",
-        f"location={source_line}:{source_column}",
-        "ast-fallback=1",
-        "authority=0",
-        "version=1",
-    )
-    return hashlib.sha256(_FALLBACK_CTX + "\n".join(rows).encode("utf-8")).hexdigest()
 
 
 def _digest(
@@ -225,58 +180,8 @@ class CompilerCapabilityEffectBasisV1:
         )
         if derived != self:
             raise CompilerCapabilityEffectBasisV1Error(
-                "compiler capability-effect basis differs from sealed MIR"
+                "compiler capability-effect basis seal mismatch: basis differs from sealed MIR"
             )
-
-
-def _legacy_checked_fallback_use(module, function):
-    imported_aliases = frozenset(module.imports)
-    imported_calls: list[str] = []
-    uses: list[tuple[str, str, str, str, int, int]] = []
-    for node in _walk(function.declaration.body):
-        if not isinstance(node, CallExpression):
-            continue
-        callee = node.callee
-        if not isinstance(callee, MemberExpression):
-            continue
-        receiver = callee.object
-        if isinstance(receiver, Identifier) and receiver.name in imported_aliases:
-            imported_calls.append(f"{receiver.name}.{callee.member}")
-            continue
-        receiver_type = module.type_of(receiver)
-        capability_type = (
-            receiver_type.name if isinstance(receiver_type, NamedType) else ""
-        )
-        canonical_effect = effect_for(capability_type, callee.member)
-        if canonical_effect is None:
-            continue
-        expected_effect, power_domain = require_capability_method_same_power_domain(
-            capability_type,
-            callee.member,
-        )
-        if expected_effect != canonical_effect:
-            raise CompilerCapabilityEffectBasisV1Error(
-                "compiler fallback capability use disagrees with canonical effect contract"
-            )
-        uses.append(
-            (
-                capability_type,
-                callee.member,
-                canonical_effect,
-                power_domain,
-                callee.location.line,
-                callee.location.column,
-            )
-        )
-    if imported_calls:
-        raise CompilerCapabilityEffectBasisV1Error(
-            "compiler capability basis v1 requires a leaf function without imported calls"
-        )
-    if len(uses) != 1:
-        raise CompilerCapabilityEffectBasisV1Error(
-            "compiler capability basis v1 requires exactly one direct capability call"
-        )
-    return uses[0]
 
 
 def derive_compiler_capability_effect_basis_v1(
@@ -323,6 +228,18 @@ def derive_compiler_capability_effect_basis_v1(
             "compiler capability basis v1 requires a leaf function without local calls"
         )
 
+    imported_aliases = frozenset(module.imports)
+    imported_loads = {
+        instruction.name
+        for block in function.blocks
+        for instruction in block.instructions
+        if isinstance(instruction, MirLoad) and instruction.name in imported_aliases
+    }
+    if imported_loads:
+        raise CompilerCapabilityEffectBasisV1Error(
+            "compiler capability basis v1 requires a leaf function without imported calls"
+        )
+
     sites = derive_mir_capability_callsites_v1(
         mir,
         module_name=module.name,
@@ -333,44 +250,21 @@ def derive_compiler_capability_effect_basis_v1(
             "compiler capability basis v1 requires exactly one normalized MIR capability call"
         )
 
-    if len(sites) == 1:
-        site = sites[0]
-        site.assert_sealed()
-        capability_type = site.capability_type
-        capability_method = site.capability_method
-        canonical_effect = site.canonical_effect
-        power_domain = site.power_domain
-        source_line = site.source_line
-        source_column = site.source_column
-        callsite_digest = site.digest
-        normalized_mir = True
-        compatibility_fallback = False
-    else:
-        if function.resources.ast_fallbacks < 1:
-            raise CompilerCapabilityEffectBasisV1Error(
-                "compiler capability basis v1 requires exactly one normalized MIR capability call"
-            )
-        (
-            capability_type,
-            capability_method,
-            canonical_effect,
-            power_domain,
-            source_line,
-            source_column,
-        ) = _legacy_checked_fallback_use(module, function)
-        callsite_digest = _fallback_digest(
-            mir_fingerprint=mir.fingerprint,
-            module_name=module.name,
-            function_name=function.name,
-            capability_type=capability_type,
-            capability_method=capability_method,
-            canonical_effect=canonical_effect,
-            power_domain=power_domain,
-            source_line=source_line,
-            source_column=source_column,
+    if len(sites) != 1:
+        raise CompilerCapabilityEffectBasisV1Error(
+            "compiler capability basis v1 requires exactly one normalized MIR capability call"
         )
-        normalized_mir = False
-        compatibility_fallback = True
+    site = sites[0]
+    site.assert_sealed()
+    capability_type = site.capability_type
+    capability_method = site.capability_method
+    canonical_effect = site.canonical_effect
+    power_domain = site.power_domain
+    source_line = site.source_line
+    source_column = site.source_column
+    callsite_digest = site.digest
+    normalized_mir = True
+    compatibility_fallback = False
 
     if function.effects != (canonical_effect,):
         raise CompilerCapabilityEffectBasisV1Error(

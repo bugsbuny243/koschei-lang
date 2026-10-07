@@ -569,10 +569,39 @@ CATALOG: tuple[Family, ...] = (
             security_sensitive=True,
         ),
     ),
+    _family(
+        "persist",
+        "partial",
+        "v1",
+        "Exact-object persistent state with bounded payloads and descriptor anchoring.",
+        _reserved(
+            "allow",
+            capability="PersistRoot",
+            security_sensitive=True,
+            note="Exact-object authority exists, but release promotion remains evidence-gated.",
+        ),
+        _reserved(
+            "load",
+            capability="PersistCaps",
+            required=("bytes", "deadline"),
+            enforced=("bytes",),
+            security_sensitive=True,
+            note="Byte bounds are enforced; syscall-preemptive deadline parity is not yet proven.",
+        ),
+        _reserved(
+            "commit",
+            capability="PersistCaps",
+            required=("bytes", "deadline"),
+            enforced=("bytes",),
+            security_sensitive=True,
+            note="Atomic replace and fsync semantics exist; deadline parity remains reserved.",
+        ),
+    ),
 )
 
 
-def validate_catalog(catalog: Sequence[Family] = CATALOG) -> None:
+def validate_catalog(catalog: Sequence[Family] | None = None) -> None:
+    catalog = CATALOG if catalog is None else catalog
     family_names: set[str] = set()
     for family in catalog:
         if family.name in family_names:
@@ -613,7 +642,8 @@ def validate_catalog(catalog: Sequence[Family] = CATALOG) -> None:
                 )
 
 
-def document(catalog: Sequence[Family] = CATALOG) -> dict[str, object]:
+def document(catalog: Sequence[Family] | None = None) -> dict[str, object]:
+    catalog = CATALOG if catalog is None else catalog
     validate_catalog(catalog)
     operations = [operation for family in catalog for operation in family.operations]
     counts = {

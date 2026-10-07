@@ -71,10 +71,10 @@ _CTX = b"koschei.native-model-curriculum/v2\x00"
 _HEX = frozenset(string.hexdigits.lower())
 _CANONICAL_SOURCE = (
     "ka treasury;\n"
-    "vor withdrawal;\n"
-    "shi evidence;\n"
-    "thal recovery;\n"
-    "nur visibility;\n"
+    "vor treasury;\n"
+    "shi treasury;\n"
+    "thal treasury;\n"
+    "nur treasury;\n"
 )
 
 
@@ -426,7 +426,10 @@ def _n1_cases() -> tuple[NativeCurriculumCaseV2, ...]:
     else:
         raise NativeModelCurriculumError("Galaxy identity oracle drift: Aevra crossed Veyra")
 
-    other_mir = _native_mir(_CANONICAL_SOURCE.replace("ka treasury;", "ka treasury_copy;"))
+    # A distinct compiler product must still satisfy native sigil lineage.
+    # Rename the admitted subject across the whole sealed program instead of
+    # mutating only ka and manufacturing orphan vor/shi/thal/nur roots.
+    other_mir = _native_mir(_CANONICAL_SOURCE.replace("treasury", "treasury_copy"))
     try:
         aevra.assert_sealed(veyra_a, other_mir)
     except GalaxyIdentityError as error:

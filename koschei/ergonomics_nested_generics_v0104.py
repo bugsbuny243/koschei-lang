@@ -106,15 +106,21 @@ def _statement(self, statement):
 
     iterable_type = self._check_expression(statement.iterable)
     item_node = _list_item(_evidence_type(self, statement.iterable))
+    success_type = self._success_type(iterable_type)
+    success_base = (
+        self._generic_type(success_type)[0]
+        if success_type is not None
+        else None
+    )
     if (
         item_node is None
-        and iterable_type is not None
-        and iterable_type != "List"
-        and not iterable_type.startswith("List<")
+        and success_type is not None
+        and success_base != "List"
     ):
         raise semantic.SemanticError(
             "KS1301",
-            f"'for ... in' yalnızca List üzerinde çalışır, {iterable_type} bulundu.",
+            f"'for ... in' yalnızca List veya List ... or Error üzerinde çalışır, "
+            f"{iterable_type} bulundu.",
             statement.location,
         )
 
@@ -123,6 +129,7 @@ def _statement(self, statement):
         item_type = _fallback_item_type(self, statement.iterable)
 
     self._v010_loop_depth = getattr(self, "_v010_loop_depth", 0) + 1
+    self.loop_depth += 1
     self.scopes.append({})
     try:
         self._declare(
@@ -137,6 +144,7 @@ def _statement(self, statement):
         self._check_statements(statement.body)
     finally:
         self.scopes.pop()
+        self.loop_depth -= 1
         self._v010_loop_depth -= 1
     return None
 

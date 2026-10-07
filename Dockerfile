@@ -14,8 +14,22 @@ RUN apt-get update \
         zip \
     && rm -rf /var/lib/apt/lists/*
 
-RUN python -m pip install --no-cache-dir --upgrade pip \
-    && python -m pip install --no-cache-dir nuitka ordered-set zstandard
+# Python release tooling is hash-bound. Do not upgrade pip from the network:
+# the pip executable is part of the still-to-be-digest-pinned Python base image.
+COPY production-build-bootstrap.txt /tmp/production-build-bootstrap.txt
+COPY production-build-requirements.txt /tmp/production-build-requirements.txt
+RUN python -m pip install \
+      --no-cache-dir \
+      --require-hashes \
+      --no-deps \
+      --only-binary=:all: \
+      -r /tmp/production-build-bootstrap.txt \
+    && python -m pip install \
+      --no-cache-dir \
+      --require-hashes \
+      --no-deps \
+      --no-build-isolation \
+      -r /tmp/production-build-requirements.txt
 
 WORKDIR /src
 COPY . .

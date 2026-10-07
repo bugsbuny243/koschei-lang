@@ -7,6 +7,7 @@ import unittest
 
 from koschei.ast_nodes import SourceLocation
 from koschei.mir import MirIntegrityError, require_mir, to_dict
+from koschei.mir_extension_instructions_v4 import MirVariantIs, MirVariantPayload
 from koschei.mir_ir import (
     MirAstFallback,
     MirBasicBlock,
@@ -125,15 +126,24 @@ class MirControlFlowCfgTests(MirCfgTestCase):
             """
         )
 
-        self.assertEqual([block.id for block in function.blocks], [0, 1, 2, 3])
-        entry = function.blocks[0]
+        by_id = {block.id: block for block in function.blocks}
+        entry = by_id[0]
         self.assertIsInstance(entry.terminator, MirBranch)
-        self.assertEqual(
-            (entry.terminator.then_block, entry.terminator.else_block), (1, 2)
-        )
-        self.assertEqual(function.blocks[1].terminator, MirJump(3))
-        self.assertEqual(function.blocks[2].terminator, MirJump(3))
-        self.assertIsInstance(function.blocks[3].terminator, MirReturn)
+
+        # v4 first guards Error-valued conditions, then performs the Bool branch.
+        error_block = by_id[entry.terminator.then_block]
+        decision_block = by_id[entry.terminator.else_block]
+        self.assertIsInstance(error_block.terminator, MirJump)
+        self.assertIsInstance(decision_block.terminator, MirBranch)
+
+        then_block = by_id[decision_block.terminator.then_block]
+        else_block = by_id[decision_block.terminator.else_block]
+        self.assertIsInstance(then_block.terminator, MirJump)
+        self.assertIsInstance(else_block.terminator, MirJump)
+        join = then_block.terminator.target
+        self.assertEqual(else_block.terminator.target, join)
+        self.assertEqual(error_block.terminator.target, join)
+        self.assertIsInstance(by_id[join].terminator, MirReturn)
 
     def test_while_has_condition_branch_and_back_edge(self) -> None:
         _, function = self.main_function(
@@ -148,16 +158,32 @@ class MirControlFlowCfgTests(MirCfgTestCase):
             """
         )
 
-        self.assertEqual(function.blocks[0].terminator, MirJump(1))
-        self.assertIsInstance(function.blocks[1].terminator, MirBranch)
-        branch = function.blocks[1].terminator
-        self.assertEqual((branch.then_block, branch.else_block), (2, 3))
-        self.assertEqual(function.blocks[2].terminator, MirJump(1))
-        self.assertIsInstance(function.blocks[3].terminator, MirReturn)
+        by_id = {block.id: block for block in function.blocks}
+        self.assertIsInstance(by_id[0].terminator, MirJump)
+        condition_id = by_id[0].terminator.target
+        condition = by_id[condition_id]
+        self.assertIsInstance(condition.terminator, MirBranch)
+
+        # One edge handles condition Error; the other reaches the Bool decision.
+        decision = by_id[condition.terminator.else_block]
+        self.assertIsInstance(decision.terminator, MirBranch)
+        exit_id = decision.terminator.else_block
+        self.assertIsInstance(by_id[exit_id].terminator, MirReturn)
+
+        # Body completion may pass through an Error guard, but a successful
+        # iteration must have one explicit back-edge to the condition block.
+        self.assertTrue(
+            any(
+                isinstance(block.terminator, MirJump)
+                and block.terminator.target == condition_id
+                for block in function.blocks
+            )
+        )
         self.assertTrue(
             any(
                 isinstance(instruction, MirStore)
-                for instruction in function.blocks[2].instructions
+                for block in function.blocks
+                for instruction in block.instructions
             )
         )
 
@@ -195,13 +221,31 @@ class MirFallbackBoundaryTests(MirCfgTestCase):
         self.assertTrue(any(isinstance(item, MirIterInit) for item in instructions))
         self.assertTrue(any(isinstance(item, MirIterHasNext) for item in instructions))
         self.assertTrue(any(isinstance(item, MirIterNext) for item in instructions))
-        self.assertEqual([block.id for block in function.blocks], [0, 1, 2, 3])
-        self.assertEqual(function.blocks[0].terminator, MirJump(1))
-        self.assertIsInstance(function.blocks[1].terminator, MirBranch)
-        self.assertEqual(function.blocks[2].terminator, MirJump(1))
-        self.assertIsInstance(function.blocks[3].terminator, MirReturn)
+        by_id = {block.id: block for block in function.blocks}
+        entry = by_id[0]
+        self.assertIsInstance(entry.terminator, MirBranch)
 
-    def test_aggregate_and_match_fallbacks_are_visible_not_erased(self) -> None:
+        iterator_init = next(
+            block
+            for block in function.blocks
+            if any(isinstance(item, MirIterInit) for item in block.instructions)
+        )
+        self.assertIsInstance(iterator_init.terminator, MirJump)
+        condition_id = iterator_init.terminator.target
+        self.assertIsInstance(by_id[condition_id].terminator, MirBranch)
+
+        self.assertTrue(
+            any(
+                isinstance(block.terminator, MirJump)
+                and block.terminator.target == condition_id
+                for block in function.blocks
+            )
+        )
+        self.assertTrue(
+            any(isinstance(block.terminator, MirReturn) for block in function.blocks)
+        )
+
+    def test_aggregate_and_match_are_normalized_without_ast_fallback(self) -> None:
         _, function = self.main_function(
             """
             enum Maybe<T> {
@@ -220,13 +264,14 @@ class MirFallbackBoundaryTests(MirCfgTestCase):
             """
         )
 
-        node_kinds = {
-            instruction.node_kind
+        instructions = [
+            instruction
             for block in function.blocks
             for instruction in block.instructions
-            if isinstance(instruction, MirAstFallback)
-        }
-        self.assertIn("MatchExpression", node_kinds)
+        ]
+        self.assertTrue(any(isinstance(item, MirVariantIs) for item in instructions))
+        self.assertTrue(any(isinstance(item, MirVariantPayload) for item in instructions))
+        self.assertFalse(any(isinstance(item, MirAstFallback) for item in instructions))
 
     def test_json_reports_normalized_for_cfg_without_fallbacks(self) -> None:
         mir = self.checked_mir(
@@ -240,13 +285,13 @@ class MirFallbackBoundaryTests(MirCfgTestCase):
         )
         function = to_dict(mir)["modules"][0]["functions"][0]
 
-        self.assertEqual(function["basic_blocks"], 4)
+        self.assertGreaterEqual(function["basic_blocks"], 6)
         self.assertGreaterEqual(function["instructions"], 8)
         self.assertEqual(function["ast_fallbacks"], 0)
-        self.assertEqual(function["blocks"][0]["terminator"]["kind"], "jump")
-        self.assertEqual(function["blocks"][1]["terminator"]["kind"], "branch")
-        self.assertEqual(function["blocks"][2]["terminator"]["kind"], "jump")
-        self.assertEqual(function["blocks"][3]["terminator"]["kind"], "return")
+        terminators = [block["terminator"]["kind"] for block in function["blocks"]]
+        self.assertIn("branch", terminators)
+        self.assertIn("jump", terminators)
+        self.assertIn("return", terminators)
 
 
 class MirCfgIntegrityTests(MirCfgTestCase):

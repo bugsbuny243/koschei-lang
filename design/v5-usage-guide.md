@@ -53,7 +53,6 @@ v5'te güvenlik bilgisi *görünürdür* ama *yazılmaz*. `ks caps` her şeyi g�
 
 ## 2. Temeller
 
-<!-- verify: future -->
 ```ks
 fn main() {
     let ad = "Onur"

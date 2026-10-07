@@ -14,7 +14,7 @@ fn label(percent: Int) -> String {
     return "NORMAL"
 }
 
-fn total(holders: List) -> Int {
+fn total(holders: List<Holder>) -> Int {
     let mut sum = 0
     for holder in holders {
         sum = sum + holder.percent

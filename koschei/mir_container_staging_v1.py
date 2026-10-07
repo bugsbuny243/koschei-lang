@@ -6,9 +6,13 @@ instruction dataclasses or become a second instruction authority.
 """
 from .mir_extension_instructions_v4 import (
     MirIsRuntimeError,
+    MirMapContains,
     MirMapFinish,
+    MirMapGet,
     MirMapInsert,
+    MirMapKeys,
     MirMapNew,
+    MirMapSet,
     MirStructFinish,
     MirStructNew,
     MirStructSet,
@@ -16,9 +20,13 @@ from .mir_extension_instructions_v4 import (
 
 __all__ = [
     "MirIsRuntimeError",
+    "MirMapContains",
     "MirMapFinish",
+    "MirMapGet",
     "MirMapInsert",
+    "MirMapKeys",
     "MirMapNew",
+    "MirMapSet",
     "MirStructFinish",
     "MirStructNew",
     "MirStructSet",

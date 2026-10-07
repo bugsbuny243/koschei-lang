@@ -16,7 +16,7 @@ from koschei.verified_ir_build_input_v1 import derive_verified_ir_build_input_v1
 from koschei.verifier_build_provenance_v1 import attest_verifier_build_from_verified_ir_v1,measure_verifier_artifact_v1
 from koschei.verifier_reproducible_admission_v1 import VerifierReproducibleAdmissionV1Error,admit_reproducible_verifier_artifact_v1
 from koschei.verifier_reproducible_build_v1 import VerifierReproducibleBuildV1Error,attest_builder_observation_v1,seal_reproducible_build_receipt_v1
-SOURCE="""ka treasury;\nvor withdrawal;\nshi evidence;\nthal recovery;\nnur visibility;\n"""
+SOURCE="""ka withdrawal;\nvor withdrawal;\nshi withdrawal;\nthal withdrawal;\nnur withdrawal;\n"""
 def verified_world():
     mir=lower_native_sigils(parse(SOURCE)); plan=expand_native_sigil_mir(mir).library_plan
     receipts=[make_receipt(activation_step_id=s.activation_step_id,obligation=s.obligation,subsystem=s.subsystem,proof_kind=s.proof_kind,evidence_digest=hashlib.sha256(s.binding_digest.encode()).hexdigest(),success=True) for s in plan.steps]
