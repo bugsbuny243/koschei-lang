@@ -8,10 +8,13 @@ on:
   push:
     branches:
       - production/runtime-variant-parity-v1
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 concurrency:
-  group: koschei-production-validation-${{ github.ref }}
+  group: koschei-validation-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
