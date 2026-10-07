@@ -26,3 +26,4 @@
   "sentinel_relationship": "optional-versioned-interoperability-not-shared-entitlement",
   "web3_relationship": "independent-language; Web3 is one optional integration consumer; no shared entitlement"
 }
+
