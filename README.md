@@ -1,10 +1,10 @@
 # Koschei (`.ks`)
 
-## Product direction and joint packages
+## Product direction
 
-Koschei Lang is an independent programming language and library ecosystem for cybersecurity-centered general-purpose software development. Its own semantics, compiler, standard library and runtime define the product; Web3 and agent integrations are applications of the language. Self-contained distribution and surpassing Rust in security remain development goals requiring executed evidence.
+Koschei Lang is an independent programming language and library ecosystem for cybersecurity-centered general-purpose software development. Its own semantics, compiler, standard library and runtime define the product; Web3 and AI integrations are applications of the language. Self-contained distribution and surpassing Rust in security remain development goals requiring executed evidence.
 
-**Koschei Lang and Koschei Sentinel are offered together in the same commercial packages.** Their runtime dependencies and release gates remain independent. See [product direction](docs/PRODUCT_DIRECTION_2026-09-10.md) and the [offline bundle contract](docs/COMMERCIAL_BUNDLE_V1.md).
+**Koschei Lang is sold and licensed separately from Koschei Sentinel and Koschei Web3 Hub.** Interoperability may use explicit SDKs, adapters and versioned contracts, but it does not create shared pricing, entitlement or runtime authority. See [the standalone product charter](docs/PRODUCT_CHARTER_LANG_V1.md), [product direction](docs/PRODUCT_DIRECTION_2026-09-10.md) and the [legacy compatibility bundle contract](docs/COMMERCIAL_BUNDLE_V1.md).
 
 > **Private commercial development repository. Koschei is proprietary software. Access to this repository does not grant redistribution, sublicensing, resale, or publication rights. See `LICENSE`.**
 
@@ -166,9 +166,9 @@ The protected-source/deception architecture is being hardened through staged att
 
 ## Commercial development
 
-Koschei is being developed as proprietary commercial software. Public redistribution of the current repository, compiler/runtime security implementation, deception mechanisms, model integrations, or derivative commercial products is not authorized unless a separate written license expressly permits it.
+Koschei Lang is being developed as standalone proprietary commercial software. Public redistribution of the current repository, compiler/runtime security implementation, deception mechanisms, model integrations, or derivative commercial products is not authorized unless a separate written license expressly permits it.
 
-Future customer-facing distribution may include licensed SDK/tooling, signed binaries, private package/artifact channels, enterprise policy management, audit evidence, and support/SLA offerings. Those distribution rights will be defined by separate commercial terms rather than repository access alone.
+Future customer-facing distribution may include licensed SDK/tooling, signed binaries, private package/artifact channels, enterprise policy management, audit evidence, and support/SLA offerings. Those distribution rights will be defined by Lang-specific commercial terms rather than repository access or purchase of another Koschei product.
 
 ## Contributions
 
