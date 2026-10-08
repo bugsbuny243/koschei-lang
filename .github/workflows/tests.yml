@@ -7,6 +7,7 @@ name: Koschei Compiler Tests
 on:
   push:
     branches:
+      - main
       - production/runtime-variant-parity-v1
   pull_request:
     branches:
