@@ -385,6 +385,25 @@ def _build_with_public_lock(args: argparse.Namespace) -> int:
         _cli.command_build = original
 
 
+
+def check_with_host_ingress_v1(
+    ingress: "CanonicalHostIngressV1",
+    path: str | Path,
+    *,
+    now: float | int | None = None,
+) -> "CanonicalCommandResultV1":
+    """Host-injected canonical check; never consults legacy CLI dispatch.
+
+    The trusted host must construct and retain the ingress capability. No
+    provider, target or secret is selected from argv, env or source contents.
+    """
+    from .canonical_host_ingress_v1 import CanonicalHostIngressV1
+
+    if not isinstance(ingress, CanonicalHostIngressV1):
+        raise TypeError("trusted canonical host ingress capability is required")
+    return ingress.execute("check", path, now=now)
+
+
 def main(argv: list[str] | None = None) -> int:
     _configure_utf8_stdio()
     arguments = sys.argv[1:] if argv is None else argv

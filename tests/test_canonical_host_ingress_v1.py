@@ -168,6 +168,37 @@ class CanonicalHostIngressV1Tests(unittest.TestCase):
             self.assertNotIn(handle.hex(), rendered)
             self.assertNotIn(self.project_id.hex(), rendered)
 
+    def test_public_host_check_boundary_uses_only_sealed_native_ingress(self) -> None:
+        from koschei.cli_entry import check_with_host_ingress_v1
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "legacy-looking.ks"
+            project, _, authority = self._fixture(root)
+            broker = Broker(authority)
+            ingress = bind_host_ingress_v1(
+                target=self.target,
+                broker=broker,
+                policy=self.broker_policy,
+                allow_check=True,
+                allow_run=False,
+            )
+            with (
+                patch("koschei.cli.open_graph", side_effect=AssertionError("legacy CLI reached")),
+                patch("koschei.modules.load_graph", side_effect=AssertionError("legacy graph reached")),
+                patch("koschei.parser.parse", side_effect=AssertionError("legacy parser reached")),
+            ):
+                checked = check_with_host_ingress_v1(ingress, root, now=self.now)
+            self.assertEqual(checked.project_id, project.project_id)
+            self.assertEqual(broker.calls, ["check"])
+
+    def test_public_host_check_boundary_rejects_untrusted_ingress(self) -> None:
+        from koschei.cli_entry import check_with_host_ingress_v1
+
+        with self.assertRaises(TypeError):
+            check_with_host_ingress_v1(None, "fake.ks")
+        with self.assertRaises(TypeError):
+            check_with_host_ingress_v1(object(), "fake.ks")
+
     def test_empty_command_scope_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "project"
