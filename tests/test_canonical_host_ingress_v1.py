@@ -239,6 +239,22 @@ class CanonicalHostIngressV1Tests(unittest.TestCase):
                 )
             self.assertEqual(broker.calls, [])
 
+    def test_public_native_check_fails_closed_without_host_authority(self) -> None:
+        from koschei.cli_entry import main
+
+        with (
+            patch("koschei.cli.main", side_effect=AssertionError("compat CLI reached")),
+            patch("koschei.cli.open_graph", side_effect=AssertionError("compat graph reached")),
+        ):
+            self.assertEqual(main(["check", "missing.ks", "--native"]), 1)
+
+    def test_public_compat_check_parser_still_accepts_existing_flags(self) -> None:
+        from koschei.cli_entry import build_parser
+
+        args = build_parser().parse_args(["check", "example.ks", "--json"])
+        self.assertFalse(args.native)
+        self.assertTrue(args.json)
+
     def test_empty_command_scope_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "project"
