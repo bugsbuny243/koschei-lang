@@ -117,6 +117,13 @@ def build_parser() -> argparse.ArgumentParser:
     add_build_compare_verify_parser(subcommands)
     add_release_proof_parser(subcommands)
 
+    check = subcommands.choices["check"]
+    check.add_argument(
+        "--native",
+        action="store_true",
+        help="Require trusted host Native IR authority; never fall back to compatibility",
+    )
+
     run = subcommands.choices["run"]
     run.add_argument(
         "--max-steps",
@@ -455,6 +462,13 @@ def main(argv: list[str] | None = None) -> int:
         return command_build_compare_verify(args)
     if args.command == "release-proof":
         return command_release_proof(args)
+    if args.command == "check" and args.native:
+        print(
+            "KS4101: Native check requires a trusted in-process host ingress; "
+            "the standalone CLI cannot obtain authority from argv or environment.",
+            file=sys.stderr,
+        )
+        return 1
     if args.command == "run":
         return _run_with_public_budget(args)
     if args.command == "emit-go":
