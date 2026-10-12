@@ -36,8 +36,8 @@ WATCHED = (
 
 @unittest.skipUnless(GO, "Go unavailable: native artifact measurement not run")
 class HostSymbolEvidenceTests(unittest.TestCase):
-    def test_pure_program_binary_symbol_receipt(self) -> None:
-        source = (ROOT / "examples" / "hello.ks").read_text(encoding="utf-8")
+    def _symbol_receipt(self, fixture: str) -> tuple[str, ...]:
+        source = (ROOT / fixture).read_text(encoding="utf-8")
         program = parse(source)
         check(program)
         generated = generate_go(program)
@@ -81,11 +81,24 @@ class HostSymbolEvidenceTests(unittest.TestCase):
             print(
                 "P0_HOST_SYMBOL_RECEIPT "
                 f"go={version.stdout.strip()!r} "
-                f"fixture='examples/hello.ks' "
+                f"fixture={fixture!r} "
                 f"present={present!r} absent={absent!r}"
             )
             self.assertEqual(set(present) | set(absent), set(WATCHED))
             self.assertFalse(set(present) & set(absent))
+            return present
+
+    def test_pure_program_binary_symbol_receipt(self) -> None:
+        self._symbol_receipt("examples/hello.ks")
+
+    def test_capability_program_binary_symbol_delta(self) -> None:
+        pure = set(self._symbol_receipt("examples/hello.ks"))
+        capability = set(self._symbol_receipt("examples/runtime_demo.ks"))
+        added = tuple(sorted(capability - pure))
+        removed = tuple(sorted(pure - capability))
+        print(f"P0_HOST_SYMBOL_DELTA added={added!r} removed={removed!r}")
+        self.assertEqual(added, tuple(sorted(capability - pure)))
+        self.assertEqual(removed, tuple(sorted(pure - capability)))
 
 
 if __name__ == "__main__":
