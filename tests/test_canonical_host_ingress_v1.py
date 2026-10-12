@@ -199,6 +199,46 @@ class CanonicalHostIngressV1Tests(unittest.TestCase):
         with self.assertRaises(TypeError):
             check_with_host_ingress_v1(object(), "fake.ks")
 
+    def test_host_bound_native_check_command_never_enters_compat_cli(self) -> None:
+        from koschei.cli_entry import main_with_host_ingress_v1
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "legacy-looking.ks"
+            _, _, authority = self._fixture(root)
+            broker = Broker(authority)
+            ingress = bind_host_ingress_v1(
+                target=self.target,
+                broker=broker,
+                policy=self.broker_policy,
+            )
+            with (
+                patch("koschei.cli.main", side_effect=AssertionError("compat CLI reached")),
+                patch("koschei.cli.open_graph", side_effect=AssertionError("compat graph reached")),
+            ):
+                result = main_with_host_ingress_v1(
+                    ["check", str(root)], ingress=ingress, now=self.now
+                )
+            self.assertEqual(result, 0)
+            self.assertEqual(broker.calls, ["check"])
+
+    def test_host_bound_command_rejects_untrusted_or_unsupported_request(self) -> None:
+        from koschei.cli_entry import main_with_host_ingress_v1
+
+        with self.assertRaises(TypeError):
+            main_with_host_ingress_v1(["check", "file.ks"], ingress=None)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "project.ks"
+            _, _, authority = self._fixture(root)
+            broker = Broker(authority)
+            ingress = bind_host_ingress_v1(
+                target=self.target, broker=broker, policy=self.broker_policy
+            )
+            with self.assertRaises(SystemExit):
+                main_with_host_ingress_v1(
+                    ["run", str(root)], ingress=ingress, now=self.now
+                )
+            self.assertEqual(broker.calls, [])
+
     def test_empty_command_scope_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "project"
