@@ -68,6 +68,14 @@ jobs:
           python -m pytest -q -s tests/test_p0_host_binary_symbols.py \
             | tee /tmp/koschei-validation-evidence/p0-host-binary-symbols.stdout.log
 
+      - name: Capture P0 capability denial runtime evidence
+        run: |
+          mkdir -p /tmp/koschei-validation-evidence
+          set -o pipefail
+          python -m pytest -q -s \
+            tests/test_native_capability_codegen.py \
+            | tee /tmp/koschei-validation-evidence/p0-native-capability-denial.stdout.log
+
       - name: Hash validation receipt
         if: always()
         run: |
