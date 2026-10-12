@@ -96,9 +96,19 @@ class HostSymbolEvidenceTests(unittest.TestCase):
         capability = set(self._symbol_receipt("examples/runtime_demo.ks"))
         added = tuple(sorted(capability - pure))
         removed = tuple(sorted(pure - capability))
-        print(f"P0_HOST_SYMBOL_DELTA added={added!r} removed={removed!r}")
-        self.assertEqual(added, tuple(sorted(capability - pure)))
-        self.assertEqual(removed, tuple(sorted(pure - capability)))
+        print(f"P0_HOST_SYMBOL_DELTA fixture='examples/runtime_demo.ks' added={added!r} removed={removed!r}")
+        # An environment-only capability example cannot establish network/disk isolation.
+        network = set(self._symbol_receipt("examples/capability.ks"))
+        print(
+            "P0_HOST_SYMBOL_DELTA "
+            "fixture='examples/capability.ks' "
+            f"added={tuple(sorted(network - pure))!r} "
+            f"removed={tuple(sorted(pure - network))!r}"
+        )
+        # The measured delta is evidence, not an assertion that any symbols must vanish.
+        self.assertTrue(pure <= set(WATCHED))
+        self.assertTrue(capability <= set(WATCHED))
+        self.assertTrue(network <= set(WATCHED))
 
 
 if __name__ == "__main__":
