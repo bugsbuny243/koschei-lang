@@ -404,6 +404,31 @@ def check_with_host_ingress_v1(
     return ingress.execute("check", path, now=now)
 
 
+
+def main_with_host_ingress_v1(
+    argv: list[str],
+    *,
+    ingress: "CanonicalHostIngressV1",
+    now: float | int | None = None,
+) -> int:
+    """Explicit host-bound native check command; never falls back to compat CLI.
+
+    This entrypoint is called by a trusted embedding host, not by the ordinary
+    shell entrypoint. The host supplies the sealed capability in process memory.
+    """
+    from .canonical_host_ingress_v1 import CanonicalHostIngressV1
+
+    if not isinstance(ingress, CanonicalHostIngressV1):
+        raise TypeError("trusted canonical host ingress capability is required")
+    parser = argparse.ArgumentParser(prog="ks-native-host")
+    subcommands = parser.add_subparsers(dest="command", required=True)
+    check = subcommands.add_parser("check")
+    check.add_argument("source")
+    args = parser.parse_args(argv)
+    check_with_host_ingress_v1(ingress, args.source, now=now)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     _configure_utf8_stdio()
     arguments = sys.argv[1:] if argv is None else argv
