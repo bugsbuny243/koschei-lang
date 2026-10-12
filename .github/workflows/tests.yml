@@ -61,6 +61,13 @@ jobs:
             --output /tmp/koschei-local-validation.json \
             --evidence-dir /tmp/koschei-validation-evidence
 
+      - name: Capture P0 host binary symbol evidence
+        run: |
+          mkdir -p /tmp/koschei-validation-evidence
+          set -o pipefail
+          python -m pytest -q -s tests/test_p0_host_binary_symbols.py \
+            | tee /tmp/koschei-validation-evidence/p0-host-binary-symbols.stdout.log
+
       - name: Hash validation receipt
         if: always()
         run: |
