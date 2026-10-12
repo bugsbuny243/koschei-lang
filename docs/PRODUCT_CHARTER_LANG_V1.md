@@ -36,4 +36,7 @@ Interoperability does not make those products runtime dependencies and does not 
 
 ## Commercial rule
 
+As of 2026-10-12, Koschei Lang sales are USD-only; Pi-denominated sales and Pi/SoloHost checkout are retired. See `../commercial/USD_ONLY_SALES_POLICY_V1.md`.
+
+
 Koschei Lang has its own pricing, licensing, entitlement, distribution and customer-access policy. Buying Web3 or Sentinel does not automatically grant Lang access, and buying Lang does not automatically grant the other products.
