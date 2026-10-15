@@ -107,7 +107,7 @@ def _unexpected_authority(imports: tuple[tuple[str, str], ...]) -> tuple[tuple[s
     startup = {"args_get", "args_sizes_get", "environ_get", "environ_sizes_get"}
     return tuple(
         (module, member) for module, member in imports
-        if not module.startswith("wasi_")
+        if module != "wasi_snapshot_preview1"
         or member in (FORBIDDEN_WASI_IMPORTS - startup)
     )
 
@@ -140,6 +140,12 @@ class P0WasiImportParserTests(unittest.TestCase):
         self.assertEqual(
             _unexpected_authority((("env", "host_disk_open"),)),
             (("env", "host_disk_open"),),
+        )
+
+    def test_lookalike_wasi_namespace_is_rejected(self) -> None:
+        self.assertEqual(
+            _unexpected_authority((("wasi_unreviewed_extension", "fd_write"),)),
+            (("wasi_unreviewed_extension", "fd_write"),),
         )
 
     def test_go_startup_import_is_not_mistaken_for_isolation(self) -> None:
