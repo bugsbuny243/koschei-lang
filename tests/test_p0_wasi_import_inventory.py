@@ -98,6 +98,24 @@ def _imports(data: bytes) -> tuple[tuple[str, str], ...]:
     return ()
 
 
+class P0WasiImportParserTests(unittest.TestCase):
+    def test_empty_module_has_no_imports(self) -> None:
+        self.assertEqual(_imports(b"\\x00asm\\x01\\x00\\x00\\x00"), ())
+
+    def test_truncated_import_section_is_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            _imports(b"\\x00asm\\x01\\x00\\x00\\x00\\x02\\x05\\x01")
+
+    def test_forbidden_import_is_parsed(self) -> None:
+        module = b"wasi_snapshot_preview1"
+        member = b"environ_get"
+        payload = (b"\\x01" + bytes([len(module)]) + module
+                   + bytes([len(member)]) + member + b"\\x00\\x00")
+        wasm = b"\\x00asm\\x01\\x00\\x00\\x00" + b"\\x02" + bytes([len(payload)]) + payload
+        self.assertEqual(_imports(wasm), (("wasi_snapshot_preview1", "environ_get"),))
+        self.assertIn("environ_get", FORBIDDEN_WASI_IMPORTS)
+
+
 @unittest.skipUnless(GO, "Go toolchain is required for experimental WASI evidence")
 class P0WasiImportInventoryTests(unittest.TestCase):
     def test_pure_fixture_has_no_authority_bearing_wasi_imports(self) -> None:
