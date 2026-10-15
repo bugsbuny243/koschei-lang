@@ -38,6 +38,19 @@ class P0HostImportCatalogTests(unittest.TestCase):
         # No unsupported capability operation may be promoted into an import contract.
         candidates = [row for row in privileged if row["status"] == "supported"]
         self.assertTrue(all(row["capability"] for row in candidates))
+        # A candidate import must be backed by both execution backends and
+        # complete declared resource budgets, not just a catalog status string.
+        for family in CATALOG:
+            for operation in family.operations:
+                if operation.capability is None or operation.status != "supported":
+                    continue
+                with self.subTest(operation=f"{family.name}.{operation.name}"):
+                    self.assertTrue(operation.interpreter)
+                    self.assertTrue(operation.native_go)
+                    self.assertEqual(
+                        set(operation.required_budgets),
+                        set(operation.enforced_budgets),
+                    )
         self.assertFalse(
             any(row["operation"] in {"process.run", "process.spawn"} for row in candidates),
             "Process execution must remain excluded from candidate host imports",
