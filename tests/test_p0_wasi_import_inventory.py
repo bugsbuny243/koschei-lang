@@ -118,7 +118,7 @@ class P0WasiImportParserTests(unittest.TestCase):
 
 @unittest.skipUnless(GO, "Go toolchain is required for experimental WASI evidence")
 class P0WasiImportInventoryTests(unittest.TestCase):
-    def test_pure_fixture_has_no_authority_bearing_wasi_imports(self) -> None:
+    def test_pure_fixture_imports_are_audited_and_filesystem_denied(self) -> None:
         source = (ROOT / "examples/hello.ks").read_text(encoding="utf-8")
         program = parse(source)
         check(program)
