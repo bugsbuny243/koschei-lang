@@ -105,9 +105,16 @@ def _unexpected_authority(imports: tuple[tuple[str, str], ...]) -> tuple[tuple[s
     allowing those imports in this inventory is NOT a sandbox guarantee.
     """
     startup = {"args_get", "args_sizes_get", "environ_get", "environ_sizes_get"}
+    # An allowlist prevents unknown future WASI functions from silently
+    # widening the pure-program authority surface.
+    permitted = {"fd_write", "proc_exit", "random_get", "clock_time_get",
+                 "clock_res_get", "sched_yield", "fd_fdstat_get", "fd_close",
+                 "fd_seek", "fd_read", "fd_filestat_get", "fd_sync",
+                 "fd_datasync", "poll_oneoff"} | startup
     return tuple(
         (module, member) for module, member in imports
         if module != "wasi_snapshot_preview1"
+        or member not in permitted
         or member in (FORBIDDEN_WASI_IMPORTS - startup)
     )
 
@@ -140,6 +147,12 @@ class P0WasiImportParserTests(unittest.TestCase):
         self.assertEqual(
             _unexpected_authority((("env", "host_disk_open"),)),
             (("env", "host_disk_open"),),
+        )
+
+    def test_unknown_wasi_function_is_rejected(self) -> None:
+        self.assertEqual(
+            _unexpected_authority((("wasi_snapshot_preview1", "future_host_escape"),)),
+            (("wasi_snapshot_preview1", "future_host_escape"),),
         )
 
     def test_lookalike_wasi_namespace_is_rejected(self) -> None:
