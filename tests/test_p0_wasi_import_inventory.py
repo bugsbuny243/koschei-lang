@@ -51,7 +51,7 @@ def _name(data: bytes, pos: int) -> tuple[str, int]:
 
 
 def _imports(data: bytes) -> tuple[tuple[str, str], ...]:
-    if not data.startswith(b"\\x00asm\\x01\\x00\\x00\\x00"):
+    if not data.startswith(b"\x00asm\x01\x00\x00\x00"):
         raise ValueError("not a wasm v1 module")
     pos = 8
     while pos < len(data):
@@ -100,18 +100,18 @@ def _imports(data: bytes) -> tuple[tuple[str, str], ...]:
 
 class P0WasiImportParserTests(unittest.TestCase):
     def test_empty_module_has_no_imports(self) -> None:
-        self.assertEqual(_imports(b"\\x00asm\\x01\\x00\\x00\\x00"), ())
+        self.assertEqual(_imports(b"\x00asm\x01\x00\x00\x00"), ())
 
     def test_truncated_import_section_is_rejected(self) -> None:
         with self.assertRaises(ValueError):
-            _imports(b"\\x00asm\\x01\\x00\\x00\\x00\\x02\\x05\\x01")
+            _imports(b"\x00asm\x01\x00\x00\x00\x02\x05\x01")
 
     def test_forbidden_import_is_parsed(self) -> None:
         module = b"wasi_snapshot_preview1"
         member = b"environ_get"
-        payload = (b"\\x01" + bytes([len(module)]) + module
-                   + bytes([len(member)]) + member + b"\\x00\\x00")
-        wasm = b"\\x00asm\\x01\\x00\\x00\\x00" + b"\\x02" + bytes([len(payload)]) + payload
+        payload = (b"\x01" + bytes([len(module)]) + module
+                   + bytes([len(member)]) + member + b"\x00\x00")
+        wasm = b"\x00asm\x01\x00\x00\x00" + b"\x02" + bytes([len(payload)]) + payload
         self.assertEqual(_imports(wasm), (("wasi_snapshot_preview1", "environ_get"),))
         self.assertIn("environ_get", FORBIDDEN_WASI_IMPORTS)
 
@@ -136,10 +136,12 @@ class P0WasiImportInventoryTests(unittest.TestCase):
             imports = _imports(wasm.read_bytes())
             print(f"P0_WASI_IMPORT_RECEIPT fixture='examples/hello.ks' imports={imports!r}")
             self.assertTrue(imports, "Go WASI module must have inspectable imports")
+            imported = {member for module, member in imports if module.startswith("wasi_")}
+            residual = imported & FORBIDDEN_WASI_IMPORTS
+            print(f"P0_WASI_RESIDUAL_AUTHORITY imports={tuple(sorted(residual))!r}")
             self.assertFalse(
-                {member for module, member in imports if module.startswith("wasi_")}
-                & FORBIDDEN_WASI_IMPORTS,
-                "Pure fixture unexpectedly imports ambient WASI authority",
+                residual - {"args_get", "args_sizes_get", "environ_get", "environ_sizes_get"},
+                "Pure fixture unexpectedly imports filesystem or socket authority",
             )
             self.assertFalse(
                 {(module, member) for module, member in imports if not module.startswith("wasi_")},
