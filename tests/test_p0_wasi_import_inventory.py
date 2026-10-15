@@ -98,6 +98,20 @@ def _imports(data: bytes) -> tuple[tuple[str, str], ...]:
     return ()
 
 
+def _unexpected_authority(imports: tuple[tuple[str, str], ...]) -> tuple[tuple[str, str], ...]:
+    """Reject ambient filesystem/socket imports and every unreviewed namespace.
+
+    Go WASI startup's argument/environment imports are recorded separately;
+    allowing those imports in this inventory is NOT a sandbox guarantee.
+    """
+    startup = {"args_get", "args_sizes_get", "environ_get", "environ_sizes_get"}
+    return tuple(
+        (module, member) for module, member in imports
+        if not module.startswith("wasi_")
+        or member in (FORBIDDEN_WASI_IMPORTS - startup)
+    )
+
+
 class P0WasiImportParserTests(unittest.TestCase):
     def test_empty_module_has_no_imports(self) -> None:
         self.assertEqual(_imports(b"\x00asm\x01\x00\x00\x00"), ())
@@ -114,6 +128,25 @@ class P0WasiImportParserTests(unittest.TestCase):
         wasm = b"\x00asm\x01\x00\x00\x00" + b"\x02" + bytes([len(payload)]) + payload
         self.assertEqual(_imports(wasm), (("wasi_snapshot_preview1", "environ_get"),))
         self.assertIn("environ_get", FORBIDDEN_WASI_IMPORTS)
+
+
+    def test_wasi_filesystem_import_is_rejected(self) -> None:
+        self.assertEqual(
+            _unexpected_authority((("wasi_snapshot_preview1", "path_open"),)),
+            (("wasi_snapshot_preview1", "path_open"),),
+        )
+
+    def test_non_wasi_import_namespace_is_rejected(self) -> None:
+        self.assertEqual(
+            _unexpected_authority((("env", "host_disk_open"),)),
+            (("env", "host_disk_open"),),
+        )
+
+    def test_go_startup_import_is_not_mistaken_for_isolation(self) -> None:
+        self.assertEqual(
+            _unexpected_authority((("wasi_snapshot_preview1", "environ_get"),)),
+            (),
+        )
 
 
 @unittest.skipUnless(GO, "Go toolchain is required for experimental WASI evidence")
@@ -156,13 +189,9 @@ class P0WasiImportInventoryTests(unittest.TestCase):
             imported = {member for module, member in imports if module.startswith("wasi_")}
             residual = imported & FORBIDDEN_WASI_IMPORTS
             print(f"P0_WASI_RESIDUAL_AUTHORITY imports={tuple(sorted(residual))!r}")
-            self.assertFalse(
-                residual - {"args_get", "args_sizes_get", "environ_get", "environ_sizes_get"},
-                "Pure fixture unexpectedly imports filesystem or socket authority",
-            )
-            self.assertFalse(
-                {(module, member) for module, member in imports if not module.startswith("wasi_")},
-                "Unreviewed non-WASI imports must be rejected",
+            self.assertEqual(
+                _unexpected_authority(imports), (),
+                "Pure fixture imports unreviewed ambient authority",
             )
 
 
