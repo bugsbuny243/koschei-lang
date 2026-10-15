@@ -13,7 +13,7 @@ from koschei.stdlib_catalog import CATALOG, document, validate_catalog
 class P0HostImportCatalogTests(unittest.TestCase):
     def test_host_authority_manifest_is_complete_and_deterministic(self) -> None:
         validate_catalog()
-        payload = document()
+        payload = document(CATALOG)
         rows = [
             {
                 "operation": f"{family.name}.{operation.name}",
