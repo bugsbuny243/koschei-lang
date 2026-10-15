@@ -1,0 +1,133 @@
+"""P0.1 experimental Go->WASI import inventory for a pure Koschei fixture.
+
+This does NOT constitute an independent Koschei WASM backend or runtime sandbox.
+"""
+from __future__ import annotations
+
+import os
+import pathlib
+import shutil
+import subprocess
+import tempfile
+import unittest
+
+from koschei.codegen_go import generate_go
+from koschei.parser import parse
+from koschei.semantic import check
+
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+GO = shutil.which("go")
+FORBIDDEN_WASI_IMPORTS = {
+    "path_open", "path_create_directory", "path_remove_directory",
+    "path_unlink_file", "path_rename", "path_link", "path_symlink",
+    "path_readlink", "fd_readdir", "sock_accept",
+}
+# No preopened directory / inherited environment access for a pure program.
+FORBIDDEN_WASI_IMPORTS |= {"fd_prestat_get", "fd_prestat_dir_name", "environ_get", "environ_sizes_get", "args_get", "args_sizes_get"}
+
+
+def _u32(data: bytes, pos: int) -> tuple[int, int]:
+    value = 0
+    for shift in range(0, 35, 7):
+        if pos >= len(data):
+            raise ValueError("truncated unsigned LEB128")
+        byte = data[pos]
+        pos += 1
+        value |= (byte & 127) << shift
+        if byte & 128 == 0:
+            if value > 0xFFFFFFFF:
+                raise ValueError("oversized u32")
+            return value, pos
+    raise ValueError("invalid unsigned LEB128")
+
+
+def _name(data: bytes, pos: int) -> tuple[str, int]:
+    length, pos = _u32(data, pos)
+    end = pos + length
+    if end > len(data):
+        raise ValueError("truncated name")
+    return data[pos:end].decode("utf-8"), end
+
+
+def _imports(data: bytes) -> tuple[tuple[str, str], ...]:
+    if not data.startswith(b"\\x00asm\\x01\\x00\\x00\\x00"):
+        raise ValueError("not a wasm v1 module")
+    pos = 8
+    while pos < len(data):
+        section_id = data[pos]
+        pos += 1
+        size, pos = _u32(data, pos)
+        end = pos + size
+        if end > len(data):
+            raise ValueError("truncated section")
+        if section_id == 2:
+            count, pos = _u32(data, pos)
+            result = []
+            for _ in range(count):
+                module, pos = _name(data, pos)
+                member, pos = _name(data, pos)
+                if pos >= end:
+                    raise ValueError("truncated import descriptor")
+                kind = data[pos]
+                pos += 1
+                if kind == 0:  # function type index
+                    _, pos = _u32(data, pos)
+                elif kind == 1:  # table type
+                    pos += 1  # reftype
+                    flags, pos = _u32(data, pos)
+                    _, pos = _u32(data, pos)
+                    if flags & 1:
+                        _, pos = _u32(data, pos)
+                elif kind == 2:  # memory limits
+                    flags, pos = _u32(data, pos)
+                    _, pos = _u32(data, pos)
+                    if flags & 1:
+                        _, pos = _u32(data, pos)
+                elif kind == 3:  # global
+                    pos += 2
+                else:
+                    raise ValueError(f"unsupported import kind: {kind}")
+                if pos > end:
+                    raise ValueError("import exceeds section")
+                result.append((module, member))
+            if pos != end:
+                raise ValueError("unconsumed import section bytes")
+            return tuple(result)
+        pos = end
+    return ()
+
+
+@unittest.skipUnless(GO, "Go toolchain is required for experimental WASI evidence")
+class P0WasiImportInventoryTests(unittest.TestCase):
+    def test_pure_fixture_has_no_authority_bearing_wasi_imports(self) -> None:
+        source = (ROOT / "examples/hello.ks").read_text(encoding="utf-8")
+        program = parse(source)
+        check(program)
+        with tempfile.TemporaryDirectory(prefix="koschei-p0-wasi-") as tmp:
+            work = pathlib.Path(tmp)
+            (work / "main.go").write_text(generate_go(program), encoding="utf-8")
+            (work / "go.mod").write_text("module koscheiwasiinventory\n\ngo 1.21\n", encoding="utf-8")
+            wasm = work / "main.wasm"
+            env = dict(os.environ, GOOS="wasip1", GOARCH="wasm", CGO_ENABLED="0")
+            built = subprocess.run(
+                [GO, "build", "-o", str(wasm), "."],
+                cwd=work, env=env, capture_output=True, text=True, timeout=240,
+            )
+            self.assertEqual(built.returncode, 0, built.stderr)
+            imports = _imports(wasm.read_bytes())
+            print(f"P0_WASI_IMPORT_RECEIPT fixture='examples/hello.ks' imports={imports!r}")
+            self.assertTrue(imports, "Go WASI module must have inspectable imports")
+            self.assertFalse(
+                {member for module, member in imports if module.startswith("wasi_")}
+                & FORBIDDEN_WASI_IMPORTS,
+                "Pure fixture unexpectedly imports ambient WASI authority",
+            )
+            self.assertFalse(
+                {(module, member) for module, member in imports if not module.startswith("wasi_")},
+                "Unreviewed non-WASI imports must be rejected",
+            )
+
+
+if __name__ == "__main__":
+    unittest.main()
