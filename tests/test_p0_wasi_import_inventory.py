@@ -125,15 +125,15 @@ class P0WasiImportParserTests(unittest.TestCase):
 
     def test_truncated_leb128_is_rejected(self) -> None:
         with self.assertRaisesRegex(ValueError, "truncated unsigned LEB128"):
-            _u32(b"\\x80", 0)
+            _u32(bytes((0x80,)), 0)
 
     def test_oversized_leb128_is_rejected(self) -> None:
         with self.assertRaisesRegex(ValueError, "oversized u32"):
-            _u32(b"\\xff\\xff\\xff\\xff\\x1f", 0)
+            _u32(bytes((255, 255, 255, 255, 31)), 0)
 
     def test_truncated_import_name_is_rejected(self) -> None:
         with self.assertRaisesRegex(ValueError, "truncated name"):
-            _name(b"\\x05ab", 0)
+            _name(bytes((5,)) + b'ab', 0)
 
     def test_truncated_import_section_is_rejected(self) -> None:
         with self.assertRaises(ValueError):
