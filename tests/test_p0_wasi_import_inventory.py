@@ -110,7 +110,8 @@ def _unexpected_authority(imports: tuple[tuple[str, str], ...]) -> tuple[tuple[s
     permitted = {"fd_write", "proc_exit", "random_get", "clock_time_get",
                  "clock_res_get", "sched_yield", "fd_fdstat_get", "fd_close",
                  "fd_seek", "fd_read", "fd_filestat_get", "fd_sync",
-                 "fd_datasync", "poll_oneoff"} | startup
+                 "fd_datasync", "poll_oneoff", "fd_fdstat_set_flags",
+                 "fd_prestat_get", "fd_prestat_dir_name"} | startup
     return tuple(
         (module, member) for module, member in imports
         if module != "wasi_snapshot_preview1"
