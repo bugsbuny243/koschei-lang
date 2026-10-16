@@ -104,7 +104,8 @@ def _unexpected_authority(imports: tuple[tuple[str, str], ...]) -> tuple[tuple[s
     Go WASI startup's argument/environment imports are recorded separately;
     allowing those imports in this inventory is NOT a sandbox guarantee.
     """
-    startup = {"args_get", "args_sizes_get", "environ_get", "environ_sizes_get"}
+    startup = {"args_get", "args_sizes_get", "environ_get", "environ_sizes_get",
+               "fd_prestat_get", "fd_prestat_dir_name"}
     # An allowlist prevents unknown future WASI functions from silently
     # widening the pure-program authority surface.
     permitted = {"fd_write", "proc_exit", "random_get", "clock_time_get",
