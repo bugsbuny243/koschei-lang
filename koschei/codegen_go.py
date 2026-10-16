@@ -2536,4 +2536,4 @@ def generate_go_wasi_pure(program: Program) -> str:
                 output.append("    fmt.Println(" + encoded + ")")
                 continue
         raise CodegenError("KS4002", "WASI pure: statement unsupported", statement.location)
-    return 'package main\\nimport "fmt"\\nfunc main() {\\n' + "\\n".join(output) + '\\n}\\n'
+    return 'package main\nimport "fmt"\nfunc main() {\n' + "\n".join(output) + '\n}\n'
