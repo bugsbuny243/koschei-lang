@@ -61,6 +61,35 @@ jobs:
             --output /tmp/koschei-local-validation.json \
             --evidence-dir /tmp/koschei-validation-evidence
 
+      - name: Capture P0 host binary symbol evidence
+        run: |
+          mkdir -p /tmp/koschei-validation-evidence
+          set -o pipefail
+          python -m pytest -q -s tests/test_p0_host_binary_symbols.py \
+            | tee /tmp/koschei-validation-evidence/p0-host-binary-symbols.stdout.log
+
+      - name: Capture P0 capability denial runtime evidence
+        run: |
+          mkdir -p /tmp/koschei-validation-evidence
+          set -o pipefail
+          python -m pytest -q -s \
+            tests/test_native_capability_codegen.py \
+            | tee /tmp/koschei-validation-evidence/p0-native-capability-denial.stdout.log
+
+      - name: Capture P0 canonical host import candidate manifest
+        run: |
+          mkdir -p /tmp/koschei-validation-evidence
+          set -o pipefail
+          python -m pytest -q -s tests/test_p0_host_import_catalog.py \
+            | tee /tmp/koschei-validation-evidence/p0-host-import-catalog.stdout.log
+
+      - name: Capture P0 experimental WASI import evidence
+        run: |
+          mkdir -p /tmp/koschei-validation-evidence
+          set -o pipefail
+          python -m pytest -q -s tests/test_p0_wasi_import_inventory.py \
+            | tee /tmp/koschei-validation-evidence/p0-wasi-imports.stdout.log
+
       - name: Hash validation receipt
         if: always()
         run: |

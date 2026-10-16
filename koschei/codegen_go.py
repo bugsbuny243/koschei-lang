@@ -2490,3 +2490,50 @@ def generate_go_mir(mir_graph) -> str:
     """Generate Go only from a sealed, checked MIR graph."""
     mir_graph.assert_sealed()
     return generate_go(mir_graph.root_module.program, mir_graph)
+
+
+def generate_go_wasi_pure(program: Program) -> str:
+    """Experimental, fail-closed WASI Go source for literal/println-only programs.
+
+    This is deliberately NOT the native capability runtime. Unsupported language
+    constructs fail compilation rather than gaining ambient host authority.
+    """
+    import json
+
+    if program.imports or program.structs or program.enums:
+        raise CodegenError("KS4002", "WASI pure: imports, structs and enums unsupported", SourceLocation(1, 1))
+    if len(program.declarations) != 1 or program.declarations[0].name != "main":
+        raise CodegenError("KS4002", "WASI pure: only main supported", SourceLocation(1, 1))
+    main = program.declarations[0]
+    if main.parameters or main.return_type is not None:
+        raise CodegenError("KS4002", "WASI pure: main signature unsupported", main.location)
+    values: dict[str, object] = {}
+    output: list[str] = []
+    for statement in main.body.statements:
+        if isinstance(statement, LetStatement) and not statement.is_mutable and isinstance(statement.value, Literal):
+            if not isinstance(statement.value.value, (str, int, bool)):
+                raise CodegenError("KS4002", "WASI pure: literal type unsupported", statement.location)
+            values[statement.name] = statement.value.value
+            continue
+        if isinstance(statement, ExpressionStatement) and isinstance(statement.expression, CallExpression):
+            call = statement.expression
+            if isinstance(call.callee, Identifier) and call.callee.name == "println" and len(call.arguments) == 1:
+                argument = call.arguments[0]
+                if isinstance(argument, Identifier) and argument.name in values:
+                    value = values[argument.name]
+                elif isinstance(argument, Literal):
+                    value = argument.value
+                else:
+                    raise CodegenError("KS4002", "WASI pure: dynamic println unsupported", statement.location)
+                if isinstance(value, bool):
+                    encoded = "true" if value else "false"
+                elif isinstance(value, str):
+                    encoded = json.dumps(value, ensure_ascii=True)
+                elif isinstance(value, int):
+                    encoded = str(value)
+                else:
+                    raise CodegenError("KS4002", "WASI pure: println type unsupported", statement.location)
+                output.append("    fmt.Println(" + encoded + ")")
+                continue
+        raise CodegenError("KS4002", "WASI pure: statement unsupported", statement.location)
+    return 'package main\nimport "fmt"\nfunc main() {\n' + "\n".join(output) + '\n}\n'
