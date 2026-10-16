@@ -50,6 +50,12 @@ class WasiPureBackendTests(unittest.TestCase):
             self.assertTrue(data.startswith(bytes((0, 97, 115, 109, 1, 0, 0, 0))))
             imports = _imports(data)
             print("P0_PURE_WASI_REAL_BINARY_IMPORTS", imports)
+            residual = tuple(sorted(member for module, member in imports
+                                    if member in {"fd_prestat_get", "fd_prestat_dir_name",
+                                                  "environ_get", "environ_sizes_get"}))
+            print("P0_PURE_WASI_STARTUP_RESIDUAL", residual)
+            self.assertIn("fd_prestat_get", residual)
+            # Import presence alone does not prove access to a preopened directory.
             self.assertEqual(_unexpected_authority(imports), ())
             self.assertNotIn(("wasi_snapshot_preview1", "path_open"), imports)
 
