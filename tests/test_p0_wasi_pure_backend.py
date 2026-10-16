@@ -38,7 +38,7 @@ class WasiPureBackendTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="koschei-pure-wasi-") as tmp:
             root = pathlib.Path(tmp)
             (root / "main.go").write_text(generate_go_wasi_pure(program), encoding="utf-8")
-            (root / "go.mod").write_text("module koscheipurewasi\\n\\ngo 1.21\\n", encoding="utf-8")
+            (root / "go.mod").write_text("module koscheipurewasi\n\ngo 1.21\n", encoding="utf-8")
             wasm = root / "hello.wasm"
             env = dict(os.environ, GOOS="wasip1", GOARCH="wasm", CGO_ENABLED="0")
             build = subprocess.run(
