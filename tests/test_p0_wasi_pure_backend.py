@@ -58,6 +58,22 @@ class WasiPureBackendTests(unittest.TestCase):
             # Import presence alone does not prove access to a preopened directory.
             self.assertEqual(_unexpected_authority(imports), ())
             self.assertNotIn(("wasi_snapshot_preview1", "path_open"), imports)
+            # Execute the compiled module with Go's WASI runner. No filesystem
+            # preopens or inherited secrets are passed to the guest.
+            runner = pathlib.Path(subprocess.check_output(
+                ["go", "env", "GOROOT"], text=True,
+            ).strip()) / "lib" / "wasm" / "go_wasip1_wasm_exec"
+            self.assertTrue(runner.is_file(), f"Go WASI runner unavailable: {runner}")
+            run = subprocess.run(
+                [str(runner), str(wasm)], cwd=root,
+                env={"PATH": os.environ.get("PATH", ""), "HOME": str(root)},
+                capture_output=True, text=True, timeout=60,
+            )
+            self.assertEqual(run.returncode, 0, run.stderr)
+            self.assertEqual(run.stdout, "Koschei\n1\n")
+            self.assertEqual(run.stderr, "")
+            print("P0_PURE_WASI_EXECUTION_PARITY stdout=", repr(run.stdout))
+
 
 
 if __name__ == "__main__":
