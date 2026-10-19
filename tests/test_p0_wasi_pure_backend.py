@@ -44,6 +44,37 @@ class WasiPureBackendTests(unittest.TestCase):
         with self.assertRaises(CodegenError):
             generate_go_wasi_pure(program)
 
+    def test_wasi_runtime_resource_limits(self):
+        """Wasmtime fuel and memory ceilings are enforced by the host."""
+        import wasmtime
+
+        # A deterministic infinite loop cannot exhaust a wall-clock timer
+        # reliably; fuel exhaustion is a reproducible CPU execution bound.
+        config = wasmtime.Config()
+        config.consume_fuel = True
+        engine = wasmtime.Engine(config)
+        module = wasmtime.Module(engine, """
+            (module (func (export "spin") (loop br 0)))
+        """)
+        store = wasmtime.Store(engine)
+        store.set_fuel(10000)
+        instance = wasmtime.Instance(store, module, [])
+        with self.assertRaises(wasmtime.Trap):
+            instance.exports(store)["spin"](store)
+
+        # Store memory limit applies to guest linear-memory growth.
+        engine = wasmtime.Engine()
+        module = wasmtime.Module(engine, """
+            (module (memory (export "mem") 1)
+                    (func (export "grow") (result i32)
+                        i32.const 2
+                        memory.grow))
+        """)
+        store = wasmtime.Store(engine)
+        store.set_limits(memory_size=65536)
+        instance = wasmtime.Instance(store, module, [])
+        self.assertEqual(instance.exports(store)["grow"](store), -1)
+
     @unittest.skipUnless(shutil.which("go"), "Go toolchain unavailable")
     def test_hello_cross_compiles_to_real_wasm(self):
         program = parse((ROOT / "examples/hello.ks").read_text(encoding="utf-8"))
