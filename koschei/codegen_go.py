@@ -2509,22 +2509,30 @@ def generate_go_wasi_pure(program: Program) -> str:
         raise CodegenError("KS4002", "WASI pure: main signature unsupported", main.location)
     values: dict[str, object] = {}
     output: list[str] = []
+    def evaluate(expression: Expression) -> object:
+        if isinstance(expression, Literal) and type(expression.value) in (str, int, bool):
+            return expression.value
+        if isinstance(expression, Identifier) and expression.name in values:
+            return values[expression.name]
+        if isinstance(expression, BinaryExpression):
+            left, right = evaluate(expression.left), evaluate(expression.right)
+            if type(left) is int and type(right) is int:
+                if expression.operator == "+": return left + right
+                if expression.operator == "-": return left - right
+                if expression.operator == "*": return left * right
+            if type(left) is str and type(right) is str and expression.operator == "+":
+                return left + right
+        raise CodegenError("KS4002", "WASI pure: expression unsupported", expression.location)
+
     for statement in main.body.statements:
-        if isinstance(statement, LetStatement) and not statement.is_mutable and isinstance(statement.value, Literal):
-            if not isinstance(statement.value.value, (str, int, bool)):
-                raise CodegenError("KS4002", "WASI pure: literal type unsupported", statement.location)
-            values[statement.name] = statement.value.value
+        if isinstance(statement, LetStatement) and not statement.is_mutable:
+            values[statement.name] = evaluate(statement.value)
             continue
         if isinstance(statement, ExpressionStatement) and isinstance(statement.expression, CallExpression):
             call = statement.expression
             if isinstance(call.callee, Identifier) and call.callee.name == "println" and len(call.arguments) == 1:
                 argument = call.arguments[0]
-                if isinstance(argument, Identifier) and argument.name in values:
-                    value = values[argument.name]
-                elif isinstance(argument, Literal):
-                    value = argument.value
-                else:
-                    raise CodegenError("KS4002", "WASI pure: dynamic println unsupported", statement.location)
+                value = evaluate(argument)
                 if isinstance(value, bool):
                     encoded = "true" if value else "false"
                 elif isinstance(value, str):
