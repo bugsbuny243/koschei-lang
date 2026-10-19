@@ -57,7 +57,7 @@ class AtomicPilotAccountingTests(unittest.TestCase):
             db.close()
 
 
-    def test_fractional_cent_reconciliation_detects_disagreement(self):
+    def test_fractional_cent_reconciliation_matches_invoice(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = AtomicPilotAccounting(str(Path(tmp) / "pilot.sqlite"))
             db.seed_tenant("t", Decimal("1.00"))
@@ -66,8 +66,8 @@ class AtomicPilotAccountingTests(unittest.TestCase):
                 db.reserve("t", run_id, 100)
                 db.settle_run(RunUsage(run_id, "t", 100, "succeeded"))
             self.assertEqual(db.invoiced_total_usd("t"), Decimal("0.01"))
-            self.assertEqual(db.settled_total_usd("t"), Decimal("0.00"))
-            self.assertNotEqual(db.invoiced_total_usd("t"), db.settled_total_usd("t"))
+            self.assertEqual(db.settled_total_usd("t"), Decimal("0.01"))
+            self.assertEqual(db.invoiced_total_usd("t"), db.settled_total_usd("t"))
             db.close()
 
     def test_cross_tenant_settlement_fails_closed(self):
