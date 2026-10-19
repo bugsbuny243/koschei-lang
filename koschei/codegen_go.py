@@ -2493,11 +2493,7 @@ def generate_go_mir(mir_graph) -> str:
 
 
 def generate_go_wasi_pure(program: Program) -> str:
-    """Experimental, fail-closed WASI Go source for literal/println-only programs.
-
-    This is deliberately NOT the native capability runtime. Unsupported language
-    constructs fail compilation rather than gaining ambient host authority.
-    """
+    """Experimental pure Go/WASI emitter: runtime expressions, no host capabilities."""
     import json
 
     if program.imports or program.structs or program.enums:
@@ -2507,41 +2503,43 @@ def generate_go_wasi_pure(program: Program) -> str:
     main = program.declarations[0]
     if main.parameters or main.return_type is not None:
         raise CodegenError("KS4002", "WASI pure: main signature unsupported", main.location)
-    values: dict[str, object] = {}
+
+    variables: dict[str, str] = {}
     output: list[str] = []
-    def evaluate(expression: Expression) -> object:
-        if isinstance(expression, Literal) and type(expression.value) in (str, int, bool):
-            return expression.value
-        if isinstance(expression, Identifier) and expression.name in values:
-            return values[expression.name]
-        if isinstance(expression, BinaryExpression):
-            left, right = evaluate(expression.left), evaluate(expression.right)
-            if type(left) is int and type(right) is int:
-                if expression.operator == "+": return left + right
-                if expression.operator == "-": return left - right
-                if expression.operator == "*": return left * right
-            if type(left) is str and type(right) is str and expression.operator == "+":
-                return left + right
+
+    def emit(expression: Expression) -> tuple[str, str]:
+        if isinstance(expression, Literal):
+            value = expression.value
+            if type(value) is str:
+                return json.dumps(value, ensure_ascii=True), "string"
+            if type(value) is bool:
+                return ("true" if value else "false"), "bool"
+            if type(value) is int:
+                return str(value), "int"
+        if isinstance(expression, Identifier) and expression.name in variables:
+            return expression.name, variables[expression.name]
+        if isinstance(expression, BinaryExpression) and expression.operator in {"+", "-", "*"}:
+            left, left_type = emit(expression.left)
+            right, right_type = emit(expression.right)
+            if left_type == right_type == "int" or (
+                left_type == right_type == "string" and expression.operator == "+"
+            ):
+                return f"({left} {expression.operator} {right})", left_type
         raise CodegenError("KS4002", "WASI pure: expression unsupported", expression.location)
 
     for statement in main.body.statements:
         if isinstance(statement, LetStatement) and not statement.is_mutable:
-            values[statement.name] = evaluate(statement.value)
+            if statement.name in variables:
+                raise CodegenError("KS4002", "WASI pure: duplicate local", statement.location)
+            source, value_type = emit(statement.value)
+            variables[statement.name] = value_type
+            output.append(f"    {statement.name} := {source}")
             continue
         if isinstance(statement, ExpressionStatement) and isinstance(statement.expression, CallExpression):
             call = statement.expression
             if isinstance(call.callee, Identifier) and call.callee.name == "println" and len(call.arguments) == 1:
-                argument = call.arguments[0]
-                value = evaluate(argument)
-                if isinstance(value, bool):
-                    encoded = "true" if value else "false"
-                elif isinstance(value, str):
-                    encoded = json.dumps(value, ensure_ascii=True)
-                elif isinstance(value, int):
-                    encoded = str(value)
-                else:
-                    raise CodegenError("KS4002", "WASI pure: println type unsupported", statement.location)
-                output.append("    fmt.Println(" + encoded + ")")
+                source, _ = emit(call.arguments[0])
+                output.append(f"    fmt.Println({source})")
                 continue
         raise CodegenError("KS4002", "WASI pure: statement unsupported", statement.location)
     return 'package main\nimport "fmt"\nfunc main() {\n' + "\n".join(output) + '\n}\n'
