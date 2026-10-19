@@ -1,0 +1,61 @@
+"""Atomic pilot accounting tests; runner and payment integrations absent."""
+import tempfile
+import unittest
+from decimal import Decimal
+from pathlib import Path
+
+from koschei.runner_accounting import AtomicPilotAccounting
+from koschei.runner_billing import RunUsage
+
+
+class AtomicPilotAccountingTests(unittest.TestCase):
+    def test_settle_records_usage_and_releases_unused_reserve(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = AtomicPilotAccounting(str(Path(tmp) / "pilot.sqlite"))
+            db.seed_tenant("t", Decimal("5.00"))
+            db.reserve("t", "a", 60000)
+            self.assertEqual(
+                db.settle_run(RunUsage("a", "t", 8000, "succeeded")),
+                Decimal("0.08"),
+            )
+            self.assertEqual(db.available("t"), Decimal("4.92"))
+            row = db._db.execute(
+                "SELECT duration_ms, result FROM runner_usage WHERE run_id='a'"
+            ).fetchone()
+            self.assertEqual(row, (8000, "succeeded"))
+            db.close()
+
+    def test_duplicate_usage_rolls_back_balance_and_hold(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = AtomicPilotAccounting(str(Path(tmp) / "pilot.sqlite"))
+            db.seed_tenant("t", Decimal("1.00"))
+            db.reserve("t", "a", 10000)
+            db._db.execute(
+                "INSERT INTO runner_usage VALUES ('t','a','pilot-v1',1,'succeeded')"
+            )
+            with self.assertRaises(Exception):
+                db.settle_run(RunUsage("a", "t", 5000, "succeeded"))
+            self.assertEqual(db.available("t"), Decimal("0.90"))
+            row = db._db.execute(
+                "SELECT state FROM pilot_hold WHERE run_id='a'"
+            ).fetchone()
+            self.assertEqual(row, ("active",))
+            db.close()
+
+    def test_host_failure_free_and_duplicate_settlement_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = AtomicPilotAccounting(str(Path(tmp) / "pilot.sqlite"))
+            db.seed_tenant("t", Decimal("1.00"))
+            db.reserve("t", "a", 10000)
+            self.assertEqual(
+                db.settle_run(RunUsage("a", "t", 5000, "host_failed")),
+                Decimal("0.00"),
+            )
+            self.assertEqual(db.available("t"), Decimal("1.00"))
+            with self.assertRaises(ValueError):
+                db.settle_run(RunUsage("a", "t", 5000, "host_failed"))
+            db.close()
+
+
+if __name__ == "__main__":
+    unittest.main()
