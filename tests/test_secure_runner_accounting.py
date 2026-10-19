@@ -57,5 +57,31 @@ class AtomicPilotAccountingTests(unittest.TestCase):
             db.close()
 
 
+    def test_fractional_cent_reconciliation_detects_disagreement(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = AtomicPilotAccounting(str(Path(tmp) / "pilot.sqlite"))
+            db.seed_tenant("t", Decimal("1.00"))
+            for i in range(10):
+                run_id = f"short-{i}"
+                db.reserve("t", run_id, 100)
+                db.settle_run(RunUsage(run_id, "t", 100, "succeeded"))
+            self.assertEqual(db.invoiced_total_usd("t"), Decimal("0.01"))
+            self.assertEqual(db.settled_total_usd("t"), Decimal("0.00"))
+            self.assertNotEqual(db.invoiced_total_usd("t"), db.settled_total_usd("t"))
+            db.close()
+
+    def test_cross_tenant_settlement_fails_closed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = AtomicPilotAccounting(str(Path(tmp) / "pilot.sqlite"))
+            db.seed_tenant("a", Decimal("1.00"))
+            db.seed_tenant("b", Decimal("1.00"))
+            db.reserve("a", "run-1", 1000)
+            with self.assertRaises(ValueError):
+                db.settle_run(RunUsage("run-1", "b", 1000, "succeeded"))
+            self.assertEqual(db.available("a"), Decimal("0.99"))
+            self.assertEqual(db.available("b"), Decimal("1.00"))
+            db.close()
+
+
 if __name__ == "__main__":
     unittest.main()
