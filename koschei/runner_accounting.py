@@ -46,6 +46,8 @@ class AtomicPilotAccounting(DurablePilotBudget):
 
     def settle_run(self, usage: RunUsage) -> Decimal:
         """Commit balance release and usage insert together or roll both back."""
+        if usage.tariff_version != "pilot-v1":
+            raise ValueError("unsupported prepaid tariff version")
         if usage.result not in BILLABLE_RESULTS | {"host_failed", "cancelled", "rejected"}:
             raise ValueError("invalid outcome")
         with self._transaction():
@@ -60,8 +62,25 @@ class AtomicPilotAccounting(DurablePilotBudget):
             if usage.duration_ms > maximum:
                 raise ValueError("execution exceeded authorized maximum")
             billable = usage.result in BILLABLE_RESULTS
-            raw = Decimal(usage.duration_ms) / 1000 * USD_PER_SECOND if billable else Decimal(0)
-            cents = int((raw * 100).to_integral_value(rounding=ROUND_HALF_UP))
+            # Charge only the increase in the aggregate rounded invoice.
+            # SQLite serializes this read/modify/write via BEGIN IMMEDIATE.
+            prior_ms = sum(
+                ms for ms, result in self._db.execute(
+                    "SELECT duration_ms, result FROM runner_usage "
+                    "WHERE tenant_id=? AND tariff_version=?",
+                    (usage.tenant_id, usage.tariff_version),
+                ) if result in BILLABLE_RESULTS
+            )
+            current_ms = prior_ms + (usage.duration_ms if billable else 0)
+            prior_cents = int(
+                (Decimal(prior_ms) / 1000 * USD_PER_SECOND * 100)
+                .to_integral_value(rounding=ROUND_HALF_UP)
+            )
+            total_cents = int(
+                (Decimal(current_ms) / 1000 * USD_PER_SECOND * 100)
+                .to_integral_value(rounding=ROUND_HALF_UP)
+            )
+            cents = total_cents - prior_cents
             if cents > reserved:
                 raise ValueError("charge exceeds reservation")
             self._db.execute(
