@@ -3,6 +3,7 @@
 No payment processing, no guest execution, no cross-database transaction.
 """
 import sqlite3
+from contextlib import contextmanager
 from decimal import Decimal, ROUND_CEILING, ROUND_HALF_UP
 
 from koschei.runner_billing import USD_PER_SECOND
@@ -32,6 +33,17 @@ class DurablePilotBudget:
                          "state TEXT NOT NULL CHECK(state IN ('active', 'settled')), "
                          "charged_cents INTEGER)")
 
+    @contextmanager
+    def _transaction(self):
+        self._db.execute("BEGIN IMMEDIATE")
+        try:
+            yield
+        except BaseException:
+            self._db.execute("ROLLBACK")
+            raise
+        else:
+            self._db.execute("COMMIT")
+
     def close(self) -> None:
         self._db.close()
 
@@ -39,7 +51,7 @@ class DurablePilotBudget:
         if not tenant_id:
             raise ValueError("tenant required")
         cents = _to_cents(amount)
-        with self._db:
+        with self._transaction():
             self._db.execute(
                 "INSERT INTO pilot_balance (tenant_id, available_cents) VALUES (?, ?)",
                 (tenant_id, cents),
@@ -57,7 +69,7 @@ class DurablePilotBudget:
             raise ValueError("invalid reservation")
         cents = int((Decimal(max_duration_ms) / 1000).to_integral_value(
             rounding=ROUND_CEILING))
-        with self._db:
+        with self._transaction():
             self._db.execute("UPDATE pilot_balance SET available_cents = available_cents - ? "
                              "WHERE tenant_id = ? AND available_cents >= ?",
                              (cents, tenant_id, cents))
@@ -74,7 +86,7 @@ class DurablePilotBudget:
     def settle(self, tenant_id: str, run_id: str, duration_ms: int, billable: bool) -> Decimal:
         if type(duration_ms) is not int or duration_ms < 0 or type(billable) is not bool:
             raise ValueError("invalid settlement")
-        with self._db:
+        with self._transaction():
             row = self._db.execute(
                 "SELECT reserved_cents, max_duration_ms FROM pilot_hold "
                 "WHERE tenant_id=? AND run_id=? AND state='active'",
