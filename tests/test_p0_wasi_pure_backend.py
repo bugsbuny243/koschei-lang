@@ -58,22 +58,28 @@ class WasiPureBackendTests(unittest.TestCase):
             # Import presence alone does not prove access to a preopened directory.
             self.assertEqual(_unexpected_authority(imports), ())
             self.assertNotIn(("wasi_snapshot_preview1", "path_open"), imports)
-            # Execute the compiled module with Go's WASI runner. No filesystem
-            # preopens or inherited secrets are passed to the guest.
-            runner = pathlib.Path(subprocess.check_output(
-                ["go", "env", "GOROOT"], text=True,
-            ).strip()) / "lib" / "wasm" / "go_wasip1_wasm_exec"
-            self.assertTrue(runner.is_file(), f"Go WASI runner unavailable: {runner}")
-            run = subprocess.run(
-                [str(runner), str(wasm)], cwd=root,
-                env={"PATH": os.environ.get("PATH", ""), "HOME": str(root)},
-                capture_output=True, text=True, timeout=60,
-            )
-            self.assertEqual(run.returncode, 0, run.stderr)
-            self.assertEqual(run.stdout, "Koschei\n1\n")
-            self.assertEqual(run.stderr, "")
-            print("P0_PURE_WASI_EXECUTION_PARITY stdout=", repr(run.stdout))
-
+            # Execute under Wasmtime with no directory preopens or guest env.
+            # Python's wasmtime package is pinned by the CI acquisition recipe.
+            import wasmtime
+            stdout_path = root / "wasm.stdout"
+            stderr_path = root / "wasm.stderr"
+            engine = wasmtime.Engine()
+            module = wasmtime.Module.from_file(engine, str(wasm))
+            linker = wasmtime.Linker(engine)
+            linker.define_wasi()
+            store = wasmtime.Store(engine)
+            wasi = wasmtime.WasiConfig()
+            wasi.argv = ["hello.wasm"]
+            wasi.stdout_file = str(stdout_path)
+            wasi.stderr_file = str(stderr_path)
+            store.set_wasi(wasi)
+            instance = linker.instantiate(store, module)
+            instance.exports(store)["_start"](store)
+            actual_stdout = stdout_path.read_text(encoding="utf-8")
+            actual_stderr = stderr_path.read_text(encoding="utf-8")
+            self.assertEqual(actual_stdout, "Koschei\n1\n")
+            self.assertEqual(actual_stderr, "")
+            print("P0_PURE_WASI_EXECUTION_PARITY stdout=", repr(actual_stdout))
 
 
 if __name__ == "__main__":
