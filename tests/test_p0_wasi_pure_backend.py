@@ -21,8 +21,9 @@ class WasiPureBackendTests(unittest.TestCase):
         program = parse((ROOT / "examples/hello.ks").read_text(encoding="utf-8"))
         check(program)
         source = generate_go_wasi_pure(program)
-        self.assertIn('fmt.Println("Koschei")', source)
-        self.assertIn("fmt.Println(1)", source)
+        self.assertIn('language := "Koschei"', source)
+        self.assertIn("fmt.Println(language)", source)
+        self.assertIn("fmt.Println(version)", source)
         self.assertNotIn("syscall", source)
         self.assertNotIn("ksNewSystemCaps", source)
 
@@ -34,8 +35,9 @@ class WasiPureBackendTests(unittest.TestCase):
     def test_pure_arithmetic_and_string_concatenation(self):
         program = parse('fn main() { let n = 2 + 3 * 4 println(n) let s = "Kos" + "chei" println(s) }')
         source = generate_go_wasi_pure(program)
-        self.assertIn("fmt.Println(14)", source)
-        self.assertIn('fmt.Println("Koschei")', source)
+        self.assertIn("n := (2 + (3 * 4))", source)
+        self.assertIn("fmt.Println(n)", source)
+        self.assertIn('s := ("Kos" + "chei")', source)
 
     def test_unsupported_dynamic_host_access_is_rejected(self):
         program = parse('fn main() { let x = system println(x) }')
