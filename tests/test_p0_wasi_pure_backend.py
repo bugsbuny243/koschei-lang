@@ -31,6 +31,17 @@ class WasiPureBackendTests(unittest.TestCase):
         with self.assertRaises(CodegenError):
             generate_go_wasi_pure(program)
 
+    def test_pure_arithmetic_and_string_concatenation(self):
+        program = parse('fn main() { let n = 2 + 3 * 4 println(n) let s = "Kos" + "chei" println(s) }')
+        source = generate_go_wasi_pure(program)
+        self.assertIn("fmt.Println(14)", source)
+        self.assertIn('fmt.Println("Koschei")', source)
+
+    def test_unsupported_dynamic_host_access_is_rejected(self):
+        program = parse('fn main() { let x = system println(x) }')
+        with self.assertRaises(CodegenError):
+            generate_go_wasi_pure(program)
+
     @unittest.skipUnless(shutil.which("go"), "Go toolchain unavailable")
     def test_hello_cross_compiles_to_real_wasm(self):
         program = parse((ROOT / "examples/hello.ks").read_text(encoding="utf-8"))
