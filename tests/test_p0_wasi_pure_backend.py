@@ -74,7 +74,10 @@ class WasiPureBackendTests(unittest.TestCase):
             wasi.stderr_file = str(stderr_path)
             store.set_wasi(wasi)
             instance = linker.instantiate(store, module)
-            instance.exports(store)["_start"](store)
+            try:
+                instance.exports(store)["_start"](store)
+            except wasmtime.ExitTrap as exit_trap:
+                self.assertEqual(exit_trap.code, 0)
             actual_stdout = stdout_path.read_text(encoding="utf-8")
             actual_stderr = stderr_path.read_text(encoding="utf-8")
             self.assertEqual(actual_stdout, "Koschei\n1\n")
