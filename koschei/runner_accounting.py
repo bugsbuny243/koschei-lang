@@ -20,6 +20,30 @@ class AtomicPilotAccounting(DurablePilotBudget):
             "PRIMARY KEY (run_id, tariff_version))"
         )
 
+    def invoiced_total_usd(self, tenant_id: str, tariff_version: str = "pilot-v1") -> Decimal:
+        """Independent aggregate-time invoice estimate, not a payment charge."""
+        if not tenant_id or not tariff_version:
+            raise ValueError("tenant and tariff required")
+        rows = self._db.execute(
+            "SELECT duration_ms, result FROM runner_usage "
+            "WHERE tenant_id=? AND tariff_version=?",
+            (tenant_id, tariff_version),
+        )
+        total_ms = sum(ms for ms, result in rows if result in BILLABLE_RESULTS)
+        return (Decimal(total_ms) / 1000 * USD_PER_SECOND).quantize(
+            Decimal("0.01"), rounding=ROUND_HALF_UP
+        )
+
+    def settled_total_usd(self, tenant_id: str) -> Decimal:
+        """Amount actually deducted from prepaid balance, in whole cents."""
+        if not tenant_id:
+            raise ValueError("tenant required")
+        row = self._db.execute(
+            "SELECT COALESCE(SUM(charged_cents), 0) FROM pilot_hold "
+            "WHERE tenant_id=? AND state='settled'", (tenant_id,),
+        ).fetchone()
+        return Decimal(row[0]) / 100
+
     def settle_run(self, usage: RunUsage) -> Decimal:
         """Commit balance release and usage insert together or roll both back."""
         if usage.result not in BILLABLE_RESULTS | {"host_failed", "cancelled", "rejected"}:
