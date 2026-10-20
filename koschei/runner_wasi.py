@@ -32,6 +32,8 @@ def execute_pure_wasi(
         raise ValueError("invalid run identity or maximum duration")
     if type(fuel) is not int or fuel <= 0 or type(memory_bytes) is not int or memory_bytes <= 0:
         raise ValueError("invalid resource limits")
+    if not stdout_path or not stderr_path:
+        raise ValueError("output paths required")
     if Path(stdout_path).resolve() == Path(stderr_path).resolve():
         raise ValueError("output paths must differ")
 
@@ -61,8 +63,8 @@ def execute_pure_wasi(
     except wasmtime.ExitTrap as exc:
         if exc.code != 0:
             outcome = "guest_failed"
-    except wasmtime.Trap:
-        outcome = "guest_failed"
+    except wasmtime.Trap as exc:
+        outcome = "guest_timeout" if "fuel" in str(exc).lower() else "guest_failed"
     except Exception:
         outcome = "host_failed"
         raise
