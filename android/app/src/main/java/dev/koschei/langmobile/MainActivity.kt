@@ -22,7 +22,7 @@ class MainActivity : Activity() {
             setPadding(24, 24, 24, 24)
         }
         val title = TextView(this).apply {
-            text = "Koschei Lang Mobile · v0.1"
+            text = "Koschei Lang Mobile · v0.2"
             textSize = 20f
         }
         editor = EditText(this).apply {
@@ -33,7 +33,10 @@ class MainActivity : Activity() {
             setHorizontallyScrolling(true)
         }
         status = TextView(this).apply {
-            text = "Yerel düzenleyici · Derleyici henüz bağlı değil"
+            text = "Hazır · Dosya kaydetme doğrulaması etkin"
+            textSize = 16f
+            setTextColor(android.graphics.Color.BLACK)
+            setPadding(0, 12, 0, 12)
         }
         val actions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val open = Button(this).apply {
@@ -59,8 +62,8 @@ class MainActivity : Activity() {
         actions.addView(save)
         layout.addView(title)
         layout.addView(actions)
-        layout.addView(editor, LinearLayout.LayoutParams(-1, 0, 1f))
         layout.addView(status)
+        layout.addView(editor, LinearLayout.LayoutParams(-1, 0, 1f))
         setContentView(layout)
     }
 
@@ -74,14 +77,27 @@ class MainActivity : Activity() {
                 openDocument -> {
                     val text = contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
                         ?: throw IllegalStateException("Dosya okunamadı")
-                    editor.setText(text)
-                    status.text = "Dosya açıldı"
+                    if (text.isEmpty()) {
+                        status.text = "UYARI: Dosya boş (0 bayt); mevcut kod korundu"
+                    } else {
+                        editor.setText(text)
+                        status.text = "Dosya açıldı: ${text.toByteArray(Charsets.UTF_8).size} bayt"
+                    }
                 }
                 saveDocument -> {
-                    contentResolver.openOutputStream(uri, "wt")?.bufferedWriter()?.use {
-                        it.write(editor.text.toString())
+                    val code = editor.text.toString()
+                    if (code.isBlank()) {
+                        status.text = "UYARI: Editör boş; dosya kaydedilmedi"
+                        return
+                    }
+                    contentResolver.openOutputStream(uri, "w")?.use { output ->
+                        output.write(code.toByteArray(Charsets.UTF_8))
+                        output.flush()
                     } ?: throw IllegalStateException("Dosya yazılamadı")
-                    status.text = "Dosya kaydedildi"
+                    val saved = contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
+                        ?: throw IllegalStateException("Dosya tekrar okunamadı")
+                    if (saved != code) throw IllegalStateException("Kaydedilen içerik doğrulanamadı")
+                    status.text = "Kaydedildi ve doğrulandı: ${code.toByteArray(Charsets.UTF_8).size} bayt"
                 }
             }
         } catch (e: Exception) {
