@@ -7,11 +7,11 @@ android {
     compileSdk = 35
     defaultConfig {
         // Separate experimental install to avoid debug-signature conflict with v0.1.
-        applicationId = "dev.koschei.langmobile.preview"
+        applicationId = "dev.koschei.langmobile.preview03"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = 3
+        versionName = "0.3.0"
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
