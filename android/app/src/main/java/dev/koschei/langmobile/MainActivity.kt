@@ -22,7 +22,7 @@ class MainActivity : Activity() {
             setPadding(24, 24, 24, 24)
         }
         val title = TextView(this).apply {
-            text = "Koschei Lang Mobile · v0.2"
+            text = "Koschei Lang Mobile · v0.3"
             textSize = 20f
         }
         editor = EditText(this).apply {
@@ -58,8 +58,21 @@ class MainActivity : Activity() {
                 }, saveDocument)
             }
         }
+        val check = Button(this).apply {
+            text = "KONTROL ET"
+            setOnClickListener {
+                val findings = BasicSyntaxCheck.inspect(editor.text.toString())
+                status.text = if (findings.isEmpty()) {
+                    "Temel işaret kontrolü geçti (tam derleme değil)"
+                } else {
+                    val issue = findings.first()
+                    "Satır ${issue.line}: ${issue.message}"
+                }
+            }
+        }
         actions.addView(open)
         actions.addView(save)
+        layout.addView(check)
         layout.addView(title)
         layout.addView(actions)
         layout.addView(status)
