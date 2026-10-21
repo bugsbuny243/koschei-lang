@@ -2,7 +2,7 @@ package dev.koschei.langmobile
 
 /**
  * Conservative offline delimiter checker. NOT a Koschei parser or compiler.
- * Avoids claims of full syntax correctness; strings and // comments are skipped.
+ * Avoids claims of full syntax correctness; double-quoted strings are skipped; full language parsing is not attempted.
  */
 object BasicSyntaxCheck {
     data class Finding(val line: Int, val message: String)
@@ -12,11 +12,9 @@ object BasicSyntaxCheck {
         var line = 1
         var quoted = false
         var escaped = false
-        var comment = false
         for (ch in source) {
             if (ch == '\n') {
                 line++
-                comment = false
                 if (quoted) {
                     // A multiline string may be legal in the full language;
                     // leave its validation to the real compiler.
@@ -24,7 +22,6 @@ object BasicSyntaxCheck {
                 if (escaped) escaped = false
                 continue
             }
-            if (comment) continue
             if (quoted) {
                 if (escaped) { escaped = false; continue }
                 if (ch == '\\') { escaped = true; continue }
@@ -32,7 +29,6 @@ object BasicSyntaxCheck {
                 continue
             }
             if (ch == '"') { quoted = true; continue }
-            if (ch == '/' && false) continue
             when (ch) {
                 '(', '{', '[' -> stack.add(ch to line)
                 ')', '}', ']' -> {
