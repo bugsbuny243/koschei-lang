@@ -2490,3 +2490,56 @@ def generate_go_mir(mir_graph) -> str:
     """Generate Go only from a sealed, checked MIR graph."""
     mir_graph.assert_sealed()
     return generate_go(mir_graph.root_module.program, mir_graph)
+
+
+def generate_go_wasi_pure(program: Program) -> str:
+    """Experimental pure Go/WASI emitter: runtime expressions, no host capabilities."""
+    import json
+
+    if program.imports or program.structs or program.enums:
+        raise CodegenError("KS4002", "WASI pure: imports, structs and enums unsupported", SourceLocation(1, 1))
+    if len(program.declarations) != 1 or program.declarations[0].name != "main":
+        raise CodegenError("KS4002", "WASI pure: only main supported", SourceLocation(1, 1))
+    main = program.declarations[0]
+    if main.parameters or main.return_type is not None:
+        raise CodegenError("KS4002", "WASI pure: main signature unsupported", main.location)
+
+    variables: dict[str, str] = {}
+    output: list[str] = []
+
+    def emit(expression: Expression) -> tuple[str, str]:
+        if isinstance(expression, Literal):
+            value = expression.value
+            if type(value) is str:
+                return json.dumps(value, ensure_ascii=True), "string"
+            if type(value) is bool:
+                return ("true" if value else "false"), "bool"
+            if type(value) is int:
+                return str(value), "int"
+        if isinstance(expression, Identifier) and expression.name in variables:
+            return expression.name, variables[expression.name]
+        if isinstance(expression, BinaryExpression) and expression.operator in {"+", "-", "*"}:
+            left, left_type = emit(expression.left)
+            right, right_type = emit(expression.right)
+            if left_type == right_type == "int" or (
+                left_type == right_type == "string" and expression.operator == "+"
+            ):
+                return f"({left} {expression.operator} {right})", left_type
+        raise CodegenError("KS4002", "WASI pure: expression unsupported", expression.location)
+
+    for statement in main.body.statements:
+        if isinstance(statement, LetStatement) and not statement.is_mutable:
+            if statement.name in variables:
+                raise CodegenError("KS4002", "WASI pure: duplicate local", statement.location)
+            source, value_type = emit(statement.value)
+            variables[statement.name] = value_type
+            output.append(f"    {statement.name} := {source}")
+            continue
+        if isinstance(statement, ExpressionStatement) and isinstance(statement.expression, CallExpression):
+            call = statement.expression
+            if isinstance(call.callee, Identifier) and call.callee.name == "println" and len(call.arguments) == 1:
+                source, _ = emit(call.arguments[0])
+                output.append(f"    fmt.Println({source})")
+                continue
+        raise CodegenError("KS4002", "WASI pure: statement unsupported", statement.location)
+    return 'package main\nimport "fmt"\nfunc main() {\n' + "\n".join(output) + '\n}\n'
