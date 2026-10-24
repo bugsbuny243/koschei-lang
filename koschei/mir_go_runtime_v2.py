@@ -11,6 +11,8 @@ Value model (Go dynamic types inside ``any``):
 * ``int64``/``float64``/``string``/``bool`` for the scalar types;
 * ``[]any`` for ``List<T>`` values, never mutated after construction;
 * ``_ksEnumValue`` for ``Option``/``Result``/user enum values;
+* ``_ksStruct`` for struct values, which have value semantics: a field
+  assignment builds an updated copy and never changes a shared value;
 * ``_ksError`` for runtime Error values, which flow like any other value;
 * ``_ksUnit`` for ``Void``.
 """
@@ -30,6 +32,20 @@ type _ksEnumValue struct {
 	hasPayload bool
 	payload    any
 	typeArgs   []string
+}
+
+type _ksStruct struct {
+	name     string
+	fields   []string
+	values   []any
+	typeArgs []string
+}
+
+type _ksStructBuilder struct {
+	name     string
+	fields   []string
+	values   map[string]any
+	consumed bool
 }
 
 type _ksMember struct {
@@ -112,6 +128,12 @@ func _ksToString(value any) string {
 			return item.variant
 		}
 		return item.variant + "(" + _ksRepr(item.payload) + ")"
+	case _ksStruct:
+		parts := make([]string, len(item.fields))
+		for index, name := range item.fields {
+			parts[index] = name + ": " + _ksRepr(item.values[index])
+		}
+		return item.name + " { " + strings.Join(parts, ", ") + " }"
 	case int64:
 		return strconv.FormatInt(item, 10)
 	case string:
@@ -165,6 +187,33 @@ func _ksEqual(left any, right any) bool {
 			return false
 		}
 		return !a.hasPayload || _ksEqual(a.payload, b.payload)
+	case _ksStruct:
+		// StructValue equality: type name, type evidence and every field.
+		b, ok := right.(_ksStruct)
+		if !ok || a.name != b.name || len(a.fields) != len(b.fields) || len(a.typeArgs) != len(b.typeArgs) {
+			return false
+		}
+		for index := range a.typeArgs {
+			if a.typeArgs[index] != b.typeArgs[index] {
+				return false
+			}
+		}
+		for index, name := range a.fields {
+			found := false
+			for other := range b.fields {
+				if b.fields[other] == name {
+					if !_ksEqual(a.values[index], b.values[other]) {
+						return false
+					}
+					found = true
+					break
+				}
+			}
+			if !found {
+				return false
+			}
+		}
+		return true
 	case _ksError:
 		b, ok := right.(_ksError)
 		return ok && a.message == b.message
@@ -464,6 +513,97 @@ func _ksAsEnum(value any) _ksEnumValue {
 	return item
 }
 
+// ---- structs: StructBuilderV1 and struct_field_set_v1 -------------------
+
+func _ksStructNew(name string, fields []string) any {
+	return &_ksStructBuilder{name: name, fields: fields, values: map[string]any{}}
+}
+
+func _ksAsStructBuilder(value any) *_ksStructBuilder {
+	builder, ok := value.(*_ksStructBuilder)
+	if !ok {
+		_ksAbort("KS5002", "invalid MIR struct builder")
+	}
+	return builder
+}
+
+func _ksStructSet(value any, field string, item any, expected []string) {
+	builder := _ksAsStructBuilder(value)
+	if builder.consumed {
+		_ksAbort("KS5002", "consumed MIR struct builder cannot accept fields")
+	}
+	admitted := false
+	for _, name := range builder.fields {
+		if name == field {
+			admitted = true
+			break
+		}
+	}
+	if !admitted {
+		_ksAbort("KS5002", "sealed MIR struct did not admit field '"+field+"'")
+	}
+	if _, seen := builder.values[field]; seen {
+		_ksAbort("KS5002", "sealed MIR struct field '"+field+"' was assigned more than once")
+	}
+	if !_ksMatchesType(item, expected, nil, nil) {
+		_ksAbort("KS3401", "'"+builder.name+"."+field+"' field received "+_ksTypeName(item))
+	}
+	builder.values[field] = item
+}
+
+func _ksStructFinish(value any) any {
+	builder := _ksAsStructBuilder(value)
+	if builder.consumed {
+		_ksAbort("KS5002", "MIR struct builder may be finished exactly once")
+	}
+	if len(builder.values) != len(builder.fields) {
+		_ksAbort("KS3101", "'"+builder.name+"' struct field contract is incomplete")
+	}
+	builder.consumed = true
+	values := make([]any, len(builder.fields))
+	for index, name := range builder.fields {
+		values[index] = builder.values[name]
+	}
+	return _ksStruct{name: builder.name, fields: builder.fields, values: values}
+}
+
+// A field assignment returns an updated copy; the receiver is never changed.
+func _ksStructWith(receiver any, owner string, field string, item any, expected []string) any {
+	value, ok := receiver.(_ksStruct)
+	if !ok || value.name != owner {
+		_ksAbort("KS5002", "sealed MIR struct field assignment received a non-struct receiver")
+	}
+	index := -1
+	for position, name := range value.fields {
+		if name == field {
+			index = position
+			break
+		}
+	}
+	if index < 0 {
+		_ksAbort("KS5002", "sealed MIR struct value is missing declared field '"+field+"'")
+	}
+	if !_ksMatchesType(item, expected, nil, nil) {
+		_ksAbort("KS3401", "'"+owner+"."+field+"' field assignment received "+_ksTypeName(item))
+	}
+	values := make([]any, len(value.values))
+	copy(values, value.values)
+	values[index] = item
+	return _ksStruct{name: value.name, fields: value.fields, values: values, typeArgs: value.typeArgs}
+}
+
+func _ksField(receiver any, name string) any {
+	if value, ok := receiver.(_ksStruct); ok {
+		for index, field := range value.fields {
+			if field == name {
+				return value.values[index]
+			}
+		}
+	}
+	_ksAbort("KS3101", "undefined field '"+name+"'")
+	return nil
+}
+
 // ---- iteration -----------------------------------------------------------
 
 func _ksIterInit(value any) any {
@@ -668,6 +808,11 @@ func _ksTypeName(value any) string {
 			return item.owner + "<" + strings.Join(item.typeArgs, ", ") + ">"
 		}
 		return item.owner
+	case _ksStruct:
+		if len(item.typeArgs) > 0 {
+			return item.name + "<" + strings.Join(item.typeArgs, ", ") + ">"
+		}
+		return item.name
 	case _ksError:
 		return "Error"
 	case []any:
@@ -824,6 +969,22 @@ func _ksMatchPattern(value any, expected string, parameters map[string]bool, bin
 		}
 		return false
 	}
+	if item, ok := value.(_ksStruct); ok && item.name == base {
+		if len(arguments) == 0 {
+			return true
+		}
+		if len(item.typeArgs) > 0 && len(item.typeArgs) == len(arguments) {
+			for index := range item.typeArgs {
+				if item.typeArgs[index] == "_" {
+					continue
+				}
+				if !_ksMatchTypeName(item.typeArgs[index], arguments[index], parameters, bindings) {
+					return false
+				}
+			}
+		}
+		return true
+	}
 	if item, ok := value.(_ksEnumValue); ok && item.owner == base {
 		if len(arguments) == 0 {
 			return true
@@ -883,3 +1044,26 @@ func _ksMatchesType(value any, expected []string, parameters map[string]bool, bi
 '''
 
 MIR_GO_RUNTIME_V2_IMPORTS = ("fmt", "math", "os", "strconv", "strings", "unicode/utf8")
+
+# Emitted only for programs that call the kernel digest (``secure_hash_v1``).
+# Go's standard ``crypto/sha3`` is the audited provider; Koschei implements no
+# cryptographic primitive of its own.
+MIR_GO_SHA3_IMPORTS_V2 = ("crypto/sha3", "encoding/hex")
+MIR_GO_SHA3_RUNTIME_V2 = r'''
+const _ksSha3MaxInputBytes = {max_bytes}
+
+func _ksSha3_256(arguments ...any) any {{
+	if len(arguments) != 1 {{
+		_ksAbort("KS3101", "sha3_256 expects one argument")
+	}}
+	text, ok := arguments[0].(string)
+	if !ok {{
+		return _ksError{{message: "sha3_256: input must be a String"}}
+	}}
+	if len(text) > _ksSha3MaxInputBytes {{
+		return _ksError{{message: "sha3_256: input exceeds {max_bytes} bytes"}}
+	}}
+	sum := sha3.Sum256([]byte(text))
+	return hex.EncodeToString(sum[:])
+}}
+'''

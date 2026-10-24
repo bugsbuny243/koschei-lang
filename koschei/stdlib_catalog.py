@@ -351,10 +351,20 @@ CATALOG: tuple[Family, ...] = (
     ),
     _family(
         "secure",
-        "planned",
+        "partial",
         "v1",
         "Hashing, signatures and constant-time verification.",
-        _planned("hash", required=("input_bytes", "work")),
+        _supported(
+            "hash",
+            required=("input_bytes", "work"),
+            enforced=("input_bytes",),
+            note=(
+                "Core Library `secure.hash`/`secure.digest` over the kernel `sha3_256`, "
+                "which delegates to audited host SHA3-256 (Python hashlib, Go crypto/sha3). "
+                "Input is bounded to 1 MiB of UTF-8, which also bounds the work of one "
+                "call; there is no separate work meter."
+            ),
+        ),
         _planned("verify", required=("input_bytes", "work")),
     ),
     _family(

@@ -868,4 +868,9 @@ def _to_string(value: Any) -> str:
         if value.payload is _NO_PAYLOAD:
             return value.variant
         return f"{value.variant}({_to_container_repr(value.payload)})"
+    if isinstance(value, _StructValue):
+        inner = ", ".join(
+            f"{name}: {_to_container_repr(item)}" for name, item in value.fields
+        )
+        return f"{value.type_name} {{ {inner} }}"
     return str(value)

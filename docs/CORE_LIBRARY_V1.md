@@ -21,7 +21,8 @@ Koschei.
 
 This is step 2 of the independence path: the library moves into the language
 first, and a small host kernel (`length`, `contains`, `trim`, `split`, `join`,
-`get`, `push`, `take`) remains below it until the compiler hosts itself.
+`get`, `push`, `take`, `sha3_256`) remains below it until the compiler hosts
+itself.
 
 ## Using it
 
@@ -63,6 +64,7 @@ its SHA-256 digest and its public functions; `--json` emits the
 | `replace(value, old, replacement)` | `Result<String, Error>` | every non-overlapping occurrence |
 | `lines(value)` | `List<String>` | split on `\n`, one trailing `\r` removed, no extra final empty line |
 | `words(value)` | `List<String>` | non-empty pieces between spaces, tabs, `\r`, `\n` |
+| `unique_sorted(values)` | `List<String>` | distinct values in ascending code-point order: a canonical set of names |
 
 A pattern that must locate something (`separator`, `needle`, `old`) may not be
 empty. An empty pattern has no single meaning, so the function returns `None`
@@ -92,25 +94,99 @@ All functions are generic over the item type and never mutate their input.
 
 Out-of-range indices produce an `Error` value; they are never clamped silently.
 
+### `secure`
+
+Written in Koschei over the kernel `sha3_256(text) -> String or Error`, which
+delegates to the host's audited SHA3-256 (Python `hashlib`, Go `crypto/sha3`).
+Koschei implements no cryptographic primitive (`crypto_agility_v1`). The
+kernel digests the UTF-8 bytes of its input, returns 64 lowercase hex
+characters, and returns an `Error` value for more than 1 MiB of input. It is
+pure (allowed in `pure fn`) and needs no capability.
+
+| Function | Result | Meaning |
+|---|---|---|
+| `hash(value)` | `Result<String, Error>` | `"sha3-256:"` + hex digest of `value` |
+| `digest(context, parts)` | `Result<String, Error>` | domain-separated digest; `context` may not be empty |
+| `zero_digest()` | `String` | the all-zero digest: "no previous record" at the start of a chain |
+| `is_digest(value)` | `Bool` | `value` has exactly the shape this module produces |
+
+`digest` encodes `koschei.secure.digest/v1`, then the context and every part
+as `<length>:<text>` (lengths in characters) on their own lines, so two
+different `(context, parts)` inputs never encode to the same bytes. Digests
+name their algorithm, so a later algorithm can live beside this one.
+
+```ks
+import secure
+
+fn main() {
+    let id = secure.digest("koschei.example.order/v1", ["S-0001", "40"]) or "?"
+    println("{secure.is_digest(id)} {secure.is_digest("abc")}")
+}
+```
+
+### Marvel universe: `captain_marvel`, `hela`, `strange`, `wanda`
+
+The first library universe modules written in Koschei. Each one ports a Python
+guardian and returns the same decisions, reasons and error causes; the
+mapping, rules and status live in
+[`KOSCHEI_KUTUPHANE_EVRENLERI_V1.md`](../KOSCHEI_KUTUPHANE_EVRENLERI_V1.md).
+
+| Module | Records | Functions |
+|---|---|---|
+| `captain_marvel` | `BlastRadiusBudget`, `PropagationVerdict` | `issue_budget`, `evaluate`, `is_canonical_budget` |
+| `hela` | `AuthorityTombstone` | `bury`, `remains_dead`, `is_resurrection_attempt`, `is_canonical` |
+| `strange` | `FutureStep`, `FutureVerdict` | `simulate` |
+| `wanda` | `RealityCommitment` | `commit`, `extends`, `detects_fork`, `detects_rollback`, `is_canonical` |
+
+```ks
+import strange
+
+fn main() {
+    let steps = [
+        FutureStep { effect: "read", target: "disk", authority_before: ["disk", "net"], authority_after: ["disk"] },
+        FutureStep { effect: "send", target: "socket", authority_before: ["disk"], authority_after: ["disk", "net"] },
+    ]
+    let verdict = strange.simulate(steps, 8, []) or return
+    println("{verdict.safe} {verdict.first_violation} {verdict.reason}")
+}
+```
+
+- Every decision function re-derives the digest of each record it receives.
+  A record edited after it was issued, or built by hand, gets the fail-closed
+  answer. A digest is not a signature: it proves that the fields did not
+  change, not who issued the record.
+- Digests use `secure.digest` with one context per record kind, so they differ
+  from the Python byte layout by design.
+- Struct names are global within a program: importing one of these modules
+  reserves its record names, and a project struct with the same name fails
+  closed with `KS1604`.
+- Koschei v1 has no private functions, so helpers such as `strange.verdict`
+  are visible too.
+- Re-deriving digests costs `ks run` steps (see `--max-steps`); native
+  binaries are not metered.
+
 ## Resolution and security rules
 
-- Only the names registered in `CORE_LIBRARY_MODULES_V1` (`list`, `text`) are
-  library modules. A stray `.ks` file placed in the library directory is never
+- Only the names registered in `CORE_LIBRARY_MODULES_V1` (`captain_marvel`,
+  `hela`, `list`, `secure`, `strange`, `text`, `wanda`) are library modules. A stray `.ks` file placed in the library directory is never
   importable by user code.
 - A project file with the same name as a library module (for example a
   `text.ks` next to `main.ks`) makes `import text` ambiguous. The import fails
   closed with `KS1601` instead of silently shadowing either side, matching the
   existing workspace-package rule.
-- Library modules may import each other (`text` imports `list`), never project
-  files.
+- Library modules may import each other (`text` imports `list`; the Marvel
+  modules import `secure` and `text`), never project files.
 - Importing the library grants no authority. Library functions are ordinary
   Koschei code: they hold no capability, and `ks caps` of a program that only
   uses the library stays empty.
 
 ## Verification
 
-`tests/test_core_library_v1.py` runs every library function through the real
-`ks run` path against a Python reference implementation. Each case embeds the
+`tests/test_core_library_v1.py` runs every `text` and `list` function through
+the real `ks run` path against a Python reference implementation;
+`tests/test_secure_library_v1.py` pins `sha3_256` to NIST answers, `hashlib`
+and its byte bound; `tests/test_marvel_library_v1.py` compares the Marvel
+modules with their Python guardians. Each case embeds the
 expected answer in a generated Koschei program, with seeded random inputs over
 an alphabet chosen to force overlapping patterns, line breaks, blanks, escapes
 and non-ASCII text. Resolution, shadowing, capability and lock behavior are
@@ -130,12 +206,15 @@ projection, not a Koschei-native runtime.
 - **Catalog promotion.** `koschei/stdlib_catalog.py` describes host builtins and
   requires interpreter/native parity for `supported`. Core Library functions are
   module functions (`text.starts_with(value, prefix)`), not `String` methods, and
-  are not counted there.
+  are not counted there. The exception is `secure.hash`, which the catalog's
+  `secure` family has always named; it is `supported` with its input bound
+  enforced.
 - **Locked builds.** Module Lock v1 covers project-local files only, so
   `ks lock create` rejects graphs that import the library with an explicit
   `KS1902` reason instead of a misleading path-escape message.
 - **Workspaces.** The workspace resolver is unchanged; workspace members cannot
   import the library yet.
+- **Bytes.** There is no byte type yet; digests travel as hex text.
 - **Missing language features.** Generic `==` on type parameters and
   function-typed parameters are not available to user code, so operations such
   as `index_of` or a generic `fold` are deferred. Character-level operations

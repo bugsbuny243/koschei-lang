@@ -1,8 +1,12 @@
-"""AST-free runtime law for mutating an already-constructed ordinary Struct.
+"""AST-free runtime law for assigning one field of an ordinary Struct.
 
 The canonical checker owns whether a field assignment is legal and mutable.  This
 module only enforces the sealed runtime facts again: receiver shape, declaration
 identity, field identity, generic type evidence, and capability confinement.
+
+Struct values have value semantics: the receiver is never changed. The law
+returns an updated copy, which the lowering stores back into the mutable
+binding, so other holders of the old value never observe the assignment.
 """
 from __future__ import annotations
 
@@ -27,7 +31,7 @@ def struct_field_set_v1(
     runtime_type_name: Callable[[Any], str],
     location: SourceLocation,
 ) -> Any:
-    """Mutate one checked Struct field and return the assignment value.
+    """Return a copy of ``receiver`` with one checked field replaced.
 
     No source AST is executed here.  Generic field types are checked against the
     concrete type arguments already carried by ``StructValue``.
@@ -93,8 +97,9 @@ def struct_field_set_v1(
             location,
         )
 
-    receiver.fields[field_name] = value
-    return value
+    fields = dict(receiver.fields)
+    fields[field_name] = value
+    return StructValue(receiver.type_name, fields, receiver.type_arguments)
 
 
 __all__ = ["StructFieldRuntimeError", "struct_field_set_v1"]

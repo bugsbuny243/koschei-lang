@@ -305,4 +305,8 @@ from .canonical_mir_budget_runtime_v1 import install_canonical_mir_budget_runtim
 
 install_canonical_mir_budget_runtime_v1()
 
+from .secure_hash_v1 import install_secure_hash_v1
+
+install_secure_hash_v1()
+
 __all__ = ["main"]

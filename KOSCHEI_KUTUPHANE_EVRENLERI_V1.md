@@ -34,17 +34,17 @@ yasayı değiştirmez.
 ```text
 Görünür dil        ka · vor · shi · thal · nur          (geliştiricinin yazdığı)
       │
-Günlük çekirdek    text · list                          (her programın temel araçları)
+Günlük çekirdek    text · list · secure                 (her programın temel araçları)
       │
 Dört evren         Marvel · Matrix · Kuantum · Diğer    (güvenlik makinesi)
       │
 Evren koordinasyonu  Galaxy · Khar · Veyra · Aevra       (evrenlerin birbirini bozmadan birleşmesi)
 ```
 
-- **Günlük çekirdek** (`docs/CORE_LIBRARY_V1.md`) metin ve liste gibi her
-  programın ihtiyaç duyduğu araçlardır. Bugün **Koschei ile yazılmıştır** ve
-  `import text` / `import list` ile kullanılır. Dört evren de bu çekirdeğin
-  üzerine kurulacaktır.
+- **Günlük çekirdek** (`docs/CORE_LIBRARY_V1.md`) metin, liste ve özet gibi
+  her programın ihtiyaç duyduğu araçlardır. **Koschei ile yazılmıştır** ve
+  `import text` / `import list` / `import secure` ile kullanılır. Dört evren
+  bu çekirdeğin üzerine kurulur.
 - **Dört evren** dilin arkasındaki büyük güvenlik makinesidir. Geliştirici
   bir sigil yazar; kütüphane ve evren o sigilin gerektirdiği bütün
   güvenceleri otomatik genişletir: *küçük görünür dil, büyük doğrulanmış iç
@@ -54,6 +54,7 @@ Durum sütunlarındaki anlamlar:
 
 | Etiket | Anlamı |
 |---|---|
+| **Koschei'de** | Koschei ile yazılmış Core Library modülü; `ks run` ve `ks build` ile çalışır, Python bekçisiyle aynı kararı verdiği fark testiyle kanıtlanmıştır |
 | **Kod + test** | Python ile yazılmış, test edilmiş host modülü var |
 | **Kod, test yok** | Modül var ama testi yok |
 | **Yalnızca belge** | Tasarım belgede tanımlı, kodu yok |
@@ -87,11 +88,11 @@ gezegenin yetkisini devralmaz.
 
 | Karakter | Güvenlik görevi | Yetki kuralı | Uygulama | Durum |
 |---|---|---|---|---|
-| **Wanda** | Gerçeklik taahhüt zinciri; çatallanma (fork) ve geri sarma (rollback) tespiti | Kabul edilmiş geçmişi yeniden yazamaz | `koschei/wanda_reality_integrity_v1.py` | Kod + test |
+| **Wanda** | Gerçeklik taahhüt zinciri; çatallanma (fork) ve geri sarma (rollback) tespiti | Kabul edilmiş geçmişi yeniden yazamaz | `import wanda` (`koschei/core_library/wanda.ks`); Python referansı `koschei/wanda_reality_integrity_v1.py` | **Koschei'de** |
 | **Loki** | Yetkisiz gözlemciler için savunma amaçlı aldatma ve tuzak kanıtı | Yemlerde gerçek sır veya çalıştırılabilir yetki yoktur; geri saldırmaz | `koschei/loki_deception_reality_v1.py`, `koschei/loki_adaptive_topology_v1.py` | Kod + test |
-| **Hela** | Geri alınamaz yetki ölümü; ölmüş yetkinin tekrar, eski epoch veya çatallanma yoluyla dirilmesini engeller | Ölü yetki geri gelmez | `koschei/hela_authority_death_v1.py` | Kod + test |
-| **Doctor Strange** | Etkiden önce sınırlı gelecek-yol simülasyonu: önerilen yol yetkiyi genişletir mi? | Simülasyon dış etki yapamaz, yetki üretemez | `koschei/strange_future_paths_v1.py` | Kod, test yok |
-| **Captain Marvel** | Patlama yarıçapı: bir olayın yayılma bütçesi | Bütçe yalnızca korunur veya küçülür; asla büyümez | `koschei/captain_marvel_blast_radius_v1.py` | Kod + test |
+| **Hela** | Geri alınamaz yetki ölümü; ölmüş yetkinin tekrar, eski epoch veya çatallanma yoluyla dirilmesini engeller | Ölü yetki geri gelmez | `import hela` (`koschei/core_library/hela.ks`); Python referansı `koschei/hela_authority_death_v1.py` | **Koschei'de** |
+| **Doctor Strange** | Etkiden önce sınırlı gelecek-yol simülasyonu: önerilen yol yetkiyi genişletir mi? | Simülasyon dış etki yapamaz, yetki üretemez | `import strange` (`koschei/core_library/strange.ks`); Python referansı `koschei/strange_future_paths_v1.py` | **Koschei'de** (testleri de taşımayla yazıldı) |
+| **Captain Marvel** | Patlama yarıçapı: bir olayın yayılma bütçesi | Bütçe yalnızca korunur veya küçülür; asla büyümez | `import captain_marvel` (`koschei/core_library/captain_marvel.ks`); Python referansı `koschei/captain_marvel_blast_radius_v1.py` | **Koschei'de** |
 | **Sonsuzluk Taşları / Gauntlet** | Kritik yetkinin tek noktada toplanmaması; altı güvenlik alanının (kimlik, yetki, bütünlük, davranış, kanıt, kurtarma/zaman) deterministik olarak birlikte onaylaması | Zorunlu alanların hepsi uyuşmadan giriş yok | Belge: `docs/MULTIVERSE_GUARDIAN_MAP.md` | Yalnızca belge |
 
 Yüksek riskli bir işlemin yolu:
@@ -104,6 +105,35 @@ Wanda gerçeklik kanıtı → Strange gelecek-yol kanıtı → Gauntlet girişi 
 İptal Hela'ya, kök yükseltme Vormir'e gider; şüpheli keşif yalnızca Loki'nin
 yetkisiz yüzeylerine yönlendirilebilir. Her bekçi kendi başına
 **fail-closed** çalışır.
+
+### Koschei'ye taşınan dört bekçi
+
+```ks
+import captain_marvel
+
+fn main() {
+    let budget = captain_marvel.issue_budget("earth-616", ["earth-838"], 2, 1) or return
+    let verdict = captain_marvel.evaluate(budget, "earth-838", 0, 0) or return
+    println("{verdict.allowed} {verdict.reason} {verdict.remaining_hops}")
+}
+```
+
+- Kararlar, gerekçe metinleri (`"hop-budget-exhausted"`, `"future authority expansion"`, …)
+  ve hata nedenleri Python bekçileriyle aynıdır;
+  `tests/test_marvel_library_v1.py` bunu tohumlu rastgele vakalarla kanıtlar.
+- Özetler `secure.digest` ile alan ayrımlı ve uzunluk önekli üretilir
+  (`"sha3-256:"` + 64 hex). Bayt düzeni Python sürümünden **bilerek farklıdır**;
+  bu yüzden Koschei özetleri Python özetleriyle karşılaştırılmaz, belgelenmiş
+  kodlamanın bağımsız bir modeliyle karşılaştırılır.
+- Koschei sürümü bir adım daha sıkıdır: her karar fonksiyonu aldığı kaydın
+  özetini alanlarından yeniden hesaplar. Sonradan düzenlenmiş veya elle
+  kurulmuş bir kayıt (genişletilmiş bütçe, ertelenmiş ölüm epoch'u, yeniden
+  yazılmış taahhüt) **fail-closed** cevabı alır: bütçe reddedilir, yetki ölü
+  sayılır, zincir uzamaz, çatallanma ve geri sarma var kabul edilir. Özet bir
+  imza değildir; kaydı kimin ürettiğini değil, alanlarının değişmediğini
+  kanıtlar.
+- Python modülleri referans olarak kalır; `matrix_portal_transit_v1.py`
+  Matrix taşınana kadar onları kullanır.
 
 ## 2. Matrix Evreni
 
@@ -145,27 +175,29 @@ gelecek (kuantum sonrası kriptografi) için kullanılır.
 
 ## Bugünkü gerçek durum
 
-- Yukarıdaki evren modüllerinin hepsi bugün **Python ile yazılmış host
-  makinesidir**. Bir Koschei programı (`.ks`) bunları henüz `import`
-  edemez. Koschei ile yazılmış olan yalnızca günlük çekirdektir (`text`,
-  `list`).
-- "Kendi kütüphanemiz" hedefi, bu evrenlerin Koschei'ye taşınmasını
-  gerektirir. Bugünkü engeller:
-  - **Özet fonksiyonu ve bayt tipi yok.** Wanda, Hela, Captain Marvel ve
-    Matrix taahhütleri SHA3-256 özetine dayanır. Kripto çevikliği kuralı
-    gereği bu özet Koschei ile yeniden yazılmaz; denetlenmiş bir
-    sağlayıcıdan çekirdek temel işlemi olarak gelir.
+- Koschei ile yazılmış olanlar: günlük çekirdek (`text`, `list`, `secure`)
+  ve Marvel evreninin dört bekçisi (`captain_marvel`, `hela`, `strange`,
+  `wanda`). Hepsi `ks run` ve `ks build` ile aynı çıktıyı verir.
+- Diğer evren modülleri hâlâ **Python ile yazılmış host makinesidir**; bir
+  Koschei programı onları `import` edemez.
+- Özet artık var: çekirdek `sha3_256` işlemi denetlenmiş host uygulamasına
+  (Python `hashlib`, Go `crypto/sha3`) devreder; Koschei yeni bir kriptografik
+  ilkel yazmaz. Girdi 1 MiB UTF-8 ile sınırlıdır.
+- Struct'lar native derlemede de çalışır ve değer semantiğine sahiptir: bir
+  alan ataması yalnızca o `let mut` bağlamasını değiştirir.
+- Kalan engeller:
+  - **Bayt tipi yok.** Özetler hex metin olarak taşınır.
   - **Bit işlemleri yok** (`&`, `|`, `^`, `<<`): hex/base64 gibi
     kodlamalar ve bayt düzeyindeki işler için gerekir.
-  - **Kayıt (struct) ve Map** yorumlayıcıda var, native derlemede henüz yok.
+  - **Map ve generic struct** native derlemede henüz yok.
 
 ## Koschei'ye taşıma sırası
 
-1. **Çekirdek:** bayt/özet tipi ve denetlenmiş bir sağlayıcıdan gelen özet
-   fonksiyonu (kripto çevikliği kuralına uygun, değiştirilebilir).
-2. **Saf mantıklı bekçiler:** Captain Marvel (bütçe yalnızca küçülür),
-   Hela (mezar taşı denetimi), Doctor Strange (gelecek-yol simülasyonu;
-   taşınırken testleri de yazılır), Wanda (taahhüt zinciri).
+1. ~~**Çekirdek:** denetlenmiş bir sağlayıcıdan gelen özet fonksiyonu (kripto
+   çevikliği kuralına uygun, değiştirilebilir).~~ **Tamamlandı:** `sha3_256`
+   ve `secure` modülü. Bayt tipi hâlâ açık.
+2. ~~**Saf mantıklı bekçiler:** Captain Marvel, Hela, Doctor Strange,
+   Wanda.~~ **Tamamlandı:** dört bekçi Koschei'de.
 3. **Matrix:** portal geçişi ve ufuk çiti.
 4. **Gezegenler:** sekiz özelliği taşıyan bir gezegen yapısı; ilk gezegen
    Vormir.

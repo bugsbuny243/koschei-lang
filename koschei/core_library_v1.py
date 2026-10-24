@@ -31,7 +31,15 @@ CORE_LIBRARY_ROOT = (Path(__file__).resolve().parent / "core_library").resolve()
 
 # Explicit registry. Adding a module is a reviewed change, not a side effect of
 # dropping a file into the package directory.
-CORE_LIBRARY_MODULES_V1: tuple[str, ...] = ("list", "text")
+CORE_LIBRARY_MODULES_V1: tuple[str, ...] = (
+    "captain_marvel",
+    "hela",
+    "list",
+    "secure",
+    "strange",
+    "text",
+    "wanda",
+)
 
 
 @dataclass(frozen=True, slots=True)

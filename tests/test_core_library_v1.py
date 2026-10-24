@@ -159,8 +159,9 @@ class CoreLibraryResolutionTests(CoreLibraryWorkspace):
                 self.assertIn(imported, CORE_LIBRARY_MODULES_V1, module.name)
 
     def test_library_carries_no_capability(self) -> None:
+        imports = "".join(f"import {name}\n" for name in CORE_LIBRARY_MODULES_V1)
         directory = self.workspace(
-            {"main.ks": "import text\nimport list\n\nfn main() {\n    return\n}\n"}
+            {"main.ks": imports + "\nfn main() {\n    return\n}\n"}
         )
         graph = load_graph(directory / "main.ks")
         check_graph(graph)
@@ -188,6 +189,12 @@ class CoreLibraryResolutionTests(CoreLibraryWorkspace):
         }
         self.assertTrue({"starts_with", "ends_with", "replace", "lines"} <= surface["text"])
         self.assertTrue({"first", "last", "reverse", "slice"} <= surface["list"])
+        self.assertTrue({"unique_sorted"} <= surface["text"])
+        self.assertEqual({"hash", "digest", "zero_digest", "is_digest"}, surface["secure"])
+        self.assertTrue({"issue_budget", "evaluate"} <= surface["captain_marvel"])
+        self.assertTrue({"bury", "remains_dead"} <= surface["hela"])
+        self.assertTrue({"simulate"} <= surface["strange"])
+        self.assertTrue({"commit", "extends", "detects_fork"} <= surface["wanda"])
         for module in payload["modules"]:
             self.assertRegex(module["sha256"], r"^[0-9a-f]{64}$")
 
@@ -273,6 +280,22 @@ class CoreLibraryTextDifferentialTests(CoreLibraryWorkspace):
                 f"        println(\"FAIL is_empty {index}\")\n    }}\n"
                 f"    if text.is_blank({v}) != {str(value.strip() == '').lower()} {{\n"
                 f"        println(\"FAIL is_blank {index}\")\n    }}"
+            )
+        self.assert_cases_pass("import text", checks)
+
+    def test_unique_sorted_matches_reference(self) -> None:
+        rng = random.Random(1604)
+        checks: list[str] = []
+        names = ["", "a", "ab", "b", "B", "ç", "z", "é", "aa", "\t"]
+        for index in range(120):
+            values = [rng.choice(names) for _ in range(rng.randint(0, 7))]
+            # Python orders str by code point, as Koschei String comparison does.
+            expected = sorted(set(values))
+            checks.append(
+                f"    let values_{index}: List<String> = {_string_list(values)}\n"
+                f"    let unique_expected_{index}: List<String> = {_string_list(expected)}\n"
+                f"    if text.unique_sorted(values_{index}) != unique_expected_{index} {{\n"
+                f"        println(\"FAIL unique_sorted {index}\")\n    }}"
             )
         self.assert_cases_pass("import text", checks)
 

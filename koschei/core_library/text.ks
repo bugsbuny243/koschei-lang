@@ -155,3 +155,29 @@ fn words(value: String) -> List<String> {
     }
     return pieces
 }
+
+// The distinct values in ascending character order: a canonical set of names.
+// Insertion keeps the work quadratic, which suits the small name sets the
+// library's guardians use.
+fn unique_sorted(values: List<String>) -> List<String> {
+    let mut out: List<String> = []
+    for value in values {
+        if out.contains(value) {
+            continue
+        }
+        let mut next: List<String> = []
+        let mut placed = false
+        for current in out {
+            if !placed && value < current {
+                next = next.push(value)
+                placed = true
+            }
+            next = next.push(current)
+        }
+        if !placed {
+            next = next.push(value)
+        }
+        out = next
+    }
+    return out
+}

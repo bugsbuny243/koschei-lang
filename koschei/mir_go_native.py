@@ -28,12 +28,21 @@ from .mir_extension_instructions_v4 import (
     MirFalliblePayload,
     MirInterpolate,
     MirIsRuntimeError,
+    MirStructFieldSet,
+    MirStructFinish,
+    MirStructNew,
+    MirStructSet,
     MirUnit,
     MirVariantConstruct,
     MirVariantIs,
     MirVariantPayload,
 )
-from .mir_go_runtime_v2 import MIR_GO_RUNTIME_V2, MIR_GO_RUNTIME_V2_IMPORTS
+from .mir_go_runtime_v2 import (
+    MIR_GO_RUNTIME_V2,
+    MIR_GO_RUNTIME_V2_IMPORTS,
+    MIR_GO_SHA3_IMPORTS_V2,
+    MIR_GO_SHA3_RUNTIME_V2,
+)
 from .mir_ir import (
     MirAstFallback,
     MirBinary,
@@ -54,14 +63,21 @@ from .mir_ir import (
     MirUnreachable,
 )
 from .mir_variant_runtime_v1 import MirVariantRuntimeError, split_canonical_variant_v1
+from .secure_hash_v1 import NAME as SECURE_HASH_NAME, SHA3_256_MAX_INPUT_BYTES
 from .semantic import INT_MAX, INT_MIN
+from .type_contracts import declaration_type
 from .type_system import GenericType, NamedType, TypeNode, alternatives, render_type
 
 _BINARY = frozenset(
     {"+", "-", "*", "/", "%", "==", "!=", "<", "<=", ">", ">=", "&&", "||"}
 )
 _UNARY = frozenset({"!", "-"})
-_BUILTINS = {"print": "_ksPrint", "println": "_ksPrintln", "Error": "_ksErrorValue"}
+_BUILTINS = {
+    "print": "_ksPrint",
+    "println": "_ksPrintln",
+    "Error": "_ksErrorValue",
+    SECURE_HASH_NAME: "_ksSha3_256",
+}
 _STRING_METHODS = frozenset({"length", "contains", "trim", "split", "join"})
 _LIST_METHODS = frozenset({"length", "get", "push", "contains", "take"})
 _VALUE_METHODS = _STRING_METHODS | _LIST_METHODS
@@ -109,6 +125,10 @@ _ADMITTED_INSTRUCTIONS = (
     MirVariantConstruct,
     MirVariantIs,
     MirVariantPayload,
+    MirStructNew,
+    MirStructSet,
+    MirStructFinish,
+    MirStructFieldSet,
 )
 _GO_IDENTIFIER = re.compile(r"[^A-Za-z0-9_]")
 _ENUM_GO_TYPE = "_ksEnumValue"
@@ -140,6 +160,7 @@ class _FunctionPlan:
     symbol: str
     refs: dict[int, _Ref]
     mutable: dict[str, bool]
+    structs: dict[str, Any]
 
 
 def inspect_mir_go_support(mir: MirGraph) -> MirGoSupport:
@@ -159,6 +180,14 @@ def generate_go_mir_native(mir: MirGraph) -> str:
         (plan.module.key, plan.function.name): plan.symbol for plan in plans
     }
     root_main = symbols[(mir.root, "main")]
+    uses_digest = any(
+        ref.kind == "builtin" and ref.name == SECURE_HASH_NAME
+        for plan in plans
+        for ref in plan.refs.values()
+    )
+    imports = sorted(
+        {*MIR_GO_RUNTIME_V2_IMPORTS, *(MIR_GO_SHA3_IMPORTS_V2 if uses_digest else ())}
+    )
 
     lines = [
         "// Code generated from sealed Koschei MIR v4. DO NOT EDIT.",
@@ -166,10 +195,12 @@ def generate_go_mir_native(mir: MirGraph) -> str:
         "package main",
         "",
         "import (",
-        *(f'\t"{name}"' for name in MIR_GO_RUNTIME_V2_IMPORTS),
+        *(f'\t"{name}"' for name in imports),
         ")",
         MIR_GO_RUNTIME_V2,
     ]
+    if uses_digest:
+        lines.append(MIR_GO_SHA3_RUNTIME_V2.format(max_bytes=SHA3_256_MAX_INPUT_BYTES))
     for plan in plans:
         lines.extend(_emit_function(plan, symbols))
         lines.append("")
@@ -199,9 +230,16 @@ def _plan(mir: MirGraph) -> tuple[list[str], list[_FunctionPlan]]:
         variant.name for declaration in enums.values() for variant in declaration.variants
     }
 
+    # Struct names are unique across a graph (KS1604), so one table serves
+    # every module.
+    structs = {
+        declaration.name: declaration
+        for module in modules
+        for declaration in module.program.structs
+    }
     for module in modules:
-        if module.program.structs:
-            reasons.append(f"{module.name}: MIR-Go does not compile structs yet")
+        for declaration in module.program.structs:
+            reasons.extend(_struct_declaration_reasons(module, declaration))
 
     root = mir.root_module
     main = next((item for item in root.functions if item.name == "main"), None)
@@ -215,7 +253,7 @@ def _plan(mir: MirGraph) -> tuple[list[str], list[_FunctionPlan]]:
         for function_index, function in enumerate(module.functions):
             label = f"{module.name}.{function.name}"
             refs, mutable, function_reasons = _resolve_function(
-                mir, module, function, enums, constructors, label
+                mir, module, function, enums, structs, constructors, label
             )
             reasons.extend(function_reasons)
             plans.append(
@@ -228,9 +266,50 @@ def _plan(mir: MirGraph) -> tuple[list[str], list[_FunctionPlan]]:
                     ),
                     refs=refs,
                     mutable=mutable,
+                    structs=structs,
                 )
             )
     return reasons, plans
+
+
+def _struct_declaration_reasons(module: MirModule, declaration: Any) -> list[str]:
+    label = f"{module.name}.{declaration.name}"
+    if tuple(getattr(declaration, "type_parameters", ()) or ()):
+        return [f"{label}: MIR-Go does not compile generic structs yet"]
+    reasons: list[str] = []
+    for field in declaration.fields:
+        rendered = render_type(declaration_type(declaration, field.type_ref))
+        names = set(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", rendered))
+        blocked = sorted(names & _CAPABILITY_TYPES)
+        if blocked:
+            reasons.append(
+                f"{label}.{field.name}: capability-typed struct fields are not "
+                f"MIR-Go ({', '.join(blocked)})"
+            )
+    return reasons
+
+
+def _struct_field_names(declaration: Any, field_name: str) -> tuple[str, ...]:
+    """Runtime type names a struct field value is checked against.
+
+    Struct literals (``StructBuilderV1.set_field``) and field assignments
+    (``struct_field_set_v1``) both check the declared field type; generic
+    structs are not admitted, so no type argument is substituted.
+    """
+
+    field = next(item for item in declaration.fields if item.name == field_name)
+    return _runtime_names(declaration_type(declaration, field.type_ref))
+
+
+def _struct_instance(declaration: Any, type_node: TypeNode) -> bool:
+    """Whether a MIR type identifies exactly one instance of ``declaration``."""
+
+    candidates = [
+        option
+        for option in alternatives(type_node)
+        if isinstance(option, (NamedType, GenericType)) and option.name == declaration.name
+    ]
+    return len(candidates) == 1 and isinstance(candidates[0], NamedType)
 
 
 def _signature_reasons(function: MirFunction, label: str) -> list[str]:
@@ -253,6 +332,7 @@ def _resolve_function(
     module: MirModule,
     function: MirFunction,
     enums: dict[str, Any],
+    structs: dict[str, Any],
     constructors: set[str],
     label: str,
 ) -> tuple[dict[int, _Ref], dict[str, bool], list[str]]:
@@ -270,6 +350,17 @@ def _resolve_function(
                 mutable[instruction.name] = instruction.is_mutable
     bindings = parameters | set(mutable)
     functions = {item.name for item in module.functions}
+    # A member that is called is a String/List method; one that is only read
+    # is a struct field (Koschei has no function-typed fields).
+    callees = {
+        instruction.callee
+        for block in function.blocks
+        for instruction in block.instructions
+        if isinstance(instruction, MirCall)
+    }
+    struct_fields = {
+        field.name for declaration in structs.values() for field in declaration.fields
+    }
 
     refs: dict[int, _Ref] = {}
     for block in function.blocks:
@@ -302,7 +393,12 @@ def _resolve_function(
                     reasons.append(f"{label}: unknown static MIR load {name!r}")
             elif isinstance(instruction, MirMember):
                 target = refs.get(instruction.object)
-                if target is None:
+                if target is None and instruction.target not in callees:
+                    if instruction.member not in struct_fields:
+                        reasons.append(
+                            f"{label}: member {instruction.member!r} is not a struct field"
+                        )
+                elif target is None:
                     if instruction.member not in _VALUE_METHODS:
                         reasons.append(
                             f"{label}: method {instruction.member!r} is not MIR-Go yet"
@@ -332,6 +428,10 @@ def _resolve_function(
                 instruction, (MirVariantConstruct, MirVariantIs, MirVariantPayload)
             ):
                 reasons.extend(_variant_reasons(instruction, enums, label))
+            elif isinstance(
+                instruction, (MirStructNew, MirStructSet, MirStructFinish, MirStructFieldSet)
+            ):
+                reasons.extend(_struct_reasons(instruction, structs, label))
 
     for block in function.blocks:
         for instruction in block.instructions:
@@ -374,8 +474,48 @@ def _use_reasons(instruction: Any, refs: dict[int, _Ref], mir: MirGraph, label: 
     return reasons
 
 
+def _struct_reasons(instruction: Any, structs: dict[str, Any], label: str) -> list[str]:
+    if isinstance(instruction, MirStructNew):
+        declaration = structs.get(instruction.type_name)
+        if declaration is None:
+            return [f"{label}: unknown struct {instruction.type_name!r}"]
+        declared = tuple(field.name for field in declaration.fields)
+        required = tuple(instruction.required_fields)
+        if len(required) != len(set(required)) or set(required) != set(declared):
+            return [f"{label}: struct {declaration.name} required fields drifted"]
+        if not _struct_instance(declaration, instruction.type):
+            return [f"{label}: struct type does not identify one {declaration.name}"]
+        return []
+    owners = [
+        option.name
+        for option in alternatives(instruction.type)
+        if isinstance(option, NamedType) and option.name in structs
+    ]
+    if len(owners) != 1:
+        return [f"{label}: struct instruction type does not identify one struct"]
+    declaration = structs[owners[0]]
+    if isinstance(instruction, (MirStructSet, MirStructFieldSet)) and not any(
+        field.name == instruction.field for field in declaration.fields
+    ):
+        return [f"{label}: {declaration.name} has no field {instruction.field!r}"]
+    return []
+
+
+def _struct_owner(instruction: Any, structs: dict[str, Any]) -> Any:
+    (owner,) = [
+        option.name
+        for option in alternatives(instruction.type)
+        if isinstance(option, NamedType) and option.name in structs
+    ]
+    return structs[owner]
+
+
 def _operands(instruction: Any) -> tuple[int, ...]:
     if isinstance(instruction, (MirBind, MirStore)):
+        return (instruction.source,)
+    if isinstance(instruction, (MirStructSet, MirStructFieldSet)):
+        return (instruction.object, instruction.source)
+    if isinstance(instruction, MirStructFinish):
         return (instruction.source,)
     if isinstance(instruction, MirUnary):
         return (instruction.operand,)
@@ -572,7 +712,13 @@ def _emit_instruction(
             return []
         return [f"{prefix}{value(instruction.target)} = {names[instruction.name]}"]
     if isinstance(instruction, MirMember):
-        if refs[instruction.target].kind != "member":
+        ref = refs.get(instruction.target)
+        if ref is None:
+            return [
+                f"{prefix}{value(instruction.target)} = "
+                f"_ksField({value(instruction.object)}, {_go_string(instruction.member)})"
+            ]
+        if ref.kind != "member":
             return []
         return [
             f"{prefix}{value(instruction.target)} = "
@@ -635,6 +781,33 @@ def _emit_instruction(
             separator = ", " if arguments else ""
             call = f"_ksInvokeMember({value(instruction.callee)}{separator}{arguments})"
         return [f"{prefix}{value(instruction.target)} = {call}"]
+    if isinstance(instruction, MirStructNew):
+        fields = _go_string_slice(tuple(instruction.required_fields))
+        return [
+            f"{prefix}{value(instruction.target)} = "
+            f"_ksStructNew({_go_string(instruction.type_name)}, {fields})"
+        ]
+    if isinstance(instruction, MirStructSet):
+        declaration = _struct_owner(instruction, plan.structs)
+        expected = _go_string_slice(
+            _struct_field_names(declaration, instruction.field)
+        )
+        return [
+            f"{prefix}_ksStructSet({value(instruction.object)}, "
+            f"{_go_string(instruction.field)}, {value(instruction.source)}, {expected})"
+        ]
+    if isinstance(instruction, MirStructFinish):
+        return [f"{prefix}{value(instruction.target)} = _ksStructFinish({value(instruction.source)})"]
+    if isinstance(instruction, MirStructFieldSet):
+        declaration = _struct_owner(instruction, plan.structs)
+        expected = _go_string_slice(
+            _struct_field_names(declaration, instruction.field)
+        )
+        return [
+            f"{prefix}{value(instruction.target)} = _ksStructWith("
+            f"{value(instruction.object)}, {_go_string(declaration.name)}, "
+            f"{_go_string(instruction.field)}, {value(instruction.source)}, {expected})"
+        ]
     if isinstance(instruction, MirVariantConstruct):
         owner, variant = split_canonical_variant_v1(instruction.variant)
         type_arguments = _variant_type_arguments(instruction)

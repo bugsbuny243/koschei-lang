@@ -159,6 +159,95 @@ fn main() {
 """
 
 
+STRUCTS = """
+enum Color {
+    Red,
+    Green,
+}
+
+struct Inner {
+    n: Int,
+}
+
+struct Record {
+    label: String,
+    maybe: Option<Int>,
+    items: List<Inner>,
+    color: Color,
+    outcome: Result<Int, Error>,
+    note: String or Error,
+}
+
+fn bump(record: Record) -> Int {
+    let mut copy = record
+    copy.maybe = Some(99)
+    return copy.items.length()
+}
+
+fn main() {
+    let empty = Inner { n: 0 }
+    let first = Record { label: "ç x", maybe: None(), items: [Inner { n: 1 }, empty], color: Red(), outcome: Ok(3), note: "n" }
+    println(first)
+    let mut second = first
+    second.note = Error("broken")
+    second.color = Green()
+    second.outcome = Err(Error("e"))
+    println("{second} {first == second} {first == first}")
+    println("{bump(first)} {first.maybe} {[first, second].contains(first)}")
+    let holder = Some(empty)
+    println("{holder} {first.items} {first.label.length()} {second.items.get(1)}")
+    let mut counter = Inner { n: 0 }
+    for value in [1, 2, 3] {
+        counter.n = counter.n + value
+    }
+    println(counter.n)
+}
+"""
+
+MARVEL_TOUR = """
+import captain_marvel
+import hela
+import secure
+import strange
+import wanda
+
+fn main() {
+    let budget = captain_marvel.issue_budget("earth-616", ["earth-838", "earth-199999"], 2, 1) or return
+    let verdict = captain_marvel.evaluate(budget, "earth-838", 0, 0) or return
+    println("{budget.allowed_destinations} {verdict.allowed} {verdict.reason} {verdict.remaining_hops} {verdict.verdict_digest}")
+    let blocked = captain_marvel.evaluate(budget, "earth-838", 0, 1) or return
+    println("{blocked.allowed} {blocked.reason}")
+    let mut forged = budget
+    forged.max_effects = 9
+    let refused = captain_marvel.evaluate(forged, "earth-838", 0, 1)
+    println(match refused {
+        Ok(v) => v.reason,
+        Err(e) => "{e}",
+    })
+
+    let principal = secure.hash("principal") or return
+    let reality = secure.hash("reality") or return
+    let cause = secure.hash("cause") or return
+    let tombstone = hela.bury(principal, "network:egress", 8, reality, cause, secure.zero_digest()) or return
+    println("{tombstone.tombstone_digest} {hela.remains_dead(tombstone, principal, "network:egress", 8)} {hela.remains_dead(tombstone, principal, "network:egress", 7)}")
+
+    let steps = [
+        FutureStep { effect: "read", target: "disk", authority_before: ["net", "disk"], authority_after: ["disk"] },
+        FutureStep { effect: "write", target: "disk", authority_before: ["disk"], authority_after: ["disk", "net"] },
+    ]
+    let path = strange.simulate(steps, 32, []) or return
+    println("{path.safe} {path.first_violation} {path.reason} {path.path_digest}")
+
+    let genesis = wanda.commit("earth-616", 0, reality, cause, secure.zero_digest()) or return
+    let next = wanda.commit("earth-616", 1, reality, cause, genesis.commitment_digest) or return
+    let mut rewritten = next
+    rewritten.state_digest = cause
+    println("{wanda.extends(genesis, next)} {wanda.extends(genesis, rewritten)} {wanda.detects_fork(next, rewritten)} {wanda.detects_rollback(next, genesis)}")
+    println("{sha3_256("") or "?"} {secure.is_digest(genesis.commitment_digest)}")
+}
+"""
+
+
 def _float_program() -> str:
     rng = random.Random(20261024)
     values = [0.0, 1.0, 0.1, 2.5, 1e15, 1e16, 1e-4, 1e-5, 5e-324, 1e300, 0.30000000000000004]
@@ -249,6 +338,42 @@ class MirGoNativeParityTests(unittest.TestCase):
         output = self.assert_parity(LIBRARY_TOUR)
         self.assertTrue(output.startswith('true\nSome("ab")\nSome("v=w")\n'), output)
 
+    def test_structs_have_value_semantics_natively(self) -> None:
+        output = self.assert_parity(STRUCTS)
+        self.assertTrue(
+            output.startswith(
+                'Record { label: "ç x", maybe: None, items: [Inner { n: 1 }, Inner { n: 0 }], '
+                'color: Red, outcome: Ok(3), note: "n" }\n'
+            ),
+            output,
+        )
+        self.assertIn("\n2 None true\n", output)
+        self.assertTrue(output.endswith("\n6\n"), output)
+
+    def test_structs_on_the_direct_mir_lane(self) -> None:
+        # Without member calls `ks run` uses the direct MIR runtime.
+        source = (
+            "struct P {\n    x: Int,\n    name: String,\n}\n\n"
+            "fn main() {\n    let p = P { x: 1, name: \"a\" }\n    println(p)\n"
+            '    println("{[p]} {p == p} {p.x}")\n}\n'
+        )
+        output = self.assert_parity(source)
+        self.assertEqual(output, 'P { x: 1, name: "a" }\n[P { x: 1, name: "a" }] true 1\n')
+
+    def test_marvel_library_compiles_natively(self) -> None:
+        output = self.assert_parity(MARVEL_TOUR)
+        lines = output.splitlines()
+        self.assertEqual(len(lines), 7, output)
+        self.assertTrue(lines[0].startswith('["earth-199999", "earth-838"] true within-blast-radius 1 '))
+        self.assertEqual(lines[1], "false effect-budget-exhausted")
+        self.assertEqual(lines[2], "captain_marvel.evaluate: canonical budget required")
+        self.assertTrue(lines[3].endswith(" true false"))
+        self.assertTrue(lines[4].startswith("false Some(1) future authority expansion sha3-256:"))
+        self.assertEqual(lines[5], "true false true true")
+        self.assertTrue(
+            lines[6].startswith("a7ffc6f8bf1ed76651c14756a061d662f580ff4de43b49fa82d80a4b80f8434a ")
+        )
+
     def test_error_inside_a_list_literal_without_variant_facts(self) -> None:
         # Member calls but no Option/Result/enum facts: `ks run` used to hand
         # this program to the checked-AST interpreter, which replaced the list
@@ -308,8 +433,8 @@ class MirGoNativeParityTests(unittest.TestCase):
 
     def test_unsupported_constructs_fail_closed(self) -> None:
         cases = {
-            "struct": "struct Point {\n    x: Int,\n}\n\nfn main() {\n"
-            "    let p = Point { x: 1 }\n    println(p.x)\n}\n",
+            "generic struct": "struct Box<T> {\n    value: T,\n}\n\nfn main() {\n"
+            "    let b = Box { value: 1 }\n    println(b.value)\n}\n",
             "callback": "fn keep(value: Int) -> Bool {\n    return value > 1\n}\n\n"
             "fn main() {\n    let kept = [1, 2].filter(keep) or []\n    println(kept)\n}\n",
             "conversion": 'fn main() {\n    let n = "12".to_int() or 0\n    println(n)\n}\n',

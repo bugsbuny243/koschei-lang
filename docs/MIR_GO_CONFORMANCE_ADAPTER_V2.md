@@ -34,6 +34,7 @@ Each MIR slot holds a Go `any`:
 | `Int`, `Float`, `String`, `Bool` | `int64`, `float64`, `string`, `bool` |
 | `List<T>` | `[]any`, never mutated after construction |
 | `Option`, `Result`, user enums | `_ksEnumValue` (owner, variant, payload, type evidence) |
+| structs | `_ksStruct` (name, fields in declaration order, values), never mutated after construction |
 | runtime `Error` | `_ksError`, which flows as a value exactly like `KsError` |
 | `Void` | `_ksUnit` |
 
@@ -45,21 +46,34 @@ whose condition is an Error runs neither arm (sealed MIR guards it with
 program with exit status 1.
 
 Runtime type evidence is checked at every call boundary with a port of the
-executor's matcher, including generic type-parameter binding. The call-depth
+executor's matcher, including generic type-parameter binding. Struct
+literals and field assignments check each field value against its declared
+type, as `StructBuilderV1` and `struct_field_set_v1` do.
+
+Structs have value semantics. A field assignment `record.field = value` on a
+`let mut` binding builds an updated copy and stores it back into that binding;
+the old value, wherever else it is held (an immutable binding, a List, the
+caller of a function), never changes. The canonical lowering emits
+`MirStructFieldSet` followed by `MirStore`, and the canonical executor and the
+checked-AST interpreter follow the same rule. The call-depth
 limit (512, `KS3105`) is enforced. The interpreter's step budget is a `ks run`
 policy, not program semantics, and is not applied to binaries.
 
 ## Admitted subset
 
 Admitted: scalars and their operators, `List<T>`, `for`/`while`/`break`/
-`continue`, `if`/`match`, `Option`/`Result`/user enums, `or return`/
+`continue`, `if`/`match`, `Option`/`Result`/user enums, non-generic structs
+(literals, field reads, field assignment, rendering and `==`), `or return`/
 `or value`/`or { }`, string interpolation, generic functions, imported modules
-(local siblings and the Core Library), `print`/`println`/`Error`, and the
-members `String.length/contains/trim/split/join` and
+(local siblings and the Core Library), `print`/`println`/`Error`, the kernel
+`sha3_256` digest (Go `crypto/sha3`, so building a program that uses it
+needs Go 1.24 or later), and the members
+`String.length/contains/trim/split/join` and
 `List.length/get/push/contains/take`.
 
-Fails closed with `KS4004`: structs, `Map`, capabilities and capability-typed
-signatures, callback members (`filter`, `map`, `sort`, …), `to_int`/
+Fails closed with `KS4004`: generic structs, struct fields of capability type,
+`Map`, capabilities and capability-typed signatures, callback members
+(`filter`, `map`, `sort`, …), `to_int`/
 `to_float`, function or constructor values, and any instruction outside the
 list above. The legacy AST-Go backend is never used as a fallback.
 
@@ -69,8 +83,9 @@ list above. The legacy AST-Go backend is never used as a fallback.
   requires byte-identical standard output and the same success/failure as
   both `ks run` and the budgeted canonical executor: Int boundaries and
   errors, 71 Float values, Unicode strings, nested lists, enums and `or`
-  forms, the Core Library, local modules, stopping paths, the depth limit,
-  fail-closed constructs and the linked host symbols.
+  forms, structs and their value semantics, the Core Library including the
+  Marvel modules and `sha3_256`, local modules, stopping paths, the depth
+  limit, fail-closed constructs and the linked host symbols.
 - A wider development corpus of 82 programs (the Core Library differential
   programs, 64 `ks-differential-fuzz` programs over four seeds, and Int,
   Float, string, list, enum, control-flow and error-path probes) matched the

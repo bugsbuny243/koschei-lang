@@ -16,6 +16,13 @@
 - Enforce the 512 call-depth limit (`KS3105`) in binaries; structs, `Map`, capabilities, callback members and `to_int`/`to_float` still fail closed with `KS4004`.
 - Run every sealed graph without a `MirAstFallback` on sealed MIR under `ks run`; the checked-AST interpreter now only serves graphs that still carry an AST boundary. Programs with member calls but no Option/Result/enum facts no longer get a second semantic authority (an Error inside a list literal stays an element, as in sealed MIR and binaries).
 - Let `ks run` reach the language's 512 call-depth limit in every lane: programs stop with `KS3602`/`KS3105` instead of crashing with a Python `RecursionError` after roughly 100 nested calls.
+- Add the kernel `sha3_256(text) -> String or Error`: the SHA3-256 digest of the text's UTF-8 bytes from the host's audited implementation (Python `hashlib`, Go `crypto/sha3`), bounded to 1 MiB of input, pure and capability-free. Koschei still implements no cryptographic primitive.
+- Add the `secure` Core Library module (`hash`, `digest`, `zero_digest`, `is_digest`): self-describing `sha3-256:` digests with domain separation and length-prefixed fields. The stdlib catalog's `secure.hash` is now `supported`.
+- Add `text.unique_sorted` for canonical sets of names.
+- Port the Marvel guardians to Koschei as Core Library modules: `captain_marvel`, `hela`, `strange` and `wanda` return the same decisions, reasons and error causes as their Python guardians, and every decision fails closed on a record whose digest no longer matches its fields. Doctor Strange gets its first tests.
+- Fix struct aliasing: a field assignment through a `let mut` copy changed every other holder of the same struct, including an immutable `let` binding, a List element and a function's caller. Field assignment now builds an updated copy in every executor.
+- Compile non-generic structs with MIR-Go v2: literals, field reads, field assignment, rendering and `==` match `ks run`. Generic structs still fail closed with `KS4004`.
+- Render structs as `P { x: 1, name: "a" }` in the direct MIR runtime. `ks run` printed the host representation `_StructValue(type_name='P', ...)` for programs that reached that lane.
 
 ## 0.10.0 — Language ergonomics
 

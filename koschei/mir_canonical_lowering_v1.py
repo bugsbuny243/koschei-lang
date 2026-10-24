@@ -17,6 +17,7 @@ from .ast_nodes import (
     MemberExpression,
 )
 from .mir_extension_instructions_v4 import MirStructFieldSet
+from .mir_ir import MirStore
 from .mir_match_lowering_v1 import lower_match_expression_v1
 from .mir_or_return_normalization_v1 import _OrReturnFunctionLowerer
 from .mir_variant_constructor_lowering_v1 import (
@@ -42,20 +43,36 @@ class _CanonicalFunctionLowererV1(_OrReturnFunctionLowerer):
             and isinstance(expression.target, MemberExpression)
             and isinstance(expression.target.object, Identifier)
         ):
-            receiver = self._lower_expression(expression.target.object)
+            # Struct values have value semantics. The assignment builds an
+            # updated copy and rebinds the variable, so every other holder of
+            # the old value (an immutable binding, a List, a caller) keeps it.
+            # The receiver is loaded after the assigned value is computed, so
+            # an assignment nested inside that value is not lost.
+            binding = expression.target.object
             source = self._lower_expression(expression.value)
-            target = self._new_value()
+            receiver = self._lower_expression(binding)
+            struct_type = self._type_of(binding)
+            updated = self._new_value()
             self._emit(
                 MirStructFieldSet(
-                    target=target,
+                    target=updated,
                     object=receiver,
                     field=expression.target.member,
                     source=source,
-                    type=self._type_of(expression),
+                    type=struct_type,
                     location=expression.location,
                 )
             )
-            return target
+            name = self._resolve_binding_name(binding.name)
+            self._emit(
+                MirStore(
+                    binding.name if name is None else name,
+                    updated,
+                    struct_type,
+                    expression.location,
+                )
+            )
+            return source
         return super()._lower_expression(expression)
 
 
