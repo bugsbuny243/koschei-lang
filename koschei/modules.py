@@ -1,6 +1,9 @@
 """Koschei module loader.
 
-By default, `import risk` binds `risk.ks` beside the importing file. Callers that
+By default, `import risk` binds `risk.ks` beside the importing file. The names
+registered in `core_library_v1.CORE_LIBRARY_MODULES_V1` (for example
+`import text`) bind the Koschei Core Library module shipped with the toolchain;
+a project file with the same name is ambiguous and fails closed. Callers that
 need a stronger project system may supply an explicit resolver, but import never
 grants authority: imported code can use disk/network/env/process effects only
 through capability values that are actually passed to it.
@@ -14,6 +17,7 @@ from pathlib import Path
 
 from .affine_resources_v1 import check_affine_resources
 from .ast_nodes import Program, SourceLocation
+from .core_library_v1 import core_library_module
 from .effect_contracts_v1 import EffectReport, check_effect_contracts
 from .integrity import check_program_integrity
 from .legacy_generics import prepare_legacy_analysis
@@ -191,9 +195,24 @@ def load_graph(
 def _resolve_sibling_import(
     importer: Path,
     name: str,
-    _location: SourceLocation,
+    location: SourceLocation,
 ) -> Path:
-    return importer.parent / (name + MODULE_SUFFIX)
+    sibling = importer.parent / (name + MODULE_SUFFIX)
+    library = core_library_module(name)
+    if library is None:
+        return sibling
+    # A library module importing another library module resolves to itself.
+    if sibling.resolve(strict=False) == library:
+        return library
+    if sibling.exists():
+        raise ModuleError(
+            "KS1601",
+            f"Belirsiz import '{name}': hem proje içinde {sibling.name} dosyası hem de "
+            "aynı adlı Koschei Core Library modülü var. Gölgeleme güvenlik nedeniyle "
+            "kapalıdır; proje dosyasını yeniden adlandırın.",
+            location,
+        )
+    return library
 
 
 def public_api(

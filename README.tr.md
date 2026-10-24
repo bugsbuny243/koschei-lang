@@ -77,6 +77,7 @@ ks run .
 - **Hatalar birer değerdir.** `Result<T, E>` kullanılır ve ele alınmamış hata derleme hatasıdır.
 - **Varsayılan immutable.** Değer değiştirmek için `let mut` gerekir.
 - **Tanılar açıklanabilir.** Sabit hata kodları ve Türkçe/İngilizce katalog vardır.
+- **Kütüphane Koschei ile yazılır.** `import text` ve `import list`, araç zinciriyle gelen ve Koschei ile yazılmış Core Library modüllerini bağlar (`text.starts_with`, `text.replace`, `text.lines`, `list.first`, `list.reverse`, `list.slice`, …). Bugün yorumlayıcıda çalışır; ayrıntılar ve native derleme eksiği için [Core Library v1](docs/CORE_LIBRARY_V1.md).
 
 ## Yetki manifestosu
 

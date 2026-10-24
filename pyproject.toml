@@ -46,6 +46,7 @@ koschei = "koschei.cli_entry:main"
 ks = "koschei.cli_entry:main"
 ks-lsp = "koschei.lsp_v5:main"
 ks-stdlib = "koschei.stdlib_catalog:main"
+ks-core-library = "koschei.core_library_v1:main"
 ks-differential-fuzz = "koschei.differential_fuzz_cli:main"
 ks-foundation-export = "koschei.foundation_export_cli:main"
 ks-model-curriculum = "koschei.model_curriculum_cli:main"
@@ -60,7 +61,9 @@ ks-universe-remote = "koschei.universe_remote_app_v1:main"
 packages = ["koschei"]
 
 [tool.setuptools.package-data]
-koschei = ["py.typed"]
+# Core Library modules are Koschei source compiled by the same pipeline as user
+# code; they ship inside the package beside the compiler.
+koschei = ["py.typed", "core_library/*.ks"]
 
 # Generated native binaries embed the single audited data-json/v1 Go core.
 # Keep that source in wheels instead of maintaining a second copied runtime.

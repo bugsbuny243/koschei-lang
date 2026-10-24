@@ -127,6 +127,8 @@ The `--deny` gate is designed for CI: a build fails if a dependency update silen
 
 Implemented today: functions with typed parameters, inferred generic functions, generic structs and enums, `let` / `let mut`, structs, `List<T>`, immutable `Map<String, V>` (`get`/`set`/`keys`/`contains`), `for`-in, `if`/`else`/`while` with `Bool`-only conditions, enums with exhaustive `match`, real `Option<T>` / `Result<T, E>`, full expression interpolation (`"{items.length()}"`), a daily standard library (`String` `trim`/`split`/`join`, `List` `sort`/`filter`/`contains`), and a module system where `import risk` binds `risk.ks` next to the importing file — no manifest, no build script, no config.
 
+The Core Library is written in Koschei itself: `import text` and `import list` bind library modules shipped with the toolchain (`text.starts_with`, `text.replace`, `text.lines`, `list.first`, `list.reverse`, `list.slice`, …), checked and executed by the same pipeline as your own code. It runs on the interpreter today; see [Core Library v1](docs/CORE_LIBRARY_V1.md) for the function list and the native-build gap.
+
 ## Toolchain
 
 ```bash

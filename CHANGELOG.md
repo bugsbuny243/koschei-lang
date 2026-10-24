@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased — Core Library v1
+
+- Add the Koschei Core Library: library modules written in Koschei and shipped under `koschei/core_library/`, compiled by the same pipeline as user code instead of duplicated Python/Go host builtins.
+- Add `text` (`is_empty`, `is_blank`, `starts_with`, `ends_with`, `strip_prefix`, `strip_suffix`, `before`, `after`, `count`, `replace`, `lines`, `words`) and generic `list` (`is_empty`, `first`, `last`, `concat`, `reverse`, `drop`, `slice`, `insert_at`, `remove_at`, `replace_at`).
+- Resolve only registered library names; a project file with a library module's name fails closed with `KS1601` instead of shadowing.
+- Reject Core Library modules in Module Lock v1 with an explicit `KS1902` reason.
+- Add `ks-core-library` / `koschei.core-library/v1` to list library modules, digests and functions.
+- Library programs run on the interpreter; native builds stay fail-closed until MIR-Go lowers member access and `List<T>`.
+
 ## 0.10.0 — Language ergonomics
 
 - Add checked `Int % Int` with interpreter/native parity, truncation-toward-zero semantics, zero-divisor handling, and compile-time Float rejection.
