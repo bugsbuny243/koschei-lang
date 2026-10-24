@@ -1,0 +1,187 @@
+# Koschei Kütüphane Evrenleri v1
+
+Durum: **yapı ve envanter belgesi** — her satırın uygulama durumu ayrıca yazılıdır.
+
+Koschei'nin kendi kütüphanesi dört evrenden oluşur:
+
+1. **Marvel Evreni** — gezegenler ve Marvel bekçileri
+2. **Matrix Evreni**
+3. **Kuantum Fiziği**
+4. **Diğer Evrenler ve Karakterler**
+
+Bu evrenlerin tasarımı bugüne kadar birkaç belgeye dağılmıştı
+(`KOSCHEI_LIBRARY_UNIVERSE_CONTRACT_V1.md`, `docs/MULTIVERSE_ARCHITECTURE.md`,
+`docs/MULTIVERSE_GUARDIAN_MAP.md`, `KOSCHEI_PHYSICS_KERNEL_V1.md`,
+`KOSCHEI_GALAXY_CONSTITUTION_V1.md`, `KOSCHEI_LANG_ANA_VIZYON_RAPORU_2026-08-24.md`).
+Bu belge onları tek yapı altında toplar; hiçbirinin yerini almaz ve hiçbir
+yasayı değiştirmez.
+
+## Temel kural
+
+- Her gezegen, karakter ve yasa **gerçek, test edilebilir bir güvenlik
+  ilkesine** karşılık gelir. İsim tek başına özellik değildir.
+- Yeni bir isim yalnızca mevcut bekçilerde olmayan **yeni bir değişmez**
+  getiriyorsa kabul edilir; aynı görevi yapan ikinci karakter ikinci bir
+  alt sistem yaratmaz.
+- Hiçbir evren yetki üretmez veya genişletmez. **Bağlantı yetki değildir;
+  bilgi yetki değildir; gözlem yetki değildir.**
+- Kütüphane evreni yasası: `DISCOVERY != READ != LINK != EXECUTE != DELEGATE != REVEAL`
+  — bir modülü bulmak onu okumak, okumak çalıştırmak, çalıştırmak başkasına
+  devretmek anlamına gelmez.
+
+## Kütüphanenin katmanları
+
+```text
+Görünür dil        ka · vor · shi · thal · nur          (geliştiricinin yazdığı)
+      │
+Günlük çekirdek    text · list                          (her programın temel araçları)
+      │
+Dört evren         Marvel · Matrix · Kuantum · Diğer    (güvenlik makinesi)
+      │
+Evren koordinasyonu  Galaxy · Khar · Veyra · Aevra       (evrenlerin birbirini bozmadan birleşmesi)
+```
+
+- **Günlük çekirdek** (`docs/CORE_LIBRARY_V1.md`) metin ve liste gibi her
+  programın ihtiyaç duyduğu araçlardır. Bugün **Koschei ile yazılmıştır** ve
+  `import text` / `import list` ile kullanılır. Dört evren de bu çekirdeğin
+  üzerine kurulacaktır.
+- **Dört evren** dilin arkasındaki büyük güvenlik makinesidir. Geliştirici
+  bir sigil yazar; kütüphane ve evren o sigilin gerektirdiği bütün
+  güvenceleri otomatik genişletir: *küçük görünür dil, büyük doğrulanmış iç
+  makine.*
+
+Durum sütunlarındaki anlamlar:
+
+| Etiket | Anlamı |
+|---|---|
+| **Kod + test** | Python ile yazılmış, test edilmiş host modülü var |
+| **Kod, test yok** | Modül var ama testi yok |
+| **Yalnızca belge** | Tasarım belgede tanımlı, kodu yok |
+| **Tanımlanmadı** | Henüz ne görevi ne kodu belirlenmiş |
+
+## 1. Marvel Evreni — Gezegenler
+
+### Gezegen yasası
+
+Gezegen bir arayüz kategorisi değil, bir **güvenlik sınırıdır**. Her gezegenin:
+
+1. kanonik gerçeklik kimliği,
+2. açık yetki manifestosu,
+3. bağımsız epoch'u,
+4. durum taahhüt zinciri,
+5. giriş/çıkış kanal politikası,
+6. kaynak bütçesi,
+7. kanıt akışı,
+8. karantina durumu
+
+vardır. Hiçbir gezegen, ikisi de aynı Matrix dokusunda olduğu için başka bir
+gezegenin yetkisini devralmaz.
+
+| Gezegen | Güvenlik görevi | Uygulama | Durum |
+|---|---|---|---|
+| **Vormir** | Kök gerçekliğe giriş. Yüksek değerli yetki ancak gerçek ve geri alınamaz bir yetki azaltma (kurban), taze epoch ve doğrulanabilir kanıtla verilir. Vormir'i bulmak ona girmek demek değildir. | `koschei/vormir_sacrifice_v1.py` | Kod + test |
+| Gezegen gerçeklikleri (genel) | Göreve özel dünyalar; her biri yukarıdaki sekiz özelliği taşır ve kendi etki alanıyla sınırlıdır. | `koschei/planetary_console_v1.py` (yalnızca gözlem paneli; yetki üretemez) | Kısmi: gözlem paneli var, gezegen nesnesi yok |
+| Diğer Marvel gezegenleri | — | — | **Tanımlanmadı** — her biri için yeni bir güvenlik değişmezi belirlenmelidir |
+
+### Marvel bekçileri
+
+| Karakter | Güvenlik görevi | Yetki kuralı | Uygulama | Durum |
+|---|---|---|---|---|
+| **Wanda** | Gerçeklik taahhüt zinciri; çatallanma (fork) ve geri sarma (rollback) tespiti | Kabul edilmiş geçmişi yeniden yazamaz | `koschei/wanda_reality_integrity_v1.py` | Kod + test |
+| **Loki** | Yetkisiz gözlemciler için savunma amaçlı aldatma ve tuzak kanıtı | Yemlerde gerçek sır veya çalıştırılabilir yetki yoktur; geri saldırmaz | `koschei/loki_deception_reality_v1.py`, `koschei/loki_adaptive_topology_v1.py` | Kod + test |
+| **Hela** | Geri alınamaz yetki ölümü; ölmüş yetkinin tekrar, eski epoch veya çatallanma yoluyla dirilmesini engeller | Ölü yetki geri gelmez | `koschei/hela_authority_death_v1.py` | Kod + test |
+| **Doctor Strange** | Etkiden önce sınırlı gelecek-yol simülasyonu: önerilen yol yetkiyi genişletir mi? | Simülasyon dış etki yapamaz, yetki üretemez | `koschei/strange_future_paths_v1.py` | Kod, test yok |
+| **Captain Marvel** | Patlama yarıçapı: bir olayın yayılma bütçesi | Bütçe yalnızca korunur veya küçülür; asla büyümez | `koschei/captain_marvel_blast_radius_v1.py` | Kod + test |
+| **Sonsuzluk Taşları / Gauntlet** | Kritik yetkinin tek noktada toplanmaması; altı güvenlik alanının (kimlik, yetki, bütünlük, davranış, kanıt, kurtarma/zaman) deterministik olarak birlikte onaylaması | Zorunlu alanların hepsi uyuşmadan giriş yok | Belge: `docs/MULTIVERSE_GUARDIAN_MAP.md` | Yalnızca belge |
+
+Yüksek riskli bir işlemin yolu:
+
+```text
+Wanda gerçeklik kanıtı → Strange gelecek-yol kanıtı → Gauntlet girişi → etki
+  → Captain Marvel yayılma bütçesi → kanıt → yorum
+```
+
+İptal Hela'ya, kök yükseltme Vormir'e gider; şüpheli keşif yalnızca Loki'nin
+yetkisiz yüzeylerine yönlendirilebilir. Her bekçi kendi başına
+**fail-closed** çalışır.
+
+## 2. Matrix Evreni
+
+Matrix, **gözlemlenen dünya ile gerçek semantik dünyanın ayrılığını** temsil
+eder.
+
+| Öğe | Güvenlik görevi | Uygulama | Durum |
+|---|---|---|---|
+| **Matrix dokusu** | Yalıtılmış gerçeklikler arasında mesaj ve kanıt taşıma. Bağlantı yetki değildir. | `koschei/matrix_portal_transit_v1.py` | Kod + test |
+| **Matrix / Hara** | Matrix, bir Veyra içindeki yerel yürütme gerçekliğidir; Hara o Matrix içindeki programa (Aevra) özel ufuktur. İki program aynı Matrix'i paylaşıp aynı Hara'yı paylaşmayabilir. | `koschei/matrix_reality_v1.py` | Kod + test |
+| **Portal geçişi** | Gerçeklikler arası geçiş; kaynak ve hedef taahhütlerine, içerik kimliğine, istenen etkiye ve epoch'a bağlıdır | `koschei/matrix_portal_transit_v1.py` | Kod + test |
+| **Ufuk çiti** | Yeni bir Matrix/Hara'ya geçince eski Hara mezara konur; eski ufuktan erişim reddedilir | `koschei/matrix_horizon_fence_v1.py` | Kod + test |
+| **Gözlemci izdüşümü (Nyr)** | Gözlemcinin gördüğü yüzey kanonik kimlikleri göstermez (`nur` kökü) | `koschei/nur_nyr_projection_v1.py` | Kod + test |
+| **Neo** | Kanonik semantik kimlik ile gözlemcinin gördüğü temsil arasındaki yetkili çözümleme katmanı | Belge: vizyon raporu | Yalnızca belge |
+| **Agent Smith** | Tehdit modeli: gözlemlenebilir ortamda kopyalama, tekrar oynatma, kimlik taklidi, yetkisiz yeniden kurma | Belge: vizyon raporu | Yalnızca belge (tehdit sınıfı) |
+
+## 3. Kuantum Fiziği
+
+Kuantum burada "kuantum kodlama" iddiası değildir; **zaman, gözlem, dönüşüm,
+durum ve değişken temsil** üzerine modeller ve gerçek kriptografik
+gelecek (kuantum sonrası kriptografi) için kullanılır.
+
+| Öğe | Güvenlik görevi | Uygulama | Durum |
+|---|---|---|---|
+| **Fizik Çekirdeği** | Evrenler arası 12 değişmez yasa (köken zorunluluğu, yetki korunumu, iddia kanıt değildir, bilgi yetki değildir, belirsizlikte reddet, sessiz geri dönüş yok, tek kanonik doğruluk…) | `koschei/physics_kernel_v1.py`, `KOSCHEI_PHYSICS_KERNEL_V1.md` | Kod + test (kayıt). Yasaların 7'si uygulanmış dilim, 4'ü kısmi, 1'i (tek kanonik doğruluk) çatışma durumunda |
+| **Kuantum Gerçeklik Sözleşmesi** | Gelecekteki gerçek kuantum arka uçları için kanonik iş tanımı: hazırlama, evrim, ölçüm açık ve özetle bağlı (H, X, Z, CNOT, MEASURE) | `koschei/quantum_reality_contract_v1.py` | Kod + test. Kuantum donanımında çalıştığını iddia etmez |
+| **Olay Ufku / Kara Delik / Morth** | Olay Ufku'nu geçen bir program (Aevra) için silinemez bir ölüm kaydı yazılır; Kara Delik'ten silme veya geri getirme yoktur, yeniden doğuş diriliş değildir. Olay Ufku yalıtımı yetkisiz kaynak erişimini, kanonik kimliği hiç göstermeyen tek yönlü bir yüzeye çeker. | `koschei/morth_black_hole_v1.py`, `koschei/event_horizon_isolation_v1.py` | Kod + test |
+| **Kripto çevikliği (kuantum sonrası dahil)** | Kriptografi değiştirilebilir kalır ve standart algoritmaları uygulayan denetlenmiş sağlayıcılara devredilir. Koschei özgünlük için yeni kriptografik ilkel icat etmez: özgünlük dildedir, kriptoda değil. Varsayılan bir kuantum sonrası uygulama gelmez. | `koschei/crypto_agility_v1.py` | Kod + test |
+
+## 4. Diğer Evrenler ve Karakterler
+
+| Öğe | Evren | Güvenlik görevi | Uygulama | Durum |
+|---|---|---|---|---|
+| **Skynet** | Terminator | Çalışma zamanı politika gözcüsü, izin denetimi, anomali çevreleme, kanıt üretimi. Kendisi de yetki ve politika sınırlarına tabidir; sınırsız yetkili bir yapay zekâ değildir. | Belge: vizyon raporu | Yalnızca belge |
+| **Khar** | Koschei Galaksisi | Bir uygulamanın Koschei kalabilmesi için uyması gereken açık anayasa yasaları; gizli dosya veya süper kullanıcı değildir | `koschei/khar_constitution_v1.py` | Kod + test |
+| **Veyra** | Koschei Galaksisi | Müşteriye özel yaşayan galaksi geometrisi; iki sistem aynı dili konuşup farklı Veyra'da yaşayabilir | `koschei/galaxy_identity_v1.py` | Kod + test |
+| **Aevra** | Koschei Galaksisi | Kimliği görünür baytlarının kopyasından büyük olan program varlığı: `copy(bytes) != birth(Aevra)` | `koschei/galaxy_identity_v1.py` | Kod + test |
+| **Altı Khar ekseni ve Sathra** | Koschei Galaksisi | `khor` (yer), `sei` (niyet), `rha` (gerçeklik), `vaal` (etki gücü), `teyr` (zaman), `esh` (süreklilik). Kritik işlem altısı aynı olayda birleşmeden olmaz: `5/6 = 0` | `koschei/khar_sathra_v1.py` | Kod + test |
+
+## Bugünkü gerçek durum
+
+- Yukarıdaki evren modüllerinin hepsi bugün **Python ile yazılmış host
+  makinesidir**. Bir Koschei programı (`.ks`) bunları henüz `import`
+  edemez. Koschei ile yazılmış olan yalnızca günlük çekirdektir (`text`,
+  `list`).
+- "Kendi kütüphanemiz" hedefi, bu evrenlerin Koschei'ye taşınmasını
+  gerektirir. Bugünkü engeller:
+  - **Özet fonksiyonu ve bayt tipi yok.** Wanda, Hela, Captain Marvel ve
+    Matrix taahhütleri SHA3-256 özetine dayanır. Kripto çevikliği kuralı
+    gereği bu özet Koschei ile yeniden yazılmaz; denetlenmiş bir
+    sağlayıcıdan çekirdek temel işlemi olarak gelir.
+  - **Bit işlemleri yok** (`&`, `|`, `^`, `<<`): hex/base64 gibi
+    kodlamalar ve bayt düzeyindeki işler için gerekir.
+  - **Kayıt (struct) ve Map** yorumlayıcıda var, native derlemede henüz yok.
+
+## Koschei'ye taşıma sırası
+
+1. **Çekirdek:** bayt/özet tipi ve denetlenmiş bir sağlayıcıdan gelen özet
+   fonksiyonu (kripto çevikliği kuralına uygun, değiştirilebilir).
+2. **Saf mantıklı bekçiler:** Captain Marvel (bütçe yalnızca küçülür),
+   Hela (mezar taşı denetimi), Doctor Strange (gelecek-yol simülasyonu;
+   taşınırken testleri de yazılır), Wanda (taahhüt zinciri).
+3. **Matrix:** portal geçişi ve ufuk çiti.
+4. **Gezegenler:** sekiz özelliği taşıyan bir gezegen yapısı; ilk gezegen
+   Vormir.
+5. **Fizik Çekirdeği** yasalarının Koschei tarafındaki denetimleri.
+
+Her taşıma aynı kurallarla yapılır: modül adı kayıt listesine eklenir ve
+özgünlük sözleşmesinden geçer; Python sürümüyle aynı sonucu verdiği fark
+testiyle kanıtlanır; `ks run` ve `ks build` aynı çıktıyı üretir; hiçbir
+modül yetki taşımaz.
+
+## Yeni gezegen veya karakter ekleme kuralı
+
+1. Hangi **yeni güvenlik değişmezini** getirdiğini yaz.
+2. Mevcut bekçilerden hangisinde olmadığını göster.
+3. Bu değişmezi ihlal eden durumu **reddeden** bir yol ve testini yaz.
+4. Bu belgeye satırını ekle.
+
+İsim, görev ve test birlikte gelmeden hiçbir gezegen veya karakter kanonik
+sayılmaz.

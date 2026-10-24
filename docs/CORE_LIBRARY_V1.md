@@ -1,6 +1,10 @@
 # Koschei Core Library v1
 
-Status: **first library modules written in Koschei; interpreter only**
+Status: **first library modules written in Koschei; `ks run` and `ks build`**
+
+This is the everyday layer of the Koschei library. The four library universes
+(Marvel, Matrix, quantum physics, other universes) that build on it are mapped
+in [`KOSCHEI_KUTUPHANE_EVRENLERI_V1.md`](../KOSCHEI_KUTUPHANE_EVRENLERI_V1.md).
 
 ## Why
 
