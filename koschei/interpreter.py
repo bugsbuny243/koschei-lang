@@ -10,7 +10,7 @@ import urllib.error
 import urllib.request
 from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -103,7 +103,10 @@ class EnumValue:
     enum_name: str
     variant: str
     payload: Any = _NO_PAYLOAD
-    type_arguments: tuple[str, ...] = ()
+    # Runtime type evidence only. Equal values built at different sites carry
+    # different evidence (`()`, `("Int",)`, `("T",)`), so it must not take part
+    # in Koschei `==`: `[1].get(0) == Some(1)` is true.
+    type_arguments: tuple[str, ...] = field(default=(), compare=False)
 
 
 @dataclass(frozen=True, slots=True)

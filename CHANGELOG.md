@@ -8,6 +8,7 @@
 - Reject Core Library modules in Module Lock v1 with an explicit `KS1902` reason.
 - Add `ks-core-library` / `koschei.core-library/v1` to list library modules, digests and functions.
 - Library programs run on the interpreter; native builds stay fail-closed until MIR-Go lowers member access and `List<T>`.
+- Fix structural equality of `Option`/`Result`/enum values: runtime type evidence no longer takes part in `==`, so `[1].get(0) == Some(1)` and `Some(1) == list.first([1])` are `true`.
 
 ## 0.10.0 — Language ergonomics
 
