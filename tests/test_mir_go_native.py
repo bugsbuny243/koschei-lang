@@ -101,8 +101,9 @@ fn main() {
             self.assertEqual(completed.returncode, 0)
             self.assertEqual(completed.stdout, "2\n1\n")
 
-    def test_normalized_for_loop_fails_closed_instead_of_legacy_ast_codegen(self) -> None:
-        _, mir = self.checked_mir(
+    @unittest.skipUnless(shutil.which("go"), "Go toolchain is required")
+    def test_normalized_for_loop_compiles_from_mir_go_without_legacy_ast_codegen(self) -> None:
+        source, mir = self.checked_mir(
             """
 fn main() {
     for value in [1, 2, 3] {
@@ -112,12 +113,38 @@ fn main() {
 """
         )
         support = inspect_mir_go_support(mir)
+        self.assertTrue(support.supported, support.reasons)
+        self.assertEqual(native_build_mode(mir), "mir_go_v1")
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "loop-native"
+            with patch.object(
+                legacy_cli,
+                "command_build",
+                side_effect=AssertionError("legacy AST-Go path must not run"),
+            ), redirect_stdout(io.StringIO()):
+                code = cli_main(["build", str(source), "-o", str(target)])
+            self.assertEqual(code, 0)
+            completed = subprocess.run(
+                [str(target)], capture_output=True, text=True, check=False
+            )
+            self.assertEqual(completed.returncode, 0)
+            self.assertEqual(completed.stdout, "1\n2\n3\n")
+
+    def test_unsupported_map_program_fails_closed_instead_of_legacy_ast_codegen(self) -> None:
+        _, mir = self.checked_mir(
+            """
+fn main() {
+    let scores: Map<String, Int> = {"a": 1}
+    println(scores)
+}
+"""
+        )
+        support = inspect_mir_go_support(mir)
         self.assertFalse(support.supported)
         self.assertEqual(native_build_mode(mir), "blocked_ambient_ast_go_v1")
         self.assertFalse(any("AST fallback" in reason for reason in support.reasons))
         self.assertTrue(
-            any("MirList" in reason or "MirIter" in reason for reason in support.reasons),
-            support.reasons,
+            any("MirMap" in reason for reason in support.reasons), support.reasons
         )
 
     def test_local_calls_and_loop_cfg_are_emitted_from_mir(self) -> None:

@@ -112,14 +112,17 @@ an alphabet chosen to force overlapping patterns, line breaks, blanks, escapes
 and non-ASCII text. Resolution, shadowing, capability and lock behavior are
 covered by the same file.
 
+## Builds
+
+`ks build` compiles library programs through the
+[MIR-Go conformance adapter v2](MIR_GO_CONFORMANCE_ADAPTER_V2.md). The same
+`.ks` library source is compiled; there is no second implementation, and
+`tests/test_mir_go_native_v2_parity.py` checks that the binary prints exactly
+what `ks run` prints. Per the native execution boundary this is a Go host
+projection, not a Koschei-native runtime.
+
 ## What v1 does not claim
 
-- **Native builds.** `ks build` currently fails closed (`KS4004`) for programs
-  that call methods on `String`/`List` values, because the MIR-Go backend does
-  not lower member access or `List<T>` types yet. Library programs therefore
-  run on the interpreter only. That is a backend gap, not a library one: once
-  MIR-Go lowers these forms, the same `.ks` source compiles natively with no
-  second implementation.
 - **Catalog promotion.** `koschei/stdlib_catalog.py` describes host builtins and
   requires interpreter/native parity for `supported`. Core Library functions are
   module functions (`text.starts_with(value, prefix)`), not `String` methods, and
