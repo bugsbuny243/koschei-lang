@@ -249,6 +249,19 @@ class MirGoNativeParityTests(unittest.TestCase):
         output = self.assert_parity(LIBRARY_TOUR)
         self.assertTrue(output.startswith('true\nSome("ab")\nSome("v=w")\n'), output)
 
+    def test_error_inside_a_list_literal_without_variant_facts(self) -> None:
+        # Member calls but no Option/Result/enum facts: `ks run` used to hand
+        # this program to the checked-AST interpreter, which replaced the list
+        # with the Error. Sealed MIR keeps the Error as an element everywhere.
+        source = (
+            "fn main() {\n    let max = 9223372036854775807\n"
+            "    let values = [1, max + 1, 3]\n    println(values)\n"
+            '    println(values.length())\n    println("a,b".split(","))\n}\n'
+        )
+        output = self.assert_parity(source)
+        self.assertTrue(output.startswith("[1, KS3501:"), output)
+        self.assertTrue(output.endswith(', 3]\n3\n["a", "b"]\n'), output)
+
     def test_local_modules_and_library_compose(self) -> None:
         helper = (
             'fn greet(name: String) -> String {\n    return "merhaba {name}"\n}\n'

@@ -75,8 +75,9 @@ list above. The legacy AST-Go backend is never used as a fallback.
   programs, 64 `ks-differential-fuzz` programs over four seeds, and Int,
   Float, string, list, enum, control-flow and error-path probes) matched the
   canonical executor in all 82 cases. Against `ks run`, those programs plus
-  the 6 admitted repository examples matched in 87 of 88 cases; the
-  remaining case is the list-literal difference below.
+  the 6 admitted repository examples and 6 call-depth programs (each
+  executor lane at and beyond the 512 limit) matched in all 94 cases,
+  including exit status.
 - Binaries link no filesystem, socket, environment, process or network
   symbols beyond what `fmt` already brought into v1 binaries.
 
@@ -84,16 +85,24 @@ This is bootstrap evidence in the sense of the boundary's evidence rule. It
 shows that the Go projection agrees with the canonical executor; it is not
 evidence of a Koschei-native executor.
 
+## One executor rule for `ks run` and `ks build`
+
+`ks run` sends every sealed graph without a `MirAstFallback` to sealed MIR:
+the direct MIR runtime when it admits the graph, otherwise the canonical MIR
+executor. The checked-AST compatibility interpreter is kept only for graphs
+that still carry an AST migration boundary; no repository example or
+benchmark program reaches it. Before this rule, programs with member calls
+but no Option/Result/enum facts ran on the AST interpreter, which replaced a
+list literal containing an Error with the Error itself while sealed MIR keeps
+it as an element (`tests/test_runtime_single_authority_v1.py`).
+
+`ks run` also gives the host interpreter enough recursion headroom to reach
+the language limit: every lane runs 512 nested calls and stops beyond them
+with `KS3602`/`KS3105`, where it used to crash with a Python `RecursionError`
+after roughly 100.
+
 ## Known differences
 
-- `ks run` routes programs that call String/List members but contain no
-  Option/Result/enum facts to the checked-AST compatibility interpreter. That
-  interpreter replaces a list literal containing an Error with the Error
-  itself, while sealed MIR (and therefore the binary) keeps the Error as a
-  list element. This is a dual-authority difference inside the interpreter.
-- In the direct MIR lane, `ks run` stops with a Python `RecursionError` at
-  roughly 100 nested calls, well below the language limit of 512 that the
-  binary enforces.
 - Programs above the interpreter step budget stop under `ks run` and run to
   completion natively.
 - Very large single functions build slowly: a generated 2,300-line `main`

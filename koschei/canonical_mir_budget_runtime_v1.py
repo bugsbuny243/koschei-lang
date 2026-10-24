@@ -17,7 +17,7 @@ from typing import Any
 from . import interpreter
 from .interpreter import KsError, KsUnit
 from .mir_executor_v1 import MirExecutionError, MirExecutorV1, _runtime_names
-from .mir_ir import MirBranch, MirJump, MirReturn, MirUnreachable
+from .mir_ir import MirAstFallback, MirBranch, MirJump, MirReturn, MirUnreachable
 from .mir_instruction_registry_v4 import require_mir_v4_graph_registry
 from .runtime_boot_v1 import require_runtime_ready
 
@@ -170,8 +170,33 @@ def _run_budgeted_canonical_mir(mir_graph, argv, budget) -> int:
     return 0
 
 
+def canonical_mir_complete_v1(mir_graph) -> bool:
+    """Return whether sealed MIR alone can execute the whole graph.
+
+    A graph without ``MirAstFallback`` and with a registered v4 instruction
+    set needs no source AST. Running it on the checked-AST interpreter would
+    let a second semantic authority decide the result, so it runs on the
+    canonical executor; only graphs that still carry an AST migration boundary
+    keep the compatibility interpreter.
+    """
+
+    for module in mir_graph.in_dependency_order():
+        for function in module.functions:
+            for block in function.blocks:
+                if any(
+                    isinstance(instruction, MirAstFallback)
+                    for instruction in block.instructions
+                ):
+                    return False
+    try:
+        require_mir_v4_graph_registry(mir_graph)
+    except (AttributeError, TypeError, ValueError):
+        return False
+    return True
+
+
 def install_canonical_mir_budget_runtime_v1() -> None:
-    """Route compiler-owned MIR facts to the budgeted canonical executor."""
+    """Route sealed MIR to the budgeted canonical executor, never to the AST."""
 
     from . import runtime_budget
 
@@ -188,15 +213,16 @@ def install_canonical_mir_budget_runtime_v1() -> None:
     ) -> int:
         mir_graph.assert_sealed()
         mode = runtime_budget.runtime_execution_mode(mir_graph)
-        if (
-            mode != "mir_native_v1"
-            and runtime_budget._requires_canonical_mir_runtime_v1(mir_graph)
+        if mode != "mir_native_v1" and (
+            runtime_budget._requires_canonical_mir_runtime_v1(mir_graph)
+            or canonical_mir_complete_v1(mir_graph)
         ):
             budget = runtime_budget.RuntimeBudget(
                 max_steps=max_steps,
                 max_call_depth=max_call_depth,
             )
-            return _run_budgeted_canonical_mir(mir_graph, argv, budget)
+            with runtime_budget.host_recursion_headroom():
+                return _run_budgeted_canonical_mir(mir_graph, argv, budget)
         return current(
             mir_graph,
             argv,

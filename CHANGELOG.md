@@ -14,6 +14,8 @@
 - Rebuild the MIR-Go conformance adapter (v2) on the canonical executor's rules, so `ks build` admits `List<T>`, String/List members, `for` loops, generic functions, imported modules, `or` forms and interpolation, and Core Library programs compile. See `docs/MIR_GO_CONFORMANCE_ADAPTER_V2.md`.
 - Fix two v1 native divergences: Int overflow silently wrapped (`3037000500 * 3037000500` printed `-9223372036709301616`) and Floats used Go formatting (`3.0` printed `3`). Binaries now produce the same Error values and the same text as `ks run`.
 - Enforce the 512 call-depth limit (`KS3105`) in binaries; structs, `Map`, capabilities, callback members and `to_int`/`to_float` still fail closed with `KS4004`.
+- Run every sealed graph without a `MirAstFallback` on sealed MIR under `ks run`; the checked-AST interpreter now only serves graphs that still carry an AST boundary. Programs with member calls but no Option/Result/enum facts no longer get a second semantic authority (an Error inside a list literal stays an element, as in sealed MIR and binaries).
+- Let `ks run` reach the language's 512 call-depth limit in every lane: programs stop with `KS3602`/`KS3105` instead of crashing with a Python `RecursionError` after roughly 100 nested calls.
 
 ## 0.10.0 — Language ergonomics
 

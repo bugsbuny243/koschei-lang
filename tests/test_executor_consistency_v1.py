@@ -1,8 +1,8 @@
-"""`ks run` routes a program to one of three executors; they must agree.
+"""Every executor behind `ks run` must compute the same output.
 
-* direct MIR (``mir_native_v1``): no member calls and no ``%``;
-* canonical MIR: Option/Result/enum facts plus member calls;
-* checked-AST compatibility: member calls without variant facts.
+The same program is run explicitly on the direct MIR runtime (when it admits
+the graph), the canonical MIR executor and the checked-AST compatibility
+interpreter, and through `ks run` itself, whichever lane it selects.
 """
 from __future__ import annotations
 
@@ -12,11 +12,14 @@ from pathlib import Path
 import tempfile
 import unittest
 
+from koschei import runtime_budget
+from koschei.canonical_mir_budget_runtime_v1 import _run_budgeted_canonical_mir
 from koschei.cli_entry import main
+from koschei.mir_native_variant_construct_v1 import inspect_native_mir_support, run_mir_native
 from koschei.modules import check_graph, load_graph
-from koschei.runtime_budget import _requires_canonical_mir_runtime_v1, runtime_execution_mode
 
 OVERFLOWS = """
+fn main() {
     let max = 9223372036854775807
     let min = 0 - max - 1
     println(max + 1)
@@ -24,8 +27,8 @@ OVERFLOWS = """
     println(max * 2)
     println(min / -1)
     println(-min)
+{extra}}
 """
-MODULO = "    println(min % -1)\n"
 
 
 def _expected(operations: tuple[str, ...]) -> str:
@@ -35,63 +38,66 @@ def _expected(operations: tuple[str, ...]) -> str:
     )
 
 
-LANES = {
-    # No member call and no variant fact: direct MIR runtime.
-    "direct": "",
-    # A variant fact plus a member call: canonical MIR executor.
-    "canonical": '    let marker = Some("x".length())\n',
-    # A member call without variant facts: checked-AST compatibility.
-    "ast": '    let marker = "x".length()\n',
-}
-
-
 class ExecutorConsistencyTests(unittest.TestCase):
-    def run_source(self, source: str) -> tuple[str, str]:
+    def outputs(self, source: str) -> dict[str, str]:
+        results: dict[str, str] = {}
         with tempfile.TemporaryDirectory(prefix="koschei-lanes-") as directory:
             path = Path(directory) / "main.ks"
             path.write_text(source, encoding="utf-8")
             graph = load_graph(path)
             check_graph(graph)
-            # Same routing order as runtime_budget.run_mir_with_budget.
-            if runtime_execution_mode(graph.mir) == "mir_native_v1":
-                lane = "direct"
-            elif _requires_canonical_mir_runtime_v1(graph.mir):
-                lane = "canonical"
-            else:
-                lane = "ast"
-            stdout = io.StringIO()
-            stderr = io.StringIO()
-            with redirect_stdout(stdout), redirect_stderr(stderr):
-                code = main(["run", str(path)])
-        self.assertEqual(code, 0, stderr.getvalue())
-        return lane, stdout.getvalue()
+            mir = graph.mir
+            root = mir.root_module
+            runs = {
+                "ks run": lambda: main(["run", str(path)]),
+                "canonical": lambda: _run_budgeted_canonical_mir(
+                    mir, [], runtime_budget.RuntimeBudget()
+                ),
+                "ast": lambda: runtime_budget.BudgetedInterpreter(
+                    root.program,
+                    [],
+                    namespaces=mir.namespaces(),
+                    imports=dict(root.imports),
+                    enums=mir.enums(),
+                    module_imports=mir.module_imports(),
+                    structs=mir.structs(),
+                    budget=runtime_budget.RuntimeBudget(),
+                ).execute_main(),
+            }
+            if inspect_native_mir_support(mir).supported:
+                runs["direct"] = lambda: run_mir_native(mir)
+            for name, run in runs.items():
+                stdout = io.StringIO()
+                with redirect_stdout(stdout), redirect_stderr(io.StringIO()):
+                    with runtime_budget.host_recursion_headroom():
+                        run()
+                results[name] = stdout.getvalue()
+        return results
 
-    def test_int_overflow_text_is_identical_in_every_lane(self) -> None:
+    def assert_all(self, source: str, expected: str, *, direct: bool) -> None:
+        outputs = self.outputs(source)
+        self.assertEqual("direct" in outputs, direct)
+        for name, output in outputs.items():
+            with self.subTest(executor=name):
+                self.assertEqual(output, expected)
+
+    def test_int_overflow_text_is_identical_in_every_executor(self) -> None:
         operations = ("+", "-", "*", "/", "unary -")
-        for expected_lane, marker in LANES.items():
-            with self.subTest(expected_lane):
-                lane, output = self.run_source(f"fn main() {{\n{marker}{OVERFLOWS}}}\n")
-                self.assertEqual(lane, expected_lane)
-                self.assertEqual(output, _expected(operations))
-        # The direct runtime does not admit '%'; the other two lanes must agree.
-        for expected_lane in ("canonical", "ast"):
-            with self.subTest(f"{expected_lane} %"):
-                marker = LANES[expected_lane]
-                lane, output = self.run_source(
-                    f"fn main() {{\n{marker}{OVERFLOWS}{MODULO}}}\n"
-                )
-                self.assertEqual(lane, expected_lane)
-                self.assertEqual(output, _expected((*operations, "%")))
+        self.assert_all(OVERFLOWS.replace("{extra}", ""), _expected(operations), direct=True)
+        # The direct runtime does not admit '%'; every other executor must agree.
+        self.assert_all(
+            OVERFLOWS.replace("{extra}", "    println(min % -1)\n"),
+            _expected((*operations, "%")),
+            direct=False,
+        )
 
-    def test_direct_mir_lane_renders_enum_values_canonically(self) -> None:
+    def test_enum_values_render_canonically_in_every_executor(self) -> None:
         source = (
             "fn wrap(value: Int) -> Option<Int> {\n    return Some(value)\n}\n\n"
             "fn main() {\n    let none: Option<Int> = None()\n"
             "    println(wrap(3))\n    println(none)\n    println([wrap(1), none])\n}\n"
         )
-        lane, output = self.run_source(source)
-        self.assertEqual(lane, "direct")
-        self.assertEqual(output, "Some(3)\nNone\n[Some(1), None]\n")
+        self.assert_all(source, "Some(3)\nNone\n[Some(1), None]\n", direct=True)
 
 
 if __name__ == "__main__":
