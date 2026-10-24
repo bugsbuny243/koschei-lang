@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from .interpreter import EnumValue
+from .interpreter import _NO_PAYLOAD, EnumValue
 from .mir import MirFunction, MirGraph
 from .mir_extension_instructions_v4 import (
     MirFallibleIsSuccess,
@@ -863,4 +863,9 @@ def _to_string(value: Any) -> str:
         return "{" + inner + "}"
     if isinstance(value, _ErrorValue):
         return value.message
+    if isinstance(value, EnumValue):
+        # Same rendering as interpreter.ks_to_string, never the host repr.
+        if value.payload is _NO_PAYLOAD:
+            return value.variant
+        return f"{value.variant}({_to_container_repr(value.payload)})"
     return str(value)

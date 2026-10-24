@@ -9,6 +9,9 @@
 - Add `ks-core-library` / `koschei.core-library/v1` to list library modules, digests and functions.
 - Library programs run on the interpreter; native builds stay fail-closed until MIR-Go lowers member access and `List<T>`.
 - Fix structural equality of `Option`/`Result`/enum values: runtime type evidence no longer takes part in `==`, so `[1].get(0) == Some(1)` and `Some(1) == list.first([1])` are `true`.
+- Give `KS3501` Int overflow one text in every executor: the canonical MIR executor and the direct MIR runtime now use the interpreter's message instead of their own short and English variants.
+- Make `INT_MIN % -1` an overflow Error in the canonical MIR executor, as it already was in the checked-AST interpreter.
+- Render `Option`/`Result`/enum values as `Some(3)` / `None` in the direct MIR runtime instead of the host `EnumValue(...)` representation.
 
 ## 0.10.0 — Language ergonomics
 

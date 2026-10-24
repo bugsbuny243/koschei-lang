@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .ast_nodes import SourceLocation
-from .interpreter import EnumValue, KsError, KsUnit, KoscheiRuntimeError, SystemCaps
+from .interpreter import EnumValue, Interpreter, KsError, KsUnit, KoscheiRuntimeError, SystemCaps
 from .mir import MIR_VERSION, MirGraph, MirIntegrityError
 from .mir_container_staging_v1 import (
     MirIsRuntimeError,
@@ -244,7 +244,7 @@ class MirExecutorV1:
                 values[instruction.target] = not bool(operand)
             elif instruction.operator == "-":
                 if type(operand) is int and operand == INT_MIN:
-                    values[instruction.target] = KsError("KS3501: Int taşması: 'unary -'")
+                    values[instruction.target] = Interpreter._int_overflow("unary -")
                 else:
                     values[instruction.target] = -operand
             else:
@@ -469,7 +469,7 @@ class MirExecutorV1:
         if op in {"+", "-", "*"} and type(left) is int and type(right) is int:
             result = left + right if op == "+" else left - right if op == "-" else left * right
             if not INT_MIN <= result <= INT_MAX:
-                return KsError(f"KS3501: Int taşması: '{op}'")
+                return Interpreter._int_overflow(op)
             return result
         if op == "+": return left + right
         if op == "-": return left - right
@@ -479,13 +479,16 @@ class MirExecutorV1:
                 return KsError("Sıfıra bölme")
             if type(left) is int and type(right) is int:
                 if left == INT_MIN and right == -1:
-                    return KsError("KS3501: Int taşması: '/'")
+                    return Interpreter._int_overflow("/")
                 quotient = abs(left) // abs(right)
                 return -quotient if (left < 0) != (right < 0) else quotient
             return left / right
         if op == "%" and type(left) is int and type(right) is int:
             if right == 0:
                 return KsError("Sıfıra bölme")
+            if left == INT_MIN and right == -1:
+                # Same checked-Int64 rule as the checked-AST interpreter.
+                return Interpreter._int_overflow("%")
             quotient = abs(left) // abs(right)
             if (left < 0) != (right < 0):
                 quotient = -quotient
