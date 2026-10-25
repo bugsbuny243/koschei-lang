@@ -494,6 +494,10 @@ class _DiskCapability(_NarrowedCapability):
                 if not fits_texts([text]):
                     return KsError(VALUE_BUDGET_STRING_MESSAGE)
                 return text
+        except UnicodeDecodeError:
+            # A String holds text. Bytes that are not UTF-8 are an Error value
+            # the program can handle, not a host exception that ends it.
+            return KsError(f"Dosya okunamadı: geçerli UTF-8 metin değil: {path}")
         except _SymlinkDenied as denied:
             return self._symlink_denied(denied.name)
         except OSError as error:
