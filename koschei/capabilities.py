@@ -52,9 +52,10 @@ DOMAIN_TITLES = {
     "process": "SÜREÇ",
     "serve": "HTTP SUNUCU",
     "persist": "KALICI DURUM",
+    "input": "PROGRAM GİRDİSİ",
 }
 
-DOMAIN_ORDER = ("disk", "net", "env", "process", "serve", "persist")
+DOMAIN_ORDER = ("disk", "net", "env", "process", "serve", "persist", "input")
 
 DYNAMIC = "<DİNAMİK — statik olarak çözülemedi>"
 
@@ -122,6 +123,8 @@ TYPE_DOMAINS = {
     "ServeCaps": "serve",
     "PersistRoot": "persist",
     "PersistCaps": "persist",
+    "InputRoot": "input",
+    "InputCaps": "input",
 }
 
 
@@ -276,6 +279,9 @@ def _inspect(
         elif domain == "persist":
             from .persistence_authority_v1 import _manifest_scope as _persist_manifest_scope
             scope = _persist_manifest_scope(expression.arguments)
+        elif domain == "input":
+            from .program_input_v1 import manifest_scope as _input_manifest_scope
+            scope = _input_manifest_scope(expression.arguments)
         else:
             scope = _literal_text(expression.arguments[0]) if expression.arguments else DYNAMIC
         manifest.grants.append(

@@ -137,6 +137,15 @@ def build_parser() -> argparse.ArgumentParser:
         default=HARD_MAX_CALL_DEPTH,
         help=f"Koschei call-frame budget (1..{HARD_MAX_CALL_DEPTH})",
     )
+    run.add_argument(
+        "program_args",
+        nargs="*",
+        metavar="ARG",
+        help=(
+            "Arguments handed to the program (InputCaps.args()); put them after "
+            "'--' when one starts with '-'"
+        ),
+    )
 
     build = subcommands.choices["build"]
     build.add_argument(
@@ -176,7 +185,7 @@ def _run_with_public_budget(args: argparse.Namespace) -> int:
         check_graph(graph)
         return run_mir_with_budget(
             require_mir(graph),
-            [],
+            list(args.program_args),
             max_steps=args.max_steps,
             max_call_depth=args.max_call_depth,
         )
@@ -436,10 +445,28 @@ def main_with_host_ingress_v1(
     return 0
 
 
+def _parse_arguments(arguments: list[str]) -> argparse.Namespace:
+    """Parse the CLI; for ``run`` everything after the first ``--`` is the program's.
+
+    Splitting before argparse keeps that rule identical on every supported
+    Python: argparse versions disagree about a second ``--``.
+    """
+
+    parser = build_parser()
+    if "--" not in arguments:
+        return parser.parse_args(arguments)
+    separator = arguments.index("--")
+    args = parser.parse_args(arguments[:separator])
+    if args.command != "run":
+        return parser.parse_args(arguments)
+    args.program_args = [*args.program_args, *arguments[separator + 1 :]]
+    return args
+
+
 def main(argv: list[str] | None = None) -> int:
     _configure_utf8_stdio()
     arguments = sys.argv[1:] if argv is None else argv
-    args = build_parser().parse_args(arguments)
+    args = _parse_arguments(list(arguments))
     if args.command == "lsp":
         return command_lsp()
     if args.command == "foreign":

@@ -50,6 +50,7 @@ EXPECTED_FAMILIES = {
     "dns",
     "websocket",
     "persist",
+    "input",
 }
 
 
@@ -69,7 +70,7 @@ class StandardLibraryCatalogTests(unittest.TestCase):
         payload = document()
         self.assertEqual(SCHEMA, "koschei.stdlib/v2")
         self.assertEqual(payload["schema"], SCHEMA)
-        self.assertEqual(payload["summary"]["families"], 33)
+        self.assertEqual(payload["summary"]["families"], 34)
         self.assertEqual({family.name for family in CATALOG}, EXPECTED_FAMILIES)
 
     def test_supported_never_means_one_backend_only(self) -> None:
@@ -206,7 +207,7 @@ class StandardLibraryCatalogTests(unittest.TestCase):
         self.assertEqual(first.getvalue(), second.getvalue())
         parsed = json.loads(first.getvalue())
         self.assertEqual(parsed["schema"], SCHEMA)
-        self.assertEqual(parsed["summary"]["families"], 33)
+        self.assertEqual(parsed["summary"]["families"], 34)
         self.assertIn("fully_bounded_supported", parsed["summary"])
         request_get = next(
             item

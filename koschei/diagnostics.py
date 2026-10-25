@@ -464,6 +464,74 @@ CATALOG: dict[str, Diagnostic] = {
         ),
         example='let birlesik = parca + parca or Error("metin çok büyük")',
     ),
+    "KS2407": Diagnostic(
+        code="KS2407",
+        title="Yetki değerleri karşılaştırılamaz",
+        summary="İki yetki jetonu (veya onları taşıyan struct'lar) == ya da != ile karşılaştırıldı.",
+        why=(
+            "Bu karşılaştırma host'a iki jetonun aynı nesne olup olmadığını sorardı. "
+            "Yetkinin kimliği Koschei'de tanımlı bir değer değildir ve çalıştırıcılar "
+            "bu soruya farklı cevap verirdi."
+        ),
+        fix="Jetonları değil, onlarla okuduğunuz değerleri karşılaştırın.",
+        example="let same = first.read_text() or \"\"",
+    ),
+    "KS2430": Diagnostic(
+        code="KS2430",
+        title="Program girdisi bütçesi statik değil",
+        summary="caps.input.allow() tek bir statik Int literal bayt bütçesi bekler.",
+        why=(
+            "Programın en fazla ne kadar standart girdi okuyabileceği kaynakta "
+            "görünmelidir; 'ks caps' bu sınırı derleme zamanında gösterir."
+        ),
+        fix="Bütçeyi bir sayı olarak yazın.",
+        example="let input = caps.input.allow(65536)",
+    ),
+    "KS2431": Diagnostic(
+        code="KS2431",
+        title="Program girdisi bütçesi aralık dışında",
+        summary="Standart girdi bütçesi 1 ile 16777216 bayt arasında olmalıdır.",
+        why=(
+            "Okunan metin bir String olur; String en fazla 16777216 bayt UTF-8 "
+            "olabilir. Sıfır veya negatif bütçe hiçbir anlam taşımaz."
+        ),
+        fix="1 ile 16777216 arasında bir bütçe seçin.",
+        example="let input = caps.input.allow(1048576)",
+    ),
+    "KS3430": Diagnostic(
+        code="KS3430",
+        title="Program girdisi metin değil",
+        summary="Bir program argümanı veya standart girdi geçerli UTF-8 metin değil.",
+        why=(
+            "String metin taşır. UTF-8 olmayan baytları sessizce değiştirmek, "
+            "programın gördüğü değeri gönderilenden farklı kılar; Koschei bunun "
+            "yerine 'or' ile yakalanabilen bir hata değeri verir."
+        ),
+        fix="Girdiyi UTF-8 olarak gönderin veya hatayı 'or' ile ele alın.",
+        example='let text = input.read_text() or return',
+    ),
+    "KS3431": Diagnostic(
+        code="KS3431",
+        title="Standart girdi bütçesi aşıldı",
+        summary="Standart girdi, caps.input.allow() ile verilen bayt bütçesinden büyük.",
+        why=(
+            "Sınırsız girdi belleği tüketir. Bütçeyi aşan girdi bir hata değeri "
+            "olur; okunan baytlar geri verilmez."
+        ),
+        fix="Bütçeyi büyütün veya girdiyi parçalara bölün.",
+        example="let input = caps.input.allow(1048576)",
+    ),
+    "KS3432": Diagnostic(
+        code="KS3432",
+        title="Standart girdi okunamadı",
+        summary="Standart girdi okunurken işletim sistemi hata verdi.",
+        why=(
+            "Okunamayan girdi sessiz bir boş metin değil, açık bir hata değeridir. "
+            "Kapalı bir standart girdi ise boş girdi sayılır."
+        ),
+        fix="Programa okunabilir bir standart girdi verin veya hatayı 'or' ile ele alın.",
+        example='let text = input.read_text() or ""',
+    ),
     "KS3402": Diagnostic(
         code="KS3402",
         title="Kapsam dışı erişim",
@@ -776,6 +844,42 @@ ENGLISH_TEXT: dict[str, tuple[str, str, str, str]] = {
         "An operation would have built a String or List over the budget, or the host ran out of memory for the program's values.",
         "Values that grow without bound stop a service and can leave half-built state behind. A String holds at most 16777216 bytes of UTF-8 and a List at most 1048576 items; an operation over the budget produces a KS3502 Error value at the same point in every executor.",
         "Split the value, bound the input size before processing it, or handle the result explicitly with 'or'.",
+    ),
+    "KS2407": (
+        "Capability values cannot be compared",
+        "Two authority tokens, or structs carrying them, were compared with == or !=.",
+        "The comparison asked the host whether two tokens were the same object. Authority identity is not a Koschei value, and executors answered that question differently.",
+        "Compare the values you read through the tokens, not the tokens.",
+    ),
+    "KS2430": (
+        "Program input budget is not static",
+        "caps.input.allow() expects a single static Int literal byte budget.",
+        "How much standard input a program may read must be visible in the source; 'ks caps' shows the bound at compile time.",
+        "Write the budget as a number.",
+    ),
+    "KS2431": (
+        "Program input budget is out of range",
+        "The standard input budget must be between 1 and 16777216 bytes.",
+        "The text read becomes a String, and a String holds at most 16777216 bytes of UTF-8. A zero or negative budget means nothing.",
+        "Choose a budget between 1 and 16777216.",
+    ),
+    "KS3430": (
+        "Program input is not text",
+        "A program argument or the standard input is not valid UTF-8 text.",
+        "A String carries text. Silently replacing bytes that are not UTF-8 would make the value the program sees differ from what was sent; Koschei returns an Error value that 'or' can handle instead.",
+        "Send the input as UTF-8 or handle the error with 'or'.",
+    ),
+    "KS3431": (
+        "Standard input budget exceeded",
+        "The standard input is larger than the byte budget given to caps.input.allow().",
+        "Unbounded input exhausts memory. Input over the budget becomes an Error value; the bytes read are not given back.",
+        "Raise the budget or split the input.",
+    ),
+    "KS3432": (
+        "Standard input could not be read",
+        "The operating system reported an error while reading the standard input.",
+        "Input that cannot be read is an explicit Error value, not a silent empty text. A closed standard input reads as empty.",
+        "Give the program a readable standard input or handle the error with 'or'.",
     ),
     "KS4001": (
         "Native target cannot safely implement the capability contract",

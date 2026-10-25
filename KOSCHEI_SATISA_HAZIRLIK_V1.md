@@ -31,7 +31,7 @@ başına kanıt değildir.
 | Kapı | Konu | Durum | Kapanış şartı | Kimin işi |
 |---|---|---|---|---|
 | **G1.1** | `disk.read` UTF-8 olmayan dosyada hata değeri | **Kapandı** | Dosya geçerli UTF-8 değilse program `or` ile yakalanabilen bir hata değeri alır; host istisnası yok (`tests/test_disk_read_text_v1.py`) | Geliştirme |
-| **G1.2** | Program girdisi: komut satırı argümanları ve standart girdi | Yok | Program argümanları ve standart girdiyi okuyabilir; yetki modeliyle uyumlu; `ks run` ve `ks build` aynı sonucu verir | Geliştirme |
+| **G1.2** | Program girdisi: komut satırı argümanları ve standart girdi | **Kapandı** | `caps.input.allow(bayt)` → `InputCaps.args()` / `read_text()`; bütçe `ks caps`'te görünür; UTF-8 olmayan girdi, bütçe aşımı ve okuma hatası `or` ile yakalanan hata değerleri; üç çalıştırıcı ve native ikili aynı baytları verir; diğer yetkiler native'de hâlâ KS4004 (`docs/PROGRAM_INPUT_V1.md`, `tests/test_program_input_v1.py`) | Geliştirme |
 | **G1.3** | `Bytes` tipi | Yok | Dosya ve ağdan ikili veri okunur, `secure.hash` baytlar üzerinde çalışır, hex kodlaması var; dört çalıştırıcı ve native aynı; değer bütçesine uyar | Geliştirme |
 | **G2** | Derlenmiş ikili dış dünyayla konuşur | Yok (bilerek kapalı, `KS4004`) | Disk ve ağ yetkileri native ikilide ayrı bir yetki aracısı ve işletim sistemi kısıtlamasıyla çalışır; `ks caps` manifesti ikilinin gerçekte yapabildikleriyle eşleşir; saldırı testleri | Geliştirme |
 | **G3** | Saat ve rastgele sayı | Yok (katalogda planlı) | `clock` ve `random` aileleri yetki olarak gelir; rastgele sayı işletim sisteminin denetlenmiş kaynağından alınır; Koschei kriptografik ilkel yazmaz | Geliştirme |

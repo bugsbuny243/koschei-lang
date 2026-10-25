@@ -607,6 +607,37 @@ CATALOG: tuple[Family, ...] = (
             note="Atomic replace and fsync semantics exist; deadline parity remains reserved.",
         ),
     ),
+    _family(
+        "input",
+        "partial",
+        "v1",
+        "Command-line arguments and standard input as data handed over by the invoker, "
+        "behind one byte-budgeted capability.",
+        _supported("allow", capability="InputRoot"),
+        _supported(
+            "args",
+            capability="InputCaps",
+            required=("items",),
+            enforced=("items",),
+            security_sensitive=True,
+            note=(
+                "Arguments after the program path; a non-UTF-8 argument is a KS3430 Error "
+                "value. Item count is bounded by the List value budget."
+            ),
+        ),
+        _supported(
+            "read_text",
+            capability="InputCaps",
+            required=("bytes",),
+            enforced=("bytes",),
+            security_sensitive=True,
+            note=(
+                "Reads standard input to its end; more than the allow() byte budget is "
+                "KS3431 and non-UTF-8 bytes are KS3430. Interactive line reading is not "
+                "part of v1."
+            ),
+        ),
+    ),
 )
 
 

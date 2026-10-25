@@ -72,6 +72,7 @@ CAPABILITY_MEMBERS = {
     "process": "ProcessRoot",
     "serve": "ServeRoot",
     "persist": "PersistRoot",
+    "input": "InputRoot",
 }
 
 ROOT_METHODS: dict[str, dict[str, str]] = {
@@ -81,6 +82,7 @@ ROOT_METHODS: dict[str, dict[str, str]] = {
     "ProcessRoot": {"allow": "ProcessCaps"},
     "ServeRoot": {"allow": "ServeCaps"},
     "PersistRoot": {"allow": "PersistCaps"},
+    "InputRoot": {"allow": "InputCaps"},
 }
 
 NARROWED_METHODS: dict[str, set[str]] = {
@@ -91,6 +93,7 @@ NARROWED_METHODS: dict[str, set[str]] = {
     "ProcessCaps": {"run", "spawn"},
     "ServeCaps": {"exchange"},
     "PersistCaps": {"load", "commit"},
+    "InputCaps": {"args", "read_text"},
 }
 
 NARROWING_METHODS = {"allow", "allow_read_only"}

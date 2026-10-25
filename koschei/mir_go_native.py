@@ -24,6 +24,7 @@ from typing import Any
 
 from .mir import MirFunction, MirGraph, MirModule
 from .mir_extension_instructions_v4 import (
+    MirCapabilityCall,
     MirFallibleIsSuccess,
     MirFalliblePayload,
     MirInterpolate,
@@ -38,6 +39,8 @@ from .mir_extension_instructions_v4 import (
     MirVariantPayload,
 )
 from .mir_go_runtime_v2 import (
+    MIR_GO_INPUT_IMPORTS_V2,
+    MIR_GO_INPUT_RUNTIME_V2,
     MIR_GO_RUNTIME_V2,
     MIR_GO_RUNTIME_V2_IMPORTS,
     MIR_GO_SHA3_IMPORTS_V2,
@@ -108,9 +111,21 @@ _CAPABILITY_TYPES = frozenset(
         "PersistCaps",
         "ServeRoot",
         "ServeCaps",
+        "InputRoot",
+        "InputCaps",
         "Response",
     }
 )
+# Program input is data the invoker handed to the process (argv, stdin), so a
+# native binary may carry it. Every other authority domain needs the native
+# capability broker and stays fail-closed (KS4004).
+_NATIVE_CAPABILITY_TYPES = frozenset({"SystemCaps", "InputRoot", "InputCaps"})
+_NATIVE_CAPABILITY_MEMBERS = {("InputRoot", "input"): "_ksCapsInput"}
+_NATIVE_CAPABILITY_CALLS = {
+    ("InputRoot", "allow"): ("_ksInputAllow", 1),
+    ("InputCaps", "args"): ("_ksInputArgs", 0),
+    ("InputCaps", "read_text"): ("_ksInputReadText", 0),
+}
 _ADMITTED_INSTRUCTIONS = (
     MirConst,
     MirLoad,
@@ -136,6 +151,7 @@ _ADMITTED_INSTRUCTIONS = (
     MirStructSet,
     MirStructFinish,
     MirStructFieldSet,
+    MirCapabilityCall,
 )
 _GO_IDENTIFIER = re.compile(r"[^A-Za-z0-9_]")
 _ENUM_GO_TYPE = "_ksEnumValue"
@@ -192,8 +208,19 @@ def generate_go_mir_native(mir: MirGraph) -> str:
         for plan in plans
         for ref in plan.refs.values()
     )
+    uses_input = any(
+        isinstance(instruction, MirCapabilityCall)
+        or (isinstance(instruction, MirMember) and _capability_member_type(instruction))
+        for plan in plans
+        for block in plan.function.blocks
+        for instruction in block.instructions
+    )
     imports = sorted(
-        {*MIR_GO_RUNTIME_V2_IMPORTS, *(MIR_GO_SHA3_IMPORTS_V2 if uses_digest else ())}
+        {
+            *MIR_GO_RUNTIME_V2_IMPORTS,
+            *(MIR_GO_SHA3_IMPORTS_V2 if uses_digest else ()),
+            *(MIR_GO_INPUT_IMPORTS_V2 if uses_input else ()),
+        }
     )
 
     lines = [
@@ -214,11 +241,43 @@ def generate_go_mir_native(mir: MirGraph) -> str:
     ]
     if uses_digest:
         lines.append(MIR_GO_SHA3_RUNTIME_V2.format(max_bytes=SHA3_256_MAX_INPUT_BYTES))
+    if uses_input:
+        lines.append(_input_runtime())
     for plan in plans:
         lines.extend(_emit_function(plan, symbols))
         lines.append("")
-    lines.extend(["func main() {", f"\t{root_main}()", "}", ""])
+    main = next(item for item in mir.root_module.functions if item.name == "main")
+    entry_arguments = "_ksSystemCaps{}" if main.parameters else ""
+    lines.extend(["func main() {", f"\t{root_main}({entry_arguments})", "}", ""])
     return "\n".join(lines)
+
+
+def _input_runtime() -> str:
+    from .program_input_v1 import (
+        ALLOW_RANGE_MESSAGE,
+        ALLOW_TYPE_MESSAGE,
+        ARGUMENT_MESSAGE,
+        BUDGET_MESSAGE,
+        MAX_INPUT_BYTES,
+        MIN_INPUT_BYTES,
+        NOT_TEXT_MESSAGE,
+        UNAVAILABLE_MESSAGE,
+    )
+
+    argument_prefix, argument_suffix = ARGUMENT_MESSAGE.split("{index}")
+    budget_prefix, budget_suffix = BUDGET_MESSAGE.split("{max_bytes}")
+    return MIR_GO_INPUT_RUNTIME_V2.format(
+        min_bytes=MIN_INPUT_BYTES,
+        max_bytes=MAX_INPUT_BYTES,
+        type_message=_go_string(ALLOW_TYPE_MESSAGE),
+        range_message=_go_string(ALLOW_RANGE_MESSAGE),
+        argument_prefix=_go_string(argument_prefix),
+        argument_suffix=_go_string(argument_suffix),
+        budget_prefix=_go_string(budget_prefix),
+        budget_suffix=_go_string(budget_suffix),
+        unavailable_message=_go_string(UNAVAILABLE_MESSAGE),
+        not_text_message=_go_string(NOT_TEXT_MESSAGE),
+    )
 
 
 def emit_go_from_mir(mir: MirGraph) -> str:
@@ -258,8 +317,8 @@ def _plan(mir: MirGraph) -> tuple[list[str], list[_FunctionPlan]]:
     main = next((item for item in root.functions if item.name == "main"), None)
     if main is None:
         reasons.append("MIR-Go requires main")
-    elif main.parameters:
-        reasons.append("MIR-Go requires zero-parameter main")
+    elif main.parameters and not _main_takes_system_caps(main):
+        reasons.append("MIR-Go requires main() or main(caps: SystemCaps)")
 
     plans: list[_FunctionPlan] = []
     for module_index, module in enumerate(modules):
@@ -283,6 +342,25 @@ def _plan(mir: MirGraph) -> tuple[list[str], list[_FunctionPlan]]:
                 )
             )
     return reasons, plans
+
+
+def _main_takes_system_caps(main: MirFunction) -> bool:
+    return len(main.parameters) == 1 and _runtime_names(main.parameters[0].type) == (
+        "SystemCaps",
+    )
+
+
+def _capability_member_type(instruction: MirMember) -> str | None:
+    """The authority type a member read produces, if it produces one.
+
+    Struct fields are never capability-typed in admitted programs (see
+    ``_struct_declaration_reasons``), so such a read is a ``SystemCaps`` root.
+    """
+
+    names = _runtime_names(instruction.type)
+    if len(names) == 1 and names[0] in _CAPABILITY_TYPES:
+        return names[0]
+    return None
 
 
 def _struct_declaration_reasons(module: MirModule, declaration: Any) -> list[str]:
@@ -331,7 +409,7 @@ def _signature_reasons(function: MirFunction, label: str) -> list[str]:
     for type_node in types:
         rendered = render_type(type_node)
         names = set(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", rendered))
-        blocked = sorted(names & _CAPABILITY_TYPES)
+        blocked = sorted(names & (_CAPABILITY_TYPES - _NATIVE_CAPABILITY_TYPES))
         if blocked:
             reasons.append(
                 f"{label}: capability-typed signatures are not MIR-Go "
@@ -387,6 +465,29 @@ def _resolve_function(
                 reasons.append(
                     f"{label}: unsupported instruction {type(instruction).__name__}"
                 )
+                continue
+            if isinstance(instruction, MirCapabilityCall):
+                key = (instruction.capability_type, instruction.method)
+                if key not in _NATIVE_CAPABILITY_CALLS:
+                    reasons.append(
+                        f"{label}: native binaries cannot use "
+                        f"{instruction.capability_type}.{instruction.method} until the "
+                        "native capability broker exists (G2)"
+                    )
+                elif len(instruction.arguments) != _NATIVE_CAPABILITY_CALLS[key][1]:
+                    reasons.append(
+                        f"{label}: {instruction.capability_type}.{instruction.method} "
+                        "arity drifted"
+                    )
+                continue
+            if isinstance(instruction, MirMember) and _capability_member_type(instruction):
+                produced = _capability_member_type(instruction)
+                if (produced, instruction.member) not in _NATIVE_CAPABILITY_MEMBERS:
+                    reasons.append(
+                        f"{label}: native binaries carry only program input; {produced} "
+                        f"through .{instruction.member} needs the native capability "
+                        "broker (G2)"
+                    )
                 continue
             if isinstance(instruction, MirLoad):
                 name = instruction.name
@@ -553,6 +654,8 @@ def _operands(instruction: Any) -> tuple[int, ...]:
         return (instruction.source,)
     if isinstance(instruction, MirVariantConstruct):
         return () if instruction.source is None else (instruction.source,)
+    if isinstance(instruction, MirCapabilityCall):
+        return (instruction.object, *instruction.arguments)
     return ()
 
 
@@ -724,6 +827,17 @@ def _emit_instruction(
         if instruction.target in refs:
             return []
         return [f"{prefix}{value(instruction.target)} = {names[instruction.name]}"]
+    if isinstance(instruction, MirMember) and _capability_member_type(instruction):
+        helper = _NATIVE_CAPABILITY_MEMBERS[
+            (_capability_member_type(instruction), instruction.member)
+        ]
+        return [f"{prefix}{value(instruction.target)} = {helper}({value(instruction.object)})"]
+    if isinstance(instruction, MirCapabilityCall):
+        helper, _ = _NATIVE_CAPABILITY_CALLS[(instruction.capability_type, instruction.method)]
+        arguments = ", ".join(
+            value(item) for item in (instruction.object, *instruction.arguments)
+        )
+        return [f"{prefix}{value(instruction.target)} = {helper}({arguments})"]
     if isinstance(instruction, MirMember):
         ref = refs.get(instruction.target)
         if ref is None:

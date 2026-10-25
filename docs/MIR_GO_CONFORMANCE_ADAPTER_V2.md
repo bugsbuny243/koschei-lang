@@ -71,8 +71,15 @@ needs Go 1.24 or later), and the members
 `String.length/contains/trim/split/join` and
 `List.length/get/push/contains/take`.
 
+Program input is the one authority a binary may carry: `main(caps:
+SystemCaps)`, `caps.input.allow`, `InputCaps.args` and `InputCaps.read_text`
+compile to `os.Args`/`os.Stdin` reads with the same Error values as `ks run`
+(see `PROGRAM_INPUT_V1.md`). `SystemCaps`, `InputRoot` and `InputCaps` may
+appear in signatures.
+
 Fails closed with `KS4004`: generic structs, struct fields of capability type,
-`Map`, capabilities and capability-typed signatures, callback members
+`Map`, every other capability (disk, network, environment, process, serve,
+persist) and its signatures, callback members
 (`filter`, `map`, `sort`, …), `to_int`/
 `to_float`, function or constructor values, and any instruction outside the
 list above. The legacy AST-Go backend is never used as a fallback.

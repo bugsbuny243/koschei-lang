@@ -58,6 +58,17 @@ type _ksIter struct {
 	index  int
 }
 
+// Authority tokens. Program input is the only domain a native binary may
+// carry (program_input_v1); every other domain fails closed before Go is
+// generated.
+type _ksSystemCaps struct{}
+
+type _ksInputRoot struct{}
+
+type _ksInputCaps struct {
+	maxBytes int
+}
+
 const _ksMaxCallDepth = 512
 const _ksIntMin = -9223372036854775808
 const _ksIntMax = 9223372036854775807
@@ -142,6 +153,12 @@ func _ksToString(value any) string {
 		return item.message
 	case _ksUnit:
 		return "unit"
+	case _ksSystemCaps:
+		return "<SystemCaps>"
+	case _ksInputRoot:
+		return "<InputRoot>"
+	case _ksInputCaps:
+		return "<InputCaps>"
 	}
 	_ksAbort("KS5002", "unrenderable runtime value")
 	return ""
@@ -865,6 +882,12 @@ func _ksTypeName(value any) string {
 		return "Float"
 	case int64:
 		return "Int"
+	case _ksSystemCaps:
+		return "SystemCaps"
+	case _ksInputRoot:
+		return "InputRoot"
+	case _ksInputCaps:
+		return "InputCaps"
 	}
 	return "unknown"
 }
@@ -1036,6 +1059,12 @@ func _ksMatchPattern(value any, expected string, parameters map[string]bool, bin
 		return base == "Float"
 	case []any:
 		return base == "List"
+	case _ksSystemCaps:
+		return base == "SystemCaps"
+	case _ksInputRoot:
+		return base == "InputRoot"
+	case _ksInputCaps:
+		return base == "InputCaps"
 	}
 	return false
 }
@@ -1106,3 +1135,86 @@ func _ksBudgetText(text string) any {{
 }}
 '''
 
+
+# Emitted only for programs that use program input (``program_input_v1``).
+# Arguments and standard input are data the invoker handed to the process; no
+# file, network, environment or process API is linked. Messages come from the
+# Python constants so both executors produce the same Error values.
+MIR_GO_INPUT_IMPORTS_V2 = ("io",)
+MIR_GO_INPUT_RUNTIME_V2 = r'''
+const _ksInputMinBytes = {min_bytes}
+const _ksInputMaxBytes = {max_bytes}
+
+func _ksCapsInput(receiver any) any {{
+	if _, ok := receiver.(_ksSystemCaps); !ok {{
+		_ksAbort("KS5002", "SystemCaps.input receiver drifted")
+	}}
+	return _ksInputRoot{{}}
+}}
+
+func _ksInputAllow(receiver any, budget any) any {{
+	if _, ok := receiver.(_ksInputRoot); !ok {{
+		_ksAbort("KS5002", "InputRoot.allow receiver drifted")
+	}}
+	value, ok := budget.(int64)
+	if !ok {{
+		return _ksError{{message: {type_message}}}
+	}}
+	if value < _ksInputMinBytes || value > _ksInputMaxBytes {{
+		return _ksError{{message: {range_message}}}
+	}}
+	return _ksInputCaps{{maxBytes: int(value)}}
+}}
+
+func _ksInputArgs(receiver any) any {{
+	if _, ok := receiver.(_ksInputCaps); !ok {{
+		_ksAbort("KS5002", "InputCaps.args receiver drifted")
+	}}
+	raw := os.Args[1:]
+	if len(raw) > _ksMaxListItems {{
+		return _ksListBudgetError
+	}}
+	items := make([]any, 0, len(raw))
+	for index, argument := range raw {{
+		if !utf8.ValidString(argument) {{
+			return _ksError{{message: {argument_prefix} + strconv.Itoa(index+1) + {argument_suffix}}}
+		}}
+		if len(argument) > _ksMaxStringBytes {{
+			return _ksStringBudgetError
+		}}
+		items = append(items, argument)
+	}}
+	return items
+}}
+
+func _ksInputReadText(receiver any) any {{
+	input, ok := receiver.(_ksInputCaps)
+	if !ok {{
+		_ksAbort("KS5002", "InputCaps.read_text receiver drifted")
+	}}
+	limit := input.maxBytes + 1
+	chunk := make([]byte, 65536)
+	data := []byte{{}}
+	for len(data) < limit {{
+		want := limit - len(data)
+		if want > len(chunk) {{
+			want = len(chunk)
+		}}
+		n, err := os.Stdin.Read(chunk[:want])
+		data = append(data, chunk[:n]...)
+		if err == io.EOF {{
+			break
+		}}
+		if err != nil {{
+			return _ksError{{message: {unavailable_message}}}
+		}}
+	}}
+	if len(data) > input.maxBytes {{
+		return _ksError{{message: {budget_prefix} + strconv.Itoa(input.maxBytes) + {budget_suffix}}}
+	}}
+	if !utf8.Valid(data) {{
+		return _ksError{{message: {not_text_message}}}
+	}}
+	return string(data)
+}}
+'''

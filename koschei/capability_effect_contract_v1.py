@@ -24,6 +24,7 @@ PROCESS_EXEC = "process.exec"
 PERSIST_READ = "persist.read"
 PERSIST_WRITE = "persist.write"
 SERVE_EXCHANGE = "serve.exchange"
+INPUT_READ = "input.read"
 
 POWER_DOMAIN_IDENTITY = "identity"
 POWER_DOMAIN_AUTHORITY = "authority"
@@ -53,6 +54,7 @@ _SYSTEM_CAPABILITY_MEMBERS = {
     "process": "ProcessRoot",
     "persist": "PersistRoot",
     "serve": "ServeRoot",
+    "input": "InputRoot",
 }
 
 _ROOT_NARROWING = {
@@ -62,6 +64,7 @@ _ROOT_NARROWING = {
     "ProcessRoot": {"allow": "ProcessCaps"},
     "PersistRoot": {"allow": "PersistCaps"},
     "ServeRoot": {"allow": "ServeCaps"},
+    "InputRoot": {"allow": "InputCaps"},
 }
 
 _NARROWED_OPERATIONS = {
@@ -72,6 +75,7 @@ _NARROWED_OPERATIONS = {
     "ProcessCaps": {"run", "spawn"},
     "PersistCaps": {"load", "commit"},
     "ServeCaps": {"exchange"},
+    "InputCaps": {"args", "read_text"},
 }
 
 _CAPABILITY_METHOD_EFFECTS = {
@@ -84,6 +88,7 @@ _CAPABILITY_METHOD_EFFECTS = {
     "ProcessRoot": {"allow": AUTHORITY_DERIVE},
     "PersistRoot": {"allow": AUTHORITY_DERIVE},
     "ServeRoot": {"allow": AUTHORITY_DERIVE},
+    "InputRoot": {"allow": AUTHORITY_DERIVE},
     "NetCaps": {
         "get": NET_IO,
         "post": NET_IO,
@@ -108,6 +113,7 @@ _CAPABILITY_METHOD_EFFECTS = {
     "ProcessCaps": {"run": PROCESS_EXEC, "spawn": PROCESS_EXEC},
     "PersistCaps": {"load": PERSIST_READ, "commit": PERSIST_WRITE},
     "ServeCaps": {"exchange": SERVE_EXCHANGE},
+    "InputCaps": {"args": INPUT_READ, "read_text": INPUT_READ},
 }
 
 # Power domains classify existing capability/effect semantics. They are not a
@@ -129,6 +135,10 @@ _CAPABILITY_POWER_DOMAINS = {
     "PersistCaps": POWER_DOMAIN_CONTINUITY,
     "ServeRoot": POWER_DOMAIN_NETWORK,
     "ServeCaps": POWER_DOMAIN_NETWORK,
+    # Program input is data the invoker hands over (argv, stdin); it reaches
+    # no resource of its own.
+    "InputRoot": POWER_DOMAIN_DATA,
+    "InputCaps": POWER_DOMAIN_DATA,
 }
 
 _EFFECT_POWER_DOMAINS = {
@@ -140,6 +150,7 @@ _EFFECT_POWER_DOMAINS = {
     PERSIST_READ: POWER_DOMAIN_CONTINUITY,
     PERSIST_WRITE: POWER_DOMAIN_CONTINUITY,
     SERVE_EXCHANGE: POWER_DOMAIN_NETWORK,
+    INPUT_READ: POWER_DOMAIN_DATA,
 }
 
 SYSTEM_CAPABILITY_MEMBERS: Mapping[str, str] = MappingProxyType(
