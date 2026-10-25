@@ -82,7 +82,46 @@ gezegenin yetkisini devralmaz.
 |---|---|---|---|
 | **Vormir** | Kök gerçekliğe giriş. Yüksek değerli yetki ancak gerçek ve geri alınamaz bir yetki azaltma (kurban), taze epoch ve doğrulanabilir kanıtla verilir. Vormir'i bulmak ona girmek demek değildir. | `koschei/vormir_sacrifice_v1.py` | Kod + test |
 | Gezegen gerçeklikleri (genel) | Göreve özel dünyalar; her biri yukarıdaki sekiz özelliği taşır ve kendi etki alanıyla sınırlıdır. | `koschei/planetary_console_v1.py` (yalnızca gözlem paneli; yetki üretemez) | Kısmi: gözlem paneli var, gezegen nesnesi yok |
-| Diğer Marvel gezegenleri | — | — | **Tanımlanmadı** — her biri için yeni bir güvenlik değişmezi belirlenmelidir |
+| Diğer Marvel gezegenleri | Aşağıdaki taramada tek tek ele alındı | — | 6 aday, 11 örtüşen, 6 tanımlanmamış |
+
+### Gezegen taraması
+
+Marvel Sinematik Evreni'nde görünen gezegen ve diyarların hepsi tek tek
+incelendi. Çizgi romanlarda yüzlerce gezegen vardır; bu tarama filmlerde
+görünenlerle sınırlıdır. Her biri için tek soru soruldu: *mevcut bekçilerde
+olmayan hangi güvenlik değişmezini getirir?*
+
+Durum etiketleri:
+
+- **Aday:** yeni bir değişmez öneriyor. Henüz kodu ve testi yok, bu yüzden
+  kanonik değil.
+- **Örtüşüyor:** anlamı mevcut bir bekçide zaten var. Ayrı bir alt sistem
+  açılmaz; isim istenirse o bekçiye takma ad olur.
+- **Tanımlanmadı:** henüz ayrı bir güvenlik görevi bulunamadı.
+
+| Gezegen | Filmdeki rolü | Önerilen değişmez | İlişkisi | Durum |
+|---|---|---|---|---|
+| **Titan** | Thanos'un, kontrolsüz büyümeyle çöken dünyası | Her programın açık bir **bellek bütçesi** vardır. Tükenme her çalıştırıcıda aynı Koschei hatasıyla, tanımlı bir noktada durur. Host çökmesi veya yarım kalmış durum oluşmaz. | Gezegen yasasının 6. özelliği (kaynak bütçesi) bellek için hiç uygulanmadı. Adım ve çağrı derinliği bütçeleri var, bellek bütçesi yok. | **Aday** (PHP2Shell CVE-2026-109618) |
+| **Nidavellir** | Cücelerin yıldız ocağı: Stormbreaker ancak ocak tam ısındığında dövülür | **Ya tam ya hiç:** bir değer, kayıt veya kalıcı yazma ya tamamen oluşur ya hiç oluşmaz. Yarıda kesilen yapım iz bırakmaz; temizlik kodu yarım veriyi asla okumaz. | Struct kurucusu (`MirStructFinish`) ve kurtarma günlüğü parçalarını sağlıyor. Kesinti altında tek bir değişmez olarak kanıtlanmadı. | **Aday** (CVE-2026-109618) |
+| **Knowhere** | Herkesin uğradığı ortak liman | **İstekler arası kalıntı yok:** uzun yaşayan bir hizmette her istek yeni bir gerçeklikte çalışır. Bir isteğin durumu sonrakine ulaşamaz; işçi yeniden kullanılmadan önce istek kapsamının boş olduğunu kanıtlar. | Matrix ufuk çitinin (eski Hara mezara konur) istek ölçeğinde uygulaması | **Aday** (CVE-2026-109619) |
+| **Sakaar** | Solucan deliklerinden düşen her şeyin vardığı, Grandmaster'ın yargıladığı gezegen | **Örtük giriş işlemi yok:** dışarıdan gelen veri, program istemeden işlenmez. Çekirdek düzeyinde örtük ayrıştırma, yükleme ilerlemesi veya oturum yazımı yoktur. Ayrıştırma kendi bütçesiyle yapılır; başarısızlık yarım değer değil `Error` değeridir. | Bugünkü serve dilimi bunu sağlıyor (gövde `String` olarak döner) ama yazılı bir değişmez değil | **Aday** (CVE-2026-109619'un `session.upload_progress` yolu) |
+| **Xandar** | Nova Corps: kayıtlar ve yasa | **Bilinen açık kabul edilmez:** açık bildirimindeki bir yapıt (bağımlılık, runtime, araç zinciri) kabul edilmez. Karar yapıtın **içerik özetine** bağlıdır, kendi bildirdiği sürüm etiketine değil. | Module Lock zaten özet kullanıyor; açık bildirimi girdisi hiçbir yerde yok | **Aday** (haber: yüz binlerce hizmet eski sürümde) |
+| **Morag** | Terk edilmiş gezegen, harabe tapınak | **Desteği biten yapıtın süresi dolar:** destek penceresi geçince, adı belli bir bakımcının tarihli yama beyanı olmadan kabul edilmez. | Xandar'dan farklı: bilinen açık olmasa da süre dolar | **Aday** (PHP 8.1 ve öncesi resmî yama almıyor) |
+| Ego | Başka dünyalara tohum eken yaşayan gezegen | Sonradan uyanan gömülü davranış | `library_behavior_baseline_v1` (yeni etki = yetki farkı) ve yetki modeli | Örtüşüyor |
+| Hala | Kree başkenti, Supreme Intelligence | Merkezî yapay zekâ kararının sınırı | Skynet | Örtüşüyor |
+| Asgard | "Asgard bir yer değil, bir halktır" | Kimlik konumdan bağımsızdır | Aevra; kanonik kimlik ile fiziksel konum ayrımı | Örtüşüyor |
+| Jotunheim | Kadim Kışlar Sandığı (dondurma) | Kabul edilmiş yapıt dondurulur | Wanda ve Module Lock | Örtüşüyor |
+| Svartalfheim | Karanlık Elfler, diyarların Yakınsaması | Hizalanan gerçeklikler birleşmez | Gezegen yasası: aynı Matrix dokusu yetki devretmez | Örtüşüyor |
+| Muspelheim | Surtur, Ragnarok ateşi | Ele geçirilmiş gerçekliği son çare olarak yok etmek | Morth Kara Delik, `library_compromise_recovery_v0` | Örtüşüyor |
+| Hel / Niflheim | Hela'nın diyarı | Ölü yetki geri gelmez | Hela | Örtüşüyor |
+| Kyln | Galaksi hapishanesi | Karantina | Gezegenin 8. özelliği, `library_quarantine_contract_v1` | Örtüşüyor |
+| Sovereign | Uzaktan kumandalı insansız gemilerle savaşan halk | Uzak denetçi yalnızca sınırlı kanaldan iş görür | `universe_remote_observer_v1` | Örtüşüyor |
+| Midgard (Dünya) | İnsanların gezegeni | Host gerçekliği, verilmeyen yetkiyi kullanamaz | Dilin temel ilkesi: ortamdan gelen yetki yok | Örtüşüyor |
+| Kuantum Diyarı | Ant-Man | — | 3. bölüm (Kuantum Fiziği) | Örtüşüyor |
+| Vanaheim, Alfheim, Contraxia, Berhert, Torfa, Zen-Whoberi | — | — | — | Tanımlanmadı |
+
+Altı adayın hepsi Ekim 2026'daki PHP2Shell olayından çıkan derslere
+dayanır (aşağıda). Hiçbiri kod ve test gelmeden kanonik sayılmaz.
 
 ### Marvel bekçileri
 
@@ -191,6 +230,57 @@ gelecek (kuantum sonrası kriptografi) için kullanılır.
     kodlamalar ve bayt düzeyindeki işler için gerekir.
   - **Map ve generic struct** native derlemede henüz yok.
 
+## PHP2Shell'den dersler (Ekim 2026)
+
+### Ne oldu
+
+- **İki açık:** CVE-2026-109618 ve CVE-2026-109619. İkisi de CVSS v4.0'da
+  9.2 puan aldı ve kimlik doğrulamasız uzaktan kod çalıştırmaya izin
+  veriyor. Web isteği sunan her PHP kurulumunu etkiliyor (mod_php, PHP-FPM,
+  php-cgi, FrankenPHP, LiteSpeed). Son on yılda çıkan, 5.4'e kadar her
+  sürüm en az birinden etkileniyor.
+- **CVE-2026-109618 (bellek tükenmesi):** bir yapı, girdisi için bellek
+  ayrılmadan önce "girdi var" diye işaretleniyor. Ayırma `memory_limit`
+  sınırını aşınca girdi eski heap verisini tutuyor. Başarısız isteğin kendi
+  temizlik kodu da bu yarım veriyi okuyor ve ona göre dallanıyor.
+- **CVE-2026-109619 (bayat global durum):** isteğe bağlı iç durum, işaret
+  ettiği bellekten uzun yaşıyor. Aynı işçideki sonraki istek, durum
+  sıfırlanmadan onu kullanabiliyor. Bu, use-after-free, bellek sızıntısı
+  (parolalar, oturum jetonları, API anahtarları) ve işçi yetkisiyle kod
+  çalıştırma demek.
+- **Yama:** 8.2.35, 8.3.36, 8.4.27 ve 8.5.12. PHP 8.1 ve öncesi resmî
+  güncelleme almıyor. Güvenlik ekibi yalnızca 7.4, 8.0 ve 8.1 için asgari
+  kaynak yamaları verdi. PHP'ye göre hiçbir ayar açıkları tamamen kapatmıyor.
+- **Türkiye:** Censys'e göre sürümünü açıklayan Türkiye kaynaklı PHP
+  hizmetlerinin %92,9'u, yani 364.237 hizmet, etkilenen sürümlerde
+  çalışıyordu. Türkiye 233 ülke ve bölge arasında 19. sıradaydı. Censys
+  sunucu değil hizmet sayar. Dağıtımlar yamayı sürüm numarasını
+  değiştirmeden uyguladığı için, sürüm etiketine dayanan sayım gerçek riski
+  her iki yönde de yanlış gösterebilir.
+- **Keşif:** açıklar yapay zekâ destekli araştırmayla bulundu. Benzer bir
+  sorun 2024'te görülmüş ama düzeltilmemişti.
+
+### Koschei'de bugün ne oluyor (ölçüldü)
+
+| Ders | Koschei bugün | Sonuç |
+|---|---|---|
+| Bellek tükenmesi tanımsız duruma yol açmamalı | `ks run` sınırsız büyüyen bir String'de Python `MemoryError` izini basıp 1 ile çıkıyor. `ks build` ikilisi Go `fatal error: out of memory` ile 2 ile çıkıyor. İkisinde de süreç ölüyor, yarım veriyi okuyan temizlik kodu yok. Ama bellek bütçesi yok, Koschei tanısı yok ve iki çalıştırıcının çıkış kodu farklı. | **Titan** ve **Nidavellir** gerekli |
+| İstekler arasında durum kalmamalı | Her `ServeCaps.exchange` çağrısı yeni bir dinleyici açıyor, tek bağlantı ve tek istek işleyip kapatıyor. İstekler arasında çalışma ortamı düzeyinde durum yok; programın tuttuğu durum açık Koschei değerleri. Bu açık sınıfı bugün oluşamaz. | Kalıcı işçili serve, **Knowhere** olmadan çıkmamalı |
+| İstek içeriği program istemeden işlenmemeli | İstek gövdesi bayt bütçesi altında okunup `String` olarak programa veriliyor. Örtük yükleme veya oturum işlemi yok. | **Sakaar** bunu yazılı değişmez yapar |
+| Sürüm afişi saldırgana harita verir | Serve yanıtında `Server` veya `X-Powered-By` başlığı yok. | Korunmalı |
+| Kabul, sürüm etiketine değil içeriğe bağlı olmalı | Module Lock içerik özeti kullanıyor, ama açık bildirimi veya destek süresi girdisi yok. | **Xandar** ve **Morag** gerekli |
+| Kod çalıştıran saldırgan işçinin bütün yetkisini alır | Koschei'de ele geçirilen kod yalnızca kendisine açıkça verilen yetkiyi kullanabilir; ortamdan gelen yetki yoktur. | Patlama yarıçapı küçülür. Ama bootstrap host (CPython ve Go runtime) kendi bellek hatalarından dilin güvencesiyle korunmaz. |
+
+### Kaynaklar
+
+- [DonanımHaber: PHP açıkları Türkiye'yi de vurdu](https://www.donanimhaber.com/php-aciklari-turkiye-yi-de-vurdu-yuzbinlerce-hizmet-eski-surumde--212007)
+- [12punto: Censys'e göre Türkiye'de %92,9](https://12punto.com.tr/bilim-teknoloji/php2shell-aciklarinda-turkiye-alarmi-censyse-gore-surumunu-aciklayan-php-hizmetlerinin-yuzde-929u-riskli-156728)
+- [Censys: CVE-2026-109618 / CVE-2026-109619 bülteni](https://censys.com/advisory/cve-2026-109618-cve-2026-109619/)
+- [watchTowr: PHP2Shell SSS](https://watchtowr.com/intelligence/php-cve-2026-109618-faq/)
+- [Qualys: PHP2Shell](https://blog.qualys.com/vulnerabilities-threat-research/2026/10/20/php-announces-critical-security-release-for-two-vulnerabilities)
+- [Wiz: PHP2Shell](https://www.wiz.io/blog/php2shell-php-rce)
+- [NCSC-NL: php2shell operasyon bilgisi](https://github.com/NCSC-NL/php2shell)
+
 ## Koschei'ye taşıma sırası
 
 1. ~~**Çekirdek:** denetlenmiş bir sağlayıcıdan gelen özet fonksiyonu (kripto
@@ -199,8 +289,14 @@ gelecek (kuantum sonrası kriptografi) için kullanılır.
 2. ~~**Saf mantıklı bekçiler:** Captain Marvel, Hela, Doctor Strange,
    Wanda.~~ **Tamamlandı:** dört bekçi Koschei'de.
 3. **Matrix:** portal geçişi ve ufuk çiti.
-4. **Gezegenler:** sekiz özelliği taşıyan bir gezegen yapısı; ilk gezegen
-   Vormir.
+4. **Gezegenler:** sekiz özelliği taşıyan bir gezegen yapısı. PHP2Shell
+   ölçümüne göre önerilen sıra:
+   1. **Titan** ve **Nidavellir:** bellek bütçesi ve "ya tam ya hiç". Ölçüm
+      bugünkü açığı gösterdi.
+   2. **Xandar** ve **Morag:** açık bildirimi ve destek süresiyle içerik
+      özetine bağlı kabul.
+   3. **Knowhere** ve **Sakaar:** kalıcı işçili serve'den önce.
+   4. **Vormir'in** Koschei'ye taşınması.
 5. **Fizik Çekirdeği** yasalarının Koschei tarafındaki denetimleri.
 
 Her taşıma aynı kurallarla yapılır: modül adı kayıt listesine eklenir ve
