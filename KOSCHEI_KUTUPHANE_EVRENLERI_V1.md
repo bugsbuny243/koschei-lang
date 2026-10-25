@@ -110,7 +110,7 @@ Köklerin bugün etkinleştirdiği Python modülleri:
 | shi | `preserve-evidence-lineage` | ad: `library.evidence_lineage` | `wanda` zincir mantığı |
 | thal | `derive-minimum-safe-containment` | ad: `library.containment` | `captain_marvel.evaluate` (parça) |
 | thal | `fence-stale-writers` | ad: `library.recovery_fencing` | `hela.remains_dead` (parça: eski epoch reddi) |
-| thal | `commit-or-abort-recovery` | ad: `library.recovery_transaction` | Nidavellir (aday, kodu yok) |
+| thal | `commit-or-abort-recovery` | ad: `library.recovery_transaction` | Nidavellir'in ilk yasası çalışma ortamında (atomik `disk.write`); Koschei kütüphane modülü yok |
 | thal | `prove-exactly-once-effect-lineage` | ad: `library.exactly_once` | Yazılacak |
 | nur | `measure-knowledge-acquisition` | ad: `library.knowledge_budget` | Yazılacak |
 | nur | `shrink-visibility-envelope` | ad: `library.visibility_envelope` | Yazılacak |
@@ -186,7 +186,7 @@ Durum etiketleri:
 | Gezegen | Filmdeki rolü | Önerilen değişmez | İlişkisi | Durum |
 |---|---|---|---|---|
 | **Titan** | Thanos'un, kontrolsüz büyümeyle çöken dünyası | Her programın açık bir **bellek bütçesi** vardır. Tükenme her çalıştırıcıda aynı Koschei hatasıyla, tanımlı bir noktada durur. Host çökmesi veya yarım kalmış durum oluşmaz. | İlk yasa uygulandı: değer bütçesi (`KS3502`, `docs/VALUE_BUDGET_V1.md`). Bir String en fazla 16 MiB UTF-8, bir List en fazla 1.048.576 öğe; dört çalıştırıcı aynı noktada durur. Toplam canlı bellek bütçesi henüz yok. | **Kısmi: kod + test** (PHP2Shell CVE-2026-109618) |
-| **Nidavellir** | Cücelerin yıldız ocağı: Stormbreaker ancak ocak tam ısındığında dövülür | **Ya tam ya hiç:** bir değer, kayıt veya kalıcı yazma ya tamamen oluşur ya hiç oluşmaz. Yarıda kesilen yapım iz bırakmaz; temizlik kodu yarım veriyi asla okumaz. | Struct kurucusu (`MirStructFinish`) ve kurtarma günlüğü parçalarını sağlıyor. Kesinti altında tek bir değişmez olarak kanıtlanmadı. | **Aday** (CVE-2026-109618) |
+| **Nidavellir** | Cücelerin yıldız ocağı: Stormbreaker ancak ocak tam ısındığında dövülür | **Ya tam ya hiç:** bir değer, kayıt veya kalıcı yazma ya tamamen oluşur ya hiç oluşmaz. Yarıda kesilen yapım iz bırakmaz; temizlik kodu yarım veriyi asla okumaz. | Bellekte kanıtlandı: alanı başarısız olan struct'ın tamamı hata değeridir, yarım struct dört çalıştırıcıda da görünmez. Diskte uygulandı: `disk.write` geçici dosya + `fsync` + tek `rename` ile atomik; kesilen yazma eski dosyayı bırakır (`docs/NIDAVELLIR_ALL_OR_NOTHING_V1.md`). Çok dosyalı işlem henüz yok. | **Kısmi: kod + test** (CVE-2026-109618) |
 | **Knowhere** | Herkesin uğradığı ortak liman | **İstekler arası kalıntı yok:** uzun yaşayan bir hizmette her istek yeni bir gerçeklikte çalışır. Bir isteğin durumu sonrakine ulaşamaz; işçi yeniden kullanılmadan önce istek kapsamının boş olduğunu kanıtlar. | Matrix ufuk çitinin (eski Hara mezara konur) istek ölçeğinde uygulaması | **Aday** (CVE-2026-109619) |
 | **Sakaar** | Solucan deliklerinden düşen her şeyin vardığı, Grandmaster'ın yargıladığı gezegen | **Örtük giriş işlemi yok:** dışarıdan gelen veri, program istemeden işlenmez. Çekirdek düzeyinde örtük ayrıştırma, yükleme ilerlemesi veya oturum yazımı yoktur. Ayrıştırma kendi bütçesiyle yapılır; başarısızlık yarım değer değil `Error` değeridir. | Bugünkü serve dilimi bunu sağlıyor (gövde `String` olarak döner) ama yazılı bir değişmez değil | **Aday** (CVE-2026-109619'un `session.upload_progress` yolu) |
 | **Xandar** | Nova Corps: kayıtlar ve yasa | **Bilinen açık kabul edilmez:** açık bildirimindeki bir yapıt (bağımlılık, runtime, araç zinciri) kabul edilmez. Karar yapıtın **içerik özetine** bağlıdır, kendi bildirdiği sürüm etiketine değil. | Module Lock zaten özet kullanıyor; açık bildirimi girdisi hiçbir yerde yok. Bildirimden önceki saldırıları yakalayamaz. | **Aday** (haber: yüz binlerce hizmet eski sürümde) |
@@ -416,7 +416,7 @@ gelecek (kuantum sonrası kriptografi) için kullanılır.
 
 | Ders | Koschei bugün | Sonuç |
 |---|---|---|
-| Bellek tükenmesi tanımsız duruma yol açmamalı | **Önce:** `ks run` sınırsız büyüyen bir String'de Python `MemoryError` izini basıp 1 ile çıkıyordu; `ks build` ikilisi Go `fatal error: out of memory` ile 2 ile çıkıyordu. **Şimdi (Titan, değer bütçesi):** 16 MiB'yi aşacak String ve 1.048.576 öğeyi aşacak List, her çalıştırıcıda aynı noktada `KS3502` hata değeri olur; `disk.read` de bu sınıra uyar. Toplam bellek host'u tüketirse `ks run` iz dökümü yerine `KS3502` ile durur. İkili hâlâ Go'nun ölümcül hatasıyla durur. | Toplam canlı bellek bütçesi ve **Nidavellir** gerekli |
+| Bellek tükenmesi tanımsız duruma yol açmamalı | **Önce:** `ks run` sınırsız büyüyen bir String'de Python `MemoryError` izini basıp 1 ile çıkıyordu; `ks build` ikilisi Go `fatal error: out of memory` ile 2 ile çıkıyordu. **Şimdi (Titan, değer bütçesi):** 16 MiB'yi aşacak String ve 1.048.576 öğeyi aşacak List, her çalıştırıcıda aynı noktada `KS3502` hata değeri olur; `disk.read` de bu sınıra uyar. Toplam bellek host'u tüketirse `ks run` iz dökümü yerine `KS3502` ile durur. İkili hâlâ Go'nun ölümcül hatasıyla durur. | Toplam canlı bellek bütçesi gerekli. **Nidavellir** geldi: yarım değer görünmez, `disk.write` atomik. |
 | İstekler arasında durum kalmamalı | Her `ServeCaps.exchange` çağrısı yeni bir dinleyici açıyor, tek bağlantı ve tek istek işleyip kapatıyor. İstekler arasında çalışma ortamı düzeyinde durum yok; programın tuttuğu durum açık Koschei değerleri. Bu açık sınıfı bugün oluşamaz. | Kalıcı işçili serve, **Knowhere** olmadan çıkmamalı |
 | İstek içeriği program istemeden işlenmemeli | İstek gövdesi bayt bütçesi altında okunup `String` olarak programa veriliyor. Örtük yükleme veya oturum işlemi yok. | **Sakaar** bunu yazılı değişmez yapar |
 | Sürüm afişi saldırgana harita verir | Serve yanıtında `Server` veya `X-Powered-By` başlığı yok. | Korunmalı |
@@ -447,7 +447,8 @@ gelecek (kuantum sonrası kriptografi) için kullanılır.
 4. **Gezegenler:** sekiz özelliği taşıyan bir gezegen yapısı. PHP2Shell
    ölçümüne göre önerilen sıra:
    1. **Titan** ve **Nidavellir:** bellek bütçesi ve "ya tam ya hiç". Titan'ın
-      değer bütçesi geldi (`KS3502`); toplam canlı bellek ve Nidavellir
+      değer bütçesi (`KS3502`) ve Nidavellir'in ilk yasası (yarım değer yok,
+      atomik `disk.write`) geldi; toplam canlı bellek ve çok dosyalı işlem
       sırada.
    2. **Morag** ve **Xandar:** destek süresi ve açık bildirimiyle içerik
       özetine bağlı kabul. Habere göre en büyük grup desteği bitmiş

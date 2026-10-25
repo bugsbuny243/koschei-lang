@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import errno
 import os
+import secrets
 import stat
 import sys
 import urllib.error
@@ -328,6 +329,7 @@ _DIR_FD_SUPPORTED = (
     os.open in os.supports_dir_fd
     and os.stat in os.supports_dir_fd
     and os.unlink in os.supports_dir_fd
+    and os.rename in os.supports_dir_fd
     and os.rmdir in os.supports_dir_fd
     and os.listdir in os.supports_fd
     and hasattr(os, "O_NOFOLLOW")
@@ -545,6 +547,59 @@ class DiskReadCaps(_DiskCapability):
         return self._scope_then_deny(path, "delete")
 
 
+def _replace_file_atomically(parent: int, name: str, text: str) -> None:
+    """Nidavellir: replace ``name`` with ``text`` completely or not at all.
+
+    The text goes to a fresh file beside the target, reaches the disk with
+    ``fsync`` and then takes the target's place in one ``rename``. A write that
+    fails or is cut short (no space, a killed process, a crash) leaves the
+    previous file untouched and no half-written file for a later reader. The
+    directory is synced so the rename itself survives a crash.
+
+    The rename replaces the directory entry: a symlink at ``name`` is refused
+    as before, and a hard link to another file is never written through.
+    """
+
+    mode = 0o600
+    try:
+        current = os.stat(name, dir_fd=parent, follow_symlinks=False)
+    except FileNotFoundError:
+        current = None
+    if current is not None:
+        if stat.S_ISLNK(current.st_mode):
+            raise _SymlinkDenied(name)
+        if stat.S_ISDIR(current.st_mode):
+            raise IsADirectoryError(errno.EISDIR, os.strerror(errno.EISDIR), name)
+        mode = stat.S_IMODE(current.st_mode)
+    temporary = f".ks-write-{secrets.token_hex(16)}.tmp"
+    handle = os.open(
+        temporary,
+        os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+        0o600,
+        dir_fd=parent,
+    )
+    try:
+        with os.fdopen(handle, "w", encoding="utf-8") as stream:
+            stream.write(text)
+            stream.flush()
+            if mode != 0o600:
+                os.fchmod(stream.fileno(), mode)
+            os.fsync(stream.fileno())
+        os.rename(temporary, name, src_dir_fd=parent, dst_dir_fd=parent)
+    except BaseException:
+        try:
+            os.unlink(temporary, dir_fd=parent)
+        except OSError:
+            pass
+        raise
+    try:
+        os.fsync(parent)
+    except OSError as error:
+        # Some filesystems cannot sync a directory; the rename is complete.
+        if error.errno not in (errno.EINVAL, errno.ENOTSUP, errno.EOPNOTSUPP):
+            raise
+
+
 class DiskCaps(_DiskCapability):
     __slots__ = ()
 
@@ -561,14 +616,7 @@ class DiskCaps(_DiskCapability):
             return KsError(f"Dosya yazılamadı: kapsam kökü bir dizindir: {path}")
         try:
             with self._parent_fd(parts) as parent:
-                handle = os.open(
-                    parts[-1],
-                    os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW,
-                    0o600,
-                    dir_fd=parent,
-                )
-                with os.fdopen(handle, "w", encoding="utf-8") as stream:
-                    stream.write(str(value))
+                _replace_file_atomically(parent, parts[-1], str(value))
         except _SymlinkDenied as denied:
             return self._symlink_denied(denied.name)
         except OSError as error:
