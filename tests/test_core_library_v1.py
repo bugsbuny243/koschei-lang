@@ -195,6 +195,8 @@ class CoreLibraryResolutionTests(CoreLibraryWorkspace):
         self.assertTrue({"bury", "remains_dead"} <= surface["hela"])
         self.assertTrue({"simulate"} <= surface["strange"])
         self.assertTrue({"commit", "extends", "detects_fork"} <= surface["wanda"])
+        self.assertTrue({"check", "feed_digest"} <= surface["xandar"])
+        self.assertTrue({"check"} <= surface["morag"])
         for module in payload["modules"]:
             self.assertRegex(module["sha256"], r"^[0-9a-f]{64}$")
 

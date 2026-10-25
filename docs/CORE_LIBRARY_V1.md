@@ -124,10 +124,12 @@ fn main() {
 }
 ```
 
-### Marvel universe: `captain_marvel`, `hela`, `strange`, `wanda`
+### Marvel universe: `captain_marvel`, `hela`, `strange`, `wanda`, `xandar`, `morag`
 
-The first library universe modules written in Koschei. Each one ports a Python
-guardian and returns the same decisions, reasons and error causes; the
+The first library universe modules written in Koschei. The first four port a
+Python guardian and return the same decisions, reasons and error causes.
+`xandar` and `morag` are new planets from the PHP2Shell survey and exist only
+in Koschei; an independent Python model of their rules checks them. The
 mapping, rules and status live in
 [`KOSCHEI_KUTUPHANE_EVRENLERI_V1.md`](../KOSCHEI_KUTUPHANE_EVRENLERI_V1.md).
 
@@ -137,6 +139,17 @@ mapping, rules and status live in
 | `hela` | `AuthorityTombstone` | `bury`, `remains_dead`, `is_resurrection_attempt`, `is_canonical` |
 | `strange` | `FutureStep`, `FutureVerdict` | `simulate` |
 | `wanda` | `RealityCommitment` | `commit`, `extends`, `detects_fork`, `detects_rollback`, `is_canonical` |
+| `xandar` | `SecurityAdvisory`, `AdvisoryVerdict` | `check`, `feed_digest`, `is_well_formed` |
+| `morag` | `SupportWindow`, `MaintainerBackport`, `SupportVerdict` | `check` |
+
+- **`xandar`** refuses an artifact whose content digest appears in an
+  advisory feed. Identities are digests, never version labels; a feed with an
+  advisory without an id, a duplicate id or an affected entry that is not a
+  digest refuses everything. An advisory can only refuse, never grant.
+- **`morag`** admits an artifact only inside its support window, or after it
+  while a named maintainer's backport for exactly that digest is in force.
+  An artifact without a known window, or with two different windows, is not
+  admitted. Days count from 1970-01-01 and are passed in by the caller.
 
 ```ks
 import strange
@@ -168,7 +181,8 @@ fn main() {
 ## Resolution and security rules
 
 - Only the names registered in `CORE_LIBRARY_MODULES_V1` (`captain_marvel`,
-  `hela`, `list`, `secure`, `strange`, `text`, `wanda`) are library modules. A stray `.ks` file placed in the library directory is never
+  `hela`, `list`, `morag`, `secure`, `strange`, `text`, `wanda`, `xandar`) are
+  library modules. A stray `.ks` file placed in the library directory is never
   importable by user code.
 - A project file with the same name as a library module (for example a
   `text.ks` next to `main.ks`) makes `import text` ambiguous. The import fails

@@ -210,11 +210,17 @@ class _Environment:
     def define(self, name: str, value: Any, is_mutable: bool) -> None:
         self.scopes[-1][name] = _Cell(value, is_mutable)
 
-    def resolve(self, name: str, location: SourceLocation) -> _Cell:
+    def lookup(self, name: str) -> _Cell | None:
         for scope in reversed(self.scopes):
             cell = scope.get(name)
             if cell is not None:
                 return cell
+        return None
+
+    def resolve(self, name: str, location: SourceLocation) -> _Cell:
+        cell = self.lookup(name)
+        if cell is not None:
+            return cell
         raise KoscheiRuntimeError(
             "KS3101", f"Tanımsız isim: '{name}'.", location
         )
@@ -1097,6 +1103,11 @@ class Interpreter:
             return value
 
         if isinstance(expression, Identifier):
+            # A local binding shadows a function of the same name, as in
+            # sealed MIR (`let digest = ...` inside the `secure` module).
+            cell = self.environment.lookup(expression.name)
+            if cell is not None:
+                return cell.value
             if expression.name in self.functions:
                 return self.functions[expression.name]
             constructor = self.constructors.get(expression.name)
