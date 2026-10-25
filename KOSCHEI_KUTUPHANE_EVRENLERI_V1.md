@@ -50,6 +50,90 @@ Evren koordinasyonu  Galaxy · Khar · Veyra · Aevra       (evrenlerin birbirin
   güvenceleri otomatik genişletir: *küçük görünür dil, büyük doğrulanmış iç
   makine.*
 
+## Beş kök: devasa anlam, kendi kütüphanemizle
+
+Koschei'nin kendine özgü beş kökü vardır. Her biri küçük bir kelimedir ama
+arkasında bütün bir güvenlik alanı durur. Kökün anlamı derleyicide kısa,
+kütüphanede devasadır: geliştirici `ka` yazar, kütüphane o kökün bütün
+yasalarını çalıştırır. Kökler sıradan anahtar kelimeler değildir; ayrıntılı
+yasaları `KOSCHEI_SIGIL_LEXICON_V1.md` içindedir.
+
+| Kök | Anlamı | Taşı | Bekçileri ve gezegenleri |
+|---|---|---|---|
+| **ka** | Varlık oluşturma, sisteme kabul ve kimlik. Doğan şey tanınır ama **yetkisiz** doğar. | Ruh | Vormir (kök kabul), Aevra, Xandar ve Morag (kabul kapıları), Knowhere (her ziyaretçinin kimliği ayrı) |
+| **vor** | Sınırlandırılmış güç, yetki ve erişim. Yetki açıktır, yalnızca daralır, asla kendiliğinden genişlemez. | Güç, Uzay | Yetki modeli, Captain Marvel (yayılma bütçesi), Titan (kaynak bütçesi), Sakaar (varış yetki değildir) |
+| **shi** | Kanıt, doğrulama ve tanıklık. İddia kanıt değildir; yazan kendi işini kesinleştiremez. | Gerçeklik, Zihin | Wanda (taahhüt zinciri), `secure` (özet), Doctor Strange (etki öncesi kanıt), Neo/Sentinel |
+| **thal** | Koruma, hasarı sınırlama ve güvenli kurtarma. Kurtarma yetki üretmez; eski yetki dirilmez. | Zaman | Hela, Captain Marvel (hasarı sınırlar), Nidavellir (yarım kalan iz bırakmaz), Morth Kara Delik |
+| **nur** | Görünürlük, bilgi kontrolü ve gizlilik. Görmek yetki değildir. | — | Loki, Matrix/Nyr, Object Space, [görünmez kod](KOSCHEI_GORUNMEZ_DEGISEN_KOD_V1.md) |
+
+`nur`'un bilerek taşı yoktur: altı taş kabul kararının girdileridir ve
+görünürlük hiçbir zaman kabul veya yetki girdisi olamaz. `nur` yalnızca
+neyin görüneceğini daraltır.
+
+### Kökün anlamını bugün kim taşıyor
+
+Derleyici bugün `ka x;` gibi kök bildirimlerini ayrıştırıyor
+(`koschei/native_sigil_parser_v1.py`) ve şu kuralları uyguluyor: bir kök
+bir planda bir kez yazılır, `ka` varsa ilk sıradadır
+(`universe_kernel_v1.py`), ve `vor`/`shi`/`thal`/`nur` ancak önce `ka` ile
+kabul edilmiş bir konuya uygulanabilir (`native_sigil_semantics_v1.py`).
+Her kök sabit yükümlülüklere açılır ve bazı Python host modüllerini
+etkinleştirir (`universe_kernel_v1.py`). Her yükümlülüğün bir kütüphane
+sahibi vardır (`library_expansion_engine_v1.py`), ama o sahip bugün
+yalnızca bir addır (`library.identity_genesis` gibi). Kanıt makbuzlarını
+dışarıdan biri getirir. "Kendi kütüphanemiz" hedefi, her yükümlülüğün
+**Koschei ile yazılmış** bir modülle karşılanmasıdır.
+
+Köklerin bugün etkinleştirdiği Python modülleri:
+
+- `ka`: `integrity`, `modules`, `mir`
+- `vor`: `capability_effect_contract_v1`, `effect_contracts_v1`, `effects`,
+  `runtime_capability_registry_v1`, `runtime_boot_v1`
+- `shi`: `library_effect_attestation_quorum_v0`, `library_recovery_journal_v0`
+- `thal`: `library_multi_scenario_containment_v0`,
+  `library_policy_conflict_resolution_v0`, `library_recovery_transaction_v0`,
+  `library_recovery_replica_quorum_v0`, `library_recovery_fencing_v0`,
+  `library_recovery_exactly_once_v0`
+- `nur`: `library_adversary_learning_resistance_v0`,
+  `library_adaptive_visibility_v0`
+
+| Kök | Yükümlülük | Bugünkü sahibi | Koschei kütüphanesindeki karşılığı |
+|---|---|---|---|
+| ka | `establish-canonical-identity` | ad: `library.identity_genesis` | `secure.digest`: alan ayrımlı kanonik özet (parça) |
+| ka | `seal-integrity-lineage` | ad: `library.integrity_lineage` | `wanda.commit` / `wanda.extends` |
+| ka | `deny-ambient-authority` | derleyici | Dilin kendisi: yetki modeli, `ks caps` |
+| vor | `derive-least-authority` | derleyici | Dilin kendisi: yetki daraltma |
+| vor | `seal-effect-contract` | derleyici | Dilin kendisi: etki sözleşmeleri |
+| vor | `validate-runtime-before-authority-injection` | Python runtime | — |
+| shi | `bind-observation-to-effect-receipt` | ad: `library.evidence_binding` | Yazılacak: `secure.digest` üzerine tanık makbuzu |
+| shi | `require-independent-evidence` | ad: `library.attestation_quorum` | Yazılacak: bağımsız tanık çoğunluğu |
+| shi | `preserve-evidence-lineage` | ad: `library.evidence_lineage` | `wanda` zincir mantığı |
+| thal | `derive-minimum-safe-containment` | ad: `library.containment` | `captain_marvel.evaluate` (parça) |
+| thal | `fence-stale-writers` | ad: `library.recovery_fencing` | `hela.remains_dead` (parça: eski epoch reddi) |
+| thal | `commit-or-abort-recovery` | ad: `library.recovery_transaction` | Nidavellir (aday, kodu yok) |
+| thal | `prove-exactly-once-effect-lineage` | ad: `library.exactly_once` | Yazılacak |
+| nur | `measure-knowledge-acquisition` | ad: `library.knowledge_budget` | Yazılacak |
+| nur | `shrink-visibility-envelope` | ad: `library.visibility_envelope` | Yazılacak |
+| nur | `rotate-observer-compartments` | ad: `library.compartment_rotation` | Yazılacak |
+| nur | `preserve-canonical-state-behind-visibility` | ad: `library.canonical_state` | Yazılacak |
+
+Özet: 17 kök yükümlülüğünün 3'ü dilin kendisidir ve öyle kalmalıdır, çünkü
+yetki kütüphaneye değil derleyiciye aittir. Kalan 14'ün 5'inin Koschei
+kütüphanesinde bugün bir parçası var; `nur`'un hiçbir parçası henüz Koschei
+ile yazılmadı. Köklerin birleşiminden doğan 11 ek yükümlülük de
+(`bind-authority-to-genesis-identity`, `abort-on-evidence-conflict`, …) aynı
+yolu izler.
+
+Yol:
+
+1. Her yükümlülük için Koschei modülü yaz; Python sürümüyle fark testi ve
+   `ks run` / `ks build` eşitliği şart.
+2. Genişletme motorunu, yükümlülüğün kanıtını o Koschei modülünü
+   çalıştırarak alacak şekilde bağla. Bugün kanıt makbuzları dışarıdan
+   veriliyor.
+3. Bir yükümlülüğün Koschei sürümü geldiğinde Python sahibi yalnızca
+   referans olarak kalır.
+
 Durum sütunlarındaki anlamlar:
 
 | Etiket | Anlamı |
