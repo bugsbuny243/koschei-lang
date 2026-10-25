@@ -123,6 +123,57 @@ Durum etiketleri:
 Altı adayın hepsi Ekim 2026'daki PHP2Shell olayından çıkan derslere
 dayanır (aşağıda). Hiçbiri kod ve test gelmeden kanonik sayılmaz.
 
+### Sonsuzluk Taşları: her gezegenin gücü
+
+Altı Sonsuzluk Taşı, `docs/SECURITY_CONVERGENCE_CONTRACT.md` içindeki altı
+güvenlik alanıdır. O sözleşmenin iç adı zaten "Thanos"tur; taşları bir
+araya getiren Eldiven (Gauntlet), bütün zorunlu alanlar aynı konu üzerinde
+uyuşmadan çalıştırmaya izin vermeyen kabul kararıdır.
+
+| Taş | Güvenlik alanı | Sorduğu soru | Bekçisi | Filmde bulunduğu yer |
+|---|---|---|---|---|
+| **Ruh** | Kimlik / köken | Bu tam olarak hangi kaynak, yapıt, bağımlılık, sürüm, epoch ve politika? | Vormir, Aevra (`copy(bytes) != birth`) | Vormir |
+| **Güç** | Yetki | Bu hesap hangi etkileri, hangi tam hedeflerde kullanabilir? | Yetki modeli, Captain Marvel | Morag → Xandar (Nova Corps) |
+| **Gerçeklik** | Bütünlük | Kaynak → Object Space → IR → yapıt → yük hâlâ kabul edilen aynı nesne mi? | Wanda | Svartalfheim → Knowhere (Koleksiyoncu) |
+| **Uzay** | Davranış | Yapıt etkilerini, hedeflerini, kaynak kullanımını veya yürütme biçimini sözleşmesinin ötesine genişletti mi? | `library_behavior_baseline_v1` | Asgard'ın kasası (Tesserakt) |
+| **Zihin** | Kanıt / öngörü | Hangi deterministik olgular var, Sentinel hangi kısıtlamayı öneriyor? | Neo / Sentinel | Loki'nin asası → Vision |
+| **Zaman** | Kurtarma / zaman | Kiralar taze mi, epoch'lar tek yönlü mü, ele geçirilen yetki iptal edildi mi? | Hela, Doctor Strange | Kamar-Taj (Agamotto'nun Gözü) |
+
+Kurallar:
+
+1. **Hiçbir taş tek başına anahtar değildir.** Tek bir alan çalıştırma yetkisi
+   üretemez (yakınsama yasası). Kanıt (Zihin) yetki değildir; yalnızca
+   kısıtlayabilir.
+2. **Her gezegen hangi taşların zorunlu olduğunu ilan eder.** Bir gezegenin
+   kararı, ilan ettiği taşlardan biri eksik veya uyuşmazsa **fail-closed**
+   reddedilir. İlan edilenden az taşla geçmek mümkün değildir.
+3. **Taşlar söz dizimi değildir.** Fizik Çekirdeği kuralı gereği altıncı bir
+   taş/eksen, tam anlamı ve sahibi test edilmeden dilin beş köküne
+   (`ka`, `vor`, `shi`, `thal`, `nur`) eklenmez.
+4. **Eldiven Nidavellir'de dövülür.** Filmde Eldiven'i Eitri Nidavellir'de
+   döver. Koschei'de Nidavellir'in "ya tam ya hiç" yasası Eldiven'in de
+   yasasıdır: altı alanın kararı ya tamamen oluşur ya hiç oluşmaz.
+
+Gezegenlerin taşları (zorunlu taşlar, aday gezegenler için öneri):
+
+| Gezegen | Ruh | Güç | Gerçeklik | Uzay | Zihin | Zaman | Neden |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|---|
+| **Vormir** | ● | ● | | | | ● | Kök girişi: kimlik, gerçek yetki azaltma (kurban), taze epoch |
+| **Titan** | | | ● | ● | | ● | Bellek davranışı sözleşmeyi aşamaz; tükenme tanımlı noktada, tanımsız durum olmadan durur |
+| **Nidavellir** | | | ● | | | ● | Yarım yapım kabul edilmez; kesinti bir önceki durumu bırakır |
+| **Knowhere** | ● | | ● | | | ● | Her ziyaretçinin kimliği ayrı; bayat durum yok; istek kirası istekle ölür |
+| **Sakaar** | | ● | | ● | | | Varış yetki değildir; giriş örtük etki doğurmaz |
+| **Xandar** | ● | | | | ● | | Karar içerik özetine bağlı; açık bildirimi kanıttır, yalnızca kısıtlar |
+| **Morag** | ● | | | | | ● | Destek süresi dolar; yama beyanının sahibi belli olmalı |
+
+Filmlerde taşların durduğu yerler, aday gezegenlerle örtüşür: Güç Taşı
+Morag'da bulunup Xandar'da korunur; Gerçeklik Taşı Knowhere'deki
+Koleksiyoncu'ya verilir; Ruh Taşı Vormir'dedir; Eldiven Nidavellir'de
+dövülür; Thanos Titan'dandır.
+
+Kodu ve yapıyı dış saldırgana göstermeme hedefi ayrı belgededir:
+[Koschei Görünmez ve Sürekli Değişen Kod](KOSCHEI_GORUNMEZ_DEGISEN_KOD_V1.md).
+
 ### Marvel bekçileri
 
 | Karakter | Güvenlik görevi | Yetki kuralı | Uygulama | Durum |
@@ -132,7 +183,7 @@ dayanır (aşağıda). Hiçbiri kod ve test gelmeden kanonik sayılmaz.
 | **Hela** | Geri alınamaz yetki ölümü; ölmüş yetkinin tekrar, eski epoch veya çatallanma yoluyla dirilmesini engeller | Ölü yetki geri gelmez | `import hela` (`koschei/core_library/hela.ks`); Python referansı `koschei/hela_authority_death_v1.py` | **Koschei'de** |
 | **Doctor Strange** | Etkiden önce sınırlı gelecek-yol simülasyonu: önerilen yol yetkiyi genişletir mi? | Simülasyon dış etki yapamaz, yetki üretemez | `import strange` (`koschei/core_library/strange.ks`); Python referansı `koschei/strange_future_paths_v1.py` | **Koschei'de** (testleri de taşımayla yazıldı) |
 | **Captain Marvel** | Patlama yarıçapı: bir olayın yayılma bütçesi | Bütçe yalnızca korunur veya küçülür; asla büyümez | `import captain_marvel` (`koschei/core_library/captain_marvel.ks`); Python referansı `koschei/captain_marvel_blast_radius_v1.py` | **Koschei'de** |
-| **Sonsuzluk Taşları / Gauntlet** | Kritik yetkinin tek noktada toplanmaması; altı güvenlik alanının (kimlik, yetki, bütünlük, davranış, kanıt, kurtarma/zaman) deterministik olarak birlikte onaylaması | Zorunlu alanların hepsi uyuşmadan giriş yok | Belge: `docs/MULTIVERSE_GUARDIAN_MAP.md` | Yalnızca belge |
+| **Sonsuzluk Taşları / Gauntlet** | Kritik yetkinin tek noktada toplanmaması; altı güvenlik alanının (kimlik, yetki, bütünlük, davranış, kanıt, kurtarma/zaman) deterministik olarak birlikte onaylaması | Zorunlu alanların hepsi uyuşmadan giriş yok | Belge: `docs/SECURITY_CONVERGENCE_CONTRACT.md`, `docs/MULTIVERSE_GUARDIAN_MAP.md`; taş ↔ alan eşlemesi yukarıda | Yalnızca belge |
 
 Yüksek riskli bir işlemin yolu:
 
