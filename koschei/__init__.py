@@ -309,4 +309,9 @@ from .secure_hash_v1 import install_secure_hash_v1
 
 install_secure_hash_v1()
 
+# Last: the value budget wraps the final behavior of every executor.
+from .value_budget_v1 import install_value_budget_v1
+
+install_value_budget_v1()
+
 __all__ = ["main"]

@@ -75,6 +75,7 @@ ks run .
 - **Yetkiler daralır, asla genişlemez.** Daraltılmış capability yeniden genişletilemez.
 - **`null` yok.** Bulunmayabilecek değerler `Option<T>` ile temsil edilir.
 - **Hatalar birer değerdir.** `Result<T, E>` kullanılır ve ele alınmamış hata derleme hatasıdır.
+- **Değerler sınırlıdır.** Bir String en fazla 16 MiB UTF-8, bir List en fazla 1.048.576 öğe olabilir; aşan işlem `ks run` ve `ks build` içinde aynı noktada `KS3502` hata değeri üretir ([Value Budget v1](docs/VALUE_BUDGET_V1.md)).
 - **Varsayılan immutable.** Değer değiştirmek için `let mut` gerekir.
 - **Tanılar açıklanabilir.** Sabit hata kodları ve Türkçe/İngilizce katalog vardır.
 - **Kütüphane Koschei ile yazılır.** `import text` ve `import list`, araç zinciriyle gelen ve Koschei ile yazılmış Core Library modüllerini bağlar (`text.starts_with`, `text.replace`, `text.lines`, `list.first`, `list.reverse`, `list.slice`, …). `import secure`, denetlenmiş host uygulamasından gelen alan ayrımlı SHA3-256 özetlerini ekler. İlk evren modülleri de Koschei ile yazıldı: Marvel bekçileri `captain_marvel`, `hela`, `strange` ve `wanda`. `ks run` çalıştırır, `ks build` aynı kaynaktan derler; fonksiyon listesi için [Core Library v1](docs/CORE_LIBRARY_V1.md). Kütüphanenin dört evreni (Marvel, Matrix, Kuantum Fiziği, Diğer Evrenler) [Koschei Kütüphane Evrenleri](KOSCHEI_KUTUPHANE_EVRENLERI_V1.md) belgesinde.

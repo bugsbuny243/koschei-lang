@@ -445,6 +445,25 @@ CATALOG: dict[str, Diagnostic] = {
             "Error(\"Int sınırı aşıldı\")"
         ),
     ),
+    "KS3502": Diagnostic(
+        code="KS3502",
+        title="Bellek bütçesi aşıldı",
+        summary=(
+            "Bir işlem bütçeden büyük bir String veya List üretecekti ya da host "
+            "belleği programın değerlerine yetmedi."
+        ),
+        why=(
+            "Sınırsız büyüyen değerler hizmeti durdurur ve yarım kalmış durum "
+            "bırakabilir. Bir String en fazla 16777216 bayt UTF-8, bir List en "
+            "fazla 1048576 öğe olabilir; aşan işlem her çalıştırıcıda aynı "
+            "noktada KS3502 hata DEĞERİ üretir."
+        ),
+        fix=(
+            "Değeri parçalara bölün, girdinin boyutunu işlemeden önce sınırlayın "
+            "veya sonucu 'or' ile açıkça ele alın."
+        ),
+        example='let birlesik = parca + parca or Error("metin çok büyük")',
+    ),
     "KS3402": Diagnostic(
         code="KS3402",
         title="Kapsam dışı erişim",
@@ -751,6 +770,12 @@ ENGLISH_TEXT: dict[str, tuple[str, str, str, str]] = {
         "An integer operation exceeded the signed 64-bit Int range.",
         "Overflow behavior is checked so interpreter and native targets cannot diverge.",
         "Keep the calculation within Int bounds or redesign it around smaller values.",
+    ),
+    "KS3502": (
+        "Memory budget exceeded",
+        "An operation would have built a String or List over the budget, or the host ran out of memory for the program's values.",
+        "Values that grow without bound stop a service and can leave half-built state behind. A String holds at most 16777216 bytes of UTF-8 and a List at most 1048576 items; an operation over the budget produces a KS3502 Error value at the same point in every executor.",
+        "Split the value, bound the input size before processing it, or handle the result explicitly with 'or'.",
     ),
     "KS4001": (
         "Native target cannot safely implement the capability contract",

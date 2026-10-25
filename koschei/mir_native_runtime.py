@@ -57,6 +57,7 @@ from .mir_variant_runtime_v1 import (
     variant_payload_v1,
 )
 from .type_system import GenericType, NamedType
+from .value_budget_v1 import STRING_MESSAGE as VALUE_BUDGET_STRING_MESSAGE, fits_texts
 
 _SUPPORTED_BINARY = frozenset({"+", "-", "*", "==", "!=", "<", "<=", ">", ">="})
 _SUPPORTED_UNARY = frozenset({"!", "-", "+"})
@@ -527,9 +528,12 @@ class _MirExecutor:
             values[instruction.target] = payload
             return
         if isinstance(instruction, MirInterpolate):
-            values[instruction.target] = "".join(
+            text = "".join(
                 _to_string(self._value(values, item))
                 for item in instruction.items
+            )
+            values[instruction.target] = (
+                text if fits_texts([text]) else _ErrorValue(VALUE_BUDGET_STRING_MESSAGE)
             )
             return
         if isinstance(instruction, MirVariantIs):
@@ -814,7 +818,10 @@ def _unary(operator: str, operand: Any) -> Any:
 
 def _binary(operator: str, left: Any, right: Any) -> Any:
     if operator == "+":
-        return left + right
+        result = left + right
+        if type(result) is str and not fits_texts([result]):
+            return _ErrorValue(VALUE_BUDGET_STRING_MESSAGE)
+        return result
     if operator == "-":
         return left - right
     if operator == "*":

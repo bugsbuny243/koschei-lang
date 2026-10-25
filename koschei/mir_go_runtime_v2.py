@@ -342,10 +342,16 @@ func _ksBinary(operator string, left any, right any) any {
 			}
 		case string:
 			if y, ok := right.(string); ok {
+				if len(x)+len(y) > _ksMaxStringBytes {
+					return _ksStringBudgetError
+				}
 				return x + y
 			}
 		case []any:
 			if y, ok := right.([]any); ok {
+				if len(x)+len(y) > _ksMaxListItems {
+					return _ksListBudgetError
+				}
 				joined := make([]any, 0, len(x)+len(y))
 				return append(append(joined, x...), y...)
 			}
@@ -720,6 +726,9 @@ func _ksInvokeMember(callee any, arguments ...any) any {
 			if separator == "" {
 				return _ksError{message: "String.split() ayıracı boş olamaz"}
 			}
+			if strings.Count(receiver, separator)+1 > _ksMaxListItems {
+				return _ksListBudgetError
+			}
 			pieces := strings.Split(receiver, separator)
 			items := make([]any, len(pieces))
 			for index, piece := range pieces {
@@ -733,12 +742,20 @@ func _ksInvokeMember(callee any, arguments ...any) any {
 				return _ksError{message: "String.join() bir List bekler"}
 			}
 			pieces := make([]string, len(values))
+			total := 0
 			for index, value := range values {
 				text, ok := value.(string)
 				if !ok {
 					return _ksError{message: "String.join() yalnızca String öğeleri birleştirir"}
 				}
 				pieces[index] = text
+				total += len(text)
+			}
+			if len(pieces) > 1 {
+				total += len(receiver) * (len(pieces) - 1)
+			}
+			if total > _ksMaxStringBytes {
+				return _ksStringBudgetError
 			}
 			return strings.Join(pieces, receiver)
 		}
@@ -759,6 +776,9 @@ func _ksInvokeMember(callee any, arguments ...any) any {
 			return _ksEnumValue{owner: "Option", variant: "Some", hasPayload: true, payload: receiver[index]}
 		case "push":
 			_ksArity("push", arguments, 1)
+			if len(receiver)+1 > _ksMaxListItems {
+				return _ksListBudgetError
+			}
 			items := make([]any, 0, len(receiver)+1)
 			return append(append(items, receiver...), arguments[0])
 		case "contains":
@@ -1067,3 +1087,22 @@ func _ksSha3_256(arguments ...any) any {{
 	return hex.EncodeToString(sum[:])
 }}
 '''
+
+# Titan value budget (``value_budget_v1``): formatted with the Python constants
+# and messages so every executor reports the same bound with the same text.
+MIR_GO_VALUE_BUDGET_RUNTIME_V2 = r'''
+const _ksMaxStringBytes = {max_string_bytes}
+const _ksMaxListItems = {max_list_items}
+
+var _ksStringBudgetError = _ksError{{message: {string_message}}}
+var _ksListBudgetError = _ksError{{message: {list_message}}}
+
+// Interpolation builds its text first, like the canonical executor.
+func _ksBudgetText(text string) any {{
+	if len(text) > _ksMaxStringBytes {{
+		return _ksStringBudgetError
+	}}
+	return text
+}}
+'''
+

@@ -42,6 +42,7 @@ from .mir_go_runtime_v2 import (
     MIR_GO_RUNTIME_V2_IMPORTS,
     MIR_GO_SHA3_IMPORTS_V2,
     MIR_GO_SHA3_RUNTIME_V2,
+    MIR_GO_VALUE_BUDGET_RUNTIME_V2,
 )
 from .mir_ir import (
     MirAstFallback,
@@ -67,6 +68,12 @@ from .secure_hash_v1 import NAME as SECURE_HASH_NAME, SHA3_256_MAX_INPUT_BYTES
 from .semantic import INT_MAX, INT_MIN
 from .type_contracts import declaration_type
 from .type_system import GenericType, NamedType, TypeNode, alternatives, render_type
+from .value_budget_v1 import (
+    LIST_MESSAGE,
+    MAX_LIST_ITEMS,
+    MAX_STRING_BYTES,
+    STRING_MESSAGE,
+)
 
 _BINARY = frozenset(
     {"+", "-", "*", "/", "%", "==", "!=", "<", "<=", ">", ">=", "&&", "||"}
@@ -198,6 +205,12 @@ def generate_go_mir_native(mir: MirGraph) -> str:
         *(f'\t"{name}"' for name in imports),
         ")",
         MIR_GO_RUNTIME_V2,
+        MIR_GO_VALUE_BUDGET_RUNTIME_V2.format(
+            max_string_bytes=MAX_STRING_BYTES,
+            max_list_items=MAX_LIST_ITEMS,
+            string_message=_go_string(STRING_MESSAGE),
+            list_message=_go_string(LIST_MESSAGE),
+        ),
     ]
     if uses_digest:
         lines.append(MIR_GO_SHA3_RUNTIME_V2.format(max_bytes=SHA3_256_MAX_INPUT_BYTES))
@@ -749,7 +762,7 @@ def _emit_instruction(
         return [f"{prefix}{value(instruction.target)} = []any{{{items}}}"]
     if isinstance(instruction, MirInterpolate):
         parts = " + ".join(f"_ksToString({value(item)})" for item in instruction.items)
-        return [f"{prefix}{value(instruction.target)} = {parts or chr(34) * 2}"]
+        return [f"{prefix}{value(instruction.target)} = _ksBudgetText({parts or chr(34) * 2})"]
     if isinstance(instruction, MirIsRuntimeError):
         return [f"{prefix}{value(instruction.target)} = _ksIsError({value(instruction.source)})"]
     if isinstance(instruction, MirFallibleIsSuccess):

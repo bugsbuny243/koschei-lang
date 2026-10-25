@@ -81,6 +81,7 @@ ks run .
 - **Capabilities narrow, never widen.** `caps.disk` is a root token that can only delegate; `caps.disk.allow(path)` produces a narrowed token that cannot re-widen (`KS2403`) and a root token cannot perform I/O directly (`KS2402`).
 - **No `null`.** Values that may be absent are `Option<T>` (`Some` / `None`).
 - **Errors are values.** `Result<T, E>` with a single `or` keyword in three forms: `or return`, `or default`, `or { block }`. An unhandled error value is a compile error (`KS1401`).
+- **Values are bounded.** A String holds at most 16 MiB of UTF-8 and a List at most 1,048,576 items; an operation over the bound produces a `KS3502` Error value at the same point in `ks run` and `ks build` ([Value Budget v1](docs/VALUE_BUDGET_V1.md)).
 - **Immutable by default.** Rebinding requires `let mut`.
 - **Every diagnostic is explainable.** 33 error codes with a bilingual catalog; `ks explain KS2401` prints the cause and a fix.
 

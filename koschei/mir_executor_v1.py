@@ -41,6 +41,7 @@ from .mir_or_return_normalization_v1 import MirFallibleIsSuccess, MirFalliblePay
 from .mir_variant_runtime_v1 import MirVariantRuntimeError, split_canonical_variant_v1, variant_is_v1, variant_payload_v1
 from .runtime_primitive_facade_v1 import KoscheiFunctionRefV1, RuntimePrimitiveFacadeV1
 from .semantic import INT_MAX, INT_MIN
+from .value_budget_v1 import STRING_MESSAGE as VALUE_BUDGET_STRING_MESSAGE, fits_texts
 from .type_system import GenericType, NamedType, alternatives, render_type
 
 
@@ -260,7 +261,8 @@ class MirExecutorV1:
             values[instruction.target] = items
             return
         if isinstance(instruction, MirInterpolate):
-            values[instruction.target] = "".join(self.primitives.to_string(values[item]) for item in instruction.items)
+            text = "".join(self.primitives.to_string(values[item]) for item in instruction.items)
+            values[instruction.target] = text if fits_texts([text]) else KsError(VALUE_BUDGET_STRING_MESSAGE)
             return
         if isinstance(instruction, MirIsRuntimeError):
             values[instruction.target] = self.primitives.is_runtime_error(values[instruction.source])
@@ -471,7 +473,11 @@ class MirExecutorV1:
             if not INT_MIN <= result <= INT_MAX:
                 return Interpreter._int_overflow(op)
             return result
-        if op == "+": return left + right
+        if op == "+":
+            result = left + right
+            if type(result) is str and not fits_texts([result]):
+                return KsError(VALUE_BUDGET_STRING_MESSAGE)
+            return result
         if op == "-": return left - right
         if op == "*": return left * right
         if op == "/":

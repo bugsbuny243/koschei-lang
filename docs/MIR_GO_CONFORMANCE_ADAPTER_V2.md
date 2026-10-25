@@ -39,8 +39,8 @@ Each MIR slot holds a Go `any`:
 | `Void` | `_ksUnit` |
 
 Because errors are values, the binary reproduces the executor's error flow:
-Int overflow, division by zero and failed String/List operations produce
-Error values; arithmetic propagates them; `or` forms catch them; an `if`
+Int overflow, division by zero, failed String/List operations and the value
+budget (`KS3502`, `docs/VALUE_BUDGET_V1.md`) produce Error values; arithmetic propagates them; `or` forms catch them; an `if`
 whose condition is an Error runs neither arm (sealed MIR guards it with
 `MirIsRuntimeError`); an Error that reaches a typed call boundary stops the
 program with exit status 1.

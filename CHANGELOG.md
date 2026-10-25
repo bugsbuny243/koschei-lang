@@ -22,6 +22,8 @@
 - Port the Marvel guardians to Koschei as Core Library modules: `captain_marvel`, `hela`, `strange` and `wanda` return the same decisions, reasons and error causes as their Python guardians, and every decision fails closed on a record whose digest no longer matches its fields. Doctor Strange gets its first tests.
 - Fix struct aliasing: a field assignment through a `let mut` copy changed every other holder of the same struct, including an immutable `let` binding, a List element and a function's caller. Field assignment now builds an updated copy in every executor.
 - Compile non-generic structs with MIR-Go v2: literals, field reads, field assignment, rendering and `==` match `ks run`. Generic structs still fail closed with `KS4004`.
+- Add the Titan value budget (`KS3502`): a String holds at most 16 MiB of UTF-8 and a List at most 1,048,576 items. String `+`, interpolation, `join`, `split`, `push` and `disk.read` produce a `KS3502` Error value instead of a larger value, at the same operation and with the same message in the checked-AST interpreter, the canonical MIR executor, the direct MIR runtime and MIR-Go binaries. See `docs/VALUE_BUDGET_V1.md`.
+- Report host memory exhaustion under `ks run` as a `KS3502` runtime stop instead of a raw Python `MemoryError` traceback. Binaries still end with the Go runtime's fatal out-of-memory error.
 - Render structs as `P { x: 1, name: "a" }` in the direct MIR runtime. `ks run` printed the host representation `_StructValue(type_name='P', ...)` for programs that reached that lane.
 
 ## 0.10.0 — Language ergonomics

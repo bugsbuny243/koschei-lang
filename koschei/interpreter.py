@@ -45,6 +45,11 @@ from .ast_nodes import (
     UnaryExpression,
     WhileStatement,
 )
+from .value_budget_v1 import (
+    MAX_STRING_BYTES,
+    STRING_MESSAGE as VALUE_BUDGET_STRING_MESSAGE,
+    fits_texts,
+)
 from .http_response_budget_v1 import (
     HttpResponseBudgetV1Error,
     read_bounded_response_body_v1,
@@ -475,7 +480,12 @@ class _DiskCapability(_NarrowedCapability):
                     dir_fd=parent,
                 )
                 with os.fdopen(handle, "r", encoding="utf-8") as stream:
-                    return stream.read()
+                    # One character past the String budget proves a file is
+                    # too large without reading all of it.
+                    text = stream.read(MAX_STRING_BYTES + 1)
+                if not fits_texts([text]):
+                    return KsError(VALUE_BUDGET_STRING_MESSAGE)
+                return text
         except _SymlinkDenied as denied:
             return self._symlink_denied(denied.name)
         except OSError as error:
@@ -1051,9 +1061,12 @@ class Interpreter:
             return self.environment.resolve(expression.name, expression.location).value
 
         if isinstance(expression, InterpolatedString):
-            return "".join(
+            text = "".join(
                 ks_to_string(self._evaluate(part)) for part in expression.parts
             )
+            if not fits_texts([text]):
+                return KsError(VALUE_BUDGET_STRING_MESSAGE)
+            return text
 
         if isinstance(expression, ListLiteral):
             items: list[Any] = []
@@ -1281,7 +1294,10 @@ class Interpreter:
                 return self._int_overflow(operator)
             return result
         if operator == "+":
-            return left + right
+            result = left + right
+            if type(result) is str and not fits_texts([result]):
+                return KsError(VALUE_BUDGET_STRING_MESSAGE)
+            return result
         if operator == "-":
             return left - right
         if operator == "*":
