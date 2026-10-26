@@ -38,17 +38,17 @@ the separate Koschei Sentinel product.
 3. **Language → host.** Capability operations are the only path to host
    effects; each is bound to a canonical effect and power domain.
 4. **Native binary → OS.** Binaries carry program input, clock and
-   randomness directly. Read-only disk and the environment go through a
-   broker process; the program runs in a seccomp-confined worker with an
-   empty environment (`docs/NATIVE_BROKER_V1.md`). Disk writes and the
-   network are refused at build time (`KS4004`).
+   randomness directly. The disk (read, write, delete) and the environment go
+   through a broker process; the program runs in a seccomp-confined worker
+   with an empty environment (`docs/NATIVE_BROKER_V1.md`). The network is
+   refused at build time (`KS4004`).
 
 ## Threats and controls
 
 | # | Threat | Control | Evidence |
 |---|---|---|---|
 | T1 | A library reads files, the network or secrets it was not given | No ambient authority; roots cannot act; narrowing only shrinks; tokens move and cannot hide in collections | `tests/test_semantic_capability_contract_v1.py`, `tests/test_affine_resources_v1.py`, adversarial lab |
-| T2 | A disk token escapes its prefix (`..`, symlinks, hard links) | Descriptor-anchored, symlink-refusing access; atomic replace on write | `tests/test_nidavellir_all_or_nothing_v1.py`, `tests/test_interpreter.py` |
+| T2 | A disk token escapes its prefix (`..`, symlinks, hard links) | Descriptor-anchored, symlink-refusing access; atomic replace on write | `tests/test_nidavellir_all_or_nothing_v1.py`, `tests/test_interpreter.py`, `tests/test_native_broker_v1.py` |
 | T3 | Network redirect leaves the allowed origin | Scoped redirect refusal (`KS3402`) | `tests/test_interpreter.py`, `tests/test_network_scheme_security.py` |
 | T4 | Hostile input crashes the program or the host | Errors are values; non-UTF-8 input and files are Error values; value budget (`KS3502`); step and call-depth budgets | `tests/test_disk_read_text_v1.py`, `tests/test_program_input_v1.py`, `tests/test_value_budget_v1.py` |
 | T5 | Executors disagree, so a decision depends on where it runs | One rule per operation; differential tests between interpreter, canonical MIR, direct MIR and binaries | `tests/test_mir_go_native_v2_parity.py`, `tests/test_morag_xandar_v1.py`, `tests/test_language_guide_v1.py` |

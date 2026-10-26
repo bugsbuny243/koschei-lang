@@ -64,6 +64,10 @@ READ_PREFIX = "Dosya okunamadı: "
 ROOT_READ_MESSAGE = "Dosya okunamadı: kapsam kökü bir dizindir: "
 NOT_TEXT_PREFIX = "Dosya okunamadı: geçerli UTF-8 metin değil: "
 LIST_PREFIX = "Dizin listelenemedi: "
+WRITE_PREFIX = "Dosya yazılamadı: "
+ROOT_WRITE_MESSAGE = "Dosya yazılamadı: kapsam kökü bir dizindir: "
+DELETE_PREFIX = "Dosya silinemedi: "
+ROOT_DELETE_MESSAGE = "Dosya silinemedi: kapsam kökü silinemez: "
 LIST_NAME_PREFIX = "Dizin listelenemedi: geçerli UTF-8 olmayan dosya adı: "
 ENV_MISSING_PREFIX = "Ortam değişkeni bulunamadı: "
 ENV_NOT_TEXT_PREFIX = "Ortam değişkeni geçerli UTF-8 metin değil: "
@@ -95,13 +99,17 @@ def broker_runtime() -> str:
         root_read=_go(ROOT_READ_MESSAGE),
         not_text=_go(NOT_TEXT_PREFIX),
         list_prefix=_go(LIST_PREFIX),
+        write_prefix=_go(WRITE_PREFIX),
+        root_write=_go(ROOT_WRITE_MESSAGE),
+        delete_prefix=_go(DELETE_PREFIX),
+        root_delete=_go(ROOT_DELETE_MESSAGE),
         list_name=_go(LIST_NAME_PREFIX),
         env_missing=_go(ENV_MISSING_PREFIX),
         env_not_text=_go(ENV_NOT_TEXT_PREFIX),
     )
 
 
-BROKER_IMPORTS = ("os/exec", "runtime", "sort", "syscall", "unsafe")
+BROKER_IMPORTS = ("crypto/rand", "encoding/hex", "os/exec", "runtime", "sort", "syscall", "unsafe")
 
 _BROKER_RUNTIME = r'''
 // ---- native capability broker (native_broker_v1) ----------------------
@@ -279,12 +287,55 @@ func _ksDiskAllowReadOnly(receiver any, prefix any) any {{
 	return _ksDiskReadCaps{{scope: answer[0]}}
 }}
 
-func _ksDiskScopeOf(receiver any) _ksDiskReadCaps {{
-	disk, ok := receiver.(_ksDiskReadCaps)
+func _ksDiskAllow(receiver any, prefix any) any {{
+	if _, ok := receiver.(_ksDiskRoot); !ok {{
+		_ksAbort("KS5002", "DiskRoot receiver drifted")
+	}}
+	text, ok := prefix.(string)
 	if !ok {{
-		_ksAbort("KS5002", "DiskReadCaps receiver drifted")
+		_ksAbort("KS5002", "DiskRoot.allow prefix drifted")
+	}}
+	_, answer := _ksAsk("scope_rw", text)
+	return _ksDiskCaps{{scope: answer[0]}}
+}}
+
+func _ksDiskScopeOf(receiver any) _ksDiskReadCaps {{
+	switch disk := receiver.(type) {{
+	case _ksDiskReadCaps:
+		return disk
+	case _ksDiskCaps:
+		return _ksDiskReadCaps{{scope: disk.scope}}
+	}}
+	_ksAbort("KS5002", "disk receiver drifted")
+	return _ksDiskReadCaps{{}}
+}}
+
+func _ksDiskWritableOf(receiver any) _ksDiskCaps {{
+	disk, ok := receiver.(_ksDiskCaps)
+	if !ok {{
+		_ksAbort("KS5002", "DiskCaps receiver drifted")
 	}}
 	return disk
+}}
+
+func _ksDiskWrite(receiver any, path any, value any) any {{
+	text, ok := value.(string)
+	if !ok {{
+		_ksAbort("KS5002", "disk write value drifted")
+	}}
+	done, answer := _ksAsk("write", _ksDiskWritableOf(receiver).scope, _ksDiskPath(path), text)
+	if !done {{
+		return _ksError{{message: answer[0]}}
+	}}
+	return _ksUnit{{}}
+}}
+
+func _ksDiskDelete(receiver any, path any) any {{
+	done, answer := _ksAsk("delete", _ksDiskWritableOf(receiver).scope, _ksDiskPath(path))
+	if !done {{
+		return _ksError{{message: answer[0]}}
+	}}
+	return _ksUnit{{}}
 }}
 
 func _ksDiskPath(path any) string {{
@@ -356,9 +407,10 @@ func _ksEnvGet(receiver any) any {{
 // ---- broker side ----------------------------------------------------------
 
 type _ksScope struct {{
-	prefix  string
-	root    int
-	rootErr syscall.Errno
+	prefix   string
+	root     int
+	rootErr  syscall.Errno
+	writable bool
 }}
 
 func _ksBrokerServe() {{
@@ -398,15 +450,28 @@ func _ksBrokerLoop(channel *os.File) {{
 	defer channel.Close()
 	scopes := []*_ksScope{{nil}}
 	for {{
-		request, err := _ksReadFrame(channel, 4, 1<<20)
+		request, err := _ksReadFrame(channel, 4, _ksBrokerMaxField+(1<<18))
 		if err != nil || len(request) == 0 {{
 			return
 		}}
 		var answer []string
 		switch {{
-		case request[0] == "scope" && len(request) == 2:
-			scopes = append(scopes, _ksOpenScope(request[1]))
+		case (request[0] == "scope" || request[0] == "scope_rw") && len(request) == 2:
+			scope := _ksOpenScope(request[1])
+			scope.writable = request[0] == "scope_rw"
+			scopes = append(scopes, scope)
 			answer = []string{{"ok", strconv.Itoa(len(scopes) - 1)}}
+		case (request[0] == "write" && len(request) == 4) || (request[0] == "delete" && len(request) == 3):
+			index, convErr := strconv.Atoi(request[1])
+			// A read-only token's scope can never be written through.
+			if convErr != nil || index < 1 || index >= len(scopes) || !scopes[index].writable {{
+				return
+			}}
+			if request[0] == "write" {{
+				answer = _ksBrokerWrite(scopes[index], request[2], request[3])
+			}} else {{
+				answer = _ksBrokerDelete(scopes[index], request[2])
+			}}
 		case (request[0] == "read" || request[0] == "list") && len(request) == 3:
 			index, convErr := strconv.Atoi(request[1])
 			if convErr != nil || index < 1 || index >= len(scopes) {{
@@ -619,6 +684,165 @@ func _ksOpenScope(prefix string) *_ksScope {{
 		scope.root = fd
 	}}
 	return scope
+}}
+
+// fstatat(dir, name, AT_SYMLINK_NOFOLLOW)
+func _ksLstatAt(dir int, name string, info *syscall.Stat_t) syscall.Errno {{
+	pointer, err := syscall.BytePtrFromString(name)
+	if err != nil {{
+		return syscall.EINVAL
+	}}
+	_, _, errno := syscall.Syscall6(syscall.SYS_NEWFSTATAT, uintptr(dir), uintptr(unsafe.Pointer(pointer)), uintptr(unsafe.Pointer(info)), 0x100, 0, 0)
+	return errno
+}}
+
+// interpreter._replace_file_atomically: a fresh exclusive temp file beside the
+// target, the target's mode, fsync, one rename, then the directory's fsync.
+// Returns (symlink refused, errno).
+func _ksReplaceAtomically(parent int, name string, text string) (bool, syscall.Errno) {{
+	mode := uint32(0o600)
+	var info syscall.Stat_t
+	if code := _ksLstatAt(parent, name, &info); code == 0 {{
+		switch info.Mode & syscall.S_IFMT {{
+		case syscall.S_IFLNK:
+			return true, 0
+		case syscall.S_IFDIR:
+			return false, syscall.EISDIR
+		}}
+		mode = info.Mode & 0o7777
+	}} else if code != syscall.ENOENT {{
+		return false, code
+	}}
+	random := make([]byte, 16)
+	if _, err := rand.Read(random); err != nil {{
+		return false, syscall.EIO
+	}}
+	temporary := ".ks-write-" + hex.EncodeToString(random) + ".tmp"
+	fd, err := syscall.Openat(parent, temporary, syscall.O_WRONLY|syscall.O_CREAT|syscall.O_EXCL|syscall.O_NOFOLLOW|syscall.O_CLOEXEC, 0o600)
+	if err != nil {{
+		return false, _ksAsErrno(err)
+	}}
+	fail := func(code syscall.Errno) (bool, syscall.Errno) {{
+		syscall.Close(fd)
+		syscall.Unlinkat(parent, temporary)
+		return false, code
+	}}
+	data := []byte(text)
+	for len(data) > 0 {{
+		n, err := syscall.Write(fd, data)
+		if err != nil {{
+			if err == syscall.EINTR {{
+				continue
+			}}
+			return fail(_ksAsErrno(err))
+		}}
+		if n == 0 {{
+			return fail(syscall.EIO)
+		}}
+		data = data[n:]
+	}}
+	if mode != 0o600 {{
+		if err := syscall.Fchmod(fd, mode); err != nil {{
+			return fail(_ksAsErrno(err))
+		}}
+	}}
+	if err := syscall.Fsync(fd); err != nil {{
+		return fail(_ksAsErrno(err))
+	}}
+	syscall.Close(fd)
+	if err := syscall.Renameat(parent, temporary, parent, name); err != nil {{
+		syscall.Unlinkat(parent, temporary)
+		return false, _ksAsErrno(err)
+	}}
+	if err := syscall.Fsync(parent); err != nil {{
+		code := _ksAsErrno(err)
+		if code != syscall.EINVAL && code != syscall.ENOTSUP && code != syscall.EOPNOTSUPP {{
+			return false, code
+		}}
+	}}
+	return false, 0
+}}
+
+func _ksBrokerWrite(scope *_ksScope, path string, text string) []string {{
+	parts, inside := _ksRelativeParts(scope, path)
+	if !inside {{
+		return []string{{"error", {reject} + path}}
+	}}
+	if len(parts) == 0 {{
+		return []string{{"error", {root_write} + path}}
+	}}
+	parent, symlink, code := _ksParent(scope, parts)
+	if symlink != "" {{
+		return []string{{"error", {symlink} + symlink}}
+	}}
+	if code != 0 {{
+		return []string{{"error", {write_prefix} + _ksErrnoText(code, path)}}
+	}}
+	defer syscall.Close(parent)
+	name := parts[len(parts)-1]
+	refused, code := _ksReplaceAtomically(parent, name, text)
+	if refused || code == syscall.ELOOP || code == syscall.EMLINK {{
+		return []string{{"error", {symlink} + name}}
+	}}
+	if code != 0 {{
+		return []string{{"error", {write_prefix} + _ksErrnoText(code, path)}}
+	}}
+	return []string{{"ok"}}
+}}
+
+func _ksBrokerDelete(scope *_ksScope, path string) []string {{
+	parts, inside := _ksRelativeParts(scope, path)
+	if !inside {{
+		return []string{{"error", {reject} + path}}
+	}}
+	if len(parts) == 0 {{
+		return []string{{"error", {root_delete} + path}}
+	}}
+	parent, symlink, code := _ksParent(scope, parts)
+	if symlink != "" {{
+		return []string{{"error", {symlink} + symlink}}
+	}}
+	if code != 0 {{
+		return []string{{"error", {delete_prefix} + _ksErrnoText(code, path)}}
+	}}
+	defer syscall.Close(parent)
+	name := parts[len(parts)-1]
+	var info syscall.Stat_t
+	if code := _ksLstatAt(parent, name, &info); code != 0 {{
+		if code == syscall.ELOOP || code == syscall.EMLINK {{
+			return []string{{"error", {symlink} + name}}
+		}}
+		return []string{{"error", {delete_prefix} + _ksErrnoText(code, path)}}
+	}}
+	var err error
+	switch info.Mode & syscall.S_IFMT {{
+	case syscall.S_IFLNK:
+		return []string{{"error", {symlink} + name}}
+	case syscall.S_IFDIR:
+		err = _ksUnlinkat(parent, name, 0x200) // AT_REMOVEDIR
+	default:
+		err = _ksUnlinkat(parent, name, 0)
+	}}
+	if err != nil {{
+		code := _ksAsErrno(err)
+		if code == syscall.ELOOP || code == syscall.EMLINK {{
+			return []string{{"error", {symlink} + name}}
+		}}
+		return []string{{"error", {delete_prefix} + _ksErrnoText(code, path)}}
+	}}
+	return []string{{"ok"}}
+}}
+
+func _ksUnlinkat(dir int, name string, flags int) error {{
+	pointer, err := syscall.BytePtrFromString(name)
+	if err != nil {{
+		return err
+	}}
+	_, _, errno := syscall.Syscall(syscall.SYS_UNLINKAT, uintptr(dir), uintptr(unsafe.Pointer(pointer)), uintptr(flags))
+	if errno != 0 {{
+		return errno
+	}}
+	return nil
 }}
 
 func _ksIsSymlinkAt(dir int, name string) bool {{

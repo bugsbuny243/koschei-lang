@@ -356,12 +356,10 @@ class ProgramInputTests(unittest.TestCase):
 
     def test_other_authority_stays_closed_natively(self) -> None:
         cases = {
-            # Read-only disk and env go through the native broker now
-            # (tests/test_native_broker_v1.py); writing and the network do not.
+            # Disk and env go through the native broker now
+            # (tests/test_native_broker_v1.py); the network does not.
             "env": 'fn main(caps: SystemCaps) {\n    let net = caps.net.allow("https://example.com")\n'
             '    println(net.get("https://example.com/") or "")\n}\n',
-            "disk": 'fn main(caps: SystemCaps) {\n    let d = caps.disk.allow("/tmp")\n'
-            '    println(d.read("/tmp/x") or "")\n}\n',
             "struct field": "struct Holder {\n    input: InputCaps,\n}\n\n"
             "fn main(caps: SystemCaps) {\n    let h = Holder { input: caps.input.allow(5) }\n"
             "    let args = h.input.args() or return\n    println(args)\n}\n",

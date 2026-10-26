@@ -58,6 +58,30 @@ fn main(caps: SystemCaps) {
 """
 
 
+WRITES = """
+fn main(caps: SystemCaps) {
+    let disk = caps.disk.allow("root")
+    println(disk.write("root/new.txt", "yeni\\r\\nsatır"))
+    println(disk.read("root/new.txt"))
+    println(disk.write("root/keep.txt", "replaced"))
+    println(disk.write("root/link", "x"))
+    println(disk.write("root/sublink/x.txt", "x"))
+    println(disk.write("root/dir", "x"))
+    println(disk.write("root/missing/x.txt", "x"))
+    println(disk.write("root", "x"))
+    println(disk.write("/tmp/outside.txt", "x"))
+    println(disk.write_file("root/sub/inner.txt", "iç"))
+    println(disk.read_bytes("root/sub/inner.txt"))
+    println(disk.delete("root/sub/inner.txt"))
+    println(disk.delete("root/sub/inner.txt"))
+    println(disk.delete("root/link"))
+    println(disk.delete("root/dir"))
+    println(disk.delete("root"))
+    println(disk.list("root"))
+}
+"""
+
+
 def workspace() -> tempfile.TemporaryDirectory:
     directory = tempfile.TemporaryDirectory(prefix="koschei-broker-")
     base = Path(directory.name)
@@ -179,9 +203,43 @@ func main() {
             self.assertEqual(probe.returncode, 0, probe.stderr)
             self.assertEqual(probe.stdout, "true true true true\ntrue\n")
 
-    def test_writing_and_the_network_stay_closed(self) -> None:
+    @unittest.skipUnless(SUPPORTED, "broker confinement is linux/amd64")
+    def test_writes_and_deletes_match_ks_run(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            (base / "main.ks").write_text(WRITES, encoding="utf-8")
+            def fresh() -> None:
+                shutil.rmtree(base / "root", ignore_errors=True)
+                (base / "root" / "sub").mkdir(parents=True)
+                (base / "root" / "dir").mkdir()
+                (base / "root" / "keep.txt").write_text("old", encoding="utf-8")
+                os.chmod(base / "root" / "keep.txt", 0o640)
+                (base / "root" / "link").symlink_to("keep.txt")
+                (base / "root" / "sublink").symlink_to("sub")
+            def state() -> list:
+                return sorted(
+                    (str(path.relative_to(base)), path.is_symlink() or path.read_bytes() if path.is_file() else None,
+                     oct(os.lstat(path).st_mode & 0o777))
+                    for path in (base / "root").rglob("*")
+                )
+            fresh()
+            run = subprocess.run(
+                [sys.executable, "-m", "koschei", "run", "main.ks"], cwd=base,
+                env=dict(os.environ, PYTHONPATH=str(ROOT)), capture_output=True, timeout=120, check=False,
+            )
+            self.assertEqual(run.returncode, 0, run.stderr)
+            expected, expected_state = run.stdout, state()
+            self.assertIn(b"Dosya yaz\xc4\xb1lamad\xc4\xb1: EISDIR: root/dir", expected)
+            binary = self.build(base / "main.ks")
+            fresh()
+            native = subprocess.run([str(binary)], cwd=base, capture_output=True, timeout=60, check=False)
+            self.assertEqual(native.returncode, 0, native.stderr)
+            self.assertEqual(native.stdout, expected)
+            self.assertEqual(state(), expected_state)
+            self.assertFalse(any(".ks-write-" in name for name in os.listdir(base / "root")))
+
+    def test_the_network_stays_closed(self) -> None:
         cases = {
-            "disk write": 'fn main(caps: SystemCaps) {\n    let d = caps.disk.allow("/tmp")\n    println(d.read("/tmp/x") or "")\n}\n',
             "network": 'fn main(caps: SystemCaps) {\n    let n = caps.net.allow("https://example.com")\n    println(n.get("https://example.com/") or "")\n}\n',
         }
         for name, source in cases.items():

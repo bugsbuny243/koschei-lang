@@ -143,10 +143,11 @@ _NATIVE_CAPABILITY_DOMAINS = {
     "ClockCaps": "clock",
     "RandomRoot": "random",
     "RandomCaps": "random",
-    # Read-only disk and the environment go through the native capability
-    # broker (native_broker_v1); DiskCaps (writing) and the network do not.
+    # Disk and the environment go through the native capability broker
+    # (native_broker_v1); the network does not yet.
     "DiskRoot": "broker",
     "DiskReadCaps": "broker",
+    "DiskCaps": "broker",
     "EnvRoot": "broker",
     "EnvCaps": "broker",
 }
@@ -175,6 +176,14 @@ _NATIVE_CAPABILITY_CALLS = {
     ("DiskReadCaps", "read_file"): ("_ksDiskReadText", 1),
     ("DiskReadCaps", "read_bytes"): ("_ksDiskReadBytes", 1),
     ("DiskReadCaps", "list"): ("_ksDiskList", 1),
+    ("DiskRoot", "allow"): ("_ksDiskAllow", 1),
+    ("DiskCaps", "read"): ("_ksDiskReadText", 1),
+    ("DiskCaps", "read_file"): ("_ksDiskReadText", 1),
+    ("DiskCaps", "read_bytes"): ("_ksDiskReadBytes", 1),
+    ("DiskCaps", "list"): ("_ksDiskList", 1),
+    ("DiskCaps", "write"): ("_ksDiskWrite", 2),
+    ("DiskCaps", "write_file"): ("_ksDiskWrite", 2),
+    ("DiskCaps", "delete"): ("_ksDiskDelete", 1),
     ("EnvRoot", "allow"): ("_ksEnvAllow", 1),
     ("EnvCaps", "get"): ("_ksEnvGet", 0),
 }

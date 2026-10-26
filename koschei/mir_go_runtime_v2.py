@@ -94,6 +94,10 @@ type _ksDiskReadCaps struct {
 	scope string
 }
 
+type _ksDiskCaps struct {
+	scope string
+}
+
 type _ksEnvRoot struct{}
 
 type _ksEnvCaps struct {
@@ -209,6 +213,8 @@ func _ksToString(value any) string {
 		return "<DiskRoot>"
 	case _ksDiskReadCaps:
 		return "<DiskReadCaps>"
+	case _ksDiskCaps:
+		return "<DiskCaps>"
 	case _ksEnvRoot:
 		return "<EnvRoot>"
 	case _ksEnvCaps:
@@ -1002,6 +1008,8 @@ func _ksTypeName(value any) string {
 		return "DiskRoot"
 	case _ksDiskReadCaps:
 		return "DiskReadCaps"
+	case _ksDiskCaps:
+		return "DiskCaps"
 	case _ksEnvRoot:
 		return "EnvRoot"
 	case _ksEnvCaps:
@@ -1197,6 +1205,8 @@ func _ksMatchPattern(value any, expected string, parameters map[string]bool, bin
 		return base == "DiskRoot"
 	case _ksDiskReadCaps:
 		return base == "DiskReadCaps"
+	case _ksDiskCaps:
+		return base == "DiskCaps"
 	case _ksEnvRoot:
 		return base == "EnvRoot"
 	case _ksEnvCaps:
