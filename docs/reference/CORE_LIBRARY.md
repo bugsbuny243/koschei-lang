@@ -333,6 +333,8 @@ fn is_blank(value: String) -> Bool
 fn starts_with(value: String, prefix: String) -> Bool
 ```
 
+Prefix and suffix tests compare UTF-8 bytes: a valid UTF-8 text starts (or ends) with another exactly when its bytes do, and a byte slice never needs more than the value itself, so any String within the value budget works.
+
 ### `text.ends_with`
 
 ```ks
@@ -352,8 +354,6 @@ fn strip_suffix(value: String, suffix: String) -> Option<String>
 ```
 
 Returns the text before a trailing `suffix`, or None when the value does not end with it.
-
-split matches left to right without overlap, so when the suffix overlaps its own previous match ("aaa" ends with "aa") the last piece is not empty even though the value ends with the suffix. With pieces = value.split(suffix) and tail = the last piece (shorter than the suffix), the last len(suffix) characters of the value are suffix[len(tail):] + tail. They equal the suffix exactly when the suffix ends with tail (suffix = core + tail) and also ends with core; the second check also yields lead = suffix[:len(tail)]. Both recursive calls take the suffix as their value, which is strictly shorter than the current value, so the recursion always terminates.
 
 ### `text.before`
 
