@@ -27,6 +27,7 @@ koschei/bounded_queue_v1.py
 koschei/build_manifest.py
 koschei/build_manifest_cli.py
 koschei/builder_environment_attestation_v1.py
+koschei/bytes_v1.py
 koschei/canonical_authority_admission_v1.py
 koschei/canonical_authority_basis_v1.py
 koschei/canonical_command_authority_v1.py
@@ -213,6 +214,7 @@ koschei/monotonic_witness_v1.py
 koschei/morth_black_hole_v1.py
 koschei/native_admission_reality_v1.py
 koschei/native_algebra_reality_v1.py
+koschei/native_broker_v1.py
 koschei/native_cell_alignment_v1.py
 koschei/native_cell_ir_v1.py
 koschei/native_cell_projection_alignment_v1.py
@@ -259,6 +261,7 @@ koschei/native_model_curriculum_cli_v2.py
 koschei/native_model_curriculum_lang_hardening_v1.py
 koschei/native_model_curriculum_lang_v1.py
 koschei/native_model_curriculum_v2.py
+koschei/native_net_v1.py
 koschei/native_pulse_reality_v1.py
 koschei/native_reality_graph_epoch_v1.py
 koschei/native_reality_graph_v1.py
@@ -271,6 +274,7 @@ koschei/native_resonance_conduit_v1.py
 koschei/native_resonance_reality_v1.py
 koschei/native_reusable_alignment_v1.py
 koschei/native_reusable_realities_v1.py
+koschei/native_serve_v1.py
 koschei/native_sigil_ast_v1.py
 koschei/native_sigil_atomic_execution_coordinator_v1.py
 koschei/native_sigil_authority_delegation_v1.py
@@ -292,6 +296,7 @@ koschei/native_value_domain_canonicality_v1.py
 koschei/native_value_domain_originality_v1.py
 koschei/native_value_domains_v1.py
 koschei/native_vow_reality_v1.py
+koschei/net_v1.py
 koschei/no_return_shadow_graph_v1.py
 koschei/nur_nyr_observation_gate_v1.py
 koschei/nur_nyr_projection_v1.py
@@ -381,6 +386,7 @@ koschei/semantic_contract_consumer_v1.py
 koschei/serve_authority_diagnostics_v1.py
 koschei/serve_authority_loopback_canonical_v1.py
 koschei/serve_authority_v1.py
+koschei/serve_knowhere_v1.py
 koschei/serve_loopback_exchange_catalog_v1.py
 koschei/serve_loopback_exchange_diagnostics_v1.py
 koschei/serve_loopback_exchange_go_integrity_v1.py
@@ -496,6 +502,7 @@ tests/test_bounded_queue_v1.py
 tests/test_build_manifest.py
 tests/test_build_manifest_verify.py
 tests/test_build_solohost_binary_v1.py
+tests/test_bytes_v1.py
 tests/test_canonical_authority_admission_v1.py
 tests/test_canonical_authority_basis_v1.py
 tests/test_canonical_command_authority_v1.py
@@ -706,6 +713,7 @@ tests/test_native_admission_reality_v1.py
 tests/test_native_algebra_reality_v1.py
 tests/test_native_algebraic_codegen.py
 tests/test_native_bootstrap_v5.py
+tests/test_native_broker_v1.py
 tests/test_native_capability_codegen.py
 tests/test_native_cell_ir_v1.py
 tests/test_native_cell_projection_adversarial_v1.py
@@ -757,6 +765,7 @@ tests/test_native_mixed_reuse_v1.py
 tests/test_native_model_curriculum_lang_v1.py
 tests/test_native_model_curriculum_v2.py
 tests/test_native_modules_codegen.py
+tests/test_native_net_v1.py
 tests/test_native_parser_v5.py
 tests/test_native_pulse_reality_v1.py
 tests/test_native_reality_graph_epoch_v1.py
@@ -775,6 +784,7 @@ tests/test_native_reusable_realities_adversarial_v1.py
 tests/test_native_reusable_realities_execution_adversarial_v1.py
 tests/test_native_reusable_realities_scale_v1.py
 tests/test_native_reusable_realities_v1.py
+tests/test_native_serve_v1.py
 tests/test_native_sigil_atomic_execution_coordinator_v1.py
 tests/test_native_sigil_authority_delegation_v1.py
 tests/test_native_sigil_canonical_mir_seal_v1.py
@@ -899,6 +909,7 @@ tests/test_semantic_capability_contract_v1.py
 tests/test_semantic_contract_consumer_v1.py
 tests/test_serve_authority_loopback_canonical_v1.py
 tests/test_serve_authority_v1.py
+tests/test_serve_knowhere_v1.py
 tests/test_serve_loopback_exchange_native_v1.py
 tests/test_serve_loopback_exchange_parity_v1.py
 tests/test_serve_loopback_exchange_v1.py
