@@ -103,6 +103,19 @@ REQUESTS: list[tuple[bytes, float]] = [
 ]
 
 
+def worker_pids(broker: int) -> list[int]:
+    """Children of every thread of the broker: Go may start the worker from
+    any OS thread, and /proc lists children per thread."""
+
+    pids: list[int] = []
+    for task in Path(f"/proc/{broker}/task").glob("*"):
+        try:
+            pids += [int(item) for item in (task / "children").read_text().split()]
+        except OSError:
+            continue
+    return pids
+
+
 def free_port() -> int:
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
@@ -236,7 +249,7 @@ class NativeServeParityTests(unittest.TestCase):
                     except OSError:
                         time.sleep(0.05)
                 self.assertIsNotNone(client)
-                children = Path(f"/proc/{process.pid}/task/{process.pid}/children").read_text().split()
+                children = worker_pids(process.pid)
                 self.assertEqual(len(children), 1)
                 worker = children[0]
                 status = Path(f"/proc/{worker}/status").read_text()

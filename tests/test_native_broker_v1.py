@@ -28,6 +28,19 @@ ROOT = Path(__file__).resolve().parent.parent
 GO = shutil.which("go")
 SUPPORTED = GO is not None and sys.platform == "linux" and platform.machine() in {"x86_64", "AMD64"}
 
+
+def worker_pids(broker: int) -> list[int]:
+    """Children of every thread of the broker: Go may start the worker from
+    any OS thread, and /proc lists children per thread."""
+
+    pids: list[int] = []
+    for task in Path(f"/proc/{broker}/task").glob("*"):
+        try:
+            pids += [int(item) for item in (task / "children").read_text().split()]
+        except OSError:
+            continue
+    return pids
+
 PROGRAM = """
 fn main(caps: SystemCaps) {
     let disk = caps.disk.allow_read_only("root")
@@ -192,8 +205,7 @@ class NativeBrokerTests(unittest.TestCase):
                 worker = None
                 deadline = time.monotonic() + 20
                 while worker is None and time.monotonic() < deadline:
-                    children = Path(f"/proc/{broker.pid}/task/{broker.pid}/children")
-                    pids = children.read_text().split() if children.exists() else []
+                    pids = worker_pids(broker.pid)
                     worker = int(pids[0]) if pids else None
                     time.sleep(0.05)
                 self.assertIsNotNone(worker, "worker process did not start")
@@ -379,10 +391,11 @@ fn main(caps: SystemCaps) {
             path = Path(directory) / "main.ks"
             path.write_text(source, encoding="utf-8")
             binary = self.build(path)
-            broker = subprocess.Popen([str(binary)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            broker = subprocess.Popen([str(binary)], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+            self.addCleanup(broker.stdout.close)
             try:
                 broker.stdout.readline()
-                worker = int(Path(f"/proc/{broker.pid}/task/{broker.pid}/children").read_text().split()[0])
+                worker = worker_pids(broker.pid)[0]
                 broker.kill()
                 broker.wait(timeout=20)
                 deadline = time.monotonic() + 20

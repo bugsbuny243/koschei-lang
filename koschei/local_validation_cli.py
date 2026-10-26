@@ -176,6 +176,20 @@ def _run_step(
     )
 
 
+def _print_failure_tail(evidence_dir: Path, index: int, step_id: str, lines: int = 40) -> None:
+    """Show why a step failed where CI logs can see it; the full output stays
+    in the evidence directory, and the receipt is unchanged."""
+
+    prefix = f"{index:02d}-{step_id}"
+    for stream in ("stdout", "stderr"):
+        text = (evidence_dir / f"{prefix}.{stream}.log").read_bytes().decode("utf-8", errors="replace")
+        tail = text.splitlines()[-lines:]
+        if tail:
+            print(f"    --- last {len(tail)} {stream} lines ---", flush=True)
+            for line in tail:
+                print(f"    | {line}", flush=True)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="ks-local-validate",
@@ -225,6 +239,8 @@ def main(argv: list[str] | None = None) -> int:
             result = _run_step(index, step_id, command, evidence_dir)
             step_results.append(result)
             print("    PASS" if result.passed else f"    FAIL ({result.returncode})", flush=True)
+            if not result.passed:
+                _print_failure_tail(evidence_dir, index, step_id)
 
         receipt = seal_local_validation_receipt_v1(
             source_commit=source_commit,
