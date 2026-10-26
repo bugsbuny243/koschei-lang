@@ -22,7 +22,7 @@ hands out; code that was not handed a token cannot reach the resource, and
 ## Verify it in ten minutes
 
 ```sh
-pip install .                                   # Python 3.12+
+./install.sh                                    # Python 3.12+; or: pip install .
 ks run examples/hello.ks
 printf 'the cat saw the dog\n' | ks run examples/apps/wordfreq/main.ks
 ks caps examples/apps/release_gate/main.ks      # what this program may touch

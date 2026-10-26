@@ -40,6 +40,8 @@
 - Give `String.to_int` one rule in every executor and compile it natively: trimmed text, an optional sign and ASCII digits, within signed 64 bits. The interpreter used Python's `int()`, which also accepted `1_000` and non-ASCII digits and returned values beyond Int.
 - Add the stability policy proposed for 1.0 (`docs/STABILITY_V1.md`), the threat model with evidence per threat (`docs/THREAT_MODEL_V1.md`) and a measured benchmark dossier against Python, Go and Rust (`bench/compare/run_v1.py`, `docs/benchmarks/`).
 - Add the buyer-facing `SALE_PACKAGE_V1.md` and the owner's action list `KOSCHEI_SAHIP_EYLEM_LISTESI_V1.md`.
+- Make native builds byte-reproducible: `ks build` passes `-trimpath`, `-buildvcs=false` and an empty build id to Go. The temporary workspace path used to end up in the binary, so no two builds of the same source were identical.
+- Add `install.sh`: installs Koschei into its own virtual environment and links `ks`.
 
 ## 0.10.0 — Language ergonomics
 

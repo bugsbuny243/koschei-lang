@@ -254,8 +254,14 @@ def _compile_mir_go(go_source: str, target: Path, locale: str) -> int:
         (directory / "go.mod").write_text(
             "module koscheiprogram\n\ngo 1.21\n", encoding="utf-8"
         )
+        # The workspace is a fresh temporary directory: without -trimpath and an
+        # empty build id its path ends up in the binary and no two builds of the
+        # same source are byte-identical.
         completed = subprocess.run(
-            [go_binary, "build", "-o", str(target), "."],
+            [
+                go_binary, "build", "-trimpath", "-buildvcs=false",
+                "-ldflags=-buildid=", "-o", str(target), ".",
+            ],
             cwd=directory,
             capture_output=True,
             text=True,

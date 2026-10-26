@@ -227,7 +227,10 @@ def command_build(path: str, output: str | None, locale: str) -> int:
             "module koscheiprogram\n\ngo 1.21\n", encoding="utf-8"
         )
         completed = subprocess.run(
-            [go_binary, "build", "-o", str(target), "."],
+            [
+                go_binary, "build", "-trimpath", "-buildvcs=false",
+                "-ldflags=-buildid=", "-o", str(target), ".",
+            ],
             cwd=directory,
             capture_output=True,
             text=True,

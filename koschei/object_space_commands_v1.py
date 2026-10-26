@@ -316,7 +316,10 @@ def _object_space_command_build(path: str, output: str | None, locale: str) -> i
         os.chmod(source_file, 0o600)
         os.chmod(module_file, 0o600)
         completed = subprocess.run(
-            [go_binary, "build", "-o", str(target), "."],
+            [
+                go_binary, "build", "-trimpath", "-buildvcs=false",
+                "-ldflags=-buildid=", "-o", str(target), ".",
+            ],
             cwd=directory,
             capture_output=True,
             text=True,

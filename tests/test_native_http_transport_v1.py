@@ -83,7 +83,8 @@ def test_public_native_compile_writes_transport_guard_only_for_http_package(
     assert observed["guard_exists"] is True
     assert observed["guard"] == native_http_transport_guard_go_v1()
     assert "module koscheiprogram" in str(observed["module"])
-    assert str(observed["command"]).endswith(f"build -o {target} .")
+    assert str(observed["command"]).endswith(f"-o {target} .")
+    assert "build -trimpath -buildvcs=false -ldflags=-buildid=" in str(observed["command"])
 
 
 def test_public_native_compile_omits_transport_guard_for_pure_package(
