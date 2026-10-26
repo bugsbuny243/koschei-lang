@@ -732,6 +732,7 @@ tests/test_native_decision_realities_adversarial_v1.py
 tests/test_native_decision_realities_execution_v1.py
 tests/test_native_decision_realities_scale_v1.py
 tests/test_native_decision_realities_v1.py
+tests/test_native_entry_v1.py
 tests/test_native_horizon_conduit_v1.py
 tests/test_native_horizon_reality_v1.py
 tests/test_native_http_transport_v1.py
