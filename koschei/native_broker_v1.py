@@ -484,6 +484,39 @@ type _ksScope struct {{
 	root     int
 	rootErr  syscall.Errno
 	writable bool
+	device   uint64
+	inode    uint64
+}}
+
+// A token narrowed again to the same directory (same resolved prefix, mode,
+// device and inode) reuses the open scope: the worker cannot report when a
+// token is dropped, so this keeps a program that narrows in a loop from
+// collecting one descriptor per iteration. The answers are identical, since
+// both descriptors would name the same directory.
+func _ksRegisterScope(scopes []*_ksScope, scope *_ksScope) ([]*_ksScope, int) {{
+	if scope.root >= 0 {{
+		var info syscall.Stat_t
+		if syscall.Fstat(scope.root, &info) == nil {{
+			scope.device, scope.inode = info.Dev, info.Ino
+		}}
+	}}
+	for index, other := range scopes {{
+		if other == nil || other.prefix != scope.prefix || other.writable != scope.writable {{
+			continue
+		}}
+		if (other.root >= 0) != (scope.root >= 0) || other.rootErr != scope.rootErr {{
+			continue
+		}}
+		if scope.root >= 0 && (other.device != scope.device || other.inode != scope.inode || scope.inode == 0) {{
+			continue
+		}}
+		if scope.root >= 0 {{
+			syscall.Close(scope.root)
+		}}
+		return scopes, index
+	}}
+	scopes = append(scopes, scope)
+	return scopes, len(scopes) - 1
 }}
 
 func _ksBrokerServe() {{
@@ -532,8 +565,9 @@ func _ksBrokerLoop(channel *os.File) {{
 		case (request[0] == "scope" || request[0] == "scope_rw") && len(request) == 2:
 			scope := _ksOpenScope(request[1])
 			scope.writable = request[0] == "scope_rw"
-			scopes = append(scopes, scope)
-			answer = []string{{"ok", strconv.Itoa(len(scopes) - 1)}}
+			var index int
+			scopes, index = _ksRegisterScope(scopes, scope)
+			answer = []string{{"ok", strconv.Itoa(index)}}
 		case (request[0] == "write" && len(request) == 4) || (request[0] == "delete" && len(request) == 3):
 			index, convErr := strconv.Atoi(request[1])
 			// A read-only token's scope can never be written through.

@@ -262,6 +262,42 @@ def _float_program() -> str:
     return "fn main() {\n" + "\n".join(lines) + "\n}\n"
 
 
+GENERIC_ENUMS = """
+enum Box<T> {
+    B(T),
+    Empty,
+}
+
+fn wrap<T>(x: T) -> Box<T> {
+    return B(x)
+}
+
+fn wrap_list<T>(items: List<T>) -> Box<List<T>> {
+    return B(items)
+}
+
+fn empty_like<T>(x: T) -> Box<T> {
+    return Empty()
+}
+
+fn unbox(b: Box<Int>) -> Int {
+    return match b {
+        B(v) => v,
+        Empty => 0,
+    }
+}
+
+fn main() {
+    println(wrap(1))
+    println(unbox(wrap(41)) + 1)
+    println(wrap_list([1, 2]))
+    println(empty_like("s"))
+    println(unbox(empty_like(3)))
+    println(wrap(wrap(2.5)))
+}
+"""
+
+
 @unittest.skipUnless(GO, "Go toolchain is required for native parity")
 class MirGoNativeParityTests(unittest.TestCase):
     def workspace(self, files: dict[str, str]) -> Path:
@@ -333,6 +369,15 @@ class MirGoNativeParityTests(unittest.TestCase):
     def test_enums_match_and_or_forms(self) -> None:
         output = self.assert_parity(ENUMS_AND_OR_FORMS)
         self.assertIn('[Circle(1.5), Square(4), Label("çember"), Empty]', output)
+
+    def test_generic_functions_construct_generic_enums(self) -> None:
+        # The enum's type evidence names the runtime binding (T = Int), not
+        # the symbol T, so the return and later call contracts accept it.
+        # (ks run serves this graph; the direct canonical lane is not asked.)
+        path = self.workspace({"main.ks": GENERIC_ENUMS}) / "main.ks"
+        native_ok, native_out, native_err = self.native_run(path)
+        self.assertEqual(self.ks_run(path), (native_ok, native_out), native_err)
+        self.assertEqual(native_out, "B(1)\n42\nB([1, 2])\nEmpty\n0\nB(B(2.5))\n")
 
     def test_core_library_compiles_natively(self) -> None:
         output = self.assert_parity(LIBRARY_TOUR)

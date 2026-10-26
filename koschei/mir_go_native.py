@@ -1133,6 +1133,15 @@ def _emit_instruction(
         payload = "nil" if instruction.source is None else value(instruction.source)
         has_payload = "false" if instruction.source is None else "true"
         evidence = _go_string_slice(type_arguments) if type_arguments else "nil"
+        type_parameters = tuple(getattr(plan.function.declaration, "type_parameters", ()) or ())
+        if type_arguments and any(
+            re.search(rf"\b{re.escape(name)}\b", argument)
+            for name in type_parameters
+            for argument in type_arguments
+        ):
+            # Inside a generic function the evidence names the runtime
+            # binding (T = Int), as the canonical executor records it.
+            evidence = f"_ksBindTypeArgs({evidence}, _ks_tp, _ks_tb)"
         return [
             f"{prefix}{value(instruction.target)} = {_ENUM_GO_TYPE}{{"
             f"owner: {_go_string(owner)}, variant: {_go_string(variant)}, "

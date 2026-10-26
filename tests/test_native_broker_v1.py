@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import platform
 import re
+import resource
 import shutil
 import subprocess
 import sys
@@ -343,6 +344,30 @@ fn main(caps: SystemCaps) {
             self.assertEqual(run.returncode, 0, run.stderr)
             refused = _refused_after_confinement(trace.read_text())
             self.assertEqual(refused, [])
+
+    @unittest.skipUnless(SUPPORTED, "broker confinement is linux/amd64")
+    def test_narrowing_in_a_loop_reuses_the_broker_scope(self) -> None:
+        source = (
+            "fn main(caps: SystemCaps) {\n    let mut i = 0\n    let mut ok = 0\n    while i < 150 {\n"
+            '        let disk = caps.disk.allow_read_only("root")\n'
+            '        let text = disk.read("root/a.txt") or ""\n'
+            '        if text == "hi" {\n            ok = ok + 1\n        }\n        i = i + 1\n    }\n    println(ok)\n}\n'
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            (base / "root").mkdir()
+            (base / "root" / "a.txt").write_text("hi", encoding="utf-8")
+            (base / "main.ks").write_text(source, encoding="utf-8")
+            binary = self.build(base / "main.ks")
+
+            def few_descriptors() -> None:
+                resource.setrlimit(resource.RLIMIT_NOFILE, (64, 64))
+
+            native = subprocess.run(
+                [str(binary)], cwd=base, capture_output=True, timeout=60, check=False,
+                preexec_fn=few_descriptors,
+            )
+            self.assertEqual((native.returncode, native.stdout), (0, b"150\n"), native.stderr)
 
     @unittest.skipUnless(SUPPORTED, "broker confinement is linux/amd64")
     def test_the_worker_dies_with_its_broker(self) -> None:

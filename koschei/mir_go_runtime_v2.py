@@ -1326,6 +1326,47 @@ func _ksMatchPattern(value any, expected string, parameters map[string]bool, bin
 	return false
 }
 
+// Replaces the generic function's type parameters in enum evidence with
+// their runtime bindings; an unbound parameter matches anything ("_").
+func _ksBindTypeArgs(arguments []string, parameters map[string]bool, bindings map[string]string) []string {
+	bound := make([]string, len(arguments))
+	for index, argument := range arguments {
+		var out strings.Builder
+		start := -1
+		flush := func(end int) {
+			if start < 0 {
+				return
+			}
+			name := argument[start:end]
+			if parameters[name] {
+				if value, ok := bindings[name]; ok {
+					name = value
+				} else {
+					name = "_"
+				}
+			}
+			out.WriteString(name)
+			start = -1
+		}
+		for position := 0; position < len(argument); position++ {
+			character := argument[position]
+			word := character == '_' || (character >= '0' && character <= '9') ||
+				(character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z')
+			if word {
+				if start < 0 {
+					start = position
+				}
+				continue
+			}
+			flush(position)
+			out.WriteByte(character)
+		}
+		flush(len(argument))
+		bound[index] = out.String()
+	}
+	return bound
+}
+
 func _ksMatchesType(value any, expected []string, parameters map[string]bool, bindings map[string]string) bool {
 	if bindings == nil {
 		bindings = map[string]string{}
