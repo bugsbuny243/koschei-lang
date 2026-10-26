@@ -340,6 +340,23 @@ fn main() {
 }
 """
 
+WORDS_OVER_BUDGET = """
+import text
+
+fn main() {
+    println(text.words(" ali\tveli \n"))
+    println(text.lines("a\r\nb\n"))
+    let mut big = " "
+    let mut i = 0
+    while i < 20 {
+        big = big + big
+        i = i + 1
+    }
+    println(text.words(big + "tail"))
+    println("not reached")
+}
+"""
+
 GENERIC_ENUMS = """
 enum Box<T> {
     B(T),
@@ -477,6 +494,12 @@ class MirGoNativeParityTests(unittest.TestCase):
             "Err(text.replace: more occurrences than one List may hold (KS3502))",
             'Ok("a+b")', "false", "true", "false",
         ])
+
+    def test_lines_and_words_stop_instead_of_truncating(self) -> None:
+        # More pieces than one List may hold has no List answer: both
+        # executors stop at the same point rather than return a short list.
+        output = self.assert_parity(WORDS_OVER_BUDGET)
+        self.assertEqual(output, '["ali", "veli"]\n["a", "b"]\n')
 
     def test_list_contains_compares_numbers_by_value(self) -> None:
         output = self.assert_parity(NUMERIC_MEMBERSHIP)

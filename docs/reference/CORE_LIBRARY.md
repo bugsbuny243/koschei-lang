@@ -11,7 +11,7 @@ Every module is written in Koschei and compiled with the program that imports it
 | [`morag`](#morag) | 2 | 3 |
 | [`secure`](#secure) | 5 | 0 |
 | [`strange`](#strange) | 2 | 2 |
-| [`text`](#text) | 13 | 0 |
+| [`text`](#text) | 14 | 0 |
 | [`wanda`](#wanda) | 5 | 1 |
 | [`xandar`](#xandar) | 4 | 2 |
 
@@ -386,6 +386,14 @@ fn replace(value: String, old: String, replacement: String) -> Result<String, Er
 ```
 
 Replaces every non-overlapping occurrence, left to right.
+
+### `text.split_all`
+
+```ks
+fn split_all(value: String, separator: String) -> List<String>
+```
+
+value.split(separator) for the List-returning helpers below. A value with more pieces than one List may hold (KS3502) has no List answer; returning the budget Error through the List contract stops the program instead of handing back a silently shortened list.
 
 ### `text.lines`
 

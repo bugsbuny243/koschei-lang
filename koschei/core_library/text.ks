@@ -106,6 +106,17 @@ fn replace(value: String, old: String, replacement: String) -> Result<String, Er
     return Ok(replaced)
 }
 
+// value.split(separator) for the List-returning helpers below. A value with
+// more pieces than one List may hold (KS3502) has no List answer; returning
+// the budget Error through the List contract stops the program instead of
+// handing back a silently shortened list.
+fn split_all(value: String, separator: String) -> List<String> {
+    let pieces = value.split(separator) or {
+        return value.split(separator)
+    }
+    return pieces
+}
+
 // Lines separated by "\n". One trailing "\r" is removed from each line, and a
 // final "\n" does not start an extra empty line.
 fn lines(value: String) -> List<String> {
@@ -113,7 +124,7 @@ fn lines(value: String) -> List<String> {
     if value.length() == 0 {
         return out
     }
-    let pieces = value.split("\n")
+    let pieces = split_all(value, "\n")
     let mut index = 0
     for piece in pieces {
         let is_final_empty = index == pieces.length() - 1 && piece.length() == 0
@@ -132,7 +143,7 @@ fn words(value: String) -> List<String> {
     for separator in [" ", "\t", "\r", "\n"] {
         let mut next: List<String> = []
         for piece in pieces {
-            for part in piece.split(separator) {
+            for part in split_all(piece, separator) {
                 if part.length() > 0 {
                     next = next.push(part)
                 }
