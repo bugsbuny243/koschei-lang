@@ -104,6 +104,19 @@ type _ksEnvCaps struct {
 	name string
 }
 
+// Network tokens (native_net_v1); requests go through the broker.
+type _ksNetRoot struct{}
+
+type _ksNetCaps struct {
+	scope string
+}
+
+// The result of NetCaps.get: read through text() and status() only.
+type _ksResponse struct {
+	status int64
+	body   string
+}
+
 type _ksClockCaps struct {
 	resolution int64
 }
@@ -219,6 +232,12 @@ func _ksToString(value any) string {
 		return "<EnvRoot>"
 	case _ksEnvCaps:
 		return "<EnvCaps>"
+	case _ksNetRoot:
+		return "<NetRoot>"
+	case _ksNetCaps:
+		return "<NetCaps>"
+	case _ksResponse:
+		return "<Response>"
 	case _ksClockRoot:
 		return "<ClockRoot>"
 	case _ksClockCaps:
@@ -771,6 +790,11 @@ func _ksMemberOf(receiver any, name string) any {
 		case "length", "hex", "to_text", "slice", "get":
 			return _ksMember{receiver: receiver, name: name}
 		}
+	case _ksResponse:
+		switch name {
+		case "text", "status":
+			return _ksMember{receiver: receiver, name: name}
+		}
 	case []any:
 		switch name {
 		case "length", "get", "push", "contains", "take":
@@ -807,6 +831,12 @@ func _ksInvokeMember(callee any, arguments ...any) any {
 	switch receiver := member.receiver.(type) {
 	case _ksBytes:
 		return _ksBytesMember(receiver, member.name, arguments)
+	case _ksResponse:
+		_ksArity(member.name, arguments, 0)
+		if member.name == "status" {
+			return receiver.status
+		}
+		return receiver.body
 	case string:
 		switch member.name {
 		case "to_bytes":
@@ -1014,6 +1044,12 @@ func _ksTypeName(value any) string {
 		return "EnvRoot"
 	case _ksEnvCaps:
 		return "EnvCaps"
+	case _ksNetRoot:
+		return "NetRoot"
+	case _ksNetCaps:
+		return "NetCaps"
+	case _ksResponse:
+		return "Response"
 	case _ksClockRoot:
 		return "ClockRoot"
 	case _ksClockCaps:
@@ -1211,6 +1247,12 @@ func _ksMatchPattern(value any, expected string, parameters map[string]bool, bin
 		return base == "EnvRoot"
 	case _ksEnvCaps:
 		return base == "EnvCaps"
+	case _ksNetRoot:
+		return base == "NetRoot"
+	case _ksNetCaps:
+		return base == "NetCaps"
+	case _ksResponse:
+		return base == "Response"
 	case _ksClockRoot:
 		return base == "ClockRoot"
 	case _ksClockCaps:

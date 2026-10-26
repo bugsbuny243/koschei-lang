@@ -397,10 +397,11 @@ Every diagnostic is listed in [`../reference/ERROR_CODES.md`](../reference/ERROR
 
 `ks build` compiles programs that use the core language, structs, enums,
 generics, modules, the Core Library, program input, the clock and randomness,
-and on linux/amd64 the disk (read, write, delete) and the environment through
-a confined broker ([`../NATIVE_BROKER_V1.md`](../NATIVE_BROKER_V1.md)). The binary prints
+and on linux/amd64 the disk (read, write, delete), the environment and the
+network through a confined broker ([`../NATIVE_BROKER_V1.md`](../NATIVE_BROKER_V1.md),
+[`../NET_V1.md`](../NET_V1.md)). The binary prints
 the same bytes and the same Error values as `ks run`. Maps, callback members
-(`filter`, `map`, `sort`) and the network are refused with
+(`filter`, `map`, `sort`), processes and the loopback server are refused with
 `KS4004` instead of compiled differently; see [`../MIR_GO_CONFORMANCE_ADAPTER_V2.md`](../MIR_GO_CONFORMANCE_ADAPTER_V2.md).
 
 ## 12. Limits worth knowing

@@ -91,7 +91,7 @@ def _check_affine_resources(program, imports, typed_report):
 def _install_opaque_rendering() -> None:
     # ks_to_string renders any non-data value with str(); every canonical
     # authority class answers with its type name only.
-    for type_name in sorted(CAPABILITY_TYPES):
+    for type_name in sorted(_AUTHORITY):
         runtime_type = getattr(_runtime, type_name)
         text = opaque_text(type_name)
         runtime_type.__str__ = lambda self, _text=text: _text

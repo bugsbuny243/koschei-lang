@@ -73,6 +73,7 @@ from .mir_ir import (
     MirUnreachable,
 )
 from .native_broker_v1 import BROKER_IMPORTS, broker_runtime
+from .native_net_v1 import NET_IMPORTS, net_runtime
 from .mir_variant_runtime_v1 import MirVariantRuntimeError, split_canonical_variant_v1
 from .secure_hash_v1 import NAME as SECURE_HASH_NAME, SHA3_256_MAX_INPUT_BYTES
 from .semantic import INT_MAX, INT_MIN
@@ -101,7 +102,8 @@ _BUILTINS = {
 _STRING_METHODS = frozenset({"length", "contains", "trim", "split", "join", "to_int", "to_bytes"})
 _LIST_METHODS = frozenset({"length", "get", "push", "contains", "take"})
 _BYTES_METHODS = frozenset({"length", "hex", "to_text", "slice", "get"})
-_VALUE_METHODS = _STRING_METHODS | _LIST_METHODS | _BYTES_METHODS
+_RESPONSE_METHODS = frozenset({"text", "status"})
+_VALUE_METHODS = _STRING_METHODS | _LIST_METHODS | _BYTES_METHODS | _RESPONSE_METHODS
 _BUILTIN_VARIANTS = {
     "Option": {"Some": True, "None": False},
     "Result": {"Ok": True, "Err": True},
@@ -143,8 +145,11 @@ _NATIVE_CAPABILITY_DOMAINS = {
     "ClockCaps": "clock",
     "RandomRoot": "random",
     "RandomCaps": "random",
-    # Disk and the environment go through the native capability broker
-    # (native_broker_v1); the network does not yet.
+    # Disk, the environment and the network go through the native
+    # capability broker (native_broker_v1, native_net_v1).
+    "NetRoot": "net",
+    "NetCaps": "net",
+    "Response": "net",
     "DiskRoot": "broker",
     "DiskReadCaps": "broker",
     "DiskCaps": "broker",
@@ -158,6 +163,7 @@ _NATIVE_CAPABILITY_MEMBERS = {
     ("RandomRoot", "random"): "_ksCapsRandom",
     ("DiskRoot", "disk"): "_ksCapsDisk",
     ("EnvRoot", "env"): "_ksCapsEnv",
+    ("NetRoot", "net"): "_ksCapsNet",
 }
 _NATIVE_CAPABILITY_CALLS = {
     ("InputRoot", "allow"): ("_ksInputAllow", 1),
@@ -186,6 +192,8 @@ _NATIVE_CAPABILITY_CALLS = {
     ("DiskCaps", "delete"): ("_ksDiskDelete", 1),
     ("EnvRoot", "allow"): ("_ksEnvAllow", 1),
     ("EnvCaps", "get"): ("_ksEnvGet", 0),
+    ("NetRoot", "allow"): ("_ksNetAllow", 1),
+    ("NetCaps", "get"): ("_ksNetGet", 1),
 }
 _ADMITTED_INSTRUCTIONS = (
     MirConst,
@@ -278,6 +286,7 @@ def generate_go_mir_native(mir: MirGraph) -> str:
             *(MIR_GO_CLOCK_IMPORTS_V2 if "clock" in domains else ()),
             *(MIR_GO_RANDOM_IMPORTS_V2 if "random" in domains else ()),
             *(BROKER_IMPORTS if "broker" in domains else ()),
+            *(NET_IMPORTS if "net" in domains else ()),
         }
     )
 
@@ -318,6 +327,8 @@ def generate_go_mir_native(mir: MirGraph) -> str:
         lines.append(_random_runtime())
     if "broker" in domains:
         lines.append(broker_runtime())
+    if "net" in domains:
+        lines.append(net_runtime())
     for plan in plans:
         lines.extend(_emit_function(plan, symbols))
         lines.append("")
@@ -366,6 +377,8 @@ def _used_domains(plans: list["_FunctionPlan"]) -> set[str]:
                 domain = _NATIVE_CAPABILITY_DOMAINS.get(produced or "")
                 if domain is not None:
                     domains.add(domain)
+    if "net" in domains:
+        domains.add("broker")
     return domains
 
 

@@ -38,10 +38,11 @@ the separate Koschei Sentinel product.
 3. **Language → host.** Capability operations are the only path to host
    effects; each is bound to a canonical effect and power domain.
 4. **Native binary → OS.** Binaries carry program input, clock and
-   randomness directly. The disk (read, write, delete) and the environment go
-   through a broker process; the program runs in a seccomp-confined worker
-   with an empty environment (`docs/NATIVE_BROKER_V1.md`). The network is
-   refused at build time (`KS4004`).
+   randomness directly. The disk (read, write, delete), the environment and
+   the network go through a broker process; the program runs in a
+   seccomp-confined worker with an empty environment and no sockets
+   (`docs/NATIVE_BROKER_V1.md`, `docs/NET_V1.md`). Processes, `persist` and
+   `serve` are refused at build time (`KS4004`).
 
 ## Threats and controls
 
@@ -49,10 +50,10 @@ the separate Koschei Sentinel product.
 |---|---|---|---|
 | T1 | A library reads files, the network or secrets it was not given | No ambient authority; roots cannot act; narrowing only shrinks; tokens move and cannot hide in collections | `tests/test_semantic_capability_contract_v1.py`, `tests/test_affine_resources_v1.py`, adversarial lab |
 | T2 | A disk token escapes its prefix (`..`, symlinks, hard links) | Descriptor-anchored, symlink-refusing access; atomic replace on write | `tests/test_nidavellir_all_or_nothing_v1.py`, `tests/test_interpreter.py`, `tests/test_native_broker_v1.py` |
-| T3 | Network redirect leaves the allowed origin | Scoped redirect refusal (`KS3402`) | `tests/test_interpreter.py`, `tests/test_network_scheme_security.py` |
+| T3 | Network redirect leaves the allowed origin | Strict URL grammar; Koschei follows redirects itself and refuses any target outside the origin (`KS3402`) | `tests/test_interpreter.py`, `tests/test_network_scheme_security.py`, `tests/test_native_net_v1.py` |
 | T4 | Hostile input crashes the program or the host | Errors are values; non-UTF-8 input and files are Error values; value budget (`KS3502`); step and call-depth budgets | `tests/test_disk_read_text_v1.py`, `tests/test_program_input_v1.py`, `tests/test_value_budget_v1.py` |
 | T5 | Executors disagree, so a decision depends on where it runs | One rule per operation; differential tests between interpreter, canonical MIR, direct MIR and binaries | `tests/test_mir_go_native_v2_parity.py`, `tests/test_morag_xandar_v1.py`, `tests/test_language_guide_v1.py` |
-| T6 | Host details leak into program output | Capabilities render as their type; comparing them is refused (`KS2407`) | `tests/test_program_input_v1.py` |
+| T6 | Host details leak into program output or to servers | Capabilities and responses render as their type; comparing them is refused (`KS2407`); errors name codes, not host messages; requests send `User-Agent: koschei/1`, never the host language or version | `tests/test_program_input_v1.py`, `tests/test_native_net_v1.py` |
 | T7 | Weak or predictable randomness | Only the OS secure source (`secrets`, `crypto/rand`); failure stops the program | `tests/test_clock_random_v1.py` |
 | T8 | Timing side channels through a precise clock | Clock resolution is part of the capability | `docs/CLOCK_RANDOM_V1.md` |
 | T9 | Home-made cryptography | None: digests delegate to audited host SHA3-256 | `koschei/secure_hash_v1.py`, `tests/test_secure_library_v1.py` |

@@ -238,9 +238,9 @@ func main() {
             self.assertEqual(state(), expected_state)
             self.assertFalse(any(".ks-write-" in name for name in os.listdir(base / "root")))
 
-    def test_the_network_stays_closed(self) -> None:
+    def test_processes_stay_closed(self) -> None:
         cases = {
-            "network": 'fn main(caps: SystemCaps) {\n    let n = caps.net.allow("https://example.com")\n    println(n.get("https://example.com/") or "")\n}\n',
+            "process": 'fn main(caps: SystemCaps) {\n    let p = caps.process.allow("echo")\n    println(p.run("hello") or "")\n}\n',
         }
         for name, source in cases.items():
             with self.subTest(name), tempfile.TemporaryDirectory() as directory:

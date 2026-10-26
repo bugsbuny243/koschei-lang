@@ -397,10 +397,10 @@ Bütün tanı kodları [`../reference/ERROR_CODES.md`](../reference/ERROR_CODES.
 
 `ks build`; çekirdek dili, struct, enum, generic, modül, Core Library, program
 girdisi, saat ve rastgelelik kullanan programları; linux/amd64'te ayrıca
-kilitli bir aracı üzerinden disk (okuma, yazma, silme) ve ortam değişkenlerini derler
-([`../NATIVE_BROKER_V1.md`](../NATIVE_BROKER_V1.md)). İkili `ks run` ile aynı
+kilitli bir aracı üzerinden disk (okuma, yazma, silme), ortam değişkenleri ve ağı derler
+([`../NATIVE_BROKER_V1.md`](../NATIVE_BROKER_V1.md), [`../NET_V1.md`](../NET_V1.md)). İkili `ks run` ile aynı
 baytları ve aynı hata değerlerini yazdırır. Map, geri çağrılı üyeler
-(`filter`, `map`, `sort`) ve ağ farklı derlenmek yerine `KS4004`
+(`filter`, `map`, `sort`), süreçler ve yerel sunucu farklı derlenmek yerine `KS4004`
 ile reddedilir; bkz.
 [`../MIR_GO_CONFORMANCE_ADAPTER_V2.md`](../MIR_GO_CONFORMANCE_ADAPTER_V2.md).
 

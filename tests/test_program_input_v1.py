@@ -356,10 +356,10 @@ class ProgramInputTests(unittest.TestCase):
 
     def test_other_authority_stays_closed_natively(self) -> None:
         cases = {
-            # Disk and env go through the native broker now
-            # (tests/test_native_broker_v1.py); the network does not.
-            "env": 'fn main(caps: SystemCaps) {\n    let net = caps.net.allow("https://example.com")\n'
-            '    println(net.get("https://example.com/") or "")\n}\n',
+            # Disk, env and the network go through the native broker now
+            # (tests/test_native_broker_v1.py); processes do not.
+            "process": 'fn main(caps: SystemCaps) {\n    let process = caps.process.allow("echo")\n'
+            '    println(process.run("hello") or "")\n}\n',
             "struct field": "struct Holder {\n    input: InputCaps,\n}\n\n"
             "fn main(caps: SystemCaps) {\n    let h = Holder { input: caps.input.allow(5) }\n"
             "    let args = h.input.args() or return\n    println(args)\n}\n",
@@ -380,7 +380,7 @@ class ProgramInputTests(unittest.TestCase):
                 self.assertEqual(code, 1)
                 self.assertIn("KS4004", errors.getvalue())
                 self.assertFalse((path.parent / "bin").exists())
-        env_graph = load_graph(self.write(cases["env"]))
+        env_graph = load_graph(self.write(cases["process"]))
         check_graph(env_graph)
         self.assertTrue(
             any("(G2)" in reason for reason in inspect_mir_go_support(env_graph.mir).reasons)

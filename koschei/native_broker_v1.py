@@ -122,6 +122,9 @@ var _ksErrnoNames = map[syscall.Errno]string{{
 
 var _ksBroker *os.File
 
+// Set by native_net_v1 when the program uses the network.
+var _ksBrokerNet func([]string) ([]string, bool)
+
 // Entry: the process the user started becomes the broker; the worker runs
 // the program confined.
 func _ksBrokerEntry(run func()) {{
@@ -485,7 +488,13 @@ func _ksBrokerLoop(channel *os.File) {{
 		case request[0] == "env" && len(request) == 2:
 			answer = _ksBrokerEnv(request[1])
 		default:
-			return
+			served := false
+			if _ksBrokerNet != nil {{
+				answer, served = _ksBrokerNet(request)
+			}}
+			if !served {{
+				return
+			}}
 		}}
 		if _ksWriteFrame(channel, answer) != nil {{
 			return

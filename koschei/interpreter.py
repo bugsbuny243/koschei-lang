@@ -8,6 +8,8 @@ import re
 import secrets
 import stat
 import sys
+import base64
+import http.client
 import urllib.error
 import urllib.request
 from collections.abc import Iterator
@@ -15,7 +17,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import unquote
 
 from .ast_nodes import (
     AssignmentExpression,
@@ -47,6 +49,7 @@ from .ast_nodes import (
     UnaryExpression,
     WhileStatement,
 )
+from . import net_v1
 from .value_budget_v1 import (
     BYTES_MESSAGE as VALUE_BUDGET_BYTES_MESSAGE,
     LIST_MESSAGE as VALUE_BUDGET_LIST_MESSAGE,
@@ -770,36 +773,32 @@ class DiskCaps(_DiskCapability):
         return KsUnit
 
 
-class _ScopedRedirectHandler(urllib.request.HTTPRedirectHandler):
-    max_redirections = 5
+class _CanonicalProxyHandler(urllib.request.ProxyHandler):
+    """A proxy chosen by net_v1.proxy_for; the host library's own bypass
+    rules (``no_proxy``) are not consulted a second time."""
 
-    def __init__(self, origin_key: tuple[str, str, int | None] | None) -> None:
-        self.origin_key = origin_key
-
-    def redirect_request(self, request, fp, code, msg, headers, newurl):
-        if self.origin_key is None or _origin_key(newurl) != self.origin_key:
-            raise _ScopedRedirectDenied(newurl)
-        return super().redirect_request(request, fp, code, msg, headers, newurl)
-
-
-class _ScopedRedirectDenied(Exception):
-    def __init__(self, target: str) -> None:
-        self.target = target
-        super().__init__(target)
+    def proxy_open(self, req, proxy, type):
+        orig_type = req.type
+        proxy_type, user, password, hostport = urllib.request._parse_proxy(proxy)
+        if proxy_type is None:
+            proxy_type = orig_type
+        if user and password:
+            credentials = f"{unquote(user)}:{unquote(password)}".encode()
+            req.add_header("Proxy-authorization", "Basic " + base64.b64encode(credentials).decode("ascii"))
+        req.set_proxy(unquote(hostport), proxy_type)
+        return None
 
 
-def _build_http_only_opener(
-    origin_key: tuple[str, str, int | None] | None,
-) -> urllib.request.OpenerDirector:
+def _build_http_only_opener(proxy: str | None) -> urllib.request.OpenerDirector:
+    # No redirect handler and no error processor: net_v1 follows redirects
+    # itself and every final status is a Response.
     opener = urllib.request.OpenerDirector()
+    proxies = {"http": proxy, "https": proxy} if proxy is not None else {}
     for handler in (
-        urllib.request.ProxyHandler(),
+        _CanonicalProxyHandler(proxies),
         urllib.request.UnknownHandler(),
         urllib.request.HTTPHandler(),
-        urllib.request.HTTPDefaultErrorHandler(),
-        _ScopedRedirectHandler(origin_key),
         urllib.request.HTTPSHandler(),
-        urllib.request.HTTPErrorProcessor(),
     ):
         opener.add_handler(handler)
     return opener
@@ -810,38 +809,67 @@ class NetCaps(_NarrowedCapability):
 
     def __init__(self, origin: str) -> None:
         self.origin = origin
-        self.origin_key = _origin_key(origin)
-        self._opener = _build_http_only_opener(self.origin_key)
+        parsed = net_v1.parse_url(origin, ALLOWED_NET_SCHEMES)
+        self.origin_key = parsed.origin if parsed is not None else None
+        proxy = net_v1.proxy_for(parsed) if parsed is not None else None
+        # Only plain HTTP proxies are supported; any other proxy fails every
+        # request instead of being used differently by each host library.
+        if proxy is not None and not proxy.lower().startswith("http://"):
+            self._opener = None
+        else:
+            self._opener = _build_http_only_opener(proxy)
 
     def _allows(self, url: str) -> bool:
-        return self.origin_key is not None and _origin_key(url) == self.origin_key
+        parsed = net_v1.parse_url(url, ALLOWED_NET_SCHEMES)
+        return self.origin_key is not None and parsed is not None and parsed.origin == self.origin_key
 
     def get(self, url: str) -> Response | KsError:
-        if not self._allows(url):
-            return KsError(
-                f"KS3402: Ağ origin kapsamı dışında erişim reddedildi: {url}"
+        current = net_v1.parse_url(url, ALLOWED_NET_SCHEMES)
+        if self.origin_key is None or current is None or current.origin != self.origin_key:
+            return KsError(net_v1.OUTSIDE_PREFIX + str(url))
+        if self._opener is None:
+            return KsError(net_v1.failure("EIO", url))
+        redirects = 0
+        while True:
+            request = urllib.request.Request(
+                current.text(),
+                method="GET",
+                headers={
+                    "User-Agent": net_v1.USER_AGENT,
+                    "Accept-Encoding": "identity",
+                    "Connection": "close",
+                },
             )
-        try:
-            request = urllib.request.Request(url, method="GET")
-            with self._opener.open(request, timeout=10) as response:
-                charset = response.headers.get_content_charset() or "utf-8"
+            try:
+                with self._opener.open(request, timeout=net_v1.TIMEOUT_SECONDS) as response:
+                    status = int(response.status)
+                    location = None
+                    if status in net_v1.REDIRECT_STATUSES:
+                        location = response.headers.get("Location") or None
+                    if location is None:
+                        try:
+                            payload = read_bounded_response_body_v1(response)
+                        except HttpResponseBudgetV1Error as error:
+                            return KsError(str(error))
+                        # http.client returns a short body silently when
+                        # the peer closes early; a missing tail is a failure.
+                        missing = getattr(response, "length", None)
+                        if isinstance(missing, int) and missing > 0:
+                            raise ConnectionResetError("response body ended early")
+            except (OSError, http.client.HTTPException, ValueError) as error:
+                return KsError(net_v1.failure(net_v1.failure_code(error), url))
+            if location is None:
                 try:
-                    payload = read_bounded_response_body_v1(response)
-                except HttpResponseBudgetV1Error as error:
-                    return KsError(str(error))
-                body = payload.decode(charset, errors="replace")
-                return Response(body, int(response.status))
-        except _ScopedRedirectDenied as denied:
-            return KsError(
-                f"KS3402: Ağ yönlendirmesi kapsam dışına çıktı: {denied.target}"
-            )
-        except (OSError, urllib.error.URLError) as error:
-            if isinstance(getattr(error, "reason", None), _ScopedRedirectDenied):
-                return KsError(
-                    "KS3402: Ağ yönlendirmesi kapsam dışına çıktı: "
-                    f"{error.reason.target}"
-                )
-            return KsError(f"API isteği başarısız: {error}")
+                    return Response(payload.decode("utf-8"), status)
+                except UnicodeDecodeError:
+                    return KsError(net_v1.NOT_TEXT_PREFIX + url)
+            target = net_v1.resolve_location(current, location, ALLOWED_NET_SCHEMES)
+            if target is None or target.origin != self.origin_key:
+                return KsError(net_v1.redirect_refused(target.text() if target is not None else location))
+            redirects += 1
+            if redirects > net_v1.MAX_REDIRECTS:
+                return KsError(f"{net_v1.FAILED_PREFIX}{net_v1.TOO_MANY_REDIRECTS}: {url}")
+            current = target
 
     @staticmethod
     def post(*arguments: Any) -> KsError:
@@ -933,21 +961,9 @@ def _contains_capability(value: Any, seen: set[int] | None = None) -> bool:
     return False
 
 
-def _origin_key(url: str) -> tuple[str, str, int | None] | None:
-    try:
-        parsed = urlsplit(url)
-        if not parsed.scheme or not parsed.hostname:
-            return None
-        scheme = parsed.scheme.lower()
-        if scheme not in ALLOWED_NET_SCHEMES:
-            return None
-        host = parsed.hostname.lower()
-        port = parsed.port
-        if port is None:
-            port = 443 if scheme == "https" else 80 if scheme == "http" else None
-        return scheme, host, port
-    except ValueError:
-        return None
+def _origin_key(url: str) -> tuple[str, str, int] | None:
+    parsed = net_v1.parse_url(url, ALLOWED_NET_SCHEMES)
+    return parsed.origin if parsed is not None else None
 
 
 class Interpreter:
