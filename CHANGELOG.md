@@ -33,6 +33,7 @@
 - Add program input (readiness gate G1.2): `caps.input.allow(max_bytes)` gives an `InputCaps` whose `args()` returns the command-line arguments and whose `read_text()` reads standard input to its end, at most `max_bytes` bytes (a static literal up to 16 MiB, shown by `ks caps`). Non-UTF-8 input or arguments, an over-budget input and a failed read are Error values (`KS3430`–`KS3432`). `ks run app.ks a b` hands `a b` to the program; everything after `--` is the program's.
 - Let `ks build` compile `main(caps: SystemCaps)` when the program uses only program input: the binary reads `os.Args` and `os.Stdin` and returns the same texts and Error values as `ks run`. Disk, network, environment and every other authority still fail closed with `KS4004`, now naming the native capability broker (G2) as the reason. See `docs/PROGRAM_INPUT_V1.md`.
 - Render capability values as their type (`<SystemCaps>`, `<EnvCaps>`, …) in every executor. Printing a token printed the host object with its memory address. Comparing tokens with `==`/`!=` is now refused with `KS2407`, including structs that carry one.
+- Add clock and random capabilities (readiness gate G3): `caps.clock.allow(resolution_ms)` gives `now_ms()` and `monotonic_ms()` rounded down to a static resolution; `caps.random.allow(max_bytes)` gives `hex(count)` and `below(bound)` from the operating system's secure source (Python `secrets`, Go `crypto/rand`) under a per-token byte budget (`KS3450`/`KS3451`). Both compile into native binaries. See `docs/CLOCK_RANDOM_V1.md`.
 
 ## 0.10.0 — Language ergonomics
 

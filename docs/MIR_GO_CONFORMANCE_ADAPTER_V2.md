@@ -74,8 +74,9 @@ needs Go 1.24 or later), and the members
 Program input is the one authority a binary may carry: `main(caps:
 SystemCaps)`, `caps.input.allow`, `InputCaps.args` and `InputCaps.read_text`
 compile to `os.Args`/`os.Stdin` reads with the same Error values as `ks run`
-(see `PROGRAM_INPUT_V1.md`). `SystemCaps`, `InputRoot` and `InputCaps` may
-appear in signatures.
+(see `PROGRAM_INPUT_V1.md`). The clock and random capabilities compile the
+same way (`CLOCK_RANDOM_V1.md`). These types and `SystemCaps` may appear in
+signatures.
 
 Fails closed with `KS4004`: generic structs, struct fields of capability type,
 `Map`, every other capability (disk, network, environment, process, serve,

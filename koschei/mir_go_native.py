@@ -39,8 +39,12 @@ from .mir_extension_instructions_v4 import (
     MirVariantPayload,
 )
 from .mir_go_runtime_v2 import (
+    MIR_GO_CLOCK_IMPORTS_V2,
+    MIR_GO_CLOCK_RUNTIME_V2,
     MIR_GO_INPUT_IMPORTS_V2,
     MIR_GO_INPUT_RUNTIME_V2,
+    MIR_GO_RANDOM_IMPORTS_V2,
+    MIR_GO_RANDOM_RUNTIME_V2,
     MIR_GO_RUNTIME_V2,
     MIR_GO_RUNTIME_V2_IMPORTS,
     MIR_GO_SHA3_IMPORTS_V2,
@@ -113,18 +117,42 @@ _CAPABILITY_TYPES = frozenset(
         "ServeCaps",
         "InputRoot",
         "InputCaps",
+        "ClockRoot",
+        "ClockCaps",
+        "RandomRoot",
+        "RandomCaps",
         "Response",
     }
 )
-# Program input is data the invoker handed to the process (argv, stdin), so a
-# native binary may carry it. Every other authority domain needs the native
-# capability broker and stays fail-closed (KS4004).
-_NATIVE_CAPABILITY_TYPES = frozenset({"SystemCaps", "InputRoot", "InputCaps"})
-_NATIVE_CAPABILITY_MEMBERS = {("InputRoot", "input"): "_ksCapsInput"}
+# Program input (argv, stdin), the clock and the operating system's random
+# source reach no resource, so a native binary may carry them. Every other
+# authority domain needs the native capability broker and stays fail-closed
+# (KS4004).
+_NATIVE_CAPABILITY_DOMAINS = {
+    "SystemCaps": None,
+    "InputRoot": "input",
+    "InputCaps": "input",
+    "ClockRoot": "clock",
+    "ClockCaps": "clock",
+    "RandomRoot": "random",
+    "RandomCaps": "random",
+}
+_NATIVE_CAPABILITY_TYPES = frozenset(_NATIVE_CAPABILITY_DOMAINS)
+_NATIVE_CAPABILITY_MEMBERS = {
+    ("InputRoot", "input"): "_ksCapsInput",
+    ("ClockRoot", "clock"): "_ksCapsClock",
+    ("RandomRoot", "random"): "_ksCapsRandom",
+}
 _NATIVE_CAPABILITY_CALLS = {
     ("InputRoot", "allow"): ("_ksInputAllow", 1),
     ("InputCaps", "args"): ("_ksInputArgs", 0),
     ("InputCaps", "read_text"): ("_ksInputReadText", 0),
+    ("ClockRoot", "allow"): ("_ksClockAllow", 1),
+    ("ClockCaps", "now_ms"): ("_ksClockNow", 0),
+    ("ClockCaps", "monotonic_ms"): ("_ksClockMonotonic", 0),
+    ("RandomRoot", "allow"): ("_ksRandomAllow", 1),
+    ("RandomCaps", "hex"): ("_ksRandomHex", 1),
+    ("RandomCaps", "below"): ("_ksRandomBelow", 1),
 }
 _ADMITTED_INSTRUCTIONS = (
     MirConst,
@@ -208,18 +236,14 @@ def generate_go_mir_native(mir: MirGraph) -> str:
         for plan in plans
         for ref in plan.refs.values()
     )
-    uses_input = any(
-        isinstance(instruction, MirCapabilityCall)
-        or (isinstance(instruction, MirMember) and _capability_member_type(instruction))
-        for plan in plans
-        for block in plan.function.blocks
-        for instruction in block.instructions
-    )
+    domains = _used_domains(plans)
     imports = sorted(
         {
             *MIR_GO_RUNTIME_V2_IMPORTS,
             *(MIR_GO_SHA3_IMPORTS_V2 if uses_digest else ()),
-            *(MIR_GO_INPUT_IMPORTS_V2 if uses_input else ()),
+            *(MIR_GO_INPUT_IMPORTS_V2 if "input" in domains else ()),
+            *(MIR_GO_CLOCK_IMPORTS_V2 if "clock" in domains else ()),
+            *(MIR_GO_RANDOM_IMPORTS_V2 if "random" in domains else ()),
         }
     )
 
@@ -241,8 +265,12 @@ def generate_go_mir_native(mir: MirGraph) -> str:
     ]
     if uses_digest:
         lines.append(MIR_GO_SHA3_RUNTIME_V2.format(max_bytes=SHA3_256_MAX_INPUT_BYTES))
-    if uses_input:
+    if "input" in domains:
         lines.append(_input_runtime())
+    if "clock" in domains:
+        lines.append(_clock_runtime())
+    if "random" in domains:
+        lines.append(_random_runtime())
     for plan in plans:
         lines.extend(_emit_function(plan, symbols))
         lines.append("")
@@ -250,6 +278,69 @@ def generate_go_mir_native(mir: MirGraph) -> str:
     entry_arguments = "_ksSystemCaps{}" if main.parameters else ""
     lines.extend(["func main() {", f"\t{root_main}({entry_arguments})", "}", ""])
     return "\n".join(lines)
+
+
+def _used_domains(plans: list["_FunctionPlan"]) -> set[str]:
+    """Authority domains a program touches; each one's runtime is emitted alone."""
+
+    domains: set[str] = set()
+    for plan in plans:
+        for block in plan.function.blocks:
+            for instruction in block.instructions:
+                if isinstance(instruction, MirCapabilityCall):
+                    produced = instruction.capability_type
+                elif isinstance(instruction, MirMember):
+                    produced = _capability_member_type(instruction)
+                else:
+                    continue
+                domain = _NATIVE_CAPABILITY_DOMAINS.get(produced or "")
+                if domain is not None:
+                    domains.add(domain)
+    return domains
+
+
+def _clock_runtime() -> str:
+    from .clock_random_v1 import (
+        CLOCK_ALLOW_RANGE_MESSAGE,
+        CLOCK_ALLOW_TYPE_MESSAGE,
+        MAX_RESOLUTION_MS,
+        MIN_RESOLUTION_MS,
+    )
+
+    return MIR_GO_CLOCK_RUNTIME_V2.format(
+        min_resolution=MIN_RESOLUTION_MS,
+        max_resolution=MAX_RESOLUTION_MS,
+        type_message=_go_string(CLOCK_ALLOW_TYPE_MESSAGE),
+        range_message=_go_string(CLOCK_ALLOW_RANGE_MESSAGE),
+    )
+
+
+def _random_runtime() -> str:
+    from .clock_random_v1 import (
+        BELOW_BOUND_MESSAGE,
+        BELOW_COST_BYTES,
+        HEX_COUNT_MESSAGE,
+        MAX_HEX_BYTES,
+        MAX_RANDOM_BYTES,
+        MIN_RANDOM_BYTES,
+        RANDOM_ALLOW_RANGE_MESSAGE,
+        RANDOM_ALLOW_TYPE_MESSAGE,
+        RANDOM_BUDGET_MESSAGE,
+    )
+
+    budget_prefix, budget_suffix = RANDOM_BUDGET_MESSAGE.split("{max_bytes}")
+    return MIR_GO_RANDOM_RUNTIME_V2.format(
+        min_bytes=MIN_RANDOM_BYTES,
+        max_bytes=MAX_RANDOM_BYTES,
+        max_hex=MAX_HEX_BYTES,
+        below_cost=BELOW_COST_BYTES,
+        type_message=_go_string(RANDOM_ALLOW_TYPE_MESSAGE),
+        range_message=_go_string(RANDOM_ALLOW_RANGE_MESSAGE),
+        hex_message=_go_string(HEX_COUNT_MESSAGE),
+        below_message=_go_string(BELOW_BOUND_MESSAGE),
+        budget_prefix=_go_string(budget_prefix),
+        budget_suffix=_go_string(budget_suffix),
+    )
 
 
 def _input_runtime() -> str:

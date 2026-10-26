@@ -83,6 +83,7 @@ ks run .
 - **Errors are values.** `Result<T, E>` with a single `or` keyword in three forms: `or return`, `or default`, `or { block }`. An unhandled error value is a compile error (`KS1401`).
 - **Values are bounded.** A String holds at most 16 MiB of UTF-8 and a List at most 1,048,576 items; an operation over the bound produces a `KS3502` Error value at the same point in `ks run` and `ks build` ([Value Budget v1](docs/VALUE_BUDGET_V1.md)).
 - **Program input is a capability too.** `caps.input.allow(65536)` gives `args()` and a byte-bounded `read_text()` of standard input; `ks run app.ks a b` and the compiled `./app a b` return the same texts and the same Error values ([Program Input v1](docs/PROGRAM_INPUT_V1.md)).
+- **Time and randomness are capabilities.** `caps.clock.allow(1000)` reads a clock no finer than its resolution; `caps.random.allow(64)` draws at most 64 bytes from the operating system's secure source ([Clock and Random v1](docs/CLOCK_RANDOM_V1.md)).
 - **Immutable by default.** Rebinding requires `let mut`.
 - **Every diagnostic is explainable.** 33 error codes with a bilingual catalog; `ks explain KS2401` prints the cause and a fix.
 

@@ -69,6 +69,21 @@ type _ksInputCaps struct {
 	maxBytes int
 }
 
+type _ksClockRoot struct{}
+
+type _ksClockCaps struct {
+	resolution int64
+}
+
+type _ksRandomRoot struct{}
+
+// A pointer: the budget is shared by every holder of the token, like the
+// interpreter's object.
+type _ksRandomCaps struct {
+	maxBytes  int64
+	remaining int64
+}
+
 const _ksMaxCallDepth = 512
 const _ksIntMin = -9223372036854775808
 const _ksIntMax = 9223372036854775807
@@ -159,6 +174,14 @@ func _ksToString(value any) string {
 		return "<InputRoot>"
 	case _ksInputCaps:
 		return "<InputCaps>"
+	case _ksClockRoot:
+		return "<ClockRoot>"
+	case _ksClockCaps:
+		return "<ClockCaps>"
+	case _ksRandomRoot:
+		return "<RandomRoot>"
+	case *_ksRandomCaps:
+		return "<RandomCaps>"
 	}
 	_ksAbort("KS5002", "unrenderable runtime value")
 	return ""
@@ -888,6 +911,14 @@ func _ksTypeName(value any) string {
 		return "InputRoot"
 	case _ksInputCaps:
 		return "InputCaps"
+	case _ksClockRoot:
+		return "ClockRoot"
+	case _ksClockCaps:
+		return "ClockCaps"
+	case _ksRandomRoot:
+		return "RandomRoot"
+	case *_ksRandomCaps:
+		return "RandomCaps"
 	}
 	return "unknown"
 }
@@ -1065,6 +1096,14 @@ func _ksMatchPattern(value any, expected string, parameters map[string]bool, bin
 		return base == "InputRoot"
 	case _ksInputCaps:
 		return base == "InputCaps"
+	case _ksClockRoot:
+		return base == "ClockRoot"
+	case _ksClockCaps:
+		return base == "ClockCaps"
+	case _ksRandomRoot:
+		return base == "RandomRoot"
+	case *_ksRandomCaps:
+		return base == "RandomCaps"
 	}
 	return false
 }
@@ -1216,5 +1255,130 @@ func _ksInputReadText(receiver any) any {{
 		return _ksError{{message: {not_text_message}}}
 	}}
 	return string(data)
+}}
+'''
+
+# Emitted only for programs that read the clock (``clock_random_v1``).
+MIR_GO_CLOCK_IMPORTS_V2 = ("time",)
+MIR_GO_CLOCK_RUNTIME_V2 = r'''
+var _ksMonotonicOrigin = time.Now()
+
+func _ksCapsClock(receiver any) any {{
+	if _, ok := receiver.(_ksSystemCaps); !ok {{
+		_ksAbort("KS5002", "SystemCaps.clock receiver drifted")
+	}}
+	return _ksClockRoot{{}}
+}}
+
+func _ksClockAllow(receiver any, resolution any) any {{
+	if _, ok := receiver.(_ksClockRoot); !ok {{
+		_ksAbort("KS5002", "ClockRoot.allow receiver drifted")
+	}}
+	value, ok := resolution.(int64)
+	if !ok {{
+		return _ksError{{message: {type_message}}}
+	}}
+	if value < {min_resolution} || value > {max_resolution} {{
+		return _ksError{{message: {range_message}}}
+	}}
+	return _ksClockCaps{{resolution: value}}
+}}
+
+func _ksClockCapsOf(receiver any) _ksClockCaps {{
+	clock, ok := receiver.(_ksClockCaps)
+	if !ok {{
+		_ksAbort("KS5002", "ClockCaps receiver drifted")
+	}}
+	return clock
+}}
+
+func _ksClockNow(receiver any) any {{
+	clock := _ksClockCapsOf(receiver)
+	now := time.Now().UnixMilli()
+	return now - now%clock.resolution
+}}
+
+func _ksClockMonotonic(receiver any) any {{
+	clock := _ksClockCapsOf(receiver)
+	elapsed := time.Since(_ksMonotonicOrigin).Milliseconds()
+	return elapsed - elapsed%clock.resolution
+}}
+'''
+
+# Emitted only for programs that draw randomness. crypto/rand is the
+# operating system's secure source; Koschei implements no generator.
+MIR_GO_RANDOM_IMPORTS_V2 = ("crypto/rand", "encoding/hex", "math/big")
+MIR_GO_RANDOM_RUNTIME_V2 = r'''
+func _ksCapsRandom(receiver any) any {{
+	if _, ok := receiver.(_ksSystemCaps); !ok {{
+		_ksAbort("KS5002", "SystemCaps.random receiver drifted")
+	}}
+	return _ksRandomRoot{{}}
+}}
+
+func _ksRandomAllow(receiver any, budget any) any {{
+	if _, ok := receiver.(_ksRandomRoot); !ok {{
+		_ksAbort("KS5002", "RandomRoot.allow receiver drifted")
+	}}
+	value, ok := budget.(int64)
+	if !ok {{
+		return _ksError{{message: {type_message}}}
+	}}
+	if value < {min_bytes} || value > {max_bytes} {{
+		return _ksError{{message: {range_message}}}
+	}}
+	return &_ksRandomCaps{{maxBytes: value, remaining: value}}
+}}
+
+func _ksRandomCapsOf(receiver any) *_ksRandomCaps {{
+	random, ok := receiver.(*_ksRandomCaps)
+	if !ok {{
+		_ksAbort("KS5002", "RandomCaps receiver drifted")
+	}}
+	return random
+}}
+
+func _ksRandomCharge(random *_ksRandomCaps, cost int64) any {{
+	if cost > random.remaining {{
+		return _ksError{{message: {budget_prefix} + strconv.FormatInt(random.maxBytes, 10) + {budget_suffix}}}
+	}}
+	random.remaining -= cost
+	return nil
+}}
+
+func _ksRandomFailed() {{
+	_ksAbort("KS5002", "secure random source failed; no weak value is produced")
+}}
+
+func _ksRandomHex(receiver any, count any) any {{
+	random := _ksRandomCapsOf(receiver)
+	n, ok := count.(int64)
+	if !ok || n < 1 || n > {max_hex} {{
+		return _ksError{{message: {hex_message}}}
+	}}
+	if refused := _ksRandomCharge(random, n); refused != nil {{
+		return refused
+	}}
+	buffer := make([]byte, n)
+	if _, err := rand.Read(buffer); err != nil {{
+		_ksRandomFailed()
+	}}
+	return hex.EncodeToString(buffer)
+}}
+
+func _ksRandomBelow(receiver any, bound any) any {{
+	random := _ksRandomCapsOf(receiver)
+	n, ok := bound.(int64)
+	if !ok || n < 1 {{
+		return _ksError{{message: {below_message}}}
+	}}
+	if refused := _ksRandomCharge(random, {below_cost}); refused != nil {{
+		return refused
+	}}
+	value, err := rand.Int(rand.Reader, big.NewInt(n))
+	if err != nil {{
+		_ksRandomFailed()
+	}}
+	return value.Int64()
 }}
 '''
