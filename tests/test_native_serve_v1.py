@@ -69,7 +69,7 @@ fn handle(server: ServeCaps) -> Int {
 }
 
 fn main(caps: SystemCaps) {
-    let server = caps.serve.allow("127.0.0.1:PORT", CONNECTIONS, 300, 120, 1500)
+    let server = caps.serve.allow("127.0.0.1:PORT", CONNECTIONS, 300, 120, 4000)
     println(handle(server))
 }
 """
@@ -93,7 +93,9 @@ REQUESTS: list[tuple[bytes, float]] = [
     (b"GET /x HTTP/1.1\r\n" + HOST + b"Content-Length: 1\r\nContent-Length: 1\r\n\r\nx", 0),
     (b"POST /x HTTP/1.1\r\n" + HOST + b"Content-Length: 999\r\n\r\n", 0),
     (b"GET /" + b"a" * 400 + b" HTTP/1.1\r\n" + HOST + b"\r\n", 0),
-    (b"GET /slow HTTP/1.1\r\n", 2.5),
+    # Past the 4 s deadline with room to spare; the deadline itself leaves a
+    # slow (CI) machine time to serve every other request under ks run.
+    (b"GET /slow HTTP/1.1\r\n", 6.0),
     (b"POST /cut HTTP/1.1\r\n" + HOST + b"Content-Length: 9\r\n\r\nabc", -1),
     (b"GET /teapot HTTP/1.1\r\n" + HOST + b"\r\n", 0),
     (b"GET /empty HTTP/1.1\r\n" + HOST + b"\r\n", 0),

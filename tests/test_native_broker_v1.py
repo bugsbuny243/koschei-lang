@@ -104,7 +104,9 @@ def _refused_after_confinement(trace: str) -> list[str]:
                 worker.add(int(child.group(1)))
         if name == "seccomp":
             confined = True
-        elif confined and re.search(r"= -1 (EPERM|ENOSYS)", full):
+        # rt_sigreturn has no result: strace shows the restored register,
+        # which reads as "-1 EPERM" when it happens to hold -1.
+        elif confined and name != "rt_sigreturn" and re.search(r"= -1 (EPERM|ENOSYS)", full):
             refused.append(full)
     return refused
 
