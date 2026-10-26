@@ -125,6 +125,9 @@ var _ksBroker *os.File
 // Set by native_net_v1 when the program uses the network.
 var _ksBrokerNet func([]string) ([]string, bool)
 
+// Set by native_serve_v1 when the program serves requests.
+var _ksBrokerServers func([]string) ([]string, bool)
+
 // Entry: the process the user started becomes the broker; the worker runs
 // the program confined.
 func _ksBrokerEntry(run func()) {{
@@ -453,7 +456,7 @@ func _ksBrokerLoop(channel *os.File) {{
 	defer channel.Close()
 	scopes := []*_ksScope{{nil}}
 	for {{
-		request, err := _ksReadFrame(channel, 4, _ksBrokerMaxField+(1<<18))
+		request, err := _ksReadFrame(channel, 6, _ksBrokerMaxField+(1<<18))
 		if err != nil || len(request) == 0 {{
 			return
 		}}
@@ -491,6 +494,9 @@ func _ksBrokerLoop(channel *os.File) {{
 			served := false
 			if _ksBrokerNet != nil {{
 				answer, served = _ksBrokerNet(request)
+			}}
+			if !served && _ksBrokerServers != nil {{
+				answer, served = _ksBrokerServers(request)
 			}}
 			if !served {{
 				return

@@ -72,6 +72,8 @@ REASONS = {
     503: "Service Unavailable",
 }
 
+_ASCII_LOWER = str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz")
+
 _INSTALLED = False
 _ORIGINALS: dict[str, Any] = {}
 
@@ -137,7 +139,7 @@ def _open(caps: ServeCaps) -> _Server | _runtime.KsError:
         listener.listen(min(caps.policy.max_connections, 128))
     except OSError as error:
         listener.close()
-        return _exchange._io_error(f"listener failed: {error}")
+        return _exchange._io_error(f"listener failed: {_exchange.socket_code(error)}")
     return _Server(listener)
 
 
@@ -189,7 +191,7 @@ def _read_request(connection: socket.socket, caps: ServeCaps, deadline: float):
     except (socket.timeout, TimeoutError):
         return None, (400, _exchange._io_error("request read exceeded the I/O deadline"))
     except OSError as error:
-        return None, (400, _exchange._io_error(f"request read failed: {error}"))
+        return None, (400, _exchange._io_error(f"request read failed: {_exchange.socket_code(error)}"))
     method, target, headers = _parse_headers(bytes(buffer[: body_start - 4]))
     return HttpRequest(method, target, headers, bytes(buffer[body_start:expected])), None
 
@@ -214,7 +216,7 @@ def _accept(self: ServeCaps):
     except (socket.timeout, TimeoutError):
         return _exchange._io_error("accept exceeded the I/O deadline")
     except OSError as error:
-        return _exchange._io_error(f"accept failed: {error}")
+        return _exchange._io_error(f"accept failed: {_exchange.socket_code(error)}")
     server.accepted += 1
     request, failure = _read_request(connection, self, deadline)
     if failure is not None:
@@ -251,7 +253,7 @@ def _reply(self: ServeCaps, status: Any, body: Any):
     except (socket.timeout, TimeoutError):
         return _exchange._io_error("response write exceeded the I/O deadline")
     except OSError as error:
-        return _exchange._io_error(f"response write failed: {error}")
+        return _exchange._io_error(f"response write failed: {_exchange.socket_code(error)}")
     finally:
         _close(connection)
     return _runtime.KsUnit
@@ -273,8 +275,11 @@ def request_method(request: HttpRequest, name: str, arguments: list[Any]) -> Any
         (wanted,) = arguments
         if not isinstance(wanted, str):
             return _runtime.KsError(HEADER_MESSAGE.format(name=wanted))
+        # Names are ASCII tokens (serve_loopback_exchange_v1), so only ASCII
+        # letters fold.
+        folded = wanted.translate(_ASCII_LOWER)
         for header, value in request.headers:
-            if header == wanted.lower():
+            if header == folded:
                 return value
         return _runtime.KsError(HEADER_MESSAGE.format(name=wanted))
     raise AssertionError(name)

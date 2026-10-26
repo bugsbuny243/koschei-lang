@@ -12,6 +12,7 @@ only be created by Serve Authority v1's loopback policy.
 
 from __future__ import annotations
 
+import errno
 import socket
 import time
 from typing import Any
@@ -34,6 +35,27 @@ def _remaining_seconds(deadline: float) -> float:
 
 def _apply_deadline(sock: socket.socket, deadline: float) -> None:
     sock.settimeout(_remaining_seconds(deadline))
+
+
+# Header names are RFC 9110 tokens; anything else is a protocol error, so a
+# name never depends on a host's Unicode case rules.
+_TOKEN_CHARS = frozenset(
+    "!#$%&'*+-.^_`|~0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+)
+_SOCKET_CODES = {
+    errno.EADDRINUSE: "EADDRINUSE",
+    errno.EADDRNOTAVAIL: "EADDRNOTAVAIL",
+    errno.EACCES: "EACCES",
+    errno.ECONNRESET: "ECONNRESET",
+    errno.EPIPE: "EPIPE",
+    errno.ECONNABORTED: "ECONNABORTED",
+}
+
+
+def socket_code(error: OSError) -> str:
+    """The stable name of a socket failure; host messages never reach programs."""
+
+    return _SOCKET_CODES.get(error.errno, "EIO")
 
 
 def _protocol_error(message: str) -> _runtime.KsError:
@@ -79,7 +101,7 @@ def _parse_request_head(raw: bytes) -> tuple[int, int] | _runtime.KsError:
         name, value = line.split(":", 1)
         name = name.strip().lower()
         value = value.strip()
-        if not name or any(char.isspace() for char in name):
+        if not name or any(char not in _TOKEN_CHARS for char in name):
             return _protocol_error("malformed HTTP header name")
         if name == "transfer-encoding":
             transfer_encoding = True
@@ -123,7 +145,7 @@ def _read_one_request(
         except socket.timeout:
             return _io_error("request header read exceeded the I/O deadline")
         except OSError as error:
-            return _io_error(f"request header read failed: {error}")
+            return _io_error(f"request header read failed: {socket_code(error)}")
         if not chunk:
             return _protocol_error("connection closed before HTTP headers completed")
         buffer.extend(chunk)
@@ -151,7 +173,7 @@ def _read_one_request(
         except socket.timeout:
             return _io_error("request body read exceeded the I/O deadline")
         except OSError as error:
-            return _io_error(f"request body read failed: {error}")
+            return _io_error(f"request body read failed: {socket_code(error)}")
         if not chunk:
             return _protocol_error("connection closed before request body completed")
         buffer.extend(chunk)
@@ -217,12 +239,12 @@ def _exchange(self: ServeCaps, response_body: Any) -> str | _runtime.KsError:
                 except socket.timeout:
                     return _io_error("response write exceeded the I/O deadline")
                 except OSError as error:
-                    return _io_error(f"response write failed: {error}")
+                    return _io_error(f"response write failed: {socket_code(error)}")
                 return request_body
     except TimeoutError:
         return _io_error("I/O deadline expired")
     except OSError as error:
-        return _io_error(f"listener failed: {error}")
+        return _io_error(f"listener failed: {socket_code(error)}")
 
 
 def _check_method_call(

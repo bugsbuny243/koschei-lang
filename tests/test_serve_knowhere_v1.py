@@ -219,7 +219,9 @@ fn main(caps: SystemCaps) {
         )
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "main.ks"
-            path.write_text(head + "    let r = s.accept() or return\n    println(r.path())\n}\n", encoding="utf-8")
+            # accept/reply compile through the broker (tests/test_native_serve_v1.py);
+            # the one-shot exchange does not.
+            path.write_text(head + '    let body = s.exchange("hi") or return\n    println(body)\n}\n', encoding="utf-8")
             with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()) as errors:
                 self.assertEqual(cli_main(["build", str(path), "-o", str(Path(directory) / "bin")]), 1)
             self.assertIn("KS4004", errors.getvalue())

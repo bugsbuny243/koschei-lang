@@ -397,11 +397,11 @@ Every diagnostic is listed in [`../reference/ERROR_CODES.md`](../reference/ERROR
 
 `ks build` compiles programs that use the core language, structs, enums,
 generics, modules, the Core Library, program input, the clock and randomness,
-and on linux/amd64 the disk (read, write, delete), the environment and the
-network through a confined broker ([`../NATIVE_BROKER_V1.md`](../NATIVE_BROKER_V1.md),
+and on linux/amd64 the disk (read, write, delete), the environment, the
+network and the loopback server through a confined broker ([`../NATIVE_BROKER_V1.md`](../NATIVE_BROKER_V1.md),
 [`../NET_V1.md`](../NET_V1.md)). The binary prints
 the same bytes and the same Error values as `ks run`. Maps, callback members
-(`filter`, `map`, `sort`), processes and the loopback server are refused with
+(`filter`, `map`, `sort`) and processes are refused with
 `KS4004` instead of compiled differently; see [`../MIR_GO_CONFORMANCE_ADAPTER_V2.md`](../MIR_GO_CONFORMANCE_ADAPTER_V2.md).
 
 ## 12. Limits worth knowing
@@ -410,4 +410,5 @@ the same bytes and the same Error values as `ks run`. Maps, callback members
   (`KS3502`).
 - `ks run` stops a program after 1,000,000 steps by default (`--max-steps`)
   and at 512 nested calls.
-- There is no interactive line reading yet, and the loopback server ([`../SERVE_KNOWHERE_V1.md`](../SERVE_KNOWHERE_V1.md)) runs under `ks run` only; see `KOSCHEI_SATISA_HAZIRLIK_V1.md` for the plan.
+- There is no interactive line reading yet, and the broker exists on
+  linux/amd64 only ([`../SERVE_KNOWHERE_V1.md`](../SERVE_KNOWHERE_V1.md)); see `KOSCHEI_SATISA_HAZIRLIK_V1.md` for the plan.

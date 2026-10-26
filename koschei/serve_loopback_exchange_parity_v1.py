@@ -88,12 +88,12 @@ def _exchange_exact_backlog(
                         "response write exceeded the I/O deadline"
                     )
                 except OSError as error:
-                    return _exchange._io_error(f"response write failed: {error}")
+                    return _exchange._io_error(f"response write failed: {_exchange.socket_code(error)}")
                 return request_body
     except TimeoutError:
         return _exchange._io_error("I/O deadline expired")
     except OSError as error:
-        return _exchange._io_error(f"listener failed: {error}")
+        return _exchange._io_error(f"listener failed: {_exchange.socket_code(error)}")
 
 
 def install_serve_loopback_exchange_parity_v1() -> None:

@@ -38,11 +38,12 @@ the separate Koschei Sentinel product.
 3. **Language → host.** Capability operations are the only path to host
    effects; each is bound to a canonical effect and power domain.
 4. **Native binary → OS.** Binaries carry program input, clock and
-   randomness directly. The disk (read, write, delete), the environment and
-   the network go through a broker process; the program runs in a
-   seccomp-confined worker with an empty environment and no sockets
-   (`docs/NATIVE_BROKER_V1.md`, `docs/NET_V1.md`). Processes, `persist` and
-   `serve` are refused at build time (`KS4004`).
+   randomness directly. The disk (read, write, delete), the environment, the
+   network and the loopback server go through a broker process; the program
+   runs in a seccomp-confined worker with an empty environment and no
+   sockets (`docs/NATIVE_BROKER_V1.md`, `docs/NET_V1.md`,
+   `docs/SERVE_KNOWHERE_V1.md`). Processes, `persist` and `serve.exchange`
+   are refused at build time (`KS4004`).
 
 ## Threats and controls
 

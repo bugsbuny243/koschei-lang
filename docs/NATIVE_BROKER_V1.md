@@ -1,9 +1,10 @@
 # Koschei Native Capability Broker v1
 
-Status: **disk (read, write, delete), environment and network in native
-binaries on linux/amd64; first three steps of readiness gate G2.** Processes,
-`persist` and `serve` still fail closed (`KS4004`). The network rules are in
-[`NET_V1.md`](NET_V1.md).
+Status: **disk (read, write, delete), environment, network and the loopback
+server in native binaries on linux/amd64; readiness gate G2.** Processes,
+`persist` and the one-shot `serve.exchange` still fail closed (`KS4004`). The
+network rules are in [`NET_V1.md`](NET_V1.md), the server's in
+[`SERVE_KNOWHERE_V1.md`](SERVE_KNOWHERE_V1.md).
 
 ## Why
 
@@ -35,8 +36,8 @@ user ──▶ broker (holds the environment, the cwd, the right to open files)
    `process_vm_readv/writev`, `kill`, `setuid`, `setgid`,
    `name_to_handle_at`, `open_by_handle_at`, `io_uring_setup`, `bpf`,
    `perf_event_open`, `userfaultfd`, `keyctl`, `add_key`, `request_key`.
-3. Every `DiskReadCaps` and `DiskCaps` operation, every `EnvCaps.get` and
-   every `NetCaps.get` is a request on the
+3. Every `DiskReadCaps` and `DiskCaps` operation, every `EnvCaps.get`,
+   every `NetCaps.get` and every `ServeCaps.accept`/`reply` is a request on the
    socket; the broker answers with the value or the Error text. A malformed
    request ends the conversation and the worker stops.
 4. The broker exits with the worker's status.
@@ -74,7 +75,7 @@ rules that do not depend on the host:
 - Confinement is implemented for linux/amd64 only; other targets refuse to
   run such a binary (`KS4001`).
 - The filter is a deny list of resource system calls, not an allow list.
-- Processes, `persist` and `serve` are still refused by `ks build`.
+- Processes, `persist` and `serve.exchange` are still refused by `ks build`.
 
 ## Evidence
 

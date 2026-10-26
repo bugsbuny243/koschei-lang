@@ -111,6 +111,21 @@ type _ksNetCaps struct {
 	scope string
 }
 
+// Loopback server tokens (native_serve_v1); the listener lives in the broker.
+type _ksServeRoot struct{}
+
+type _ksServeCaps struct {
+	scope string
+}
+
+// One received request: data only (serve_knowhere_v1.HttpRequest).
+type _ksHttpRequest struct {
+	method  string
+	path    string
+	headers [][2]string
+	body    string
+}
+
 // The result of NetCaps.get: read through text() and status() only.
 type _ksResponse struct {
 	status int64
@@ -238,6 +253,12 @@ func _ksToString(value any) string {
 		return "<NetCaps>"
 	case _ksResponse:
 		return "<Response>"
+	case _ksServeRoot:
+		return "<ServeRoot>"
+	case _ksServeCaps:
+		return "<ServeCaps>"
+	case _ksHttpRequest:
+		return "HttpRequest(" + item.method + " " + item.path + ")"
 	case _ksClockRoot:
 		return "<ClockRoot>"
 	case _ksClockCaps:
@@ -327,6 +348,18 @@ func _ksEqual(left any, right any) bool {
 	case _ksUnit:
 		_, ok := right.(_ksUnit)
 		return ok
+	case _ksHttpRequest:
+		// A frozen dataclass: every field, headers in order.
+		b, ok := right.(_ksHttpRequest)
+		if !ok || a.method != b.method || a.path != b.path || a.body != b.body || len(a.headers) != len(b.headers) {
+			return false
+		}
+		for index := range a.headers {
+			if a.headers[index] != b.headers[index] {
+				return false
+			}
+		}
+		return true
 	}
 	return false
 }
@@ -795,6 +828,11 @@ func _ksMemberOf(receiver any, name string) any {
 		case "text", "status":
 			return _ksMember{receiver: receiver, name: name}
 		}
+	case _ksHttpRequest:
+		switch name {
+		case "method", "path", "header", "body", "body_bytes":
+			return _ksMember{receiver: receiver, name: name}
+		}
 	case []any:
 		switch name {
 		case "length", "get", "push", "contains", "take":
@@ -831,6 +869,8 @@ func _ksInvokeMember(callee any, arguments ...any) any {
 	switch receiver := member.receiver.(type) {
 	case _ksBytes:
 		return _ksBytesMember(receiver, member.name, arguments)
+	case _ksHttpRequest:
+		return _ksRequestMember(receiver, member.name, arguments)
 	case _ksResponse:
 		_ksArity(member.name, arguments, 0)
 		if member.name == "status" {
@@ -1050,6 +1090,12 @@ func _ksTypeName(value any) string {
 		return "NetCaps"
 	case _ksResponse:
 		return "Response"
+	case _ksServeRoot:
+		return "ServeRoot"
+	case _ksServeCaps:
+		return "ServeCaps"
+	case _ksHttpRequest:
+		return "HttpRequest"
 	case _ksClockRoot:
 		return "ClockRoot"
 	case _ksClockCaps:
@@ -1253,6 +1299,12 @@ func _ksMatchPattern(value any, expected string, parameters map[string]bool, bin
 		return base == "NetCaps"
 	case _ksResponse:
 		return base == "Response"
+	case _ksServeRoot:
+		return base == "ServeRoot"
+	case _ksServeCaps:
+		return base == "ServeCaps"
+	case _ksHttpRequest:
+		return base == "HttpRequest"
 	case _ksClockRoot:
 		return base == "ClockRoot"
 	case _ksClockCaps:

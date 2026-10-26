@@ -397,10 +397,10 @@ Bütün tanı kodları [`../reference/ERROR_CODES.md`](../reference/ERROR_CODES.
 
 `ks build`; çekirdek dili, struct, enum, generic, modül, Core Library, program
 girdisi, saat ve rastgelelik kullanan programları; linux/amd64'te ayrıca
-kilitli bir aracı üzerinden disk (okuma, yazma, silme), ortam değişkenleri ve ağı derler
+kilitli bir aracı üzerinden disk (okuma, yazma, silme), ortam değişkenleri, ağ ve yerel sunucuyu derler
 ([`../NATIVE_BROKER_V1.md`](../NATIVE_BROKER_V1.md), [`../NET_V1.md`](../NET_V1.md)). İkili `ks run` ile aynı
 baytları ve aynı hata değerlerini yazdırır. Map, geri çağrılı üyeler
-(`filter`, `map`, `sort`), süreçler ve yerel sunucu farklı derlenmek yerine `KS4004`
+(`filter`, `map`, `sort`) ve süreçler farklı derlenmek yerine `KS4004`
 ile reddedilir; bkz.
 [`../MIR_GO_CONFORMANCE_ADAPTER_V2.md`](../MIR_GO_CONFORMANCE_ADAPTER_V2.md).
 
@@ -410,5 +410,5 @@ ile reddedilir; bkz.
   (`KS3502`).
 - `ks run` bir programı varsayılan olarak 1.000.000 adımdan sonra
   (`--max-steps`) ve 512 iç içe çağrıda durdurur.
-- Henüz etkileşimli satır okuma yoktur; yerel sunucu ([`../SERVE_KNOWHERE_V1.md`](../SERVE_KNOWHERE_V1.md)) yalnızca `ks run` altında çalışır;
-  plan için `KOSCHEI_SATISA_HAZIRLIK_V1.md`.
+- Henüz etkileşimli satır okuma yoktur; aracı yalnızca linux/amd64'te vardır
+  ([`../SERVE_KNOWHERE_V1.md`](../SERVE_KNOWHERE_V1.md)); plan için `KOSCHEI_SATISA_HAZIRLIK_V1.md`.
