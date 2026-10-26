@@ -75,8 +75,12 @@ class ServeLoopbackHttpStrictV1Tests(unittest.TestCase):
             set(exchange.required_budgets),
             {"connections", "request_bytes", "response_bytes", "deadline"},
         )
-        listen = next(operation for operation in serve.operations if operation.name == "listen")
-        self.assertEqual(listen.status, "planned")
+        # The multi-request server is implemented for ks run only; native
+        # builds refuse it, so it is not claimed as supported.
+        for name in ("accept", "reply"):
+            operation = next(item for item in serve.operations if item.name == name)
+            self.assertEqual(operation.status, "reserved")
+            self.assertFalse(operation.native_go)
 
 
 if __name__ == "__main__":

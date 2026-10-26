@@ -408,5 +408,5 @@ yerine `KS4004` ile reddedilir; bkz.
   (`KS3502`).
 - `ks run` bir programı varsayılan olarak 1.000.000 adımdan sonra
   (`--max-steps`) ve 512 iç içe çağrıda durdurur.
-- Henüz etkileşimli satır okuma ve sürekli çalışan sunucu yoktur;
+- Henüz etkileşimli satır okuma yoktur; yerel sunucu ([`../SERVE_KNOWHERE_V1.md`](../SERVE_KNOWHERE_V1.md)) yalnızca `ks run` altında çalışır;
   plan için `KOSCHEI_SATISA_HAZIRLIK_V1.md`.

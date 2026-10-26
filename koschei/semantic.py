@@ -95,7 +95,7 @@ NARROWED_METHODS: dict[str, set[str]] = {
     "DiskReadCaps": {"read", "list", "read_file", "read_bytes"},
     "EnvCaps": {"get"},
     "ProcessCaps": {"run", "spawn"},
-    "ServeCaps": {"exchange"},
+    "ServeCaps": {"exchange", "accept", "reply"},
     "PersistCaps": {"load", "commit"},
     "InputCaps": {"args", "read_text", "read_bytes"},
     "ClockCaps": {"now_ms", "monotonic_ms"},

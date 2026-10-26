@@ -408,4 +408,4 @@ differently; see [`../MIR_GO_CONFORMANCE_ADAPTER_V2.md`](../MIR_GO_CONFORMANCE_A
   (`KS3502`).
 - `ks run` stops a program after 1,000,000 steps by default (`--max-steps`)
   and at 512 nested calls.
-- There is no interactive line reading and no long-running server yet; see `KOSCHEI_SATISA_HAZIRLIK_V1.md` for the plan.
+- There is no interactive line reading yet, and the loopback server ([`../SERVE_KNOWHERE_V1.md`](../SERVE_KNOWHERE_V1.md)) runs under `ks run` only; see `KOSCHEI_SATISA_HAZIRLIK_V1.md` for the plan.

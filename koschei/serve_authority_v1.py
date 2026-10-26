@@ -217,10 +217,13 @@ class ServeRoot(_runtime._NarrowedCapability):
 
 
 class ServeCaps(_runtime._NarrowedCapability):
-    __slots__ = ("policy",)
+    # `_server` holds the open listener and the one pending request of the
+    # multi-request server (serve_knowhere_v1); None until accept() is used.
+    __slots__ = ("policy", "_server")
 
     def __init__(self, policy: ServePolicy) -> None:
         self.policy = policy
+        self._server = None
 
 
 class SystemCaps:
