@@ -22,6 +22,8 @@ CASES = {
     "-9223372036854775808": -9223372036854775808,
     "1_000": None, "\u0661\u0662": None, "\uff11": None, "9223372036854775808": None,
     "": None, "+": None, "4.0": None, "0x1": None, "1 2": None,
+    # Past Python's 4,300-digit int() limit: still an Error value, not a crash.
+    "1" * 5000: None, "-" + "0" * 5000 + "7": -7,
 }
 
 

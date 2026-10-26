@@ -344,6 +344,34 @@ fn main(caps: SystemCaps) {
             refused = _refused_after_confinement(trace.read_text())
             self.assertEqual(refused, [])
 
+    @unittest.skipUnless(SUPPORTED, "broker confinement is linux/amd64")
+    def test_the_worker_dies_with_its_broker(self) -> None:
+        source = (
+            'fn main(caps: SystemCaps) {\n    println(caps.env.allow("HOME").get() or "?")\n'
+            "    let mut i = 0\n    while i >= 0 {\n        i = (i + 1) % 1000\n    }\n}\n"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "main.ks"
+            path.write_text(source, encoding="utf-8")
+            binary = self.build(path)
+            broker = subprocess.Popen([str(binary)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            try:
+                broker.stdout.readline()
+                worker = int(Path(f"/proc/{broker.pid}/task/{broker.pid}/children").read_text().split()[0])
+                broker.kill()
+                broker.wait(timeout=20)
+                deadline = time.monotonic() + 20
+                while time.monotonic() < deadline and Path(f"/proc/{worker}").exists():
+                    status = Path(f"/proc/{worker}/status").read_text() if Path(f"/proc/{worker}/status").exists() else ""
+                    if "State:\tZ" in status:
+                        break
+                    time.sleep(0.05)
+                status = Path(f"/proc/{worker}/status").read_text() if Path(f"/proc/{worker}").exists() else ""
+                self.assertTrue(status == "" or "State:\tZ" in status, status[:200])
+            finally:
+                if broker.poll() is None:
+                    broker.kill()
+
     def test_processes_stay_closed(self) -> None:
         cases = {
             "process": 'fn main(caps: SystemCaps) {\n    let p = caps.process.allow("echo")\n    println(p.run("hello") or "")\n}\n',

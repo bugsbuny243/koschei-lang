@@ -203,6 +203,20 @@ class BytesTests(unittest.TestCase):
         if native is not None:
             self.assertEqual(native, message)
 
+    def test_hex_respects_the_string_budget(self) -> None:
+        source = (
+            "fn main(caps: SystemCaps) {\n    let input = caps.input.allow(16777216)\n"
+            '    let block = input.read_bytes() or "".to_bytes()\n'
+            "    println(block.hex())\n}\n"
+        )
+        path = self.write(source)
+        message = "KS3502: Bellek bütçesi aşıldı: bir String en fazla 16777216 bayt UTF-8 olabilir.\n"
+        data = b"\x00" * ((1 << 23) + 1)
+        self.assertEqual(self.ks_run(path, data), message)
+        native = self.native(path, data)
+        if native is not None:
+            self.assertEqual(native, message)
+
     def test_the_checker_keeps_bytes_and_text_apart(self) -> None:
         cases = {
             'fn main() {\n    let x = "a".to_bytes() + "b"\n}\n': "KS1306",

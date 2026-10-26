@@ -148,6 +148,7 @@ class NetRulesTests(unittest.TestCase):
             "HTTPS://example.com:8443/a?b=1#frag": ("https", "example.com", 8443, "/a?b=1"),
             "http://127.0.0.1:18471?x": ("http", "127.0.0.1", 18471, "/?x"),
             "http://[::1]:8080/p": ("http", "::1", 8080, "/p"),
+            "http://[::ffff:1.2.3.4]/": ("http", "::ffff:1.2.3.4", 80, "/"),
             "http://a_b.example/%41(b)": ("http", "a_b.example", 80, "/%41(b)"),
         }
         for url, expected in accepted.items():
@@ -162,6 +163,7 @@ class NetRulesTests(unittest.TestCase):
             "http://example.com/a b", "http://example.com/%zz", "http://example.com/%4",
             "http://example.com/{x}", "http://ex\\ample.com/", "http://[::1/", "http://[::1]x/",
             "http://ğ.example/", "http://example.com/ğ", "1http://example.com/",
+            "http://[::::]/", "http://[1.2.3.4]/", "http://[1::2::3]/", "http://[::ffff:01.2.3.4]/",
         ]
         for url in rejected:
             with self.subTest(url):

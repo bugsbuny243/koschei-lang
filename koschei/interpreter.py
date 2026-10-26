@@ -216,7 +216,14 @@ def ks_parse_int(text: str) -> int | None:
     trimmed = text.strip()
     if not _INT_TEXT.fullmatch(trimmed):
         return None
-    value = int(trimmed)
+    # More than 19 significant digits is outside Int. Converting only the
+    # significant digits also keeps Python's int() digit limit (4,300, which
+    # counts leading zeros) from raising.
+    negative = trimmed.startswith("-")
+    digits = trimmed.lstrip("+-").lstrip("0") or "0"
+    if len(digits) > 19:
+        return None
+    value = -int(digits) if negative else int(digits)
     if not -(1 << 63) <= value < (1 << 63):
         return None
     return value

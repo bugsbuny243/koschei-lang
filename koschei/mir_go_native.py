@@ -348,10 +348,11 @@ def generate_go_mir_native(mir: MirGraph) -> str:
         lines.append("")
     main = next(item for item in mir.root_module.functions if item.name == "main")
     entry_arguments = "_ksSystemCaps{}" if main.parameters else ""
+    # Like the canonical executor, an Error returned by main fails the run.
     if "broker" in domains:
-        entry = [f"\t_ksBrokerEntry(func() {{ {root_main}({entry_arguments}) }})"]
+        entry = [f"\t_ksBrokerEntry(func() {{ _ksFinish({root_main}({entry_arguments})) }})"]
     else:
-        entry = [f"\t{root_main}({entry_arguments})"]
+        entry = [f"\t_ksFinish({root_main}({entry_arguments}))"]
     lines.extend(["func main() {", *entry, "}", ""])
     return "\n".join(lines)
 

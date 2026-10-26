@@ -156,6 +156,15 @@ func _ksAbort(code string, message string) {
 	os.Exit(1)
 }
 
+// canonical_mir_budget_runtime_v1: an Error returned by main is reported
+// and the process exits with status 1.
+func _ksFinish(result any) {
+	if failure, ok := result.(_ksError); ok {
+		fmt.Fprintln(os.Stderr, "KOSCHEI RUNTIME ERROR: "+failure.message)
+		os.Exit(1)
+	}
+}
+
 func _ksEnter() {
 	if _ksDepth >= _ksMaxCallDepth {
 		_ksAbort("KS3105", "call depth limit exceeded ("+strconv.Itoa(_ksMaxCallDepth)+")")
@@ -1634,6 +1643,9 @@ func _ksBytesMember(receiver _ksBytes, name string, arguments []any) any {{
 		return int64(len(data))
 	case "hex":
 		_ksArity("hex", arguments, 0)
+		if 2*len(data) > _ksMaxStringBytes {{
+			return _ksStringBudgetError
+		}}
 		return _ksHexText(data)
 	case "to_text":
 		_ksArity("to_text", arguments, 0)

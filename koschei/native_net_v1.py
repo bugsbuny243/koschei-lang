@@ -191,6 +191,10 @@ func _ksParseURL(raw string) (_ksURL, bool) {{
 		if host == "" || !_ksAllIn(host, "0123456789abcdef:.") {{
 			return _ksURL{{}}, false
 		}}
+		// ipaddress.IPv6Address: a real IPv6 address, which always has a colon.
+		if !strings.Contains(host, ":") || net.ParseIP(host) == nil {{
+			return _ksURL{{}}, false
+		}}
 		if after != "" {{
 			if !strings.HasPrefix(after, ":") {{
 				return _ksURL{{}}, false

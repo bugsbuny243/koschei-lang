@@ -145,6 +145,10 @@ def parse_url(url: str, schemes: frozenset[str] | set[str]) -> Url | None:
         after = authority[close + 1 :]
         if not host or any(character not in _IPV6_CHARS for character in host):
             return None
+        try:
+            ipaddress.IPv6Address(host)
+        except ValueError:
+            return None
         if after:
             if not after.startswith(":"):
                 return None

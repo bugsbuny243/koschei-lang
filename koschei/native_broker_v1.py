@@ -285,6 +285,14 @@ func _ksWorkerStart() {{
 	if err := syscall.Fstat(3, &info); err != nil || info.Mode&syscall.S_IFMT != syscall.S_IFSOCK {{
 		_ksAbort("KS5002", "native worker started without its broker")
 	}}
+	// The worker dies with its broker: PR_SET_PDEATHSIG, then make sure the
+	// broker (the peer of descriptor 3) had not already gone.
+	if _, _, errno := syscall.RawSyscall(syscall.SYS_PRCTL, syscall.PR_SET_PDEATHSIG, uintptr(syscall.SIGKILL), 0); errno != 0 {{
+		_ksAbort("KS5002", "native worker could not bind its lifetime to the broker")
+	}}
+	if peer, err := syscall.GetsockoptUcred(3, syscall.SOL_SOCKET, syscall.SO_PEERCRED); err != nil || int(peer.Pid) != os.Getppid() {{
+		os.Exit(1)
+	}}
 	syscall.CloseOnExec(3)
 	_ksBroker = os.NewFile(3, "koschei-broker")
 	_ksConfine()
