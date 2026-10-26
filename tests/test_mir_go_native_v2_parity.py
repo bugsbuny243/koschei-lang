@@ -262,6 +262,55 @@ def _float_program() -> str:
     return "fn main() {\n" + "\n".join(lines) + "\n}\n"
 
 
+TEXT_EDGES = """
+import text
+
+fn repeat(piece: String, times: Int) -> String {
+    let mut out = ""
+    let mut i = 0
+    while i < times {
+        out = out + piece
+        i = i + 1
+    }
+    return out
+}
+
+fn main() {
+    let value = repeat("a", 601)
+    let suffix = repeat("a", 600)
+    println(text.ends_with(value, suffix))
+    println(text.strip_suffix(value, suffix))
+    let mut big = "a"
+    let mut i = 0
+    while i < 20 {
+        big = big + big
+        i = i + 1
+    }
+    println(big.length())
+    println(text.starts_with(big, "a"))
+    let rest = text.strip_prefix(big, "aaa") or ""
+    println(rest.length())
+    println(text.ends_with("çay", "ay"))
+    println(text.strip_prefix("çay", "ç"))
+    println(text.strip_suffix("ab", ""))
+    println(text.starts_with("ab", "abc"))
+}
+"""
+
+NUMERIC_MEMBERSHIP = """
+fn main() {
+    println([1].contains(1.0))
+    println([1].contains(true))
+    println([false].contains(0))
+    println([[1]].contains([1.0]))
+    println([1.5].contains(1))
+    println([9007199254740993].contains(9007199254740992.0))
+    println("ab".to_bytes() == "ab".to_bytes())
+    let head = "ab".to_bytes().slice(0, 1) or "".to_bytes()
+    println(head == "a".to_bytes())
+}
+"""
+
 GENERIC_ENUMS = """
 enum Box<T> {
     B(T),
@@ -378,6 +427,19 @@ class MirGoNativeParityTests(unittest.TestCase):
         native_ok, native_out, native_err = self.native_run(path)
         self.assertEqual(self.ks_run(path), (native_ok, native_out), native_err)
         self.assertEqual(native_out, "B(1)\n42\nB([1, 2])\nEmpty\n0\nB(B(2.5))\n")
+
+    def test_prefix_and_suffix_work_on_long_and_self_overlapping_text(self) -> None:
+        # No recursion bounded by the suffix length and no split of the whole
+        # value: a 601/600 overlap and a 1 MiB value both answer.
+        output = self.assert_parity(TEXT_EDGES)
+        self.assertEqual(
+            output,
+            'true\nSome("a")\n1048576\ntrue\n1048573\ntrue\nSome("ay")\nSome("ab")\nfalse\n',
+        )
+
+    def test_list_contains_compares_numbers_by_value(self) -> None:
+        output = self.assert_parity(NUMERIC_MEMBERSHIP)
+        self.assertEqual(output, "true\ntrue\ntrue\ntrue\nfalse\nfalse\ntrue\ntrue\n")
 
     def test_core_library_compiles_natively(self) -> None:
         output = self.assert_parity(LIBRARY_TOUR)

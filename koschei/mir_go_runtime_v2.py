@@ -290,17 +290,54 @@ func _ksRepr(value any) string {
 
 // ---- equality and ordering ---------------------------------------------
 
-func _ksEqual(left any, right any) bool {
-	switch a := left.(type) {
+// Python numbers compare by value across bool, Int and Float, exactly:
+// [1].contains(1.0) and true == 1 hold, 2**53+1 == 2.0**53 does not.
+func _ksNumberOf(value any) (int64, float64, bool, bool) {
+	switch number := value.(type) {
 	case bool:
-		b, ok := right.(bool)
-		return ok && a == b
+		if number {
+			return 1, 0, true, true
+		}
+		return 0, 0, true, true
 	case int64:
-		b, ok := right.(int64)
-		return ok && a == b
+		return number, 0, true, true
 	case float64:
-		b, ok := right.(float64)
-		return ok && a == b
+		return 0, number, false, true
+	}
+	return 0, 0, false, false
+}
+
+func _ksNumberEqual(left any, right any) bool {
+	leftInt, leftFloat, leftIsInt, _ := _ksNumberOf(left)
+	rightInt, rightFloat, rightIsInt, ok := _ksNumberOf(right)
+	if !ok {
+		return false
+	}
+	if leftIsInt && rightIsInt {
+		return leftInt == rightInt
+	}
+	if !leftIsInt && !rightIsInt {
+		return leftFloat == rightFloat
+	}
+	whole, number := leftInt, rightFloat
+	if !leftIsInt {
+		whole, number = rightInt, leftFloat
+	}
+	if math.IsNaN(number) || math.IsInf(number, 0) || number != math.Trunc(number) {
+		return false
+	}
+	if number < -9223372036854775808.0 || number >= 9223372036854775808.0 {
+		return false
+	}
+	return int64(number) == whole
+}
+
+func _ksEqual(left any, right any) bool {
+	switch left.(type) {
+	case bool, int64, float64:
+		return _ksNumberEqual(left, right)
+	}
+	switch a := left.(type) {
 	case string:
 		b, ok := right.(string)
 		return ok && a == b

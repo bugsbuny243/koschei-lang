@@ -365,7 +365,6 @@ type _ksNetScope struct {{
 	origin   _ksURL
 	valid    bool
 	broken   bool
-	proxied  bool
 	client   *http.Client
 }}
 
@@ -409,7 +408,6 @@ func _ksNetOpenScope(origin string) *_ksNetScope {{
 			}}
 		}}
 		proxyURL = parsedProxy
-		scope.proxied = true
 	}}
 	dialer := &net.Dialer{{Timeout: {timeout} * time.Second}}
 	transport := &http.Transport{{
@@ -489,10 +487,17 @@ func _ksBrokerNetGet(scope *_ksNetScope, raw string) []string {{
 	redirects := 0
 	for {{
 		path, query, hasQuery := strings.Cut(current.target, "?")
-		requestURL := &url.URL{{Scheme: current.scheme, Host: current.authority(), Opaque: path, RawQuery: query, ForceQuery: hasQuery && query == ""}}
-		if scope.proxied && current.scheme == "http" {{
-			// A forwarding proxy is sent the absolute URL, as Python does.
-			requestURL.Opaque = "//" + current.authority() + path
+		// Path plus RawPath sends the path exactly as written (the grammar
+		// admits only characters Go keeps unescaped), including a leading
+		// "//". A forwarding proxy gets the absolute URL from net/http, as
+		// Python sends it.
+		decoded, err := url.PathUnescape(path)
+		if err != nil {{
+			return []string{{"err", {failed} + "EIO: " + raw}}
+		}}
+		requestURL := &url.URL{{Scheme: current.scheme, Host: current.authority(), Path: decoded, RawPath: path, RawQuery: query, ForceQuery: hasQuery && query == ""}}
+		if requestURL.EscapedPath() != path {{
+			return []string{{"err", {failed} + "EIO: " + raw}}
 		}}
 		request := &http.Request{{
 			Method:     http.MethodGet,

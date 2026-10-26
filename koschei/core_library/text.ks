@@ -15,17 +15,12 @@ fn is_blank(value: String) -> Bool {
     return value.trim().length() == 0
 }
 
+// Prefix and suffix tests compare UTF-8 bytes: a valid UTF-8 text starts (or
+// ends) with another exactly when its bytes do, and a byte slice never needs
+// more than the value itself, so any String within the value budget works.
 fn starts_with(value: String, prefix: String) -> Bool {
-    if prefix.length() == 0 {
-        return true
-    }
-    if value.length() < prefix.length() {
-        return false
-    }
-    // split finds the leftmost occurrence first, so the first piece is empty
-    // exactly when the value begins with the prefix.
-    let head = value.split(prefix).get(0) or return false
-    return head.length() == 0
+    let rest = strip_prefix(value, prefix) or return false
+    return true
 }
 
 fn ends_with(value: String, suffix: String) -> Bool {
@@ -34,47 +29,36 @@ fn ends_with(value: String, suffix: String) -> Bool {
 }
 
 fn strip_prefix(value: String, prefix: String) -> Option<String> {
-    if !starts_with(value, prefix) {
+    let data = value.to_bytes()
+    let wanted = prefix.to_bytes()
+    if data.length() < wanted.length() {
         return None()
     }
-    if prefix.length() == 0 {
-        return Some(value)
+    let head = data.slice(0, wanted.length()) or return None()
+    if head != wanted {
+        return None()
     }
-    let rest = prefix.join(list.drop(value.split(prefix), 1)) or return None()
+    let tail = data.slice(wanted.length(), data.length()) or return None()
+    let rest = tail.to_text() or return None()
     return Some(rest)
 }
 
 // Returns the text before a trailing `suffix`, or None when the value does not
 // end with it.
-//
-// split matches left to right without overlap, so when the suffix overlaps its
-// own previous match ("aaa" ends with "aa") the last piece is not empty even
-// though the value ends with the suffix. With pieces = value.split(suffix) and
-// tail = the last piece (shorter than the suffix), the last len(suffix)
-// characters of the value are suffix[len(tail):] + tail. They equal the suffix
-// exactly when the suffix ends with tail (suffix = core + tail) and also ends
-// with core; the second check also yields lead = suffix[:len(tail)]. Both
-// recursive calls take the suffix as their value, which is strictly shorter
-// than the current value, so the recursion always terminates.
 fn strip_suffix(value: String, suffix: String) -> Option<String> {
-    if suffix.length() == 0 {
-        return Some(value)
-    }
-    if value.length() < suffix.length() {
+    let data = value.to_bytes()
+    let wanted = suffix.to_bytes()
+    if data.length() < wanted.length() {
         return None()
     }
-    let pieces = value.split(suffix)
-    let tail = list.last(pieces) or return None()
-    let head = suffix.join(pieces.take(pieces.length() - 1)) or return None()
-    if tail.length() == 0 {
-        return Some(head)
-    }
-    if tail.length() >= suffix.length() {
+    let cut = data.length() - wanted.length()
+    let tail = data.slice(cut, data.length()) or return None()
+    if tail != wanted {
         return None()
     }
-    let core = strip_suffix(suffix, tail) or return None()
-    let lead = strip_suffix(suffix, core) or return None()
-    return Some(head + lead)
+    let head = data.slice(0, cut) or return None()
+    let rest = head.to_text() or return None()
+    return Some(rest)
 }
 
 // Text before the first occurrence of `separator`.

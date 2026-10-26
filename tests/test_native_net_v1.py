@@ -44,7 +44,11 @@ class _Handler(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802 - http.server API
         path = self.path
-        if path == "/ok":
+        if "different.example" in self.requestline:
+            # http.server folds a leading "//" in self.path; the request line
+            # is what the client sent.
+            self._send(200, self.requestline.encode())
+        elif path == "/ok":
             self._send(200, "merhaba ğ".encode(), {"Content-Type": "text/plain; charset=utf-8"})
         elif path == "/404":
             self._send(404, b"nope")
@@ -259,7 +263,7 @@ class NativeNetParityTests(unittest.TestCase):
         paths = [
             "/ok", "/404", "/r", "/abs", "/out", "/scheme", "/chain/5", "/chain/6", "/noloc",
             "/gz", "/identity", "/latin", "/exact", "/big", "/headers", "/close", "/short",
-            "/garbage", "/a(b)/../c?x=1&y=%41", "/ok#fragment",
+            "/garbage", "/a(b)/../c?x=1&y=%41", "/ok#fragment", "//different.example/p%2Fq?q=1",
         ]
         others = [
             f"HTTP://127.0.0.1:{self.server.server_port}/ok",
@@ -299,6 +303,8 @@ class NativeNetParityTests(unittest.TestCase):
         self.assertEqual(lines[16], f"API isteği başarısız: ECONNRESET: {origin}/short")
         self.assertEqual(lines[17], f"API isteği başarısız: EPROTO: {origin}/garbage")
         self.assertEqual(lines[18], "200 25 seen /a(b)/../c?x=1&y=%41")
+        # A leading "//" stays a path; it never becomes an authority.
+        self.assertEqual(lines[20], "200 42 GET //different.example/p%2Fq?q=1 HTTP/1.1")
         self.assertEqual(lines[-4], f"API isteği başarısız: ECONNREFUSED: http://127.0.0.1:{closed}/")
         self.assertEqual(lines[-3], "KS3402: Ağ origin kapsamı dışında erişim reddedildi: file:///etc/passwd")
         self.assertEqual(lines[-2:], ["<NetCaps>", "<Response>"])
