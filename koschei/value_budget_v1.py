@@ -40,6 +40,9 @@ STRING_MESSAGE = (
 LIST_MESSAGE = (
     f"{CODE}: Bellek bütçesi aşıldı: bir List en fazla {MAX_LIST_ITEMS} öğe olabilir."
 )
+BYTES_MESSAGE = (
+    f"{CODE}: Bellek bütçesi aşıldı: bir Bytes en fazla {MAX_STRING_BYTES} bayt olabilir."
+)
 HOST_MESSAGE = (
     "Bellek bütçesi tükendi: host belleği programın değerlerine yetmedi; "
     "program durduruldu."
@@ -82,6 +85,8 @@ def oversize_message(value: Any) -> str | None:
 
     if isinstance(value, str):
         return None if fits_texts([value]) else STRING_MESSAGE
+    if isinstance(value, bytes):
+        return None if len(value) <= MAX_STRING_BYTES else BYTES_MESSAGE
     if isinstance(value, (list, tuple)) and len(value) > MAX_LIST_ITEMS:
         return LIST_MESSAGE
     return None

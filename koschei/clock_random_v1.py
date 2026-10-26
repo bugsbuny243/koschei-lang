@@ -67,6 +67,7 @@ RANDOM_BUDGET_MESSAGE = (
     "KS3450: Rastgele sayı bütçesi tükendi: bu yetki en fazla {max_bytes} bayt üretebilir."
 )
 HEX_COUNT_MESSAGE = f"KS3451: random.hex() bayt sayısı 1..{MAX_HEX_BYTES} aralığında olmalıdır."
+BYTES_COUNT_MESSAGE = f"KS3451: random.bytes() bayt sayısı 1..{MAX_HEX_BYTES} aralığında olmalıdır."
 BELOW_BOUND_MESSAGE = "KS3451: random.below() üst sınırı en az 1 olmalıdır."
 
 _MONOTONIC_ORIGIN_NS = time.monotonic_ns()
@@ -168,6 +169,17 @@ class RandomCaps(_runtime._NarrowedCapability):
         except OSError as error:
             raise _random_failure() from error
 
+    def bytes(self, count: Any) -> "_runtime.Bytes | _runtime.KsError":
+        if not _allowed_int(count, 1, MAX_HEX_BYTES):
+            return _runtime.KsError(BYTES_COUNT_MESSAGE)
+        refused = self._charge(count)
+        if refused is not None:
+            return refused
+        try:
+            return _runtime.Bytes(secrets.token_bytes(count))
+        except OSError as error:
+            raise _random_failure() from error
+
     def below(self, bound: Any) -> int | _runtime.KsError:
         if type(bound) is not int or bound < 1:
             return _runtime.KsError(BELOW_BOUND_MESSAGE)
@@ -196,7 +208,7 @@ _EDGES = {
     ClockRoot: {"allow"},
     ClockCaps: {"now_ms", "monotonic_ms"},
     RandomRoot: {"allow"},
-    RandomCaps: {"hex", "below"},
+    RandomCaps: {"hex", "below", "bytes"},
 }
 
 
@@ -260,7 +272,11 @@ def _check_allow(self, receiver_type, method_name, location, argument_types, arg
 _OPERATIONS = {
     # capability type: {method: (argument count, legacy result type)}
     "ClockCaps": {"now_ms": (0, "Int"), "monotonic_ms": (0, "Int")},
-    "RandomCaps": {"hex": (1, "String or Error"), "below": (1, "Int or Error")},
+    "RandomCaps": {
+        "hex": (1, "String or Error"),
+        "below": (1, "Int or Error"),
+        "bytes": (1, "Bytes or Error"),
+    },
 }
 
 
@@ -318,6 +334,7 @@ _TYPED_RESULTS = {
     ("ClockCaps", "monotonic_ms"): (0, INT),
     ("RandomCaps", "hex"): (1, union_type(STRING, ERROR)),
     ("RandomCaps", "below"): (1, union_type(INT, ERROR)),
+    ("RandomCaps", "bytes"): (1, union_type(NamedType("Bytes"), ERROR)),
 }
 
 
@@ -426,6 +443,7 @@ def install_clock_random_v1() -> None:
 __all__ = [
     "BELOW_BOUND_MESSAGE",
     "BELOW_COST_BYTES",
+    "BYTES_COUNT_MESSAGE",
     "CLOCK_ALLOW_RANGE_MESSAGE",
     "CLOCK_ALLOW_TYPE_MESSAGE",
     "HEX_COUNT_MESSAGE",

@@ -41,7 +41,12 @@ from .mir_or_return_normalization_v1 import MirFallibleIsSuccess, MirFalliblePay
 from .mir_variant_runtime_v1 import MirVariantRuntimeError, split_canonical_variant_v1, variant_is_v1, variant_payload_v1
 from .runtime_primitive_facade_v1 import KoscheiFunctionRefV1, RuntimePrimitiveFacadeV1
 from .semantic import INT_MAX, INT_MIN
-from .value_budget_v1 import STRING_MESSAGE as VALUE_BUDGET_STRING_MESSAGE, fits_texts
+from .value_budget_v1 import (
+    BYTES_MESSAGE as VALUE_BUDGET_BYTES_MESSAGE,
+    MAX_STRING_BYTES as VALUE_BUDGET_MAX_BYTES,
+    STRING_MESSAGE as VALUE_BUDGET_STRING_MESSAGE,
+    fits_texts,
+)
 from .type_system import GenericType, NamedType, alternatives, render_type
 
 
@@ -477,6 +482,8 @@ class MirExecutorV1:
             result = left + right
             if type(result) is str and not fits_texts([result]):
                 return KsError(VALUE_BUDGET_STRING_MESSAGE)
+            if isinstance(result, bytes) and len(result) > VALUE_BUDGET_MAX_BYTES:
+                return KsError(VALUE_BUDGET_BYTES_MESSAGE)
             return result
         if op == "-": return left - right
         if op == "*": return left * right

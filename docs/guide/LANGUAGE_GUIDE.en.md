@@ -234,6 +234,31 @@ false
 Map keys are Strings and keep insertion order. `get` on a missing key is an
 Error value, so handle it with `or` or ask `contains` first.
 
+### Bytes
+
+`String` is always UTF-8 text; binary data is `Bytes`, and the two never
+convert silently. Sources: `input.read_bytes()`, `disk.read_bytes(path)`,
+`random.bytes(n)`; see [`../BYTES_V1.md`](../BYTES_V1.md).
+
+```ks
+fn main() {
+    let data = "héllo".to_bytes()
+    println(data)
+    println(data.length())
+    let head = data.slice(0, 2) or data
+    println(head.to_text())
+    let key = bytes_from_hex("00ff") or data
+    println(key + head)
+}
+```
+
+```output
+Bytes(68c3a96c6c6f)
+6
+KS3430: Bytes geçerli UTF-8 metin değil.
+Bytes(00ff68c3)
+```
+
 ## 7. Modules and the Core Library
 
 `import name` binds a sibling file `name.ks` or a Core Library module. The
@@ -383,5 +408,4 @@ differently; see [`../MIR_GO_CONFORMANCE_ADAPTER_V2.md`](../MIR_GO_CONFORMANCE_A
   (`KS3502`).
 - `ks run` stops a program after 1,000,000 steps by default (`--max-steps`)
   and at 512 nested calls.
-- There is no `Bytes` type yet, no interactive line reading and no
-  long-running server; see `KOSCHEI_SATISA_HAZIRLIK_V1.md` for the plan.
+- There is no interactive line reading and no long-running server yet; see `KOSCHEI_SATISA_HAZIRLIK_V1.md` for the plan.

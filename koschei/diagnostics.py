@@ -549,6 +549,22 @@ CATALOG: dict[str, Diagnostic] = {
         fix="Argümanı izin verilen aralıkta verin.",
         example="let die = random.below(6) or return",
     ),
+    "KS3460": Diagnostic(
+        code="KS3460",
+        title="Bytes aralığı geçersiz",
+        summary="Bytes.get() veya Bytes.slice() değerin uzunluğu dışında bir konum istedi.",
+        why="Aralık dışı erişim sessizce kırpılmaz veya başka bir bayt döndürmez; bir hata değeridir.",
+        fix="Konumu 0 ile length() arasında tutun veya hatayı 'or' ile ele alın.",
+        example="let first = data.get(0) or -1",
+    ),
+    "KS3461": Diagnostic(
+        code="KS3461",
+        title="Hex metni geçersiz",
+        summary="bytes_from_hex() çift uzunlukta ve yalnızca 0-9, a-f, A-F içeren bir metin bekler.",
+        why="Boşluk, ayraç veya tek kalan hane sessizce atlanmaz; anlamı belirsiz girdi hata değeridir.",
+        fix="Hex metnini ayraçsız ve çift uzunlukta verin.",
+        example='let key = bytes_from_hex("00ff") or return',
+    ),
     "KS3430": Diagnostic(
         code="KS3430",
         title="Program girdisi metin değil",
@@ -949,6 +965,18 @@ ENGLISH_TEXT: dict[str, tuple[str, str, str, str]] = {
         "random.hex() expects 1..1024 bytes and random.below() an upper bound of at least 1.",
         "An invalid request is an Error value; nothing is drawn and nothing is charged.",
         "Pass an argument in the allowed range.",
+    ),
+    "KS3460": (
+        "Bytes range is invalid",
+        "Bytes.get() or Bytes.slice() asked for a position outside the value's length.",
+        "An out-of-range access is not silently clipped and returns no other byte; it is an Error value.",
+        "Keep positions between 0 and length() or handle the error with 'or'.",
+    ),
+    "KS3461": (
+        "Hex text is invalid",
+        "bytes_from_hex() expects text of even length containing only 0-9, a-f and A-F.",
+        "Spaces, separators or a dangling digit are not silently skipped; ambiguous input is an Error value.",
+        "Pass hex without separators and of even length.",
     ),
     "KS3430": (
         "Program input is not text",

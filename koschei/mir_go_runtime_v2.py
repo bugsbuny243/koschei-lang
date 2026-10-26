@@ -58,6 +58,21 @@ type _ksIter struct {
 	index  int
 }
 
+// Bytes (bytes_v1): an immutable byte sequence; a Go string holds any bytes.
+type _ksBytes struct {
+	data string
+}
+
+const _ksHexDigits = "0123456789abcdef"
+
+func _ksHexText(data string) string {
+	out := make([]byte, 0, 2*len(data))
+	for index := 0; index < len(data); index++ {
+		out = append(out, _ksHexDigits[data[index]>>4], _ksHexDigits[data[index]&15])
+	}
+	return string(out)
+}
+
 // Authority tokens. Program input is the only domain a native binary may
 // carry (program_input_v1); every other domain fails closed before Go is
 // generated.
@@ -168,6 +183,8 @@ func _ksToString(value any) string {
 		return item.message
 	case _ksUnit:
 		return "unit"
+	case _ksBytes:
+		return "Bytes(" + _ksHexText(item.data) + ")"
 	case _ksSystemCaps:
 		return "<SystemCaps>"
 	case _ksInputRoot:
@@ -257,6 +274,9 @@ func _ksEqual(left any, right any) bool {
 	case _ksError:
 		b, ok := right.(_ksError)
 		return ok && a.message == b.message
+	case _ksBytes:
+		b, ok := right.(_ksBytes)
+		return ok && a.data == b.data
 	case _ksUnit:
 		_, ok := right.(_ksUnit)
 		return ok
@@ -304,6 +324,10 @@ func _ksOrder(operator string, left any, right any) bool {
 			default:
 				return a >= b
 			}
+		}
+	case _ksBytes:
+		if b, ok := right.(_ksBytes); ok {
+			return _ksOrder(operator, a.data, b.data)
 		}
 	case bool:
 		if b, ok := right.(bool); ok {
@@ -386,6 +410,13 @@ func _ksBinary(operator string, left any, right any) any {
 					return _ksStringBudgetError
 				}
 				return x + y
+			}
+		case _ksBytes:
+			if y, ok := right.(_ksBytes); ok {
+				if len(x.data)+len(y.data) > _ksMaxStringBytes {
+					return _ksBytesBudgetError
+				}
+				return _ksBytes{data: x.data + y.data}
 			}
 		case []any:
 			if y, ok := right.([]any); ok {
@@ -704,7 +735,12 @@ func _ksMemberOf(receiver any, name string) any {
 	switch receiver.(type) {
 	case string:
 		switch name {
-		case "length", "contains", "trim", "split", "join", "to_int":
+		case "length", "contains", "trim", "split", "join", "to_int", "to_bytes":
+			return _ksMember{receiver: receiver, name: name}
+		}
+	case _ksBytes:
+		switch name {
+		case "length", "hex", "to_text", "slice", "get":
 			return _ksMember{receiver: receiver, name: name}
 		}
 	case []any:
@@ -741,8 +777,13 @@ func _ksInvokeMember(callee any, arguments ...any) any {
 		_ksAbort("KS5002", "MIR call target is not a member")
 	}
 	switch receiver := member.receiver.(type) {
+	case _ksBytes:
+		return _ksBytesMember(receiver, member.name, arguments)
 	case string:
 		switch member.name {
+		case "to_bytes":
+			_ksArity("to_bytes", arguments, 0)
+			return _ksBytes{data: receiver}
 		case "length":
 			_ksArity("length", arguments, 0)
 			return int64(utf8.RuneCountInString(receiver))
@@ -927,6 +968,8 @@ func _ksTypeName(value any) string {
 		return "Float"
 	case int64:
 		return "Int"
+	case _ksBytes:
+		return "Bytes"
 	case _ksSystemCaps:
 		return "SystemCaps"
 	case _ksInputRoot:
@@ -1112,6 +1155,8 @@ func _ksMatchPattern(value any, expected string, parameters map[string]bool, bin
 		return base == "Float"
 	case []any:
 		return base == "List"
+	case _ksBytes:
+		return base == "Bytes"
 	case _ksSystemCaps:
 		return base == "SystemCaps"
 	case _ksInputRoot:
@@ -1186,6 +1231,7 @@ const _ksMaxListItems = {max_list_items}
 
 var _ksStringBudgetError = _ksError{{message: {string_message}}}
 var _ksListBudgetError = _ksError{{message: {list_message}}}
+var _ksBytesBudgetError = _ksError{{message: {bytes_message}}}
 
 // Interpolation builds its text first, like the canonical executor.
 func _ksBudgetText(text string) any {{
@@ -1249,9 +1295,25 @@ func _ksInputArgs(receiver any) any {{
 }}
 
 func _ksInputReadText(receiver any) any {{
+	data := _ksInputReadRaw(receiver)
+	raw, ok := data.(_ksBytes)
+	if !ok {{
+		return data
+	}}
+	if !utf8.ValidString(raw.data) {{
+		return _ksError{{message: {not_text_message}}}
+	}}
+	return raw.data
+}}
+
+func _ksInputReadBytes(receiver any) any {{
+	return _ksInputReadRaw(receiver)
+}}
+
+func _ksInputReadRaw(receiver any) any {{
 	input, ok := receiver.(_ksInputCaps)
 	if !ok {{
-		_ksAbort("KS5002", "InputCaps.read_text receiver drifted")
+		_ksAbort("KS5002", "InputCaps.read receiver drifted")
 	}}
 	limit := input.maxBytes + 1
 	chunk := make([]byte, 65536)
@@ -1273,10 +1335,7 @@ func _ksInputReadText(receiver any) any {{
 	if len(data) > input.maxBytes {{
 		return _ksError{{message: {budget_prefix} + strconv.Itoa(input.maxBytes) + {budget_suffix}}}
 	}}
-	if !utf8.Valid(data) {{
-		return _ksError{{message: {not_text_message}}}
-	}}
-	return string(data)
+	return _ksBytes{{data: string(data)}}
 }}
 '''
 
@@ -1388,6 +1447,22 @@ func _ksRandomHex(receiver any, count any) any {{
 	return hex.EncodeToString(buffer)
 }}
 
+func _ksRandomBytes(receiver any, count any) any {{
+	random := _ksRandomCapsOf(receiver)
+	n, ok := count.(int64)
+	if !ok || n < 1 || n > {max_hex} {{
+		return _ksError{{message: {bytes_message}}}
+	}}
+	if refused := _ksRandomCharge(random, n); refused != nil {{
+		return refused
+	}}
+	buffer := make([]byte, n)
+	if _, err := rand.Read(buffer); err != nil {{
+		_ksRandomFailed()
+	}}
+	return _ksBytes{{data: string(buffer)}}
+}}
+
 func _ksRandomBelow(receiver any, bound any) any {{
 	random := _ksRandomCapsOf(receiver)
 	n, ok := bound.(int64)
@@ -1402,5 +1477,90 @@ func _ksRandomBelow(receiver any, bound any) any {{
 		_ksRandomFailed()
 	}}
 	return value.Int64()
+}}
+'''
+
+# Bytes members and builtins (``bytes_v1``); always emitted with the base
+# runtime because _ksInvokeMember dispatches to them. Messages come from the
+# Python constants.
+MIR_GO_BYTES_RUNTIME_V2 = r'''
+func _ksBytesMember(receiver _ksBytes, name string, arguments []any) any {{
+	data := receiver.data
+	switch name {{
+	case "length":
+		_ksArity("length", arguments, 0)
+		return int64(len(data))
+	case "hex":
+		_ksArity("hex", arguments, 0)
+		return _ksHexText(data)
+	case "to_text":
+		_ksArity("to_text", arguments, 0)
+		if !utf8.ValidString(data) {{
+			return _ksError{{message: {not_text_message}}}
+		}}
+		return data
+	case "slice":
+		_ksArity("slice", arguments, 2)
+		start, okStart := arguments[0].(int64)
+		end, okEnd := arguments[1].(int64)
+		if !okStart || !okEnd || start < 0 || start > end || end > int64(len(data)) {{
+			return _ksError{{message: {slice_prefix} + _ksToString(arguments[0]) + ".." + _ksToString(arguments[1]) + {slice_middle} + strconv.Itoa(len(data)) + {slice_suffix}}}
+		}}
+		return _ksBytes{{data: data[start:end]}}
+	case "get":
+		_ksArity("get", arguments, 1)
+		index, ok := arguments[0].(int64)
+		if !ok || index < 0 || index >= int64(len(data)) {{
+			return _ksError{{message: {get_prefix} + _ksToString(arguments[0]) + {get_middle} + strconv.Itoa(len(data)) + {get_suffix}}}
+		}}
+		return int64(data[index])
+	}}
+	_ksAbort("KS3101", "undefined member '"+name+"'")
+	return nil
+}}
+
+func _ksBytesFromHex(arguments ...any) any {{
+	_ksArity("bytes_from_hex", arguments, 1)
+	text, ok := arguments[0].(string)
+	if !ok || len(text)%2 != 0 {{
+		return _ksError{{message: {hex_message}}}
+	}}
+	out := make([]byte, len(text)/2)
+	for index := 0; index < len(text); index++ {{
+		symbol := text[index]
+		var value byte
+		switch {{
+		case symbol >= '0' && symbol <= '9':
+			value = symbol - '0'
+		case symbol >= 'a' && symbol <= 'f':
+			value = symbol - 'a' + 10
+		case symbol >= 'A' && symbol <= 'F':
+			value = symbol - 'A' + 10
+		default:
+			return _ksError{{message: {hex_message}}}
+		}}
+		if index%2 == 0 {{
+			out[index/2] = value << 4
+		}} else {{
+			out[index/2] |= value
+		}}
+	}}
+	return _ksBytes{{data: string(out)}}
+}}
+'''
+
+# Emitted with the SHA3 runtime when a program digests Bytes.
+MIR_GO_SHA3_BYTES_RUNTIME_V2 = r'''
+func _ksSha3_256Bytes(arguments ...any) any {{
+	_ksArity("sha3_256_bytes", arguments, 1)
+	data, ok := arguments[0].(_ksBytes)
+	if !ok {{
+		return _ksError{{message: {type_message}}}
+	}}
+	if len(data.data) > _ksSha3MaxInputBytes {{
+		return _ksError{{message: {size_message}}}
+	}}
+	sum := sha3.Sum256([]byte(data.data))
+	return hex.EncodeToString(sum[:])
 }}
 '''

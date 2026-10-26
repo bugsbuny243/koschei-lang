@@ -48,6 +48,7 @@ from .ast_nodes import (
     WhileStatement,
 )
 from .value_budget_v1 import (
+    BYTES_MESSAGE as VALUE_BUDGET_BYTES_MESSAGE,
     MAX_STRING_BYTES,
     STRING_MESSAGE as VALUE_BUDGET_STRING_MESSAGE,
     fits_texts,
@@ -70,6 +71,26 @@ class KsError:
 
     def __str__(self) -> str:
         return self.message
+
+
+class Bytes(bytes):
+    """A Koschei ``Bytes`` value: immutable bytes, rendered as ``Bytes(hex)``.
+
+    A subclass so that a byte sequence never passes for a host ``bytes`` by
+    accident; concatenation keeps the type.
+    """
+
+    __slots__ = ()
+
+    def __add__(self, other):
+        if not isinstance(other, Bytes):
+            return NotImplemented
+        return Bytes(bytes.__add__(self, other))
+
+    def __str__(self) -> str:
+        return f"Bytes({self.hex()})"
+
+    __repr__ = __str__
 
 
 @dataclass(frozen=True, slots=True)
@@ -520,6 +541,30 @@ class _DiskCapability(_NarrowedCapability):
             # A String holds text. Bytes that are not UTF-8 are an Error value
             # the program can handle, not a host exception that ends it.
             return KsError(f"Dosya okunamadı: geçerli UTF-8 metin değil: {path}")
+        except _SymlinkDenied as denied:
+            return self._symlink_denied(denied.name)
+        except OSError as error:
+            if error.errno in (errno.ELOOP, errno.EMLINK):
+                return self._symlink_denied(parts[-1])
+            return KsError(f"Dosya okunamadı: {error}")
+
+    def read_bytes(self, path: str) -> "Bytes | KsError":
+        if not _DIR_FD_SUPPORTED:
+            return self._unsupported()
+        parts = self._relative_parts(path)
+        if parts is None:
+            return self._reject(path)
+        if not parts:
+            return KsError(f"Dosya okunamadı: kapsam kökü bir dizindir: {path}")
+        try:
+            with self._parent_fd(parts) as parent:
+                handle = os.open(parts[-1], os.O_RDONLY | os.O_NOFOLLOW, dir_fd=parent)
+                with os.fdopen(handle, "rb") as stream:
+                    # One byte past the budget proves a file is too large.
+                    data = stream.read(MAX_STRING_BYTES + 1)
+            if len(data) > MAX_STRING_BYTES:
+                return KsError(VALUE_BUDGET_BYTES_MESSAGE)
+            return Bytes(data)
         except _SymlinkDenied as denied:
             return self._symlink_denied(denied.name)
         except OSError as error:
@@ -1382,6 +1427,8 @@ class Interpreter:
             result = left + right
             if type(result) is str and not fits_texts([result]):
                 return KsError(VALUE_BUDGET_STRING_MESSAGE)
+            if isinstance(result, bytes) and len(result) > MAX_STRING_BYTES:
+                return KsError(VALUE_BUDGET_BYTES_MESSAGE)
             return result
         if operator == "-":
             return left - right
@@ -1466,8 +1513,8 @@ class Interpreter:
             EnvRoot: {"allow"},
             ProcessRoot: {"allow"},
             NetCaps: {"get", "post", "put", "delete", "request"},
-            DiskCaps: {"read", "read_file", "write", "write_file", "list", "delete"},
-            DiskReadCaps: {"read", "read_file", "write", "write_file", "list", "delete"},
+            DiskCaps: {"read", "read_file", "read_bytes", "write", "write_file", "list", "delete"},
+            DiskReadCaps: {"read", "read_file", "read_bytes", "write", "write_file", "list", "delete"},
             EnvCaps: {"get"},
             ProcessCaps: {"run", "spawn"},
             Response: {"text", "status"},
@@ -1942,6 +1989,8 @@ class Interpreter:
             return True
         if base == "String" and isinstance(value, str):
             return True
+        if base == "Bytes" and isinstance(value, Bytes):
+            return True
         if base == "Bool" and isinstance(value, bool):
             return True
         if base == "Int" and isinstance(value, int) and not isinstance(value, bool):
@@ -2023,6 +2072,7 @@ class Interpreter:
             (ProcessCaps, "ProcessCaps"),
             (Response, "Response"),
             (bool, "Bool"),
+            (Bytes, "Bytes"),
             (str, "String"),
             (float, "Float"),
             (int, "Int"),

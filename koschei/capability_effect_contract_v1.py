@@ -75,15 +75,15 @@ _ROOT_NARROWING = {
 
 _NARROWED_OPERATIONS = {
     "NetCaps": {"get", "post", "put", "delete", "request"},
-    "DiskCaps": {"read", "write", "delete", "list", "read_file", "write_file"},
-    "DiskReadCaps": {"read", "list", "read_file"},
+    "DiskCaps": {"read", "write", "delete", "list", "read_file", "write_file", "read_bytes"},
+    "DiskReadCaps": {"read", "list", "read_file", "read_bytes"},
     "EnvCaps": {"get"},
     "ProcessCaps": {"run", "spawn"},
     "PersistCaps": {"load", "commit"},
     "ServeCaps": {"exchange"},
-    "InputCaps": {"args", "read_text"},
+    "InputCaps": {"args", "read_text", "read_bytes"},
     "ClockCaps": {"now_ms", "monotonic_ms"},
-    "RandomCaps": {"hex", "below"},
+    "RandomCaps": {"hex", "below", "bytes"},
 }
 
 _CAPABILITY_METHOD_EFFECTS = {
@@ -109,11 +109,13 @@ _CAPABILITY_METHOD_EFFECTS = {
     "DiskReadCaps": {
         "read": DISK_READ,
         "read_file": DISK_READ,
+        "read_bytes": DISK_READ,
         "list": DISK_READ,
     },
     "DiskCaps": {
         "read": DISK_READ,
         "read_file": DISK_READ,
+        "read_bytes": DISK_READ,
         "list": DISK_READ,
         "write": DISK_WRITE,
         "write_file": DISK_WRITE,
@@ -123,9 +125,9 @@ _CAPABILITY_METHOD_EFFECTS = {
     "ProcessCaps": {"run": PROCESS_EXEC, "spawn": PROCESS_EXEC},
     "PersistCaps": {"load": PERSIST_READ, "commit": PERSIST_WRITE},
     "ServeCaps": {"exchange": SERVE_EXCHANGE},
-    "InputCaps": {"args": INPUT_READ, "read_text": INPUT_READ},
+    "InputCaps": {"args": INPUT_READ, "read_text": INPUT_READ, "read_bytes": INPUT_READ},
     "ClockCaps": {"now_ms": CLOCK_READ, "monotonic_ms": CLOCK_READ},
-    "RandomCaps": {"hex": RANDOM_READ, "below": RANDOM_READ},
+    "RandomCaps": {"hex": RANDOM_READ, "below": RANDOM_READ, "bytes": RANDOM_READ},
 }
 
 # Power domains classify existing capability/effect semantics. They are not a

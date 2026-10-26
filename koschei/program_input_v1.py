@@ -111,11 +111,23 @@ def program_arguments(raw: tuple[str, ...]) -> list[str] | _runtime.KsError:
 def read_standard_input(max_bytes: int) -> str | _runtime.KsError:
     """Read standard input to its end, at most ``max_bytes`` bytes of UTF-8."""
 
+    data = read_standard_bytes(max_bytes)
+    if isinstance(data, _runtime.KsError):
+        return data
+    try:
+        return bytes(data).decode("utf-8")
+    except UnicodeDecodeError:
+        return _runtime.KsError(NOT_TEXT_MESSAGE)
+
+
+def read_standard_bytes(max_bytes: int) -> "_runtime.Bytes | _runtime.KsError":
+    """Read standard input to its end, at most ``max_bytes`` bytes."""
+
     if sys.stdin is None:
         # Python leaves sys.stdin unset when the process started with fd 0
         # closed. The Go runtime reopens a closed standard descriptor on
         # /dev/null, so in both executors a closed input is an empty one.
-        return ""
+        return _runtime.Bytes()
     stream = getattr(sys.stdin, "buffer", None)
     if stream is None:
         return _runtime.KsError(UNAVAILABLE_MESSAGE)
@@ -127,10 +139,7 @@ def read_standard_input(max_bytes: int) -> str | _runtime.KsError:
         return _runtime.KsError(UNAVAILABLE_MESSAGE)
     if len(data) > max_bytes:
         return _runtime.KsError(budget_message(max_bytes))
-    try:
-        return bytes(data).decode("utf-8")
-    except UnicodeDecodeError:
-        return _runtime.KsError(NOT_TEXT_MESSAGE)
+    return _runtime.Bytes(data)
 
 
 # ---- runtime authority ------------------------------------------------------
@@ -162,6 +171,9 @@ class InputCaps(_runtime._NarrowedCapability):
     def read_text(self) -> str | _runtime.KsError:
         return read_standard_input(self.max_bytes)
 
+    def read_bytes(self) -> "_runtime.Bytes | _runtime.KsError":
+        return read_standard_bytes(self.max_bytes)
+
 
 _BaseSystemCaps = _runtime.SystemCaps
 
@@ -181,7 +193,7 @@ def _member(self, receiver, name, location):
         return receiver.input
     if isinstance(receiver, InputRoot) and name == "allow":
         return _runtime._BoundMember(receiver, name, location)
-    if isinstance(receiver, InputCaps) and name in {"args", "read_text"}:
+    if isinstance(receiver, InputCaps) and name in {"args", "read_text", "read_bytes"}:
         return _runtime._BoundMember(receiver, name, location)
     return _ORIGINAL_MEMBER(self, receiver, name, location)
 
@@ -261,7 +273,7 @@ def _check_method_call(
                 "InputCaps daraltılmış bir yetkidir; yeniden genişletilemez.",
                 location,
             )
-        if method_name not in {"args", "read_text"}:
+        if method_name not in {"args", "read_text", "read_bytes"}:
             raise _semantic.SemanticError(
                 "KS2404",
                 f"InputCaps yetkisi '{method_name}' işlemine izin vermez.",
@@ -274,7 +286,11 @@ def _check_method_call(
                 f"InputCaps.{method_name}() 0 argüman bekler, {len(values)} verildi.",
                 location,
             )
-        return "List or Error" if method_name == "args" else "String or Error"
+        return {
+            "args": "List or Error",
+            "read_text": "String or Error",
+            "read_bytes": "Bytes or Error",
+        }[method_name]
 
     return _ORIGINAL_CHECK_METHOD_CALL(
         self,
@@ -288,7 +304,7 @@ def _check_method_call(
 
 def _method_type(receiver, method, arguments, location):
     if isinstance(receiver, NamedType) and receiver.name == "InputCaps":
-        if method in {"args", "read_text"}:
+        if method in {"args", "read_text", "read_bytes"}:
             if arguments:
                 raise _semantic.SemanticError(
                     "KS1301",
@@ -297,6 +313,8 @@ def _method_type(receiver, method, arguments, location):
                 )
             if method == "args":
                 return union_type(generic("List", STRING), ERROR)
+            if method == "read_bytes":
+                return union_type(NamedType("Bytes"), ERROR)
             return union_type(STRING, ERROR)
     return _ORIGINAL_METHOD_TYPE(receiver, method, arguments, location)
 

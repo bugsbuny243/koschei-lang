@@ -57,7 +57,12 @@ from .mir_variant_runtime_v1 import (
     variant_payload_v1,
 )
 from .type_system import GenericType, NamedType
-from .value_budget_v1 import STRING_MESSAGE as VALUE_BUDGET_STRING_MESSAGE, fits_texts
+from .value_budget_v1 import (
+    BYTES_MESSAGE as VALUE_BUDGET_BYTES_MESSAGE,
+    MAX_STRING_BYTES as VALUE_BUDGET_MAX_BYTES,
+    STRING_MESSAGE as VALUE_BUDGET_STRING_MESSAGE,
+    fits_texts,
+)
 
 _SUPPORTED_BINARY = frozenset({"+", "-", "*", "==", "!=", "<", "<=", ">", ">="})
 _SUPPORTED_UNARY = frozenset({"!", "-", "+"})
@@ -821,6 +826,8 @@ def _binary(operator: str, left: Any, right: Any) -> Any:
         result = left + right
         if type(result) is str and not fits_texts([result]):
             return _ErrorValue(VALUE_BUDGET_STRING_MESSAGE)
+        if isinstance(result, bytes) and len(result) > VALUE_BUDGET_MAX_BYTES:
+            return _ErrorValue(VALUE_BUDGET_BYTES_MESSAGE)
         return result
     if operator == "-":
         return left - right

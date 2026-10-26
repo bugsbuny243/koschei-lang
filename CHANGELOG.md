@@ -42,6 +42,7 @@
 - Add the buyer-facing `SALE_PACKAGE_V1.md` and the owner's action list `KOSCHEI_SAHIP_EYLEM_LISTESI_V1.md`.
 - Make native builds byte-reproducible: `ks build` passes `-trimpath`, `-buildvcs=false` and an empty build id to Go. The temporary workspace path used to end up in the binary, so no two builds of the same source were identical.
 - Add `install.sh`: installs Koschei into its own virtual environment and links `ks`.
+- Add the `Bytes` type (readiness gate G1.3): `text.to_bytes()`, `length`, `hex`, `to_text`, `get`, `slice`, `+`, byte-wise comparison, `bytes_from_hex`, `sha3_256_bytes` and `secure.hash_bytes`; binary data from `InputCaps.read_bytes()`, `DiskCaps.read_bytes(path)` and `RandomCaps.bytes(count)`. A `Bytes` value holds at most 16 MiB. Every executor and MIR-Go binaries agree. See `docs/BYTES_V1.md`.
 
 ## 0.10.0 — Language ergonomics
 

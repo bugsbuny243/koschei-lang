@@ -10,6 +10,13 @@ fn hash(value: String) -> Result<String, Error> {
     return Ok("sha3-256:" + digest)
 }
 
+// The digest of raw bytes, in the same self-describing form as `hash`. For a
+// String, `hash(text)` and `hash_bytes(text.to_bytes())` are the same digest.
+fn hash_bytes(value: Bytes) -> Result<String, Error> {
+    let digest = sha3_256_bytes(value) or return Err(Error("secure.hash_bytes: input exceeds the digest budget"))
+    return Ok("sha3-256:" + digest)
+}
+
 // Domain-separated digest of a context label and an ordered list of parts.
 // Every field is written as "<length>:<text>", with lengths in characters, so
 // two different (context, parts) inputs can never encode to the same bytes.

@@ -14,7 +14,12 @@ from . import codegen_go as _codegen
 from . import interpreter as _runtime
 from .ast_nodes import FunctionDeclaration, Parameter, StructLiteral, TypeRef
 from .semantic import CAPABILITY_TYPES, INT_MIN, SemanticError
-from .value_budget_v1 import STRING_MESSAGE as VALUE_BUDGET_STRING_MESSAGE, fits_texts
+from .value_budget_v1 import (
+    BYTES_MESSAGE as VALUE_BUDGET_BYTES_MESSAGE,
+    MAX_STRING_BYTES as VALUE_BUDGET_MAX_BYTES,
+    STRING_MESSAGE as VALUE_BUDGET_STRING_MESSAGE,
+    fits_texts,
+)
 from .type_contracts import (
     declaration_type,
     function_type,
@@ -402,6 +407,8 @@ def _binary(self, expression) -> Any:
         result = left + right
         if type(result) is str and not fits_texts([result]):
             return _runtime.KsError(VALUE_BUDGET_STRING_MESSAGE)
+        if isinstance(result, bytes) and len(result) > VALUE_BUDGET_MAX_BYTES:
+            return _runtime.KsError(VALUE_BUDGET_BYTES_MESSAGE)
         return result
     if operator == "-":
         return left - right

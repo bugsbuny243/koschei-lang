@@ -234,6 +234,31 @@ false
 Map anahtarları String'dir ve ekleme sırasını korur. Olmayan bir anahtarda
 `get` bir hata değeridir; `or` ile ele alın veya önce `contains` ile sorun.
 
+### Bytes
+
+`String` her zaman UTF-8 metindir; ikili veri `Bytes`'tır ve ikisi asla
+sessizce birbirine dönüşmez. Kaynaklar: `input.read_bytes()`,
+`disk.read_bytes(yol)`, `random.bytes(n)`; bkz. [`../BYTES_V1.md`](../BYTES_V1.md).
+
+```ks
+fn main() {
+    let data = "héllo".to_bytes()
+    println(data)
+    println(data.length())
+    let head = data.slice(0, 2) or data
+    println(head.to_text())
+    let key = bytes_from_hex("00ff") or data
+    println(key + head)
+}
+```
+
+```output
+Bytes(68c3a96c6c6f)
+6
+KS3430: Bytes geçerli UTF-8 metin değil.
+Bytes(00ff68c3)
+```
+
 ## 7. Modüller ve Core Library
 
 `import ad`, yandaki `ad.ks` dosyasını veya bir Core Library modülünü bağlar.
@@ -383,5 +408,5 @@ yerine `KS4004` ile reddedilir; bkz.
   (`KS3502`).
 - `ks run` bir programı varsayılan olarak 1.000.000 adımdan sonra
   (`--max-steps`) ve 512 iç içe çağrıda durdurur.
-- Henüz `Bytes` tipi, etkileşimli satır okuma ve sürekli çalışan sunucu yoktur;
+- Henüz etkileşimli satır okuma ve sürekli çalışan sunucu yoktur;
   plan için `KOSCHEI_SATISA_HAZIRLIK_V1.md`.

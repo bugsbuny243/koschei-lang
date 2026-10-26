@@ -59,7 +59,6 @@ What works today is listed in the guide. What does not:
 |---|---|
 | `ks run` is slow: one to three orders of magnitude behind native code on compute-heavy work (see benchmarks) | performance was not a goal so far; the native binary is the fast path |
 | Native binaries refuse disk, network and environment authority (`KS4004`) | readiness gate G2: a separate capability broker with OS confinement |
-| No `Bytes` type | readiness gate G1.3 |
 | No long-running multi-request server (one-shot loopback exchange only) | readiness gate G4 |
 | `ks run` is language enforcement inside CPython, not an OS sandbox | see residual risks in the threat model |
 | Runtime messages are Turkish; codes and English diagnostics exist | messages are marked experimental in the stability policy |

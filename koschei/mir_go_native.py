@@ -39,6 +39,7 @@ from .mir_extension_instructions_v4 import (
     MirVariantPayload,
 )
 from .mir_go_runtime_v2 import (
+    MIR_GO_BYTES_RUNTIME_V2,
     MIR_GO_CLOCK_IMPORTS_V2,
     MIR_GO_CLOCK_RUNTIME_V2,
     MIR_GO_INPUT_IMPORTS_V2,
@@ -47,6 +48,7 @@ from .mir_go_runtime_v2 import (
     MIR_GO_RANDOM_RUNTIME_V2,
     MIR_GO_RUNTIME_V2,
     MIR_GO_RUNTIME_V2_IMPORTS,
+    MIR_GO_SHA3_BYTES_RUNTIME_V2,
     MIR_GO_SHA3_IMPORTS_V2,
     MIR_GO_SHA3_RUNTIME_V2,
     MIR_GO_VALUE_BUDGET_RUNTIME_V2,
@@ -76,6 +78,7 @@ from .semantic import INT_MAX, INT_MIN
 from .type_contracts import declaration_type
 from .type_system import GenericType, NamedType, TypeNode, alternatives, render_type
 from .value_budget_v1 import (
+    BYTES_MESSAGE,
     LIST_MESSAGE,
     MAX_LIST_ITEMS,
     MAX_STRING_BYTES,
@@ -91,10 +94,13 @@ _BUILTINS = {
     "println": "_ksPrintln",
     "Error": "_ksErrorValue",
     SECURE_HASH_NAME: "_ksSha3_256",
+    "bytes_from_hex": "_ksBytesFromHex",
+    "sha3_256_bytes": "_ksSha3_256Bytes",
 }
-_STRING_METHODS = frozenset({"length", "contains", "trim", "split", "join", "to_int"})
+_STRING_METHODS = frozenset({"length", "contains", "trim", "split", "join", "to_int", "to_bytes"})
 _LIST_METHODS = frozenset({"length", "get", "push", "contains", "take"})
-_VALUE_METHODS = _STRING_METHODS | _LIST_METHODS
+_BYTES_METHODS = frozenset({"length", "hex", "to_text", "slice", "get"})
+_VALUE_METHODS = _STRING_METHODS | _LIST_METHODS | _BYTES_METHODS
 _BUILTIN_VARIANTS = {
     "Option": {"Some": True, "None": False},
     "Result": {"Ok": True, "Err": True},
@@ -147,12 +153,14 @@ _NATIVE_CAPABILITY_CALLS = {
     ("InputRoot", "allow"): ("_ksInputAllow", 1),
     ("InputCaps", "args"): ("_ksInputArgs", 0),
     ("InputCaps", "read_text"): ("_ksInputReadText", 0),
+    ("InputCaps", "read_bytes"): ("_ksInputReadBytes", 0),
     ("ClockRoot", "allow"): ("_ksClockAllow", 1),
     ("ClockCaps", "now_ms"): ("_ksClockNow", 0),
     ("ClockCaps", "monotonic_ms"): ("_ksClockMonotonic", 0),
     ("RandomRoot", "allow"): ("_ksRandomAllow", 1),
     ("RandomCaps", "hex"): ("_ksRandomHex", 1),
     ("RandomCaps", "below"): ("_ksRandomBelow", 1),
+    ("RandomCaps", "bytes"): ("_ksRandomBytes", 1),
 }
 _ADMITTED_INSTRUCTIONS = (
     MirConst,
@@ -231,11 +239,11 @@ def generate_go_mir_native(mir: MirGraph) -> str:
         (plan.module.key, plan.function.name): plan.symbol for plan in plans
     }
     root_main = symbols[(mir.root, "main")]
-    uses_digest = any(
-        ref.kind == "builtin" and ref.name == SECURE_HASH_NAME
-        for plan in plans
-        for ref in plan.refs.values()
-    )
+    builtins_used = {
+        ref.name for plan in plans for ref in plan.refs.values() if ref.kind == "builtin"
+    }
+    uses_bytes_digest = "sha3_256_bytes" in builtins_used
+    uses_digest = SECURE_HASH_NAME in builtins_used or uses_bytes_digest
     domains = _used_domains(plans)
     imports = sorted(
         {
@@ -261,10 +269,21 @@ def generate_go_mir_native(mir: MirGraph) -> str:
             max_list_items=MAX_LIST_ITEMS,
             string_message=_go_string(STRING_MESSAGE),
             list_message=_go_string(LIST_MESSAGE),
+            bytes_message=_go_string(BYTES_MESSAGE),
         ),
+        _bytes_runtime(),
     ]
     if uses_digest:
         lines.append(MIR_GO_SHA3_RUNTIME_V2.format(max_bytes=SHA3_256_MAX_INPUT_BYTES))
+    if uses_bytes_digest:
+        from .bytes_v1 import SHA3_SIZE_MESSAGE, SHA3_TYPE_MESSAGE
+
+        lines.append(
+            MIR_GO_SHA3_BYTES_RUNTIME_V2.format(
+                type_message=_go_string(SHA3_TYPE_MESSAGE),
+                size_message=_go_string(SHA3_SIZE_MESSAGE),
+            )
+        )
     if "input" in domains:
         lines.append(_input_runtime())
     if "clock" in domains:
@@ -278,6 +297,25 @@ def generate_go_mir_native(mir: MirGraph) -> str:
     entry_arguments = "_ksSystemCaps{}" if main.parameters else ""
     lines.extend(["func main() {", f"\t{root_main}({entry_arguments})", "}", ""])
     return "\n".join(lines)
+
+
+def _bytes_runtime() -> str:
+    from .bytes_v1 import GET_MESSAGE, HEX_MESSAGE, NOT_TEXT_MESSAGE, SLICE_MESSAGE
+
+    slice_prefix, rest = SLICE_MESSAGE.split("{start}..{end}")
+    slice_middle, slice_suffix = rest.split("{length}")
+    get_prefix, rest = GET_MESSAGE.split("{index}")
+    get_middle, get_suffix = rest.split("{length}")
+    return MIR_GO_BYTES_RUNTIME_V2.format(
+        not_text_message=_go_string(NOT_TEXT_MESSAGE),
+        hex_message=_go_string(HEX_MESSAGE),
+        slice_prefix=_go_string(slice_prefix),
+        slice_middle=_go_string(slice_middle),
+        slice_suffix=_go_string(slice_suffix),
+        get_prefix=_go_string(get_prefix),
+        get_middle=_go_string(get_middle),
+        get_suffix=_go_string(get_suffix),
+    )
 
 
 def _used_domains(plans: list["_FunctionPlan"]) -> set[str]:
@@ -319,6 +357,7 @@ def _random_runtime() -> str:
     from .clock_random_v1 import (
         BELOW_BOUND_MESSAGE,
         BELOW_COST_BYTES,
+        BYTES_COUNT_MESSAGE,
         HEX_COUNT_MESSAGE,
         MAX_HEX_BYTES,
         MAX_RANDOM_BYTES,
@@ -337,6 +376,7 @@ def _random_runtime() -> str:
         type_message=_go_string(RANDOM_ALLOW_TYPE_MESSAGE),
         range_message=_go_string(RANDOM_ALLOW_RANGE_MESSAGE),
         hex_message=_go_string(HEX_COUNT_MESSAGE),
+        bytes_message=_go_string(BYTES_COUNT_MESSAGE),
         below_message=_go_string(BELOW_BOUND_MESSAGE),
         budget_prefix=_go_string(budget_prefix),
         budget_suffix=_go_string(budget_suffix),

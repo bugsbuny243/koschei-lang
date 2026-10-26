@@ -190,7 +190,7 @@ class CoreLibraryResolutionTests(CoreLibraryWorkspace):
         self.assertTrue({"starts_with", "ends_with", "replace", "lines"} <= surface["text"])
         self.assertTrue({"first", "last", "reverse", "slice"} <= surface["list"])
         self.assertTrue({"unique_sorted"} <= surface["text"])
-        self.assertEqual({"hash", "digest", "zero_digest", "is_digest"}, surface["secure"])
+        self.assertEqual({"hash", "hash_bytes", "digest", "zero_digest", "is_digest"}, surface["secure"])
         self.assertTrue({"issue_budget", "evaluate"} <= surface["captain_marvel"])
         self.assertTrue({"bury", "remains_dead"} <= surface["hela"])
         self.assertTrue({"simulate"} <= surface["strange"])

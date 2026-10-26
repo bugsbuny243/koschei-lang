@@ -271,7 +271,7 @@ CATALOG: tuple[Family, ...] = (
                 security_sensitive=True,
                 note="File content is not yet bounded identically in both bootstraps.",
             )
-            for name in ("read", "read_file", "write", "write_file")
+            for name in ("read", "read_file", "read_bytes", "write", "write_file")
         ),
         _reserved(
             "list",

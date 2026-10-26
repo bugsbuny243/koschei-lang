@@ -9,7 +9,7 @@ Every module is written in Koschei and compiled with the program that imports it
 | [`hela`](#hela) | 4 | 1 |
 | [`list`](#list) | 10 | 0 |
 | [`morag`](#morag) | 2 | 3 |
-| [`secure`](#secure) | 4 | 0 |
+| [`secure`](#secure) | 5 | 0 |
 | [`strange`](#strange) | 2 | 2 |
 | [`text`](#text) | 13 | 0 |
 | [`wanda`](#wanda) | 5 | 1 |
@@ -240,6 +240,14 @@ Written in Koschei over the kernel `sha3_256` digest, which delegates to an audi
 ```ks
 fn hash(value: String) -> Result<String, Error>
 ```
+
+### `secure.hash_bytes`
+
+```ks
+fn hash_bytes(value: Bytes) -> Result<String, Error>
+```
+
+The digest of raw bytes, in the same self-describing form as `hash`. For a String, `hash(text)` and `hash_bytes(text.to_bytes())` are the same digest.
 
 ### `secure.digest`
 

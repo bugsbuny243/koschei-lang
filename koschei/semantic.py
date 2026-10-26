@@ -91,15 +91,15 @@ ROOT_METHODS: dict[str, dict[str, str]] = {
 
 NARROWED_METHODS: dict[str, set[str]] = {
     "NetCaps": {"get", "post", "put", "delete", "request"},
-    "DiskCaps": {"read", "write", "delete", "list", "read_file", "write_file"},
-    "DiskReadCaps": {"read", "list", "read_file"},
+    "DiskCaps": {"read", "write", "delete", "list", "read_file", "write_file", "read_bytes"},
+    "DiskReadCaps": {"read", "list", "read_file", "read_bytes"},
     "EnvCaps": {"get"},
     "ProcessCaps": {"run", "spawn"},
     "ServeCaps": {"exchange"},
     "PersistCaps": {"load", "commit"},
-    "InputCaps": {"args", "read_text"},
+    "InputCaps": {"args", "read_text", "read_bytes"},
     "ClockCaps": {"now_ms", "monotonic_ms"},
-    "RandomCaps": {"hex", "below"},
+    "RandomCaps": {"hex", "below", "bytes"},
 }
 
 NARROWING_METHODS = {"allow", "allow_read_only"}
@@ -931,14 +931,14 @@ class SemanticChecker:
                         f"'{operator}' iki farklı tipe uygulanamaz: {left_type} ve {right_type}.",
                         expression.location,
                     )
-                if left_type == "String":
+                if left_type in {"String", "Bytes"}:
                     if operator != "+":
                         raise SemanticError(
                             "KS1301",
-                            f"String yalnızca '+' ile birleştirilebilir; '{operator}' geçersiz.",
+                            f"{left_type} yalnızca '+' ile birleştirilebilir; '{operator}' geçersiz.",
                             expression.location,
                         )
-                    return "String"
+                    return left_type
                 if left_type not in NUMERIC_TYPES:
                     raise SemanticError(
                         "KS1301",
