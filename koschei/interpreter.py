@@ -49,6 +49,8 @@ from .ast_nodes import (
 )
 from .value_budget_v1 import (
     BYTES_MESSAGE as VALUE_BUDGET_BYTES_MESSAGE,
+    LIST_MESSAGE as VALUE_BUDGET_LIST_MESSAGE,
+    MAX_LIST_ITEMS,
     MAX_STRING_BYTES,
     STRING_MESSAGE as VALUE_BUDGET_STRING_MESSAGE,
     fits_texts,
@@ -362,6 +364,60 @@ def _is_symlink_at(name: str, dir_fd: int) -> bool:
         return False
 
 
+# Disk errors name the errno symbolically and repeat the program's own path,
+# so the text is the same in every executor and on every host (the strerror
+# wording and the host's view of the path are not). Native binaries use the
+# same table (native_broker_v1).
+DISK_ERRNO_NAMES = {
+    errno.EPERM: "EPERM",
+    errno.ENOENT: "ENOENT",
+    errno.EIO: "EIO",
+    errno.EBADF: "EBADF",
+    errno.EACCES: "EACCES",
+    errno.EBUSY: "EBUSY",
+    errno.EEXIST: "EEXIST",
+    errno.ENOTDIR: "ENOTDIR",
+    errno.EISDIR: "EISDIR",
+    errno.EINVAL: "EINVAL",
+    errno.ENFILE: "ENFILE",
+    errno.EMFILE: "EMFILE",
+    errno.EFBIG: "EFBIG",
+    errno.ENOSPC: "ENOSPC",
+    errno.EROFS: "EROFS",
+    errno.ENAMETOOLONG: "ENAMETOOLONG",
+    errno.ENOTEMPTY: "ENOTEMPTY",
+    errno.EXDEV: "EXDEV",
+}
+
+
+def os_error_text(error: OSError, path: str) -> str:
+    code = error.errno
+    return f"{DISK_ERRNO_NAMES.get(code, f'errno {code}')}: {path}"
+
+
+def _utf8_name(name: str) -> str | None:
+    """A host-decoded name as Koschei text, or None when it is not UTF-8."""
+
+    try:
+        return os.fsencode(name).decode("utf-8")
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        return None
+
+
+def _listing(names: list[str], path: str) -> list[str] | KsError:
+    """Directory entries sorted by code point; every name must be UTF-8 text."""
+
+    if len(names) > MAX_LIST_ITEMS:
+        return KsError(VALUE_BUDGET_LIST_MESSAGE)
+    texts = []
+    for name in names:
+        text = _utf8_name(name)
+        if text is None:
+            return KsError(f"Dizin listelenemedi: geçerli UTF-8 olmayan dosya adı: {path}")
+        texts.append(text)
+    return sorted(texts)
+
+
 class _SymlinkDenied(Exception):
     """Kapsam içinde bir yol bileşeni sembolik bağ çıktı.
 
@@ -442,6 +498,9 @@ class _DiskCapability(_NarrowedCapability):
         self._root_fd = None
 
     def _relative_parts(self, path: str) -> list[str] | None:
+        if "\x00" in path:
+            # No file name contains NUL; the host would raise instead.
+            return None
         target = os.path.abspath(os.fspath(path))
         try:
             relative = os.path.relpath(target, self.prefix)
@@ -516,37 +575,19 @@ class _DiskCapability(_NarrowedCapability):
         return self.read_file(path)
 
     def read_file(self, path: str) -> str | KsError:
-        if not _DIR_FD_SUPPORTED:
-            return self._unsupported()
-        parts = self._relative_parts(path)
-        if parts is None:
-            return self._reject(path)
-        if not parts:
-            return KsError(f"Dosya okunamadı: kapsam kökü bir dizindir: {path}")
+        # The file's bytes as text: no newline translation, the byte budget
+        # first, then strict UTF-8.
+        data = self.read_bytes(path)
+        if isinstance(data, KsError):
+            if data.message == VALUE_BUDGET_BYTES_MESSAGE:
+                return KsError(VALUE_BUDGET_STRING_MESSAGE)
+            return data
         try:
-            with self._parent_fd(parts) as parent:
-                handle = os.open(
-                    parts[-1],
-                    os.O_RDONLY | os.O_NOFOLLOW,
-                    dir_fd=parent,
-                )
-                with os.fdopen(handle, "r", encoding="utf-8") as stream:
-                    # One character past the String budget proves a file is
-                    # too large without reading all of it.
-                    text = stream.read(MAX_STRING_BYTES + 1)
-                if not fits_texts([text]):
-                    return KsError(VALUE_BUDGET_STRING_MESSAGE)
-                return text
+            return bytes(data).decode("utf-8")
         except UnicodeDecodeError:
             # A String holds text. Bytes that are not UTF-8 are an Error value
             # the program can handle, not a host exception that ends it.
             return KsError(f"Dosya okunamadı: geçerli UTF-8 metin değil: {path}")
-        except _SymlinkDenied as denied:
-            return self._symlink_denied(denied.name)
-        except OSError as error:
-            if error.errno in (errno.ELOOP, errno.EMLINK):
-                return self._symlink_denied(parts[-1])
-            return KsError(f"Dosya okunamadı: {error}")
 
     def read_bytes(self, path: str) -> "Bytes | KsError":
         if not _DIR_FD_SUPPORTED:
@@ -570,7 +611,7 @@ class _DiskCapability(_NarrowedCapability):
         except OSError as error:
             if error.errno in (errno.ELOOP, errno.EMLINK):
                 return self._symlink_denied(parts[-1])
-            return KsError(f"Dosya okunamadı: {error}")
+            return KsError(f"Dosya okunamadı: {os_error_text(error, path)}")
 
     def list(self, path: str) -> list[str] | KsError:
         if not _DIR_FD_SUPPORTED:
@@ -581,7 +622,7 @@ class _DiskCapability(_NarrowedCapability):
         try:
             if not parts:
                 with self._scope_root_fd() as root:
-                    return sorted(os.listdir(root))
+                    return _listing(os.listdir(root), path)
             with self._parent_fd(parts) as parent:
                 handle = os.open(
                     parts[-1],
@@ -589,7 +630,7 @@ class _DiskCapability(_NarrowedCapability):
                     dir_fd=parent,
                 )
                 try:
-                    return sorted(os.listdir(handle))
+                    return _listing(os.listdir(handle), path)
                 finally:
                     os.close(handle)
         except _SymlinkDenied as denied:
@@ -597,7 +638,7 @@ class _DiskCapability(_NarrowedCapability):
         except OSError as error:
             if error.errno in (errno.ELOOP, errno.EMLINK):
                 return self._symlink_denied(parts[-1])
-            return KsError(f"Dizin listelenemedi: {error}")
+            return KsError(f"Dizin listelenemedi: {os_error_text(error, path)}")
 
 
 class DiskReadCaps(_DiskCapability):
@@ -699,7 +740,7 @@ class DiskCaps(_DiskCapability):
         except OSError as error:
             if error.errno in (errno.ELOOP, errno.EMLINK):
                 return self._symlink_denied(parts[-1])
-            return KsError(f"Dosya yazılamadı: {error}")
+            return KsError(f"Dosya yazılamadı: {os_error_text(error, path)}")
         return KsUnit
 
     def delete(self, path: str) -> _KsUnit | KsError:
@@ -725,7 +766,7 @@ class DiskCaps(_DiskCapability):
         except OSError as error:
             if error.errno in (errno.ELOOP, errno.EMLINK):
                 return self._symlink_denied(parts[-1])
-            return KsError(f"Dosya silinemedi: {error}")
+            return KsError(f"Dosya silinemedi: {os_error_text(error, path)}")
         return KsUnit
 
 
@@ -829,7 +870,10 @@ class EnvCaps(_NarrowedCapability):
         value = os.environ.get(self.name)
         if value is None:
             return KsError(f"Ortam değişkeni bulunamadı: {self.name}")
-        return value
+        text = _utf8_name(value)
+        if text is None:
+            return KsError(f"Ortam değişkeni geçerli UTF-8 metin değil: {self.name}")
+        return text
 
 
 class ProcessCaps(_NarrowedCapability):

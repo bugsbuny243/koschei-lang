@@ -72,6 +72,7 @@ from .mir_ir import (
     MirUnary,
     MirUnreachable,
 )
+from .native_broker_v1 import BROKER_IMPORTS, broker_runtime
 from .mir_variant_runtime_v1 import MirVariantRuntimeError, split_canonical_variant_v1
 from .secure_hash_v1 import NAME as SECURE_HASH_NAME, SHA3_256_MAX_INPUT_BYTES
 from .semantic import INT_MAX, INT_MIN
@@ -142,12 +143,20 @@ _NATIVE_CAPABILITY_DOMAINS = {
     "ClockCaps": "clock",
     "RandomRoot": "random",
     "RandomCaps": "random",
+    # Read-only disk and the environment go through the native capability
+    # broker (native_broker_v1); DiskCaps (writing) and the network do not.
+    "DiskRoot": "broker",
+    "DiskReadCaps": "broker",
+    "EnvRoot": "broker",
+    "EnvCaps": "broker",
 }
 _NATIVE_CAPABILITY_TYPES = frozenset(_NATIVE_CAPABILITY_DOMAINS)
 _NATIVE_CAPABILITY_MEMBERS = {
     ("InputRoot", "input"): "_ksCapsInput",
     ("ClockRoot", "clock"): "_ksCapsClock",
     ("RandomRoot", "random"): "_ksCapsRandom",
+    ("DiskRoot", "disk"): "_ksCapsDisk",
+    ("EnvRoot", "env"): "_ksCapsEnv",
 }
 _NATIVE_CAPABILITY_CALLS = {
     ("InputRoot", "allow"): ("_ksInputAllow", 1),
@@ -161,6 +170,13 @@ _NATIVE_CAPABILITY_CALLS = {
     ("RandomCaps", "hex"): ("_ksRandomHex", 1),
     ("RandomCaps", "below"): ("_ksRandomBelow", 1),
     ("RandomCaps", "bytes"): ("_ksRandomBytes", 1),
+    ("DiskRoot", "allow_read_only"): ("_ksDiskAllowReadOnly", 1),
+    ("DiskReadCaps", "read"): ("_ksDiskReadText", 1),
+    ("DiskReadCaps", "read_file"): ("_ksDiskReadText", 1),
+    ("DiskReadCaps", "read_bytes"): ("_ksDiskReadBytes", 1),
+    ("DiskReadCaps", "list"): ("_ksDiskList", 1),
+    ("EnvRoot", "allow"): ("_ksEnvAllow", 1),
+    ("EnvCaps", "get"): ("_ksEnvGet", 0),
 }
 _ADMITTED_INSTRUCTIONS = (
     MirConst,
@@ -252,6 +268,7 @@ def generate_go_mir_native(mir: MirGraph) -> str:
             *(MIR_GO_INPUT_IMPORTS_V2 if "input" in domains else ()),
             *(MIR_GO_CLOCK_IMPORTS_V2 if "clock" in domains else ()),
             *(MIR_GO_RANDOM_IMPORTS_V2 if "random" in domains else ()),
+            *(BROKER_IMPORTS if "broker" in domains else ()),
         }
     )
 
@@ -290,12 +307,18 @@ def generate_go_mir_native(mir: MirGraph) -> str:
         lines.append(_clock_runtime())
     if "random" in domains:
         lines.append(_random_runtime())
+    if "broker" in domains:
+        lines.append(broker_runtime())
     for plan in plans:
         lines.extend(_emit_function(plan, symbols))
         lines.append("")
     main = next(item for item in mir.root_module.functions if item.name == "main")
     entry_arguments = "_ksSystemCaps{}" if main.parameters else ""
-    lines.extend(["func main() {", f"\t{root_main}({entry_arguments})", "}", ""])
+    if "broker" in domains:
+        entry = [f"\t_ksBrokerEntry(func() {{ {root_main}({entry_arguments}) }})"]
+    else:
+        entry = [f"\t{root_main}({entry_arguments})"]
+    lines.extend(["func main() {", *entry, "}", ""])
     return "\n".join(lines)
 
 

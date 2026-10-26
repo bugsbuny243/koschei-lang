@@ -183,7 +183,7 @@ class AtomicDiskWriteTests(unittest.TestCase):
         self.assertEqual((outside / "target.txt").read_text(encoding="utf-8"), "DOKUNMA")
         folder = capability.write_file(str(scope / "folder"), "YENI")
         self.assertIsInstance(folder, KsError)
-        self.assertEqual(folder.message, f"Dosya yazılamadı: [Errno {errno.EISDIR}] {os.strerror(errno.EISDIR)}: 'folder'")
+        self.assertTrue(folder.message.startswith("Dosya yazılamadı: EISDIR: "), folder.message)
         self.assertEqual(_leftovers(scope), [])
 
     def test_program_writes_then_reads(self) -> None:

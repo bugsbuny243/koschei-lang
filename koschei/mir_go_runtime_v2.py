@@ -86,6 +86,20 @@ type _ksInputCaps struct {
 
 type _ksClockRoot struct{}
 
+// Read-only disk and environment tokens; their operations go through the
+// native capability broker (native_broker_v1).
+type _ksDiskRoot struct{}
+
+type _ksDiskReadCaps struct {
+	scope string
+}
+
+type _ksEnvRoot struct{}
+
+type _ksEnvCaps struct {
+	name string
+}
+
 type _ksClockCaps struct {
 	resolution int64
 }
@@ -191,6 +205,14 @@ func _ksToString(value any) string {
 		return "<InputRoot>"
 	case _ksInputCaps:
 		return "<InputCaps>"
+	case _ksDiskRoot:
+		return "<DiskRoot>"
+	case _ksDiskReadCaps:
+		return "<DiskReadCaps>"
+	case _ksEnvRoot:
+		return "<EnvRoot>"
+	case _ksEnvCaps:
+		return "<EnvCaps>"
 	case _ksClockRoot:
 		return "<ClockRoot>"
 	case _ksClockCaps:
@@ -976,6 +998,14 @@ func _ksTypeName(value any) string {
 		return "InputRoot"
 	case _ksInputCaps:
 		return "InputCaps"
+	case _ksDiskRoot:
+		return "DiskRoot"
+	case _ksDiskReadCaps:
+		return "DiskReadCaps"
+	case _ksEnvRoot:
+		return "EnvRoot"
+	case _ksEnvCaps:
+		return "EnvCaps"
 	case _ksClockRoot:
 		return "ClockRoot"
 	case _ksClockCaps:
@@ -1163,6 +1193,14 @@ func _ksMatchPattern(value any, expected string, parameters map[string]bool, bin
 		return base == "InputRoot"
 	case _ksInputCaps:
 		return base == "InputCaps"
+	case _ksDiskRoot:
+		return base == "DiskRoot"
+	case _ksDiskReadCaps:
+		return base == "DiskReadCaps"
+	case _ksEnvRoot:
+		return base == "EnvRoot"
+	case _ksEnvCaps:
+		return base == "EnvCaps"
 	case _ksClockRoot:
 		return base == "ClockRoot"
 	case _ksClockCaps:

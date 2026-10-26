@@ -1,0 +1,803 @@
+"""Native capability broker v1 (readiness gate G2, first step).
+
+A native binary that uses read-only disk or environment authority runs as two
+processes:
+
+* the **broker** is the process the user started. It keeps the authority: the
+  environment, the current directory and the right to open files. It starts
+  the worker, answers its requests and exits with the worker's status.
+* the **worker** runs the program. It starts with an empty environment, checks
+  that descriptor 3 is its socket to the broker, and before any program code
+  runs it confines itself with a seccomp filter (``no_new_privs``, all
+  threads): opening files, sockets, ``exec``, ``fork``, writing to the file
+  system, ``ptrace``, ``mount``, handle-based opens and similar calls fail with
+  ``EPERM``. Every disk read, directory listing and environment lookup is a
+  request to the broker.
+
+The broker applies exactly the interpreter's rules (``interpreter.py``): the
+scope root is resolved with Python's ``realpath`` and opened once when the
+token is narrowed; a path is made absolute and relative with Python's
+``abspath``/``relpath``; every component is opened with ``O_NOFOLLOW``
+relative to the previous one, ``..`` cannot leave the scope, symlinks are
+refused (``KS3405``), errors name the errno symbolically, a file holds at most
+16 MiB, text must be UTF-8 and directory names must be UTF-8.
+
+Confinement is implemented for ``linux/amd64``; any other target refuses to
+build such a program. Disk writes and the network stay closed (``KS4004``).
+"""
+
+from __future__ import annotations
+
+from .interpreter import DISK_ERRNO_NAMES
+from .value_budget_v1 import BYTES_MESSAGE, LIST_MESSAGE, MAX_LIST_ITEMS, MAX_STRING_BYTES, STRING_MESSAGE
+
+# x86-64 system call numbers the worker may not use. Each fails with EPERM;
+# a foreign architecture or the x32 ABI kills the worker.
+DENIED_SYSCALLS_AMD64 = {
+    "open": 2, "openat": 257, "openat2": 437, "creat": 85,
+    "socket": 41, "socketpair": 53, "connect": 42, "bind": 49, "listen": 50,
+    "accept": 43, "accept4": 288,
+    "execve": 59, "execveat": 322, "fork": 57, "vfork": 58,
+    "unlink": 87, "unlinkat": 263, "rename": 82, "renameat": 264, "renameat2": 316,
+    "mkdir": 83, "mkdirat": 258, "rmdir": 84, "link": 86, "linkat": 265,
+    "symlink": 88, "symlinkat": 266, "chmod": 90, "fchmod": 91, "fchmodat": 268,
+    "chown": 92, "fchown": 93, "lchown": 94, "fchownat": 260,
+    "truncate": 76, "ftruncate": 77, "mknod": 133, "mknodat": 259,
+    "chdir": 80, "fchdir": 81, "chroot": 161, "pivot_root": 155,
+    "mount": 165, "umount2": 166,
+    "ptrace": 101, "process_vm_readv": 310, "process_vm_writev": 311, "kill": 62,
+    "setuid": 105, "setgid": 106,
+    "name_to_handle_at": 303, "open_by_handle_at": 304,
+    "io_uring_setup": 425, "bpf": 321, "perf_event_open": 298, "userfaultfd": 323,
+    "keyctl": 250, "add_key": 248, "request_key": 249,
+}
+
+WORKER_ENV = "KOSCHEI_NATIVE_WORKER=v1"
+
+# Messages, identical to interpreter.py.
+REJECT_MESSAGE = "KS3402: Disk kapsamı dışında erişim reddedildi: "
+SYMLINK_MESSAGE = (
+    "KS3402: Disk kapsamı sembolik bağ üzerinden aşılamaz; "
+    "KS3405: Kapsam içinde sembolik bağ takip edilmez: "
+)
+READ_PREFIX = "Dosya okunamadı: "
+ROOT_READ_MESSAGE = "Dosya okunamadı: kapsam kökü bir dizindir: "
+NOT_TEXT_PREFIX = "Dosya okunamadı: geçerli UTF-8 metin değil: "
+LIST_PREFIX = "Dizin listelenemedi: "
+LIST_NAME_PREFIX = "Dizin listelenemedi: geçerli UTF-8 olmayan dosya adı: "
+ENV_MISSING_PREFIX = "Ortam değişkeni bulunamadı: "
+ENV_NOT_TEXT_PREFIX = "Ortam değişkeni geçerli UTF-8 metin değil: "
+
+
+def _go(value: str) -> str:
+    from .mir_go_native import _go_string
+
+    return _go_string(value)
+
+
+def broker_runtime() -> str:
+    errnos = "\n".join(
+        f"\tsyscall.Errno({code}): {_go(name)}," for code, name in sorted(DISK_ERRNO_NAMES.items())
+    )
+    denied = ", ".join(str(number) for number in sorted(DENIED_SYSCALLS_AMD64.values()))
+    return _BROKER_RUNTIME.format(
+        errnos=errnos,
+        denied=denied,
+        worker_env=_go(WORKER_ENV),
+        max_bytes=MAX_STRING_BYTES,
+        max_items=MAX_LIST_ITEMS,
+        bytes_message=_go(BYTES_MESSAGE),
+        string_message=_go(STRING_MESSAGE),
+        list_message=_go(LIST_MESSAGE),
+        reject=_go(REJECT_MESSAGE),
+        symlink=_go(SYMLINK_MESSAGE),
+        read_prefix=_go(READ_PREFIX),
+        root_read=_go(ROOT_READ_MESSAGE),
+        not_text=_go(NOT_TEXT_PREFIX),
+        list_prefix=_go(LIST_PREFIX),
+        list_name=_go(LIST_NAME_PREFIX),
+        env_missing=_go(ENV_MISSING_PREFIX),
+        env_not_text=_go(ENV_NOT_TEXT_PREFIX),
+    )
+
+
+BROKER_IMPORTS = ("os/exec", "runtime", "sort", "syscall", "unsafe")
+
+_BROKER_RUNTIME = r'''
+// ---- native capability broker (native_broker_v1) ----------------------
+
+const _ksBrokerMaxField = {max_bytes} + 1
+
+var _ksErrnoNames = map[syscall.Errno]string{{
+{errnos}
+}}
+
+var _ksBroker *os.File
+
+// Entry: the process the user started becomes the broker; the worker runs
+// the program confined.
+func _ksBrokerEntry(run func()) {{
+	if os.Getenv("KOSCHEI_NATIVE_WORKER") == "v1" {{
+		_ksWorkerStart()
+		run()
+		os.Exit(0)
+	}}
+	_ksBrokerServe()
+}}
+
+// ---- framing: u32 count, then u32 length + bytes per field --------------
+
+func _ksWriteFrame(file *os.File, fields []string) error {{
+	size := 4
+	for _, field := range fields {{
+		size += 4 + len(field)
+	}}
+	out := make([]byte, 0, size)
+	out = append(out, byte(len(fields)>>24), byte(len(fields)>>16), byte(len(fields)>>8), byte(len(fields)))
+	for _, field := range fields {{
+		n := len(field)
+		out = append(out, byte(n>>24), byte(n>>16), byte(n>>8), byte(n))
+		out = append(out, field...)
+	}}
+	_, err := file.Write(out)
+	return err
+}}
+
+func _ksReadFull(file *os.File, buffer []byte) error {{
+	for read := 0; read < len(buffer); {{
+		n, err := file.Read(buffer[read:])
+		if n == 0 && err != nil {{
+			return err
+		}}
+		read += n
+	}}
+	return nil
+}}
+
+func _ksReadU32(file *os.File) (int, error) {{
+	var raw [4]byte
+	if err := _ksReadFull(file, raw[:]); err != nil {{
+		return 0, err
+	}}
+	return int(raw[0])<<24 | int(raw[1])<<16 | int(raw[2])<<8 | int(raw[3]), nil
+}}
+
+func _ksReadFrame(file *os.File, maxFields int, maxTotal int) ([]string, error) {{
+	count, err := _ksReadU32(file)
+	if err != nil {{
+		return nil, err
+	}}
+	if count > maxFields {{
+		return nil, syscall.EINVAL
+	}}
+	fields := make([]string, 0, count)
+	total := 0
+	for index := 0; index < count; index++ {{
+		n, err := _ksReadU32(file)
+		if err != nil {{
+			return nil, err
+		}}
+		total += n
+		if n > _ksBrokerMaxField || total > maxTotal {{
+			return nil, syscall.EINVAL
+		}}
+		buffer := make([]byte, n)
+		if err := _ksReadFull(file, buffer); err != nil {{
+			return nil, err
+		}}
+		fields = append(fields, string(buffer))
+	}}
+	return fields, nil
+}}
+
+// ---- worker side --------------------------------------------------------
+
+func _ksWorkerStart() {{
+	var info syscall.Stat_t
+	if err := syscall.Fstat(3, &info); err != nil || info.Mode&syscall.S_IFMT != syscall.S_IFSOCK {{
+		_ksAbort("KS5002", "native worker started without its broker")
+	}}
+	syscall.CloseOnExec(3)
+	_ksBroker = os.NewFile(3, "koschei-broker")
+	_ksConfine()
+}}
+
+func _ksConfine() {{
+	if runtime.GOOS != "linux" || runtime.GOARCH != "amd64" {{
+		_ksAbort("KS4001", "native capability confinement is implemented for linux/amd64 only")
+	}}
+	const auditArchX8664 = 0xC000003E
+	const retKill = 0x80000000
+	const retAllow = 0x7fff0000
+	const retEperm = 0x00050000 | 1
+	denied := []uint32{{{denied}}}
+	n := len(denied)
+	filter := []syscall.SockFilter{{
+		{{Code: syscall.BPF_LD | syscall.BPF_W | syscall.BPF_ABS, K: 4}},
+		{{Code: syscall.BPF_JMP | syscall.BPF_JEQ | syscall.BPF_K, Jt: 1, Jf: 0, K: auditArchX8664}},
+		{{Code: syscall.BPF_RET | syscall.BPF_K, K: retKill}},
+		{{Code: syscall.BPF_LD | syscall.BPF_W | syscall.BPF_ABS, K: 0}},
+		{{Code: syscall.BPF_JMP | syscall.BPF_JGE | syscall.BPF_K, Jt: uint8(n + 2), Jf: 0, K: 0x40000000}},
+	}}
+	for index, number := range denied {{
+		filter = append(filter, syscall.SockFilter{{
+			Code: syscall.BPF_JMP | syscall.BPF_JEQ | syscall.BPF_K, Jt: uint8(n - index), Jf: 0, K: number,
+		}})
+	}}
+	filter = append(filter,
+		syscall.SockFilter{{Code: syscall.BPF_RET | syscall.BPF_K, K: retAllow}},
+		syscall.SockFilter{{Code: syscall.BPF_RET | syscall.BPF_K, K: retEperm}},
+		syscall.SockFilter{{Code: syscall.BPF_RET | syscall.BPF_K, K: retKill}},
+	)
+	if _, _, errno := syscall.RawSyscall(syscall.SYS_PRCTL, 38, 1, 0); errno != 0 {{
+		_ksAbort("KS5002", "native worker could not set no_new_privs")
+	}}
+	program := syscall.SockFprog{{Len: uint16(len(filter)), Filter: &filter[0]}}
+	// seccomp(SECCOMP_SET_MODE_FILTER, SECCOMP_FILTER_FLAG_TSYNC, &program)
+	if result, _, errno := syscall.RawSyscall(317, 1, 1, uintptr(unsafe.Pointer(&program))); errno != 0 || result != 0 {{
+		_ksAbort("KS5002", "native worker could not confine itself")
+	}}
+}}
+
+func _ksAsk(fields ...string) (bool, []string) {{
+	if _ksBroker == nil {{
+		_ksAbort("KS5002", "native broker is not connected")
+	}}
+	if err := _ksWriteFrame(_ksBroker, fields); err != nil {{
+		_ksAbort("KS5002", "native broker request failed")
+	}}
+	answer, err := _ksReadFrame(_ksBroker, _ksMaxListItems+2, 2*_ksBrokerMaxField+64*_ksMaxListItems)
+	if err != nil || len(answer) == 0 {{
+		_ksAbort("KS5002", "native broker answer failed")
+	}}
+	return answer[0] == "ok", answer[1:]
+}}
+
+func _ksCapsDisk(receiver any) any {{
+	if _, ok := receiver.(_ksSystemCaps); !ok {{
+		_ksAbort("KS5002", "SystemCaps.disk receiver drifted")
+	}}
+	return _ksDiskRoot{{}}
+}}
+
+func _ksCapsEnv(receiver any) any {{
+	if _, ok := receiver.(_ksSystemCaps); !ok {{
+		_ksAbort("KS5002", "SystemCaps.env receiver drifted")
+	}}
+	return _ksEnvRoot{{}}
+}}
+
+func _ksDiskAllowReadOnly(receiver any, prefix any) any {{
+	if _, ok := receiver.(_ksDiskRoot); !ok {{
+		_ksAbort("KS5002", "DiskRoot receiver drifted")
+	}}
+	text, ok := prefix.(string)
+	if !ok {{
+		_ksAbort("KS5002", "DiskRoot.allow_read_only prefix drifted")
+	}}
+	_, answer := _ksAsk("scope", text)
+	return _ksDiskReadCaps{{scope: answer[0]}}
+}}
+
+func _ksDiskScopeOf(receiver any) _ksDiskReadCaps {{
+	disk, ok := receiver.(_ksDiskReadCaps)
+	if !ok {{
+		_ksAbort("KS5002", "DiskReadCaps receiver drifted")
+	}}
+	return disk
+}}
+
+func _ksDiskPath(path any) string {{
+	text, ok := path.(string)
+	if !ok {{
+		_ksAbort("KS5002", "disk path drifted")
+	}}
+	return text
+}}
+
+func _ksDiskReadBytes(receiver any, path any) any {{
+	ok, answer := _ksAsk("read", _ksDiskScopeOf(receiver).scope, _ksDiskPath(path))
+	if !ok {{
+		return _ksError{{message: answer[0]}}
+	}}
+	return _ksBytes{{data: answer[0]}}
+}}
+
+func _ksDiskReadText(receiver any, path any) any {{
+	text := _ksDiskPath(path)
+	ok, answer := _ksAsk("read", _ksDiskScopeOf(receiver).scope, text)
+	if !ok {{
+		if answer[0] == {bytes_message} {{
+			return _ksError{{message: {string_message}}}
+		}}
+		return _ksError{{message: answer[0]}}
+	}}
+	if !utf8.ValidString(answer[0]) {{
+		return _ksError{{message: {not_text} + text}}
+	}}
+	return answer[0]
+}}
+
+func _ksDiskList(receiver any, path any) any {{
+	ok, answer := _ksAsk("list", _ksDiskScopeOf(receiver).scope, _ksDiskPath(path))
+	if !ok {{
+		return _ksError{{message: answer[0]}}
+	}}
+	items := make([]any, len(answer))
+	for index, name := range answer {{
+		items[index] = name
+	}}
+	return items
+}}
+
+func _ksEnvAllow(receiver any, name any) any {{
+	if _, ok := receiver.(_ksEnvRoot); !ok {{
+		_ksAbort("KS5002", "EnvRoot receiver drifted")
+	}}
+	text, ok := name.(string)
+	if !ok {{
+		_ksAbort("KS5002", "EnvRoot.allow name drifted")
+	}}
+	return _ksEnvCaps{{name: text}}
+}}
+
+func _ksEnvGet(receiver any) any {{
+	env, ok := receiver.(_ksEnvCaps)
+	if !ok {{
+		_ksAbort("KS5002", "EnvCaps receiver drifted")
+	}}
+	found, answer := _ksAsk("env", env.name)
+	if !found {{
+		return _ksError{{message: answer[0]}}
+	}}
+	return answer[0]
+}}
+
+// ---- broker side ----------------------------------------------------------
+
+type _ksScope struct {{
+	prefix  string
+	root    int
+	rootErr syscall.Errno
+}}
+
+func _ksBrokerServe() {{
+	pair, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_STREAM|syscall.SOCK_CLOEXEC, 0)
+	if err != nil {{
+		_ksAbort("KS5002", "native broker could not create its channel")
+	}}
+	brokerSide := os.NewFile(uintptr(pair[0]), "koschei-broker")
+	workerSide := os.NewFile(uintptr(pair[1]), "koschei-worker")
+	command := exec.Command("/proc/self/exe", os.Args[1:]...)
+	command.Args[0] = os.Args[0]
+	command.Stdin, command.Stdout, command.Stderr = os.Stdin, os.Stdout, os.Stderr
+	command.ExtraFiles = []*os.File{{workerSide}}
+	command.Env = []string{{{worker_env}}}
+	if err := command.Start(); err != nil {{
+		_ksAbort("KS5002", "native broker could not start the worker")
+	}}
+	workerSide.Close()
+	go _ksBrokerLoop(brokerSide)
+	err = command.Wait()
+	if exit, ok := err.(*exec.ExitError); ok {{
+		if status, ok := exit.Sys().(syscall.WaitStatus); ok && status.Signaled() {{
+			fmt.Fprintln(os.Stderr, "KOSCHEI RUNTIME ERROR: KS5002: native worker was stopped by signal "+strconv.Itoa(int(status.Signal())))
+			os.Exit(1)
+		}}
+		os.Exit(exit.ExitCode())
+	}}
+	if err != nil {{
+		_ksAbort("KS5002", "native worker failed")
+	}}
+	os.Exit(0)
+}}
+
+func _ksBrokerLoop(channel *os.File) {{
+	// Any malformed request ends the conversation: the worker sees the
+	// channel close and stops instead of waiting.
+	defer channel.Close()
+	scopes := []*_ksScope{{nil}}
+	for {{
+		request, err := _ksReadFrame(channel, 4, 1<<20)
+		if err != nil || len(request) == 0 {{
+			return
+		}}
+		var answer []string
+		switch {{
+		case request[0] == "scope" && len(request) == 2:
+			scopes = append(scopes, _ksOpenScope(request[1]))
+			answer = []string{{"ok", strconv.Itoa(len(scopes) - 1)}}
+		case (request[0] == "read" || request[0] == "list") && len(request) == 3:
+			index, convErr := strconv.Atoi(request[1])
+			if convErr != nil || index < 1 || index >= len(scopes) {{
+				return
+			}}
+			if request[0] == "read" {{
+				answer = _ksBrokerRead(scopes[index], request[2])
+			}} else {{
+				answer = _ksBrokerList(scopes[index], request[2])
+			}}
+		case request[0] == "env" && len(request) == 2:
+			answer = _ksBrokerEnv(request[1])
+		default:
+			return
+		}}
+		if _ksWriteFrame(channel, answer) != nil {{
+			return
+		}}
+	}}
+}}
+
+func _ksErrnoText(code syscall.Errno, path string) string {{
+	if name, ok := _ksErrnoNames[code]; ok {{
+		return name + ": " + path
+	}}
+	return "errno " + strconv.Itoa(int(code)) + ": " + path
+}}
+
+func _ksAsErrno(err error) syscall.Errno {{
+	if code, ok := err.(syscall.Errno); ok {{
+		return code
+	}}
+	return syscall.EIO
+}}
+
+// posixpath.normpath
+func _ksNormpath(path string) string {{
+	if path == "" {{
+		return "."
+	}}
+	initial := 0
+	if strings.HasPrefix(path, "/") {{
+		initial = 1
+		if strings.HasPrefix(path, "//") && !strings.HasPrefix(path, "///") {{
+			initial = 2
+		}}
+	}}
+	parts := []string{{}}
+	for _, part := range strings.Split(path, "/") {{
+		if part == "" || part == "." {{
+			continue
+		}}
+		if part != ".." || (initial == 0 && len(parts) == 0) || (len(parts) > 0 && parts[len(parts)-1] == "..") {{
+			parts = append(parts, part)
+		}} else if len(parts) > 0 {{
+			parts = parts[:len(parts)-1]
+		}}
+	}}
+	out := strings.Repeat("/", initial) + strings.Join(parts, "/")
+	if out == "" {{
+		return "."
+	}}
+	return out
+}}
+
+func _ksGetwd() string {{
+	buffer := make([]byte, 4096)
+	n, _, errno := syscall.Syscall(syscall.SYS_GETCWD, uintptr(unsafe.Pointer(&buffer[0])), uintptr(len(buffer)), 0)
+	if errno != 0 || n == 0 {{
+		_ksAbort("KS5002", "native broker could not read the current directory")
+	}}
+	return string(buffer[:n-1])
+}}
+
+func _ksJoin(left string, right string) string {{
+	if strings.HasPrefix(right, "/") {{
+		return right
+	}}
+	if left == "" || strings.HasSuffix(left, "/") {{
+		return left + right
+	}}
+	return left + "/" + right
+}}
+
+// posixpath.abspath
+func _ksAbspath(path string) string {{
+	if !strings.HasPrefix(path, "/") {{
+		path = _ksJoin(_ksGetwd(), path)
+	}}
+	return _ksNormpath(path)
+}}
+
+// posixpath.split
+func _ksSplit(path string) (string, string) {{
+	index := strings.LastIndex(path, "/") + 1
+	head, tail := path[:index], path[index:]
+	if head != "" && strings.Trim(head, "/") != "" {{
+		head = strings.TrimRight(head, "/")
+	}}
+	return head, tail
+}}
+
+// posixpath.realpath (strict=False), as in CPython 3.12.
+func _ksRealpath(path string) string {{
+	resolved, _ := _ksJoinRealpath("", path, map[string]*string{{}})
+	return _ksAbspath(resolved)
+}}
+
+func _ksJoinRealpath(path string, rest string, seen map[string]*string) (string, bool) {{
+	if strings.HasPrefix(rest, "/") {{
+		rest = rest[1:]
+		path = "/"
+	}}
+	for rest != "" {{
+		name := rest
+		if index := strings.Index(rest, "/"); index >= 0 {{
+			name, rest = rest[:index], rest[index+1:]
+		}} else {{
+			rest = ""
+		}}
+		if name == "" || name == "." {{
+			continue
+		}}
+		if name == ".." {{
+			if path != "" {{
+				var tail string
+				path, tail = _ksSplit(path)
+				if tail == ".." {{
+					path = _ksJoin(_ksJoin(path, ".."), "..")
+				}}
+			}} else {{
+				path = ".."
+			}}
+			continue
+		}}
+		next := _ksJoin(path, name)
+		var info syscall.Stat_t
+		if syscall.Lstat(next, &info) != nil || info.Mode&syscall.S_IFMT != syscall.S_IFLNK {{
+			path = next
+			continue
+		}}
+		if known, ok := seen[next]; ok {{
+			if known != nil {{
+				path = *known
+				continue
+			}}
+			return _ksJoin(next, rest), false
+		}}
+		seen[next] = nil
+		buffer := make([]byte, 4096)
+		n, err := syscall.Readlink(next, buffer)
+		if err != nil {{
+			path = next
+			continue
+		}}
+		var ok bool
+		path, ok = _ksJoinRealpath(path, string(buffer[:n]), seen)
+		if !ok {{
+			return _ksJoin(path, rest), false
+		}}
+		value := path
+		seen[next] = &value
+	}}
+	return path, true
+}}
+
+// posixpath.relpath split into components; nil when outside the scope.
+func _ksRelativeParts(scope *_ksScope, path string) ([]string, bool) {{
+	if strings.Contains(path, "\x00") {{
+		return nil, false
+	}}
+	target := _ksAbspath(path)
+	start := []string{{}}
+	for _, part := range strings.Split(_ksAbspath(scope.prefix), "/") {{
+		if part != "" {{
+			start = append(start, part)
+		}}
+	}}
+	parts := []string{{}}
+	for _, part := range strings.Split(target, "/") {{
+		if part != "" {{
+			parts = append(parts, part)
+		}}
+	}}
+	common := 0
+	for common < len(start) && common < len(parts) && start[common] == parts[common] {{
+		common++
+	}}
+	if common < len(start) {{
+		return nil, false
+	}}
+	out := []string{{}}
+	for _, part := range parts[common:] {{
+		if part == ".." {{
+			return nil, false
+		}}
+		if part != "" && part != "." {{
+			out = append(out, part)
+		}}
+	}}
+	return out, true
+}}
+
+func _ksOpenScope(prefix string) *_ksScope {{
+	scope := &_ksScope{{prefix: _ksRealpath(prefix), root: -1}}
+	fd, err := syscall.Open(scope.prefix, syscall.O_RDONLY|syscall.O_DIRECTORY|syscall.O_NOFOLLOW|syscall.O_CLOEXEC, 0)
+	if err != nil {{
+		scope.rootErr = _ksAsErrno(err)
+	}} else {{
+		scope.root = fd
+	}}
+	return scope
+}}
+
+func _ksIsSymlinkAt(dir int, name string) bool {{
+	var info syscall.Stat_t
+	pointer, err := syscall.BytePtrFromString(name)
+	if err != nil {{
+		return false
+	}}
+	// newfstatat(dir, name, &info, AT_SYMLINK_NOFOLLOW)
+	_, _, errno := syscall.Syscall6(syscall.SYS_NEWFSTATAT, uintptr(dir), uintptr(unsafe.Pointer(pointer)), uintptr(unsafe.Pointer(&info)), 0x100, 0, 0)
+	if errno != 0 {{
+		return false
+	}}
+	return info.Mode&syscall.S_IFMT == syscall.S_IFLNK
+}}
+
+// The parent directory of parts[len-1]: (fd, symlink name, errno).
+func _ksParent(scope *_ksScope, parts []string) (int, string, syscall.Errno) {{
+	if scope.root < 0 {{
+		return -1, "", scope.rootErr
+	}}
+	current, err := syscall.Dup(scope.root)
+	if err != nil {{
+		return -1, "", _ksAsErrno(err)
+	}}
+	for _, component := range parts[:len(parts)-1] {{
+		next, err := syscall.Openat(current, component, syscall.O_RDONLY|syscall.O_DIRECTORY|syscall.O_NOFOLLOW|syscall.O_CLOEXEC, 0)
+		if err != nil {{
+			code := _ksAsErrno(err)
+			if (code == syscall.ELOOP || code == syscall.ENOTDIR) && _ksIsSymlinkAt(current, component) {{
+				syscall.Close(current)
+				return -1, component, 0
+			}}
+			syscall.Close(current)
+			return -1, "", code
+		}}
+		syscall.Close(current)
+		current = next
+	}}
+	return current, "", 0
+}}
+
+func _ksBrokerRead(scope *_ksScope, path string) []string {{
+	parts, inside := _ksRelativeParts(scope, path)
+	if !inside {{
+		return []string{{"error", {reject} + path}}
+	}}
+	if len(parts) == 0 {{
+		return []string{{"error", {root_read} + path}}
+	}}
+	parent, symlink, code := _ksParent(scope, parts)
+	if symlink != "" {{
+		return []string{{"error", {symlink} + symlink}}
+	}}
+	if code != 0 {{
+		return []string{{"error", {read_prefix} + _ksErrnoText(code, path)}}
+	}}
+	defer syscall.Close(parent)
+	name := parts[len(parts)-1]
+	fd, err := syscall.Openat(parent, name, syscall.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_CLOEXEC, 0)
+	if err != nil {{
+		code := _ksAsErrno(err)
+		if code == syscall.ELOOP || code == syscall.EMLINK {{
+			return []string{{"error", {symlink} + name}}
+		}}
+		return []string{{"error", {read_prefix} + _ksErrnoText(code, path)}}
+	}}
+	defer syscall.Close(fd)
+	data := make([]byte, 0, 65536)
+	chunk := make([]byte, 65536)
+	for len(data) <= {max_bytes} {{
+		n, err := syscall.Read(fd, chunk)
+		if err != nil {{
+			if err == syscall.EINTR {{
+				continue
+			}}
+			return []string{{"error", {read_prefix} + _ksErrnoText(_ksAsErrno(err), path)}}
+		}}
+		if n == 0 {{
+			break
+		}}
+		data = append(data, chunk[:n]...)
+	}}
+	if len(data) > {max_bytes} {{
+		return []string{{"error", {bytes_message}}}
+	}}
+	return []string{{"ok", string(data)}}
+}}
+
+func _ksListNames(fd int) ([]string, syscall.Errno) {{
+	if _, err := syscall.Seek(fd, 0, 0); err != nil {{
+		return nil, _ksAsErrno(err)
+	}}
+	names := []string{{}}
+	buffer := make([]byte, 65536)
+	for {{
+		n, err := syscall.ReadDirent(fd, buffer)
+		if err != nil {{
+			return nil, _ksAsErrno(err)
+		}}
+		if n <= 0 {{
+			break
+		}}
+		_, _, names = syscall.ParseDirent(buffer[:n], -1, names)
+		if len(names) > {max_items} {{
+			break
+		}}
+	}}
+	return names, 0
+}}
+
+func _ksBrokerList(scope *_ksScope, path string) []string {{
+	parts, inside := _ksRelativeParts(scope, path)
+	if !inside {{
+		return []string{{"error", {reject} + path}}
+	}}
+	var fd int
+	if len(parts) == 0 {{
+		if scope.root < 0 {{
+			return []string{{"error", {list_prefix} + _ksErrnoText(scope.rootErr, path)}}
+		}}
+		duplicate, err := syscall.Dup(scope.root)
+		if err != nil {{
+			return []string{{"error", {list_prefix} + _ksErrnoText(_ksAsErrno(err), path)}}
+		}}
+		fd = duplicate
+	}} else {{
+		parent, symlink, code := _ksParent(scope, parts)
+		if symlink != "" {{
+			return []string{{"error", {symlink} + symlink}}
+		}}
+		if code != 0 {{
+			return []string{{"error", {list_prefix} + _ksErrnoText(code, path)}}
+		}}
+		name := parts[len(parts)-1]
+		opened, err := syscall.Openat(parent, name, syscall.O_RDONLY|syscall.O_DIRECTORY|syscall.O_NOFOLLOW|syscall.O_CLOEXEC, 0)
+		syscall.Close(parent)
+		if err != nil {{
+			code := _ksAsErrno(err)
+			if code == syscall.ELOOP || code == syscall.EMLINK {{
+				return []string{{"error", {symlink} + name}}
+			}}
+			return []string{{"error", {list_prefix} + _ksErrnoText(code, path)}}
+		}}
+		fd = opened
+	}}
+	defer syscall.Close(fd)
+	names, code := _ksListNames(fd)
+	if code != 0 {{
+		return []string{{"error", {list_prefix} + _ksErrnoText(code, path)}}
+	}}
+	if len(names) > {max_items} {{
+		return []string{{"error", {list_message}}}
+	}}
+	for _, name := range names {{
+		if !utf8.ValidString(name) {{
+			return []string{{"error", {list_name} + path}}
+		}}
+	}}
+	// Python sorts by code point; for UTF-8 that is byte order.
+	sort.Strings(names)
+	return append([]string{{"ok"}}, names...)
+}}
+
+func _ksBrokerEnv(name string) []string {{
+	value, found := syscall.Getenv(name)
+	if !found {{
+		return []string{{"error", {env_missing} + name}}
+	}}
+	if !utf8.ValidString(value) {{
+		return []string{{"error", {env_not_text} + name}}
+	}}
+	return []string{{"ok", value}}
+}}
+'''
+
+__all__ = [
+    "BROKER_IMPORTS",
+    "DENIED_SYSCALLS_AMD64",
+    "WORKER_ENV",
+    "broker_runtime",
+]
