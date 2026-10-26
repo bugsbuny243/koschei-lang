@@ -61,24 +61,25 @@ fn strip_suffix(value: String, suffix: String) -> Option<String> {
     return Some(rest)
 }
 
-// Text before the first occurrence of `separator`.
+// Text before the first occurrence of `separator`. None also when the value
+// holds more pieces than one List may (KS3502): the answer is not computed.
 fn before(value: String, separator: String) -> Option<String> {
     if separator.length() == 0 {
         return None()
     }
-    let pieces = value.split(separator)
+    let pieces = value.split(separator) or return None()
     if pieces.length() < 2 {
         return None()
     }
     return pieces.get(0)
 }
 
-// Text after the first occurrence of `separator`.
+// Text after the first occurrence of `separator`; None as for `before`.
 fn after(value: String, separator: String) -> Option<String> {
     if separator.length() == 0 {
         return None()
     }
-    let pieces = value.split(separator)
+    let pieces = value.split(separator) or return None()
     if pieces.length() < 2 {
         return None()
     }
@@ -91,7 +92,8 @@ fn count(value: String, needle: String) -> Result<Int, Error> {
     if needle.length() == 0 {
         return Err(Error("text.count: needle must not be empty"))
     }
-    return Ok(value.split(needle).length() - 1)
+    let pieces = value.split(needle) or return Err(Error("text.count: more occurrences than one List may hold (KS3502)"))
+    return Ok(pieces.length() - 1)
 }
 
 // Replaces every non-overlapping occurrence, left to right.
@@ -99,7 +101,8 @@ fn replace(value: String, old: String, replacement: String) -> Result<String, Er
     if old.length() == 0 {
         return Err(Error("text.replace: old text must not be empty"))
     }
-    let replaced = replacement.join(value.split(old)) or return Err(Error("text.replace: join failed"))
+    let pieces = value.split(old) or return Err(Error("text.replace: more occurrences than one List may hold (KS3502)"))
+    let replaced = replacement.join(pieces) or return Err(Error("text.replace: join failed"))
     return Ok(replaced)
 }
 

@@ -311,6 +311,35 @@ fn main() {
 }
 """
 
+SPLIT_BUDGET = """
+import text
+import secure
+
+fn main() {
+    let mut big = "a"
+    let mut i = 0
+    while i < 20 {
+        big = big + big
+        i = i + 1
+    }
+    println(text.count(big, "a"))
+    println(text.count("banana", "a"))
+    println(text.before(big, "a"))
+    println(text.after("k=v=w", "="))
+    println(text.replace(big, "a", "b"))
+    println(text.replace("a-b", "-", "+"))
+    let mut colons = ":"
+    let mut j = 0
+    while j < 20 {
+        colons = colons + colons
+        j = j + 1
+    }
+    println(secure.is_digest(colons))
+    println(secure.is_digest(secure.hash("x") or ""))
+    println(secure.is_digest("sha3-256:zz"))
+}
+"""
+
 GENERIC_ENUMS = """
 enum Box<T> {
     B(T),
@@ -436,6 +465,18 @@ class MirGoNativeParityTests(unittest.TestCase):
             output,
             'true\nSome("a")\n1048576\ntrue\n1048573\ntrue\nSome("ay")\nSome("ab")\nfalse\n',
         )
+
+    def test_library_splits_within_the_list_budget(self) -> None:
+        # A value with more pieces than one List may hold gives an Err / None
+        # / false instead of stopping the program; is_digest never splits an
+        # oversized candidate.
+        output = self.assert_parity(SPLIT_BUDGET)
+        self.assertEqual(output.splitlines(), [
+            "Err(text.count: more occurrences than one List may hold (KS3502))",
+            "Ok(3)", "None", 'Some("v=w")',
+            "Err(text.replace: more occurrences than one List may hold (KS3502))",
+            'Ok("a+b")', "false", "true", "false",
+        ])
 
     def test_list_contains_compares_numbers_by_value(self) -> None:
         output = self.assert_parity(NUMERIC_MEMBERSHIP)

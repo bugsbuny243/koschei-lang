@@ -43,7 +43,12 @@ fn zero_digest() -> String {
 
 // True when `value` has the shape this module produces.
 fn is_digest(value: String) -> Bool {
-    let pieces = value.split(":")
+    // "sha3-256:" and 64 hex digits; deciding the length first means no
+    // untrusted value is ever split into more pieces than a List may hold.
+    if value.length() != 73 {
+        return false
+    }
+    let pieces = value.split(":") or return false
     if pieces.length() != 2 {
         return false
     }

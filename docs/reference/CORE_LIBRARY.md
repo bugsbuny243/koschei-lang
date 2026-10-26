@@ -361,7 +361,7 @@ Returns the text before a trailing `suffix`, or None when the value does not end
 fn before(value: String, separator: String) -> Option<String>
 ```
 
-Text before the first occurrence of `separator`.
+Text before the first occurrence of `separator`. None also when the value holds more pieces than one List may (KS3502): the answer is not computed.
 
 ### `text.after`
 
@@ -369,7 +369,7 @@ Text before the first occurrence of `separator`.
 fn after(value: String, separator: String) -> Option<String>
 ```
 
-Text after the first occurrence of `separator`.
+Text after the first occurrence of `separator`; None as for `before`.
 
 ### `text.count`
 
