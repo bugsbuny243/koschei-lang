@@ -73,6 +73,8 @@ CAPABILITY_MEMBERS = {
     "serve": "ServeRoot",
     "persist": "PersistRoot",
     "input": "InputRoot",
+    "clock": "ClockRoot",
+    "random": "RandomRoot",
 }
 
 ROOT_METHODS: dict[str, dict[str, str]] = {
@@ -83,6 +85,8 @@ ROOT_METHODS: dict[str, dict[str, str]] = {
     "ServeRoot": {"allow": "ServeCaps"},
     "PersistRoot": {"allow": "PersistCaps"},
     "InputRoot": {"allow": "InputCaps"},
+    "ClockRoot": {"allow": "ClockCaps"},
+    "RandomRoot": {"allow": "RandomCaps"},
 }
 
 NARROWED_METHODS: dict[str, set[str]] = {
@@ -94,6 +98,8 @@ NARROWED_METHODS: dict[str, set[str]] = {
     "ServeCaps": {"exchange"},
     "PersistCaps": {"load", "commit"},
     "InputCaps": {"args", "read_text"},
+    "ClockCaps": {"now_ms", "monotonic_ms"},
+    "RandomCaps": {"hex", "below"},
 }
 
 NARROWING_METHODS = {"allow", "allow_read_only"}

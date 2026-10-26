@@ -331,10 +331,20 @@ CATALOG: tuple[Family, ...] = (
     ),
     _family(
         "clock",
-        "planned",
+        "partial",
         "v1",
         "Monotonic time, wall time and explicit deadlines.",
-        _planned("now", capability="ClockCaps", security_sensitive=True),
+        _supported("allow", capability="ClockRoot"),
+        _supported(
+            "now_ms",
+            capability="ClockCaps",
+            note="Wall-clock milliseconds since 1970-01-01 UTC, rounded down to the allow() resolution.",
+        ),
+        _supported(
+            "monotonic_ms",
+            capability="ClockCaps",
+            note="Milliseconds since an arbitrary start, never decreasing, rounded down to the resolution.",
+        ),
         _planned("deadline", capability="ClockCaps", security_sensitive=True),
     ),
     _family(
@@ -369,9 +379,29 @@ CATALOG: tuple[Family, ...] = (
     ),
     _family(
         "random",
-        "planned",
+        "partial",
         "v1",
         "Cryptographically secure randomness only.",
+        _supported("allow", capability="RandomRoot"),
+        _supported(
+            "hex",
+            capability="RandomCaps",
+            required=("output_bytes",),
+            enforced=("output_bytes",),
+            security_sensitive=True,
+            note=(
+                "1..1024 bytes from the operating system's secure source (Python secrets, Go "
+                "crypto/rand) as lowercase hex, charged against the allow() byte budget."
+            ),
+        ),
+        _supported(
+            "below",
+            capability="RandomCaps",
+            required=("output_bytes",),
+            enforced=("output_bytes",),
+            security_sensitive=True,
+            note="Uniform Int in 0..bound-1 from the same source; costs eight budget bytes.",
+        ),
         _planned(
             "bytes",
             capability="RandomCaps",

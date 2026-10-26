@@ -53,9 +53,13 @@ DOMAIN_TITLES = {
     "serve": "HTTP SUNUCU",
     "persist": "KALICI DURUM",
     "input": "PROGRAM GİRDİSİ",
+    "clock": "SAAT",
+    "random": "RASTGELE SAYI",
 }
 
-DOMAIN_ORDER = ("disk", "net", "env", "process", "serve", "persist", "input")
+DOMAIN_ORDER = (
+    "disk", "net", "env", "process", "serve", "persist", "input", "clock", "random",
+)
 
 DYNAMIC = "<DİNAMİK — statik olarak çözülemedi>"
 
@@ -125,6 +129,10 @@ TYPE_DOMAINS = {
     "PersistCaps": "persist",
     "InputRoot": "input",
     "InputCaps": "input",
+    "ClockRoot": "clock",
+    "ClockCaps": "clock",
+    "RandomRoot": "random",
+    "RandomCaps": "random",
 }
 
 
@@ -282,6 +290,9 @@ def _inspect(
         elif domain == "input":
             from .program_input_v1 import manifest_scope as _input_manifest_scope
             scope = _input_manifest_scope(expression.arguments)
+        elif domain in {"clock", "random"}:
+            from .clock_random_v1 import manifest_scope as _clock_random_manifest_scope
+            scope = _clock_random_manifest_scope(domain, expression.arguments)
         else:
             scope = _literal_text(expression.arguments[0]) if expression.arguments else DYNAMIC
         manifest.grants.append(

@@ -25,6 +25,8 @@ PERSIST_READ = "persist.read"
 PERSIST_WRITE = "persist.write"
 SERVE_EXCHANGE = "serve.exchange"
 INPUT_READ = "input.read"
+CLOCK_READ = "clock.read"
+RANDOM_READ = "random.read"
 
 POWER_DOMAIN_IDENTITY = "identity"
 POWER_DOMAIN_AUTHORITY = "authority"
@@ -55,6 +57,8 @@ _SYSTEM_CAPABILITY_MEMBERS = {
     "persist": "PersistRoot",
     "serve": "ServeRoot",
     "input": "InputRoot",
+    "clock": "ClockRoot",
+    "random": "RandomRoot",
 }
 
 _ROOT_NARROWING = {
@@ -65,6 +69,8 @@ _ROOT_NARROWING = {
     "PersistRoot": {"allow": "PersistCaps"},
     "ServeRoot": {"allow": "ServeCaps"},
     "InputRoot": {"allow": "InputCaps"},
+    "ClockRoot": {"allow": "ClockCaps"},
+    "RandomRoot": {"allow": "RandomCaps"},
 }
 
 _NARROWED_OPERATIONS = {
@@ -76,6 +82,8 @@ _NARROWED_OPERATIONS = {
     "PersistCaps": {"load", "commit"},
     "ServeCaps": {"exchange"},
     "InputCaps": {"args", "read_text"},
+    "ClockCaps": {"now_ms", "monotonic_ms"},
+    "RandomCaps": {"hex", "below"},
 }
 
 _CAPABILITY_METHOD_EFFECTS = {
@@ -89,6 +97,8 @@ _CAPABILITY_METHOD_EFFECTS = {
     "PersistRoot": {"allow": AUTHORITY_DERIVE},
     "ServeRoot": {"allow": AUTHORITY_DERIVE},
     "InputRoot": {"allow": AUTHORITY_DERIVE},
+    "ClockRoot": {"allow": AUTHORITY_DERIVE},
+    "RandomRoot": {"allow": AUTHORITY_DERIVE},
     "NetCaps": {
         "get": NET_IO,
         "post": NET_IO,
@@ -114,6 +124,8 @@ _CAPABILITY_METHOD_EFFECTS = {
     "PersistCaps": {"load": PERSIST_READ, "commit": PERSIST_WRITE},
     "ServeCaps": {"exchange": SERVE_EXCHANGE},
     "InputCaps": {"args": INPUT_READ, "read_text": INPUT_READ},
+    "ClockCaps": {"now_ms": CLOCK_READ, "monotonic_ms": CLOCK_READ},
+    "RandomCaps": {"hex": RANDOM_READ, "below": RANDOM_READ},
 }
 
 # Power domains classify existing capability/effect semantics. They are not a
@@ -139,6 +151,12 @@ _CAPABILITY_POWER_DOMAINS = {
     # no resource of its own.
     "InputRoot": POWER_DOMAIN_DATA,
     "InputCaps": POWER_DOMAIN_DATA,
+    # Reading the clock or the operating system's random source reaches no
+    # resource either; both are data the host hands over.
+    "ClockRoot": POWER_DOMAIN_DATA,
+    "ClockCaps": POWER_DOMAIN_DATA,
+    "RandomRoot": POWER_DOMAIN_DATA,
+    "RandomCaps": POWER_DOMAIN_DATA,
 }
 
 _EFFECT_POWER_DOMAINS = {
@@ -151,6 +169,8 @@ _EFFECT_POWER_DOMAINS = {
     PERSIST_WRITE: POWER_DOMAIN_CONTINUITY,
     SERVE_EXCHANGE: POWER_DOMAIN_NETWORK,
     INPUT_READ: POWER_DOMAIN_DATA,
+    CLOCK_READ: POWER_DOMAIN_DATA,
+    RANDOM_READ: POWER_DOMAIN_DATA,
 }
 
 SYSTEM_CAPABILITY_MEMBERS: Mapping[str, str] = MappingProxyType(
