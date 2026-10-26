@@ -27,15 +27,20 @@ user ──▶ broker (holds the environment, the cwd, the right to open files)
    descriptor 3. Standard input, output and error are inherited.
 2. Before any program code runs, the worker checks that descriptor 3 is a
    socket, sets `no_new_privs` and installs a seccomp filter on all threads.
-   A foreign architecture or the x32 ABI kills it; these calls fail with
-   `EPERM`: `open`, `openat`, `openat2`, `creat`, `socket`, `socketpair`,
-   `connect`, `bind`, `listen`, `accept`, `accept4`, `execve`, `execveat`,
-   `fork`, `vfork`, every call that creates, renames, links, removes or
-   changes a file system entry or its mode/owner, `truncate`, `ftruncate`,
-   `chdir`, `fchdir`, `chroot`, `pivot_root`, `mount`, `umount2`, `ptrace`,
-   `process_vm_readv/writev`, `kill`, `setuid`, `setgid`,
-   `name_to_handle_at`, `open_by_handle_at`, `io_uring_setup`, `bpf`,
-   `perf_event_open`, `userfaultfd`, `keyctl`, `add_key`, `request_key`.
+   The filter is an **allow list** (`native_broker_v1.ALLOWED_SYSCALLS_AMD64`):
+   the calls the Go runtime and the program need, measured by tracing
+   confined workers, and none that names a path, opens a descriptor to the
+   outside, creates a process or reaches another process:
+   `read`, `write`, `close`, `fstat`, `lseek`, memory management (`mmap`,
+   `munmap`, `mprotect`, `mremap`, `madvise`, `brk`), signal handling of the
+   process itself, `futex`, `sched_yield`, sleeping, clocks, `getrandom`,
+   `epoll`, `eventfd2`, `pipe2`, `fcntl`, `uname`, `getrlimit`, `getpid`,
+   `gettid`, `exit`/`exit_group`, and glibc's per-thread `set_tid_address`,
+   `set_robust_list` and `rseq`. Three are checked by argument: `clone` only
+   creates threads (`CLONE_THREAD`), `kill`/`tgkill` only signal the worker
+   itself, `prlimit64` only reads or sets the worker's own limits. `clone3`
+   fails with `ENOSYS`, so callers fall back to `clone`. Every other call fails with
+   `EPERM`; a foreign architecture or the x32 ABI kills the worker.
 3. Every `DiskReadCaps` and `DiskCaps` operation, every `EnvCaps.get`,
    every `NetCaps.get` and every `ServeCaps.accept`/`reply` is a request on the
    socket; the broker answers with the value or the Error text. A malformed
@@ -74,7 +79,9 @@ rules that do not depend on the host:
 
 - Confinement is implemented for linux/amd64 only; other targets refuse to
   run such a binary (`KS4001`).
-- The filter is a deny list of resource system calls, not an allow list.
+- A new Go release may need a system call that is not listed; the worker
+  then gets `EPERM` from it, and the binary fails rather than gaining
+  authority. The tracing tests below catch this.
 - Processes, `persist` and `serve.exchange` are still refused by `ks build`.
 
 ## Evidence
@@ -85,7 +92,10 @@ directories and scope roots, missing scopes, non-UTF-8 content, names and
 values, listings); the worker process reports `Seccomp: 2`,
 `NoNewPrivs: 1` and an environment of only the marker; a probe built from
 the same runtime shows `open`, `socket`, `exec`, `fork` and `mkdir` refused
-after confinement; a write/delete program (new files, replacement with the
+after confinement, and so are calls nobody listed (`newfstatat` on a path,
+`ioctl(TIOCSTI)`, `ptrace`), a raw `clone` without `CLONE_THREAD`, and
+`kill`, `tgkill` and `prlimit64` aimed at the broker, while `kill` and
+`prlimit64` on the worker itself pass and `clone3` is `ENOSYS`; a write/delete program (new files, replacement with the
 mode kept, symlinked targets and parents, directories, missing parents, the
 scope root, paths outside the scope) prints the same bytes and leaves the
 same tree, modes included, with no temporary file left behind; processes

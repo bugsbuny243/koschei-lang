@@ -40,8 +40,8 @@ the separate Koschei Sentinel product.
 4. **Native binary → OS.** Binaries carry program input, clock and
    randomness directly. The disk (read, write, delete), the environment, the
    network and the loopback server go through a broker process; the program
-   runs in a seccomp-confined worker with an empty environment and no
-   sockets (`docs/NATIVE_BROKER_V1.md`, `docs/NET_V1.md`,
+   runs in a worker confined by a seccomp allow list, with an empty
+   environment and no sockets (`docs/NATIVE_BROKER_V1.md`, `docs/NET_V1.md`,
    `docs/SERVE_KNOWHERE_V1.md`). Processes, `persist` and `serve.exchange`
    are refused at build time (`KS4004`).
 
@@ -66,9 +66,10 @@ These are known and not closed by the code:
 
 1. **`ks run` is not an OS sandbox.** Capability checks are language
    enforcement inside the CPython process. A bug in the interpreter or in
-   CPython can bypass them. Running untrusted code needs OS confinement
-   around the process (containers, seccomp) until the native capability
-   broker (readiness gate G2) exists.
+   CPython can bypass them. Running untrusted code under `ks run` needs OS
+   confinement around the process (containers, seccomp). A native binary on
+   linux/amd64 is confined by the broker's seccomp allow list instead; other
+   targets refuse to run a binary that needs the broker (`KS4001`).
 2. **No total memory budget.** Each value is bounded, but many values can
    still exhaust memory; `ks run` reports `KS3502` when the host runs out,
    a binary ends with Go's fatal out-of-memory error.

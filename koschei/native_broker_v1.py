@@ -8,10 +8,10 @@ processes:
   the worker, answers its requests and exits with the worker's status.
 * the **worker** runs the program. It starts with an empty environment, checks
   that descriptor 3 is its socket to the broker, and before any program code
-  runs it confines itself with a seccomp filter (``no_new_privs``, all
-  threads): opening files, sockets, ``exec``, ``fork``, writing to the file
-  system, ``ptrace``, ``mount``, handle-based opens and similar calls fail with
-  ``EPERM``. Every disk read, directory listing and environment lookup is a
+  runs it confines itself with a seccomp allow list (``no_new_privs``, all
+  threads, :data:`ALLOWED_SYSCALLS_AMD64`): opening files, sockets, ``exec``,
+  ``fork``, writing to the file system, ``ptrace``, signalling other processes
+  and every call not listed fail with ``EPERM``. Every disk read, directory listing and environment lookup is a
   request to the broker.
 
 The broker applies exactly the interpreter's rules (``interpreter.py``): the
@@ -31,26 +31,99 @@ from __future__ import annotations
 from .interpreter import DISK_ERRNO_NAMES
 from .value_budget_v1 import BYTES_MESSAGE, LIST_MESSAGE, MAX_LIST_ITEMS, MAX_STRING_BYTES, STRING_MESSAGE
 
-# x86-64 system call numbers the worker may not use. Each fails with EPERM;
-# a foreign architecture or the x32 ABI kills the worker.
-DENIED_SYSCALLS_AMD64 = {
-    "open": 2, "openat": 257, "openat2": 437, "creat": 85,
-    "socket": 41, "socketpair": 53, "connect": 42, "bind": 49, "listen": 50,
-    "accept": 43, "accept4": 288,
-    "execve": 59, "execveat": 322, "fork": 57, "vfork": 58,
-    "unlink": 87, "unlinkat": 263, "rename": 82, "renameat": 264, "renameat2": 316,
-    "mkdir": 83, "mkdirat": 258, "rmdir": 84, "link": 86, "linkat": 265,
-    "symlink": 88, "symlinkat": 266, "chmod": 90, "fchmod": 91, "fchmodat": 268,
-    "chown": 92, "fchown": 93, "lchown": 94, "fchownat": 260,
-    "truncate": 76, "ftruncate": 77, "mknod": 133, "mknodat": 259,
-    "chdir": 80, "fchdir": 81, "chroot": 161, "pivot_root": 155,
-    "mount": 165, "umount2": 166,
-    "ptrace": 101, "process_vm_readv": 310, "process_vm_writev": 311, "kill": 62,
-    "setuid": 105, "setgid": 106,
-    "name_to_handle_at": 303, "open_by_handle_at": 304,
-    "io_uring_setup": 425, "bpf": 321, "perf_event_open": 298, "userfaultfd": 323,
-    "keyctl": 250, "add_key": 248, "request_key": 249,
+# x86-64 system calls the worker may make once confined: what the Go runtime
+# and the program need, nothing that names a path, opens a descriptor to the
+# outside, creates a process or reaches another process. Every other call
+# fails with EPERM (clone3 with ENOSYS, so callers fall back to clone); a
+# foreign architecture or the x32 ABI kills the worker.
+ALLOWED_SYSCALLS_AMD64 = {
+    "read": 0, "write": 1, "close": 3, "fstat": 5, "lseek": 8, "mmap": 9, "mprotect": 10,
+    "munmap": 11, "brk": 12, "rt_sigaction": 13, "rt_sigprocmask": 14, "rt_sigreturn": 15,
+    "readv": 19, "writev": 20, "sched_yield": 24, "mremap": 25, "madvise": 28,
+    "nanosleep": 35, "getpid": 39, "exit": 60, "uname": 63, "fcntl": 72,
+    "gettimeofday": 96, "getrlimit": 97, "sigaltstack": 131, "gettid": 186, "time": 201,
+    "futex": 202, "sched_getaffinity": 204, "restart_syscall": 219, "clock_gettime": 228,
+    "clock_getres": 229, "clock_nanosleep": 230, "exit_group": 231, "epoll_wait": 232,
+    "epoll_ctl": 233, "epoll_pwait": 281, "eventfd2": 290, "epoll_create1": 291,
+    "pipe2": 293, "getrandom": 318, "epoll_pwait2": 441,
+    # glibc's per-thread setup, for binaries that link it (cgo's resolver).
+    "set_tid_address": 218, "set_robust_list": 273, "rseq": 334,
 }
+# Allowed only with a checked first argument.
+CLONE_SYSCALL = 56  # threads only: CLONE_THREAD must be set (no fork)
+CLONE_THREAD = 0x10000
+SELF_SIGNAL_SYSCALLS = {"kill": 62, "tgkill": 234}  # only the worker's own pid
+PRLIMIT_SYSCALL = 302  # only pid 0, the worker itself
+CLONE3_SYSCALL = 435
+
+_RET_KILL = 0x80000000
+_RET_ALLOW = 0x7FFF0000
+_RET_EPERM = 0x00050000 | 1
+_RET_ENOSYS = 0x00050000 | 38
+_AUDIT_ARCH_X86_64 = 0xC000003E
+_LD_ABS = 0x20  # BPF_LD | BPF_W | BPF_ABS
+_JEQ = 0x15  # BPF_JMP | BPF_JEQ | BPF_K
+_JGE = 0x35  # BPF_JMP | BPF_JGE | BPF_K
+_JSET = 0x45  # BPF_JMP | BPF_JSET | BPF_K
+_RET = 0x06  # BPF_RET | BPF_K
+_NR, _ARCH, _ARG0 = 0, 4, 16  # struct seccomp_data offsets (low half of args[0])
+
+
+def seccomp_filter() -> tuple[list[tuple[int, int, int, int]], list[int]]:
+    """The worker's filter as (code, jt, jf, k) and the indices whose k is the pid."""
+
+    program: list[tuple[int, object, object, int]] = []
+    pid_slots: list[int] = []
+
+    def emit(code: int, k: int, jt: object = 0, jf: object = 0) -> int:
+        program.append((code, jt, jf, k))
+        return len(program) - 1
+
+    emit(_LD_ABS, _ARCH)
+    emit(_JEQ, _AUDIT_ARCH_X86_64, 0, "kill")
+    emit(_LD_ABS, _NR)
+    emit(_JGE, 0x40000000, "kill", 0)
+    for number in sorted(ALLOWED_SYSCALLS_AMD64.values()):
+        emit(_JEQ, number, "allow", 0)
+    emit(_JEQ, CLONE3_SYSCALL, "enosys", 0)
+    emit(_JEQ, CLONE_SYSCALL, 0, "not_clone")
+    emit(_LD_ABS, _ARG0)
+    emit(_JSET, CLONE_THREAD, "allow", "eperm")
+    labels = {"not_clone": len(program)}
+    emit(_JEQ, PRLIMIT_SYSCALL, 0, "not_prlimit")
+    emit(_LD_ABS, _ARG0)
+    emit(_JEQ, 0, "allow", "eperm")
+    labels["not_prlimit"] = len(program)
+    signals = sorted(SELF_SIGNAL_SYSCALLS.values())
+    emit(_JEQ, signals[0], "self", 0)
+    emit(_JEQ, signals[1], "self", "eperm")
+    labels["self"] = len(program)
+    emit(_LD_ABS, _ARG0)
+    pid_slots.append(emit(_JEQ, 0, "allow", "eperm"))
+    labels["eperm"] = emit(_RET, _RET_EPERM)
+    labels["allow"] = emit(_RET, _RET_ALLOW)
+    labels["enosys"] = emit(_RET, _RET_ENOSYS)
+    labels["kill"] = emit(_RET, _RET_KILL)
+
+    resolved = []
+    for index, (code, jt, jf, k) in enumerate(program):
+        def target(value: object) -> int:
+            if isinstance(value, int):
+                return value
+            offset = labels[value] - index - 1
+            assert 0 <= offset <= 255, (value, offset)
+            return offset
+        resolved.append((code, target(jt), target(jf), k))
+    return resolved, pid_slots
+
+
+def _filter_source() -> tuple[str, str]:
+    program, pid_slots = seccomp_filter()
+    lines = ",\n".join(
+        f"\t\t{{Code: 0x{code:02x}, Jt: {jt}, Jf: {jf}, K: 0x{k:x}}}" for code, jt, jf, k in program
+    )
+    return lines, ", ".join(str(slot) for slot in pid_slots)
+
 
 WORKER_ENV = "KOSCHEI_NATIVE_WORKER=v1"
 
@@ -83,10 +156,11 @@ def broker_runtime() -> str:
     errnos = "\n".join(
         f"\tsyscall.Errno({code}): {_go(name)}," for code, name in sorted(DISK_ERRNO_NAMES.items())
     )
-    denied = ", ".join(str(number) for number in sorted(DENIED_SYSCALLS_AMD64.values()))
+    filter_lines, pid_slots = _filter_source()
     return _BROKER_RUNTIME.format(
         errnos=errnos,
-        denied=denied,
+        filter_lines=filter_lines,
+        pid_slots=pid_slots,
         worker_env=_go(WORKER_ENV),
         max_bytes=MAX_STRING_BYTES,
         max_items=MAX_LIST_ITEMS,
@@ -220,29 +294,14 @@ func _ksConfine() {{
 	if runtime.GOOS != "linux" || runtime.GOARCH != "amd64" {{
 		_ksAbort("KS4001", "native capability confinement is implemented for linux/amd64 only")
 	}}
-	const auditArchX8664 = 0xC000003E
-	const retKill = 0x80000000
-	const retAllow = 0x7fff0000
-	const retEperm = 0x00050000 | 1
-	denied := []uint32{{{denied}}}
-	n := len(denied)
+	// An allow list (native_broker_v1.seccomp_filter); kill and tgkill
+	// may only signal this process.
 	filter := []syscall.SockFilter{{
-		{{Code: syscall.BPF_LD | syscall.BPF_W | syscall.BPF_ABS, K: 4}},
-		{{Code: syscall.BPF_JMP | syscall.BPF_JEQ | syscall.BPF_K, Jt: 1, Jf: 0, K: auditArchX8664}},
-		{{Code: syscall.BPF_RET | syscall.BPF_K, K: retKill}},
-		{{Code: syscall.BPF_LD | syscall.BPF_W | syscall.BPF_ABS, K: 0}},
-		{{Code: syscall.BPF_JMP | syscall.BPF_JGE | syscall.BPF_K, Jt: uint8(n + 2), Jf: 0, K: 0x40000000}},
+{filter_lines},
 	}}
-	for index, number := range denied {{
-		filter = append(filter, syscall.SockFilter{{
-			Code: syscall.BPF_JMP | syscall.BPF_JEQ | syscall.BPF_K, Jt: uint8(n - index), Jf: 0, K: number,
-		}})
+	for _, slot := range []int{{{pid_slots}}} {{
+		filter[slot].K = uint32(os.Getpid())
 	}}
-	filter = append(filter,
-		syscall.SockFilter{{Code: syscall.BPF_RET | syscall.BPF_K, K: retAllow}},
-		syscall.SockFilter{{Code: syscall.BPF_RET | syscall.BPF_K, K: retEperm}},
-		syscall.SockFilter{{Code: syscall.BPF_RET | syscall.BPF_K, K: retKill}},
-	)
 	if _, _, errno := syscall.RawSyscall(syscall.SYS_PRCTL, 38, 1, 0); errno != 0 {{
 		_ksAbort("KS5002", "native worker could not set no_new_privs")
 	}}
@@ -1036,7 +1095,7 @@ func _ksBrokerEnv(name string) []string {{
 
 __all__ = [
     "BROKER_IMPORTS",
-    "DENIED_SYSCALLS_AMD64",
+    "ALLOWED_SYSCALLS_AMD64",
     "WORKER_ENV",
     "broker_runtime",
 ]

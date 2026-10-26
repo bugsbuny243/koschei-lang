@@ -11,6 +11,7 @@ import io
 import os
 from pathlib import Path
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -56,6 +57,42 @@ fn main(caps: SystemCaps) {
     println(caps.env.allow("KS_TEST_BINARY").get())
 }
 """
+
+
+def _refused_after_confinement(trace: str) -> list[str]:
+    """Calls the worker (and its threads) saw refused after seccomp."""
+
+    first, worker, pending, refused, confined = None, set(), {}, [], False
+    for line in trace.splitlines():
+        match = re.match(r"(\d+)\s+(.*)", line)
+        if not match:
+            continue
+        pid, rest = int(match.group(1)), match.group(2)
+        first = pid if first is None else first
+        resumed = re.match(r"<\.\.\. (\w+) resumed>(.*)", rest)
+        if resumed:
+            name, full = resumed.group(1), pending.pop(pid, "") + resumed.group(2)
+        else:
+            call = re.match(r"(\w+)\((.*)", rest)
+            if not call:
+                continue
+            name, full = call.group(1), rest
+            if "<unfinished" in rest:
+                pending[pid] = rest
+                continue
+        if name == "execve" and pid != first and full.rstrip().endswith("= 0"):
+            worker.add(pid)
+        if pid not in worker:
+            continue
+        if name in ("clone", "clone3"):
+            child = re.search(r"= (\d+)", full)
+            if child:
+                worker.add(int(child.group(1)))
+        if name == "seccomp":
+            confined = True
+        elif confined and re.search(r"= -1 (EPERM|ENOSYS)", full):
+            refused.append(full)
+    return refused
 
 
 WRITES = """
@@ -192,6 +229,26 @@ func main() {
 	_, forkErr := syscall.ForkExec("/bin/true", []string{"true"}, nil)
 	fmt.Println(openErr != nil, socketErr == syscall.EPERM, execErr == syscall.EPERM, forkErr != nil)
 	fmt.Println(syscall.Mkdir("/tmp/koschei-confined", 0o700) == syscall.EPERM)
+	// An allow list: calls nobody listed are refused too, and the listed
+	// ones with argument checks only reach this process.
+	path := []byte("/etc/passwd\\x00")
+	var info [256]byte
+	_, _, statErr := syscall.RawSyscall6(262, ^uintptr(99), uintptr(unsafe.Pointer(&path[0])), uintptr(unsafe.Pointer(&info[0])), 0, 0, 0)
+	_, _, ioctlErr := syscall.RawSyscall(syscall.SYS_IOCTL, 0, syscall.TIOCSTI, uintptr(unsafe.Pointer(&path[0])))
+	_, _, forkRaw := syscall.RawSyscall(syscall.SYS_CLONE, uintptr(syscall.SIGCHLD), 0, 0)
+	_, _, killOther := syscall.RawSyscall(syscall.SYS_KILL, uintptr(os.Getppid()), 0, 0)
+	_, _, tgkillOther := syscall.RawSyscall(syscall.SYS_TGKILL, uintptr(os.Getppid()), uintptr(os.Getppid()), 0)
+	_, _, prlimitOther := syscall.RawSyscall6(syscall.SYS_PRLIMIT64, uintptr(os.Getppid()), 7, 0, uintptr(unsafe.Pointer(&info[0])), 0, 0)
+	_, _, ptraceErr := syscall.RawSyscall(syscall.SYS_PTRACE, 16, uintptr(os.Getppid()), 0)
+	_, _, clone3Err := syscall.RawSyscall(435, 0, 0, 0)
+	_, _, killSelf := syscall.RawSyscall(syscall.SYS_KILL, uintptr(os.Getpid()), 0, 0)
+	_, _, prlimitSelf := syscall.RawSyscall6(syscall.SYS_PRLIMIT64, 0, 7, 0, uintptr(unsafe.Pointer(&info[0])), 0, 0)
+	refused := []syscall.Errno{statErr, ioctlErr, forkRaw, killOther, tgkillOther, prlimitOther, ptraceErr}
+	all := true
+	for _, errno := range refused {
+		all = all && errno == syscall.EPERM
+	}
+	fmt.Println(all, clone3Err == syscall.ENOSYS, killSelf == 0, prlimitSelf == 0)
 	_ = koscheiMain
 }
 '''
@@ -201,7 +258,7 @@ func main() {
             self.assertEqual(built.returncode, 0, built.stderr)
             probe = subprocess.run([str(base / "probe")], capture_output=True, text=True, timeout=30)
             self.assertEqual(probe.returncode, 0, probe.stderr)
-            self.assertEqual(probe.stdout, "true true true true\ntrue\n")
+            self.assertEqual(probe.stdout, "true true true true\ntrue\ntrue true true true\n")
 
     @unittest.skipUnless(SUPPORTED, "broker confinement is linux/amd64")
     def test_writes_and_deletes_match_ks_run(self) -> None:
@@ -237,6 +294,55 @@ func main() {
             self.assertEqual(native.stdout, expected)
             self.assertEqual(state(), expected_state)
             self.assertFalse(any(".ks-write-" in name for name in os.listdir(base / "root")))
+
+    @unittest.skipUnless(SUPPORTED and shutil.which("strace"), "needs strace on linux/amd64")
+    def test_a_confined_worker_needs_no_refused_call(self) -> None:
+        # The allow list must cover what the Go runtime does under load: a
+        # traced worker that allocates, collects garbage, starts threads and
+        # uses every brokered domain gets no EPERM or ENOSYS.
+        source = """
+fn churn(n: Int) -> Int {
+    let mut items = [0]
+    let mut i = 0
+    while i < n {
+        items = items.push(i)
+        i = i + 1
+    }
+    let mut text = ""
+    for item in items {
+        text = "{text}{item}"
+    }
+    return text.length()
+}
+
+fn main(caps: SystemCaps) {
+    let input = caps.input.allow(64)
+    println(input.read_text())
+    let disk = caps.disk.allow("root")
+    println(disk.write("root/b.txt", "x"))
+    println(disk.read("root/b.txt"))
+    println(disk.list("root"))
+    println(disk.delete("root/b.txt"))
+    println(caps.env.allow("HOME").get())
+    let random = caps.random.allow(8)
+    let roll = random.below(6) or -1
+    println(roll >= 0)
+    println(churn(20000))
+}
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            (base / "root").mkdir()
+            (base / "main.ks").write_text(source, encoding="utf-8")
+            binary = self.build(base / "main.ks")
+            trace = base / "trace.txt"
+            run = subprocess.run(
+                ["strace", "-f", "-qq", "-o", str(trace), str(binary)], cwd=base,
+                input=b"in", capture_output=True, timeout=120, check=False,
+            )
+            self.assertEqual(run.returncode, 0, run.stderr)
+            refused = _refused_after_confinement(trace.read_text())
+            self.assertEqual(refused, [])
 
     def test_processes_stay_closed(self) -> None:
         cases = {
