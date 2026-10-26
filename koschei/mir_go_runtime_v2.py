@@ -704,7 +704,7 @@ func _ksMemberOf(receiver any, name string) any {
 	switch receiver.(type) {
 	case string:
 		switch name {
-		case "length", "contains", "trim", "split", "join":
+		case "length", "contains", "trim", "split", "join", "to_int":
 			return _ksMember{receiver: receiver, name: name}
 		}
 	case []any:
@@ -757,6 +757,28 @@ func _ksInvokeMember(callee any, arguments ...any) any {
 		case "trim":
 			_ksArity("trim", arguments, 0)
 			return strings.TrimFunc(receiver, _ksIsSpace)
+		case "to_int":
+			// interpreter.ks_parse_int: trimmed, optional sign, ASCII digits,
+			// signed 64-bit range.
+			_ksArity("to_int", arguments, 0)
+			trimmed := strings.TrimFunc(receiver, _ksIsSpace)
+			digits := trimmed
+			if len(digits) > 0 && (digits[0] == '+' || digits[0] == '-') {
+				digits = digits[1:]
+			}
+			valid := len(digits) > 0
+			for index := 0; index < len(digits); index++ {
+				if digits[index] < '0' || digits[index] > '9' {
+					valid = false
+					break
+				}
+			}
+			if valid {
+				if value, err := strconv.ParseInt(trimmed, 10, 64); err == nil {
+					return value
+				}
+			}
+			return _ksError{message: "Int dönüşümü başarısız: " + receiver}
 		case "split":
 			_ksArity("split", arguments, 1)
 			separator, ok := arguments[0].(string)

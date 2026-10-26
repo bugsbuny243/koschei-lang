@@ -1,0 +1,40 @@
+{
+  "metadata": {
+    "cores": 4,
+    "cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+    "go": "go version go1.24.7 linux/amd64",
+    "os": "Linux-6.18.44-fc-v153-x86_64-with-glibc2.39",
+    "python": "3.13.17",
+    "runs": 5,
+    "rustc": "rustc 1.97.0 (2d8144b78 2026-07-07)",
+    "unit": "milliseconds, wall-clock median including process start"
+  },
+  "results": {
+    "fib": {
+      "go": 2.3,
+      "koschei_native": 30.6,
+      "koschei_run": 3279.6,
+      "python": 20.9,
+      "rust": 1.9
+    },
+    "loop": {
+      "go": 2.1,
+      "koschei_native": 33.0,
+      "koschei_run": 4906.0,
+      "python": 59.1,
+      "rust": 1.9
+    },
+    "text": {
+      "go": 23.1,
+      "koschei_native": 29.3,
+      "koschei_run": 514.2,
+      "python": 29.8,
+      "rust": 208.4
+    }
+  },
+  "workloads": {
+    "fib": "recursive fib(24): about 150,000 calls",
+    "loop": "300,000 iterations of Int arithmetic with overflow checks",
+    "text": "3,000 value-semantics list appends, then join and split"
+  }
+}

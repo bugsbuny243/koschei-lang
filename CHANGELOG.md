@@ -34,6 +34,12 @@
 - Let `ks build` compile `main(caps: SystemCaps)` when the program uses only program input: the binary reads `os.Args` and `os.Stdin` and returns the same texts and Error values as `ks run`. Disk, network, environment and every other authority still fail closed with `KS4004`, now naming the native capability broker (G2) as the reason. See `docs/PROGRAM_INPUT_V1.md`.
 - Render capability values as their type (`<SystemCaps>`, `<EnvCaps>`, …) in every executor. Printing a token printed the host object with its memory address. Comparing tokens with `==`/`!=` is now refused with `KS2407`, including structs that carry one.
 - Add clock and random capabilities (readiness gate G3): `caps.clock.allow(resolution_ms)` gives `now_ms()` and `monotonic_ms()` rounded down to a static resolution; `caps.random.allow(max_bytes)` gives `hex(count)` and `below(bound)` from the operating system's secure source (Python `secrets`, Go `crypto/rand`) under a per-token byte budget (`KS3450`/`KS3451`). Both compile into native binaries. See `docs/CLOCK_RANDOM_V1.md`.
+- Add the language guide in English and Turkish (`docs/guide/`): every program in it is run by the test suite and must print the documented output under `ks run` and, where the native backend admits it, from the binary.
+- Generate `docs/reference/ERROR_CODES.md` (every diagnostic, both languages) and `docs/reference/CORE_LIBRARY.md` from their sources with `python -m koschei.reference_docs_v1 --write`; a test fails when either is stale.
+- Add three end-to-end example applications under `examples/apps/` (`wordfreq`, `release_gate`, `keygen`), each tested under `ks run` and as a native binary.
+- Give `String.to_int` one rule in every executor and compile it natively: trimmed text, an optional sign and ASCII digits, within signed 64 bits. The interpreter used Python's `int()`, which also accepted `1_000` and non-ASCII digits and returned values beyond Int.
+- Add the stability policy proposed for 1.0 (`docs/STABILITY_V1.md`), the threat model with evidence per threat (`docs/THREAT_MODEL_V1.md`) and a measured benchmark dossier against Python, Go and Rust (`bench/compare/run_v1.py`, `docs/benchmarks/`).
+- Add the buyer-facing `SALE_PACKAGE_V1.md` and the owner's action list `KOSCHEI_SAHIP_EYLEM_LISTESI_V1.md`.
 
 ## 0.10.0 — Language ergonomics
 

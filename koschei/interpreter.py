@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import errno
 import os
+import re
 import secrets
 import stat
 import sys
@@ -172,6 +173,27 @@ def ks_to_string(value: Any) -> str:
             return value.variant
         return f"{value.variant}({_ks_repr(value.payload)})"
     return str(value)
+
+
+_INT_TEXT = re.compile(r"[+-]?[0-9]+")
+
+
+def ks_parse_int(text: str) -> int | None:
+    """Koschei's ``String.to_int`` rule, identical in every executor.
+
+    Surrounding whitespace is trimmed; then an optional sign and ASCII digits
+    only, within the signed 64-bit range. Python's ``int()`` also accepted
+    ``1_000`` and non-ASCII digits and returned values beyond Int; those are
+    host details, not Koschei numbers.
+    """
+
+    trimmed = text.strip()
+    if not _INT_TEXT.fullmatch(trimmed):
+        return None
+    value = int(trimmed)
+    if not -(1 << 63) <= value < (1 << 63):
+        return None
+    return value
 
 
 def _ks_repr(value: Any) -> str:
@@ -1547,10 +1569,10 @@ class Interpreter:
                 return len(receiver)
             if name == "to_int":
                 self._require_arity(name, arguments, 0, member.location)
-                try:
-                    return int(receiver.strip())
-                except ValueError:
+                parsed = ks_parse_int(receiver)
+                if parsed is None:
                     return KsError(f"Int dönüşümü başarısız: {receiver}")
+                return parsed
             if name == "to_float":
                 self._require_arity(name, arguments, 0, member.location)
                 try:

@@ -68,7 +68,7 @@ Admitted: scalars and their operators, `List<T>`, `for`/`while`/`break`/
 (local siblings and the Core Library), `print`/`println`/`Error`, the kernel
 `sha3_256` digest (Go `crypto/sha3`, so building a program that uses it
 needs Go 1.24 or later), and the members
-`String.length/contains/trim/split/join` and
+`String.length/contains/trim/split/join/to_int` and
 `List.length/get/push/contains/take`.
 
 Program input is the one authority a binary may carry: `main(caps:
@@ -81,8 +81,7 @@ signatures.
 Fails closed with `KS4004`: generic structs, struct fields of capability type,
 `Map`, every other capability (disk, network, environment, process, serve,
 persist) and its signatures, callback members
-(`filter`, `map`, `sort`, …), `to_int`/
-`to_float`, function or constructor values, and any instruction outside the
+(`filter`, `map`, `sort`, …), `to_float`, function or constructor values, and any instruction outside the
 list above. The legacy AST-Go backend is never used as a fallback.
 
 ## Evidence

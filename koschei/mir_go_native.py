@@ -92,7 +92,7 @@ _BUILTINS = {
     "Error": "_ksErrorValue",
     SECURE_HASH_NAME: "_ksSha3_256",
 }
-_STRING_METHODS = frozenset({"length", "contains", "trim", "split", "join"})
+_STRING_METHODS = frozenset({"length", "contains", "trim", "split", "join", "to_int"})
 _LIST_METHODS = frozenset({"length", "get", "push", "contains", "take"})
 _VALUE_METHODS = _STRING_METHODS | _LIST_METHODS
 _BUILTIN_VARIANTS = {
