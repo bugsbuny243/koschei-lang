@@ -785,6 +785,7 @@ class SemanticChecker:
         if isinstance(expression, OrReturnExpression):
             value_type = self._check_expression(expression.value)
             success_type = self._success_type(value_type)
+            self._check_or_return_target(value_type, expression)
             if expression.error is not None:
                 error_type = self._check_expression(expression.error)
                 if self.current_function is not None and self.current_function.return_type is not None:
@@ -1056,6 +1057,43 @@ class SemanticChecker:
         raise SemanticError(
             "KS1702",
             f"match kolları uyumsuz tip döndürüyor: {left} ve {right}.",
+            location,
+        )
+
+    def _check_or_return_target(self, value_type: str | None, expression: OrReturnExpression) -> None:
+        # 'or return' returns a value: the given one, or for a bare 'or
+        # return' the failure itself (the Error, None or Err value). The
+        # function must be able to return it; only main may return an Error
+        # it does not declare, which ends the run.
+        function = self.current_function
+        location = expression.location
+        if function is None or function.name == "main":
+            return
+        if function.return_type is None:
+            raise SemanticError(
+                "KS1304",
+                f"'{function.name}' Void bir fonksiyon; 'or return' ondan değer döndüremez. "
+                "Dönüş tipine 'or Error' ekleyin ya da hatayı 'or değer' veya 'or { ... }' ile ele alın.",
+                location,
+            )
+        if expression.error is not None:
+            return
+        base, _ = self._generic_type(value_type or "")
+        if value_type in {None, "_"} or base in {"Option", "Result"}:
+            return
+        names = function.return_type.names
+        type_parameters = set(getattr(function, "type_parameters", ()) or ())
+        if any(
+            name == "Error" or name == "_" or name in type_parameters
+            or self._generic_type(name)[0] in {"Option", "Result"}
+            for name in names
+        ):
+            return
+        raise SemanticError(
+            "KS1301",
+            f"'or return' burada bir Error döndürür, ama '{function.name}' "
+            f"{' or '.join(names)} döndürür. Dönüş tipine 'or Error' ekleyin ya da "
+            "hatayı 'or değer' veya 'or { ... }' ile ele alın.",
             location,
         )
 

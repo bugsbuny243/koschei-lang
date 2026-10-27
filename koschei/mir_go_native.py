@@ -359,7 +359,7 @@ def generate_go_mir_native(mir: MirGraph) -> str:
     if "serve" in domains:
         lines.append(serve_runtime())
     for plan in plans:
-        lines.extend(_emit_function(plan, symbols))
+        lines.extend(_emit_function(plan, symbols, process_error=plan.symbol == root_main))
         lines.append("")
     main = next(item for item in mir.root_module.functions if item.name == "main")
     entry_arguments = "_ksSystemCaps{}" if main.parameters else ""
@@ -931,7 +931,9 @@ def _variant_type_arguments(instruction: MirVariantConstruct) -> tuple[str, ...]
 # ---- emission --------------------------------------------------------------
 
 
-def _emit_function(plan: _FunctionPlan, symbols: dict[tuple[str, str], str]) -> list[str]:
+def _emit_function(
+    plan: _FunctionPlan, symbols: dict[tuple[str, str], str], *, process_error: bool = False
+) -> list[str]:
     function = plan.function
     parameter_symbols = {
         parameter.name: f"_ks_p_{index}_{_safe_identifier(parameter.name)}"
@@ -983,7 +985,12 @@ def _emit_function(plan: _FunctionPlan, symbols: dict[tuple[str, str], str]) -> 
         ]
     )
 
-    return_contract = _go_string_slice(_runtime_names(function.return_type))
+    return_names = _runtime_names(function.return_type)
+    # Root main may return an Error whatever it declares: _ksFinish ends the
+    # run with it, as the canonical executor does.
+    if process_error and "Error" not in return_names:
+        return_names = (*return_names, "Error")
+    return_contract = _go_string_slice(return_names)
     lines.extend(["\t_ks_pc := 0", "\tfor {", "\t\tswitch _ks_pc {"])
     for block in function.blocks:
         lines.append(f"\t\tcase {block.id}:")

@@ -137,6 +137,13 @@ fn main() {
 refused: out of range: 70000
 ```
 
+A bare `or return` hands the failure itself to the caller, so the function
+must be able to return it: `-> T or Error` when the failure is an Error, an
+`Option` or `Result` return type when it is `None` or `Err`. A function
+without a return type cannot (`KS1304`).
+Only `main` may return an Error it does not declare: the program ends with
+`KOSCHEI RUNTIME ERROR: <message>` and exit status 1.
+
 Runtime failures are values too: Int overflow (`KS3501`), division by zero
 and a value over the memory budget (`KS3502`) produce Error values at the
 same point in every executor, and `or` catches them.

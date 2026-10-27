@@ -128,9 +128,9 @@ def _register_diagnostics() -> None:
         "KS1304": Diagnostic(
             code="KS1304",
             title="Void fonksiyon değer döndüremez",
-            summary="Dönüş tipi olmayan bir fonksiyonda 'return değer' kullanıldı.",
+            summary="Dönüş tipi olmayan bir fonksiyonda 'return değer' ya da hatayı döndüren çıplak 'or return' kullanıldı.",
             why="Void fonksiyonun çağıranına değer vermeyeceği sözleşmenin parçasıdır; gizli bir sonuç bu sözleşmeyi belirsizleştirir.",
-            fix="Yalnız 'return' kullanın veya fonksiyona açık bir dönüş tipi ekleyin.",
+            fix="Yalnız 'return' kullanın, fonksiyona açık bir dönüş tipi ekleyin ('-> Void or Error') veya hatayı 'or değer' ya da 'or { ... }' ile ele alın. Yalnız main bir Error döndürerek programı bitirebilir.",
             example="fn log_done() {\n    println(\"done\")\n    return\n}",
         ),
         "KS1305": Diagnostic(
@@ -162,9 +162,9 @@ def _register_diagnostics() -> None:
         "KS1304": Diagnostic(
             code="KS1304",
             title="A Void function cannot return a value",
-            summary="A function without a return type used 'return value'.",
+            summary="A function without a return type used 'return value', or a bare 'or return' that returns the failure.",
             why="The absence of a result is part of the function contract; a hidden value would make that contract ambiguous.",
-            fix="Use a bare return or declare an explicit return type.",
+            fix="Use a bare return, declare an explicit return type ('-> Void or Error'), or handle the failure with 'or value' or 'or { ... }'. Only main may end the program by returning an Error.",
             example="fn log_done() {\n    println(\"done\")\n    return\n}",
         ),
         "KS1305": Diagnostic(

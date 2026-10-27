@@ -163,6 +163,10 @@ class MirExecutorV1:
                 terminator = block.terminator
                 if isinstance(terminator, MirReturn):
                     result = KsUnit if terminator.value is None else values[terminator.value]
+                    # Root main has an implicit process-error edge, as in the
+                    # direct MIR runtime: an Error it returns ends the run.
+                    if function.name == "main" and module.key == self.mir.root and isinstance(result, KsError):
+                        return result
                     expected_return = _runtime_names(function.return_type)
                     if not self.primitives.matches_type(
                         result,

@@ -137,6 +137,13 @@ fn main() {
 refused: out of range: 70000
 ```
 
+Yalın `or return` hatanın kendisini çağırana verir; bu yüzden fonksiyon onu
+döndürebilmelidir: hata bir Error ise `-> T or Error`, `None` ya da `Err`
+ise `Option` ya da `Result` dönüş tipi. Dönüş tipi olmayan bir fonksiyon
+döndüremez (`KS1304`).
+Yalnızca `main`, bildirmediği bir Error'u döndürebilir: program
+`KOSCHEI RUNTIME ERROR: <mesaj>` yazar ve 1 koduyla biter.
+
 Çalışma zamanı hataları da değerdir: Int taşması (`KS3501`), sıfıra bölme ve
 bellek bütçesini aşan değer (`KS3502`) her çalıştırıcıda aynı noktada hata
 değeri üretir ve `or` bunları yakalar.

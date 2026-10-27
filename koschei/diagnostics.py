@@ -408,8 +408,9 @@ CATALOG: dict[str, Diagnostic] = {
         code="KS3401",
         title="Çalışma anı: capability tip bütünlüğü ihlali",
         summary=(
-            "Runtime, bir capability veya capability taşıyan değerin başka bir tip "
-            "gibi geçirildiğini ya da döndürüldüğünü tespit etti."
+            "Runtime, bir değerin fonksiyonun bildirdiği parametre veya dönüş tipine "
+            "uymadığını ya da bir capability veya capability taşıyan değerin başka "
+            "bir tip gibi geçirildiğini tespit etti."
         ),
         why=(
             "Semantic denetim normalde bu kodu derlemeden reddeder. Runtime aynı "
@@ -422,8 +423,9 @@ CATALOG: dict[str, Diagnostic] = {
             "DiskCaps gibi jetonları, bildirilen tiple birebir uyumlu olarak geçirin."
         ),
         example=(
-            "fn fetch(net: NetCaps) {\n"
+            "fn fetch(net: NetCaps) -> String or Error {\n"
             "    let response = net.get(\"https://api.example.com\") or return\n"
+            "    return response.text()\n"
             "}"
         ),
     ),
@@ -898,7 +900,7 @@ ENGLISH_TEXT: dict[str, tuple[str, str, str, str]] = {
     ),
     "KS3401": (
         "Runtime capability type-integrity violation",
-        "A capability or capability-carrying value was disguised, stored, or returned as an ordinary value.",
+        "A value did not match a function's declared parameter or return type, or a capability or capability-carrying value was disguised, stored, or returned as an ordinary value.",
         "Capability laundering would bypass explicit authority flow and containment rules.",
         "Keep capability values in capability-typed variables and never place them in structs, enums, Lists, or Maps.",
     ),

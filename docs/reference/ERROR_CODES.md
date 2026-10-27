@@ -167,13 +167,13 @@ fn sign(x: Int) -> Int {
 
 ### KS1304 — A Void function cannot return a value
 
-**EN.** A function without a return type used 'return value'. The absence of a result is part of the function contract; a hidden value would make that contract ambiguous.
+**EN.** A function without a return type used 'return value', or a bare 'or return' that returns the failure. The absence of a result is part of the function contract; a hidden value would make that contract ambiguous.
 
-*Fix:* Use a bare return or declare an explicit return type.
+*Fix:* Use a bare return, declare an explicit return type ('-> Void or Error'), or handle the failure with 'or value' or 'or { ... }'. Only main may end the program by returning an Error.
 
-**TR — Void fonksiyon değer döndüremez.** Dönüş tipi olmayan bir fonksiyonda 'return değer' kullanıldı. Void fonksiyonun çağıranına değer vermeyeceği sözleşmenin parçasıdır; gizli bir sonuç bu sözleşmeyi belirsizleştirir.
+**TR — Void fonksiyon değer döndüremez.** Dönüş tipi olmayan bir fonksiyonda 'return değer' ya da hatayı döndüren çıplak 'or return' kullanıldı. Void fonksiyonun çağıranına değer vermeyeceği sözleşmenin parçasıdır; gizli bir sonuç bu sözleşmeyi belirsizleştirir.
 
-*Düzeltme:* Yalnız 'return' kullanın veya fonksiyona açık bir dönüş tipi ekleyin.
+*Düzeltme:* Yalnız 'return' kullanın, fonksiyona açık bir dönüş tipi ekleyin ('-> Void or Error') veya hatayı 'or değer' ya da 'or { ... }' ile ele alın. Yalnız main bir Error döndürerek programı bitirebilir.
 
 ```ks
 fn log_done() {
@@ -709,17 +709,18 @@ total = total + 1
 
 ### KS3401 — Runtime capability type-integrity violation
 
-**EN.** A capability or capability-carrying value was disguised, stored, or returned as an ordinary value. Capability laundering would bypass explicit authority flow and containment rules.
+**EN.** A value did not match a function's declared parameter or return type, or a capability or capability-carrying value was disguised, stored, or returned as an ordinary value. Capability laundering would bypass explicit authority flow and containment rules.
 
 *Fix:* Keep capability values in capability-typed variables and never place them in structs, enums, Lists, or Maps.
 
-**TR — Çalışma anı: capability tip bütünlüğü ihlali.** Runtime, bir capability veya capability taşıyan değerin başka bir tip gibi geçirildiğini ya da döndürüldüğünü tespit etti. Semantic denetim normalde bu kodu derlemeden reddeder. Runtime aynı sözleşmeyi savunma derinliği için yeniden kontrol eder; bu hata, tip denetiminin atlatıldığı veya bozuk bir AST çalıştırıldığı anlamına gelir.
+**TR — Çalışma anı: capability tip bütünlüğü ihlali.** Runtime, bir değerin fonksiyonun bildirdiği parametre veya dönüş tipine uymadığını ya da bir capability veya capability taşıyan değerin başka bir tip gibi geçirildiğini tespit etti. Semantic denetim normalde bu kodu derlemeden reddeder. Runtime aynı sözleşmeyi savunma derinliği için yeniden kontrol eder; bu hata, tip denetiminin atlatıldığı veya bozuk bir AST çalıştırıldığı anlamına gelir.
 
 *Düzeltme:* SystemCaps'i yalnızca main parametresi olarak kullanın. Kök yetkiyi main içinde allow/allow_read_only ile daraltın ve fonksiyonlara gerçek NetCaps, DiskCaps gibi jetonları, bildirilen tiple birebir uyumlu olarak geçirin.
 
 ```ks
-fn fetch(net: NetCaps) {
+fn fetch(net: NetCaps) -> String or Error {
     let response = net.get("https://api.example.com") or return
+    return response.text()
 }
 ```
 
