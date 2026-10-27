@@ -62,8 +62,8 @@ its SHA-256 digest and its public functions; `--json` emits the
 | `after(value, separator)` | `Option<String>` | text after the first occurrence |
 | `count(value, needle)` | `Result<Int, Error>` | non-overlapping, left to right |
 | `replace(value, old, replacement)` | `Result<String, Error>` | every non-overlapping occurrence |
-| `lines(value)` | `List<String>` | split on `\n`, one trailing `\r` removed, no extra final empty line |
-| `words(value)` | `List<String>` | non-empty pieces between spaces, tabs, `\r`, `\n` |
+| `lines(value)` | `Result<List<String>, Error>` | split on `\n`, one trailing `\r` removed, no extra final empty line; `Err` when there are more lines than one List may hold |
+| `words(value)` | `Result<List<String>, Error>` | non-empty pieces between spaces, tabs, `\r`, `\n`; `Err` when a split exceeds the List budget |
 | `unique_sorted(values)` | `List<String>` | distinct values in ascending code-point order: a canonical set of names |
 
 A pattern that must locate something (`separator`, `needle`, `old`) may not be

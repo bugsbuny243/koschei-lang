@@ -106,25 +106,15 @@ fn replace(value: String, old: String, replacement: String) -> Result<String, Er
     return Ok(replaced)
 }
 
-// value.split(separator) for the List-returning helpers below. A value with
-// more pieces than one List may hold (KS3502) has no List answer; returning
-// the budget Error through the List contract stops the program instead of
-// handing back a silently shortened list.
-fn split_all(value: String, separator: String) -> List<String> {
-    let pieces = value.split(separator) or {
-        return value.split(separator)
-    }
-    return pieces
-}
-
 // Lines separated by "\n". One trailing "\r" is removed from each line, and a
-// final "\n" does not start an extra empty line.
-fn lines(value: String) -> List<String> {
+// final "\n" does not start an extra empty line. A value with more lines
+// than one List may hold is an Err (KS3502), never a shortened list.
+fn lines(value: String) -> Result<List<String>, Error> {
     let mut out: List<String> = []
     if value.length() == 0 {
-        return out
+        return Ok(out)
     }
-    let pieces = split_all(value, "\n")
+    let pieces = value.split("\n") or return Err(Error("text.lines: more lines than one List may hold (KS3502)"))
     let mut index = 0
     for piece in pieces {
         let is_final_empty = index == pieces.length() - 1 && piece.length() == 0
@@ -134,16 +124,19 @@ fn lines(value: String) -> List<String> {
         }
         index = index + 1
     }
-    return out
+    return Ok(out)
 }
 
 // Non-empty pieces separated by spaces, tabs, carriage returns or newlines.
-fn words(value: String) -> List<String> {
+// More pieces than one List may hold is an Err (KS3502), never a shortened
+// list.
+fn words(value: String) -> Result<List<String>, Error> {
     let mut pieces = [value]
     for separator in [" ", "\t", "\r", "\n"] {
         let mut next: List<String> = []
         for piece in pieces {
-            for part in split_all(piece, separator) {
+            let parts = piece.split(separator) or return Err(Error("text.words: more pieces than one List may hold (KS3502)"))
+            for part in parts {
                 if part.length() > 0 {
                     next = next.push(part)
                 }
@@ -151,7 +144,7 @@ fn words(value: String) -> List<String> {
         }
         pieces = next
     }
-    return pieces
+    return Ok(pieces)
 }
 
 // The distinct values in ascending character order: a canonical set of names.

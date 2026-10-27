@@ -31,7 +31,7 @@ fn report(input: InputCaps) -> Int or Error {
     let args = input.args() or return Error("arguments are not UTF-8 text")
     let least = minimum(args) or return Error("usage: wordfreq [MINIMUM]")
     let body = input.read_text() or return Error("standard input is unreadable or over 1 MiB")
-    let words = text.words(body)
+    let words = text.words(body) or return Error("standard input has more words than one List may hold")
     let mut reported = 0
     for word in text.unique_sorted(words) {
         let count = occurrences(words, word)

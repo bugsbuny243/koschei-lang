@@ -346,6 +346,7 @@ import text
 fn main() {
     println(text.words(" ali\tveli \n"))
     println(text.lines("a\r\nb\n"))
+    println(text.lines(""))
     let mut big = " "
     let mut i = 0
     while i < 20 {
@@ -353,7 +354,15 @@ fn main() {
         i = i + 1
     }
     println(text.words(big + "tail"))
-    println("not reached")
+    let mut nl = "\n"
+    let mut j = 0
+    while j < 20 {
+        nl = nl + nl
+        j = j + 1
+    }
+    println(text.lines(nl + "x"))
+    let words = text.words("a b") or ["?"]
+    println(words.length())
 }
 """
 
@@ -495,11 +504,16 @@ class MirGoNativeParityTests(unittest.TestCase):
             'Ok("a+b")', "false", "true", "false",
         ])
 
-    def test_lines_and_words_stop_instead_of_truncating(self) -> None:
-        # More pieces than one List may hold has no List answer: both
-        # executors stop at the same point rather than return a short list.
+    def test_lines_and_words_report_the_list_budget(self) -> None:
+        # More pieces than one List may hold is an Err the caller can handle
+        # with `or`, never a silently shortened list.
         output = self.assert_parity(WORDS_OVER_BUDGET)
-        self.assertEqual(output, '["ali", "veli"]\n["a", "b"]\n')
+        self.assertEqual(output.splitlines(), [
+            'Ok(["ali", "veli"])', 'Ok(["a", "b"])', "Ok([])",
+            "Err(text.words: more pieces than one List may hold (KS3502))",
+            "Err(text.lines: more lines than one List may hold (KS3502))",
+            "2",
+        ])
 
     def test_list_contains_compares_numbers_by_value(self) -> None:
         output = self.assert_parity(NUMERIC_MEMBERSHIP)
@@ -568,7 +582,7 @@ class MirGoNativeParityTests(unittest.TestCase):
             '    println(text.words(" ka vor  shi "))\n}\n'
         )
         output = self.assert_parity(source, extra={"helper.ks": helper})
-        self.assertEqual(output, 'merhaba dünya\n["ka", "vor", "shi"]\n')
+        self.assertEqual(output, 'merhaba dünya\nOk(["ka", "vor", "shi"])\n')
 
     def test_error_valued_if_condition_skips_the_statement(self) -> None:
         # Sealed MIR guards an `if` condition with MirIsRuntimeError: an Error

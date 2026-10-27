@@ -283,7 +283,7 @@ fn main() {
 ```output
 true
 a+b+c
-["one", "two"]
+Ok(["one", "two"])
 [3, 2, 1]
 Some("x")
 sha3-256:3997da0d8a19346db3fb4c5be74689b753e506c8a03f2bba28be7b3bd3125e8c

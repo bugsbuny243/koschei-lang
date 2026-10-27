@@ -273,10 +273,12 @@ class CoreLibraryTextDifferentialTests(CoreLibraryWorkspace):
             v = _literal(value)
             checks.append(
                 f"    let expected_lines_{index}: List<String> = {_string_list(_reference_lines(value))}\n"
-                f"    if text.lines({v}) != expected_lines_{index} {{\n"
+                f"    let got_lines_{index} = text.lines({v}) or [\"<err>\"]\n"
+                f"    if got_lines_{index} != expected_lines_{index} {{\n"
                 f"        println(\"FAIL lines {index}\")\n    }}\n"
                 f"    let expected_words_{index}: List<String> = {_string_list(_reference_words(value))}\n"
-                f"    if text.words({v}) != expected_words_{index} {{\n"
+                f"    let got_words_{index} = text.words({v}) or [\"<err>\"]\n"
+                f"    if got_words_{index} != expected_words_{index} {{\n"
                 f"        println(\"FAIL words {index}\")\n    }}\n"
                 f"    if text.is_empty({v}) != {str(value == '').lower()} {{\n"
                 f"        println(\"FAIL is_empty {index}\")\n    }}\n"
