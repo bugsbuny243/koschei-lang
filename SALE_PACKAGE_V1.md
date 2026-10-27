@@ -1,8 +1,10 @@
 # Koschei Lang — Sale Package v1
 
-For a prospective buyer. Every claim below points to something you can run
+For an organisation evaluating a Team or Enterprise license, or anyone given
+access to this repository. Every claim below points to something you can run
 or read in this repository; nothing here is a valuation, legal advice or a
-promise beyond the repository's own evidence.
+promise beyond the repository's own evidence. Koschei Lang is sold as
+commercial licenses, not as a transfer of the project; see `LICENSING.md`.
 
 ## What Koschei is
 
@@ -63,21 +65,20 @@ What works today is listed in the guide. What does not:
 | Runtime messages are Turkish; codes and English diagnostics exist | messages are marked experimental in the stability policy |
 | No independent security audit | needs an external party |
 
-## What the owner still has to provide
+## Licensing
 
-These cannot come from source code. The owner's checklist is
-`KOSCHEI_SAHIP_EYLEM_LISTESI_V1.md`:
+Koschei Lang is under the Koschei Lang License 1.0 (`LICENSE`, Turkish
+`LICENSE.tr.md`):
 
-- the license or assignment the buyer receives (the repository is under a
-  proprietary notice today, with an MIT history recorded in
-  `KOSCHEI_LICENSE_LINEAGE_V1.md`);
-- a signed chain-of-title statement covering every contribution, including
-  AI-assisted ones;
-- branch protection and release signing evidence;
-- the asking price and terms.
+- personal, non-commercial use is free;
+- commercial use needs a one-time, perpetual license that covers every
+  version released within 12 months of purchase: Individual 49 USD, Team (up
+  to 10 developers) 249 USD, Enterprise 999 USD (`LICENSING.md`);
+- programs written in Koschei, and binaries built from them, belong to their
+  authors and may be shipped without royalties;
+- revisions released earlier under the MIT License stay under it
+  (`KOSCHEI_LICENSE_LINEAGE_V1.md`).
 
-## Transfer
-
-On closing, the buyer receives the repository with full history, the
-documents above, and the build and release tooling. Accounts, domains and
-signing identities are transferred as listed in the owner's checklist.
+Licenses and the download (`tools/polar_bundle_v1.py`) are sold on Polar.
+What the owner still has to do (the Polar store, release signing, an
+ownership statement) is listed in `KOSCHEI_SAHIP_EYLEM_LISTESI_V1.md`.

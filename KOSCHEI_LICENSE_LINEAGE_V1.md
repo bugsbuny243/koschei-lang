@@ -26,6 +26,10 @@ For technical due diligence, the source-control boundary is therefore:
 
 Important limitation: Git history proves the license file changed at this point. It does **not** independently prove which historical commits were actually made public, downloaded, mirrored, packaged, or separately licensed. A buyer data room should retain release/publication evidence for that question.
 
+## Koschei Lang License 1.0 (2026-10-27)
+
+The owner chose to sell commercial licenses instead of the whole project. The proprietary notice in `LICENSE` was replaced by the Koschei Lang License 1.0 (English `LICENSE`, Turkish `LICENSE.tr.md`): personal, non-commercial use is free; commercial use needs a perpetual license covering versions released within 12 months of purchase; the Software itself may not be redistributed. Section 6 of that license keeps the historical MIT grants exactly as the proprietary notice did, so the MIT boundary below is unchanged. The section that follows describes the proprietary notice that applied from `661798a8...` until this change.
+
 ## Current proprietary notice
 
 The current notice states that current Koschei source, binaries, documentation, security mechanisms, model integrations, build artifacts and related materials are proprietary and confidential unless separately licensed. It also says historical MIT grants are not revoked.

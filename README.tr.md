@@ -2,7 +2,7 @@
 
 Koschei Lang; kendi semantiği, derleyicisi, kütüphaneleri ve çalışma ortamıyla siber güvenlik temelli genel amaçlı yazılım geliştirme dilidir. Dış bağımlılıksız ekosistem ve Rust’ı güvenlikte aşmak geliştirme hedefidir. **Lang ve Sentinel aynı ticari paketlerde birlikte sunulacak; dilin bağımsızlığı korunacaktır.** [Güncel ürün yönü](docs/PRODUCT_DIRECTION_2026-09-10.md).
 
-> **Özel ticari geliştirme deposu. Koschei proprietary yazılımdır. Bu repoya erişim; yeniden dağıtım, alt lisanslama, satış veya kaynak kodu yayımlama hakkı vermez. Ayrıntılar için `LICENSE` dosyasına bakın.**
+> **Özel geliştirme deposu. Koschei Lang kişisel kullanım için ücretsizdir; ticari kullanım için kalıcı bir ticari lisans gerekir ([`LICENSING.tr.md`](LICENSING.tr.md)). Bu repoya erişim; yeniden dağıtım, alt lisanslama, satış veya kaynak kodu yayımlama hakkı vermez. Ayrıntılar için `LICENSE.tr.md` dosyasına bakın.**
 
 **Capability tabanlı güvenli bir programlama dili. İçe aktardığınız bir paket, siz açıkça bir jeton vermedikçe diskinize, ağınıza veya ortam değişkenlerinize dokunamaz.**
 
@@ -126,11 +126,11 @@ Koschei pre-1.0 aşamasında ve özel ticari geliştirme altında. Sözdizimi, r
 
 Korunan source/deception mimarisi aşamalı saldırı dalgalarıyla sertleştirilmektedir. Canonical source identity fiziksel source locator'lardan ayrıdır; decoy view'lar deploy edilemez olarak işaretlenir ve kısa ömürlü epoch-bound read grant'ler ile yetki ayrımı yapılır.
 
-## Ticari geliştirme
+## Lisans ve dağıtım
 
-Koschei proprietary ticari yazılım olarak geliştirilmektedir. Mevcut repo, compiler/runtime güvenlik implementasyonu, deception mekanizmaları, model entegrasyonları veya bunlardan türetilmiş ticari ürünlerin public yeniden dağıtımı ayrı bir yazılı lisans olmadan yetkili değildir.
+Koschei Lang kişisel ve ticari olmayan kullanım için ücretsizdir. Ticari kullanım için ticari lisans gerekir: bedeli bir kez ödenir, süresi dolmaz ve satın almadan sonraki 12 ay içinde çıkan bütün sürümleri kapsar. Fiyatlar: Bireysel 49 USD, Ekip (en fazla 10 geliştirici) 249 USD, Kurumsal 999 USD. Koschei ile yazılan programlar ve `ks build` ile derlenen ikililer yazarlarına aittir. Ayrıntılar: [`LICENSING.tr.md`](LICENSING.tr.md).
 
-Gelecekte müşteri dağıtımı; lisanslı SDK/tooling, imzalı binary'ler, private package/artifact kanalları, enterprise policy yönetimi, audit evidence ve destek/SLA paketleri içerebilir.
+Kullanıcılar Koschei'yi Polar (polar.sh) mağazasından indirir. Bu indirmeyi `python tools/polar_bundle_v1.py` üretir (`dist/polar/koschei-lang-<sürüm>.zip`): `koschei` paketi, kurulum betiği, lisans, müşteri README'si (`distribution/polar/`), dil rehberi, başvuru belgeleri ve README'nin çalıştırdığı örnekler. Bu depo ve iç belgeler özel kalır.
 
 ## Katkı
 
@@ -138,4 +138,4 @@ Katkılar yalnızca yetkili private collaboration üzerinden kabul edilir. Dış
 
 ## Lisans
 
-**Proprietary — mevcut ve gelecekteki proprietary Koschei sürümleri için tüm hakları saklıdır.** Daha önce MIT altında public yayımlanmış belirli revizyonların geçmiş lisans durumunu ve güncel proprietary şartları `LICENSE` dosyası açıklar.
+**Koschei Lang Lisansı 1.0** — kişisel kullanım ücretsiz; ticari kullanım için kalıcı ticari lisans gerekir. Bkz. [`LICENSE.tr.md`](LICENSE.tr.md) (İngilizcesi [`LICENSE`](LICENSE)). Daha önce MIT Lisansıyla yayımlanmış sürümler MIT Lisansına tabi kalır.

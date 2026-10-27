@@ -2,6 +2,8 @@
 
 ## Unreleased — Core Library v1
 
+- License Koschei Lang commercially under the Koschei Lang License 1.0 (`LICENSE`, Turkish `LICENSE.tr.md`), replacing the proprietary notice: personal, non-commercial use is free; commercial use needs a one-time, perpetual license that covers versions released within 12 months of purchase (Individual 49 USD, Team 249 USD, Enterprise 999 USD; `LICENSING.md`). Programs written in Koschei and binaries built from them belong to their authors. Earlier MIT-released revisions stay under MIT.
+- Add `tools/polar_bundle_v1.py`, which builds the deterministic download sold on Polar (`dist/polar/koschei-lang-<version>.zip`) with the package, installer, license, customer README (`distribution/polar/`), guide, references and examples, and `tests/test_polar_bundle_v1.py`, which runs the bundled Koschei.
 - Add the Koschei Core Library: library modules written in Koschei and shipped under `koschei/core_library/`, compiled by the same pipeline as user code instead of duplicated Python/Go host builtins.
 - Add `text` (`is_empty`, `is_blank`, `starts_with`, `ends_with`, `strip_prefix`, `strip_suffix`, `before`, `after`, `count`, `replace`, `lines`, `words`) and generic `list` (`is_empty`, `first`, `last`, `concat`, `reverse`, `drop`, `slice`, `insert_at`, `remove_at`, `replace_at`).
 - Resolve only registered library names; a project file with a library module's name fails closed with `KS1601` instead of shadowing.

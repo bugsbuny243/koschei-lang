@@ -1,30 +1,100 @@
-Koschei Proprietary License Notice
+Koschei Lang License 1.0
 
 Copyright (c) 2026 Onur Sel. All rights reserved.
 
-This repository and the current Koschei source code, binaries, documentation,
-security mechanisms, model integrations, build artifacts, and related materials
-(the "Software") are proprietary and confidential unless a separate written
-license agreement expressly states otherwise.
+This license covers Koschei Lang: its compiler, runtime, Core Library, tools,
+documentation and examples, in source or any other form (the "Software"), as
+made available by Onur Sel (the "Licensor"). A Turkish version of this license
+is in LICENSE.tr.md.
 
-No permission is granted to copy, modify, publish, distribute, sublicense, sell,
-reverse engineer, create derivative works from, or otherwise use the Software
-except as expressly authorized in writing by the copyright holder or under a
-separate commercial license issued for the Software.
+1. PERSONAL USE IS FREE
 
-Access to this private repository does not itself grant a license to redistribute
-or commercialize the Software.
+You may download, install, use and modify the Software free of charge for
+personal, non-commercial purposes: learning, teaching, hobby projects,
+research that is not done for a business, and trying the Software out.
 
-Third-party components, if any, remain subject to their own license terms.
+An organisation may also evaluate the Software free of charge for 30 days
+before buying a commercial license.
 
-IMPORTANT HISTORICAL NOTICE
+2. COMMERCIAL USE NEEDS A COMMERCIAL LICENSE
 
-Earlier Koschei source revisions that were previously released publicly under
-the MIT License remain governed by the license terms that applied to those
-specific revisions when they were released. This proprietary notice applies to
-the current and future proprietary Koschei codebase and does not revoke rights
-already granted under an earlier license.
+Every other use is commercial use and needs a commercial license that covers
+each developer who uses the Software. Commercial use includes using the
+Software:
 
-THE SOFTWARE IS PROVIDED WITHOUT WARRANTY TO THE MAXIMUM EXTENT PERMITTED BY
-APPLICABLE LAW, EXCEPT TO THE EXTENT A SEPARATE WRITTEN COMMERCIAL AGREEMENT
-EXPRESSLY PROVIDES OTHERWISE.
+  (a) by or for a company or other organisation, after the 30-day evaluation;
+  (b) to build, run or support a product or service that is sold or earns
+      revenue;
+  (c) in work done for a client or an employer.
+
+Commercial licenses are sold through the Licensor's store on Polar
+(polar.sh) in three tiers:
+
+  - Individual: one named developer;
+  - Team: up to 10 developers of one organisation;
+  - Enterprise: any number of developers of one organisation.
+
+The current prices are listed in LICENSING.md and on the store.
+
+3. A COMMERCIAL LICENSE IS PERPETUAL
+
+A commercial license is paid for once and does not expire. It covers every
+version of the Software released within 12 months after the purchase date,
+and you may keep using those versions without time limit. Versions released
+later need a new license.
+
+4. YOUR PROGRAMS ARE YOURS
+
+Programs you write in Koschei, and the files the Software produces from them
+(including binaries built with `ks build`), belong to you. Where such a file
+contains parts of the Software, such as the native runtime, you may
+distribute those parts as part of your program without royalties: freely
+under a commercial license, and for non-commercial purposes under personal
+use.
+
+5. WHAT YOU MAY NOT DO
+
+Unless the Licensor agrees in writing, you may not:
+
+  (a) publish, sell, rent, sublicense or otherwise distribute copies of the
+      Software itself, modified or not, except as part of your programs as
+      section 4 allows;
+  (b) let more developers use a commercial license than it covers, or
+      transfer it to another person or organisation;
+  (c) remove or change copyright or license notices in the Software;
+  (d) use the Software or its source code to create a competing programming
+      language, compiler or development tool.
+
+6. EARLIER MIT-LICENSED REVISIONS
+
+Earlier Koschei source revisions that were released under the MIT License
+remain governed by the MIT License as it applied to those revisions. This
+license applies to later revisions and does not take back rights already
+granted under the MIT License.
+
+7. NO WARRANTY
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NON-INFRINGEMENT, TO THE MAXIMUM EXTENT PERMITTED BY
+APPLICABLE LAW.
+
+8. LIMITATION OF LIABILITY
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE LICENSOR IS NOT LIABLE
+FOR ANY INDIRECT, INCIDENTAL, SPECIAL OR CONSEQUENTIAL DAMAGES, AND THE
+LICENSOR'S TOTAL LIABILITY UNDER THIS LICENSE IS LIMITED TO THE AMOUNT YOU
+PAID FOR YOUR LICENSE.
+
+9. TERMINATION
+
+Your rights under this license end automatically if you break its terms.
+Programs you distributed in line with this license before that remain yours.
+
+10. GOVERNING LAW
+
+This license is governed by the laws of the Republic of Türkiye. The courts
+at the Licensor's place of residence have jurisdiction. If the English and
+Turkish versions differ, the Turkish version prevails.
+
+Third-party components, if any, remain under their own license terms.
