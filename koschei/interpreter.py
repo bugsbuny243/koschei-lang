@@ -152,6 +152,8 @@ class _EnumConstructor:
 
 LIST_METHODS = {"length", "get", "push", "contains", "sort", "filter"}
 ALLOWED_NET_SCHEMES = frozenset({"http", "https"})
+# A FIFO, socket or device is never read as a file (DiskCaps.read_bytes).
+NOT_REGULAR_FILE = "düzenli dosya değil"
 MAP_METHODS = {"get", "set", "keys", "contains"}
 
 
@@ -609,7 +611,16 @@ class _DiskCapability(_NarrowedCapability):
             return KsError(f"Dosya okunamadı: kapsam kökü bir dizindir: {path}")
         try:
             with self._parent_fd(parts) as parent:
-                handle = os.open(parts[-1], os.O_RDONLY | os.O_NOFOLLOW, dir_fd=parent)
+                # O_NONBLOCK: opening a FIFO without a writer must not hang;
+                # only regular files (and directories, which fail with
+                # EISDIR below) are read.
+                handle = os.open(
+                    parts[-1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent
+                )
+                mode = os.fstat(handle).st_mode
+                if not (stat.S_ISREG(mode) or stat.S_ISDIR(mode)):
+                    os.close(handle)
+                    return KsError(f"Dosya okunamadı: {NOT_REGULAR_FILE}: {path}")
                 with os.fdopen(handle, "rb") as stream:
                     # One byte past the budget proves a file is too large.
                     data = stream.read(MAX_STRING_BYTES + 1)

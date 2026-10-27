@@ -7,15 +7,19 @@
 //
 // Every file is named by its SHA3-256 digest (`secure.hash_bytes`), so a
 // change to any byte shows. The audited digest takes at most 1 MiB, so a
-// larger file is digested in 1 MiB chunks and recorded as the
-// domain-separated digest of those chunk digests (`secure.digest`). The tool reads DIR read-only and has neither
+// larger file is digested in 1 MiB chunks and recorded as
+// "sha3-256-chunks:" and the domain-separated digest of those chunk digests
+// (`secure.digest`); the distinct tag keeps a small file that holds the
+// serialized chunk digests from matching the large file. The tool reads DIR read-only and has neither
 // write nor network authority: the manifest goes to standard output and
 // comes back on standard input. A manifest line is "DIGEST PATH", with PATH
-// relative to DIR. A symbolic link is never followed and is recorded as
-// "skipped", so a change of kind shows; .git is left out. Any other entry
-// that cannot be digested (over the 16 MiB value budget, unreadable) or
-// whose name holds a newline (a manifest line cannot) fails the run rather
-// than leaving a file unchecked.
+// relative to DIR. A symbolic link (never followed) and an entry that is
+// not a regular file (a FIFO, socket or device, never opened as a stream)
+// are recorded as "skipped", so a change of kind shows; .git is left out.
+// Any other entry that cannot be digested (over the 16 MiB value budget,
+// unreadable), a name that holds a newline (a manifest line cannot) and a
+// manifest over the 16 MiB that `verify` reads fail the snapshot rather than
+// leaving a file unchecked.
 //
 // `verify` prints CHANGED, MISSING and NEW lines and fails (exit status 1)
 // when there is any difference, so a CI step or a server can gate on it.
@@ -42,7 +46,16 @@ fn file_digest(data: Bytes) -> String or Error {
         start = end
     }
     let combined = secure.digest("koschei.example.integrity.chunks/v1", parts) or return Error("integrity: a file could not be digested")
-    return combined
+    let hex = text.after(combined, "sha3-256:") or return Error("integrity: a file could not be digested")
+    return "sha3-256-chunks:{hex}"
+}
+
+// A read failure that loses no file content: a symbolic link (never
+// followed) or an entry that is not a regular file (a FIFO, socket or
+// device, never opened as a stream). Matched on the message's fixed start,
+// never on the path it ends with.
+fn skipped_by_design(reason: String) -> Bool {
+    return text.starts_with(reason, "KS3402: Disk kapsamı sembolik bağ üzerinden aşılamaz; KS3405: ") || text.starts_with(reason, "Dosya okunamadı: düzenli dosya değil: ")
 }
 
 // The Error text of a failed read, or "" when it succeeded.
@@ -78,7 +91,7 @@ fn digests(disk: DiskReadCaps, root: String) -> Map<String, String> or Error {
             let children = disk.list("{root}/{path}") or {
                 let data = disk.read_bytes("{root}/{path}") or {
                     let reason = failure(disk.read_bytes("{root}/{path}"))
-                    if !reason.contains("KS3405") {
+                    if !skipped_by_design(reason) {
                         return Error("integrity: {path} cannot be digested: {reason}")
                     }
                     found = found.set(path, "skipped")
@@ -142,9 +155,20 @@ fn main(caps: SystemCaps) -> Void or Error {
     }
     let current = digests(caps.disk.allow_read_only(root), root) or return
     if mode == "snapshot" {
+        // verify reads the manifest with a 16 MiB input budget.
+        let mut lines: List<String> = []
+        let mut size = 0
         for path in current.keys() {
             let digest = current.get(path) or ""
-            println("{digest} {path}")
+            let line = "{digest} {path}"
+            size = size + line.to_bytes().length() + 1
+            if size > 16777216 {
+                return Error("integrity: the manifest would exceed the 16 MiB that verify reads; snapshot a smaller directory")
+            }
+            lines = lines.push(line)
+        }
+        for line in lines {
+            println(line)
         }
         return
     }

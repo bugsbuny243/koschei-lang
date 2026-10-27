@@ -62,6 +62,10 @@ rules that do not depend on the host:
 - `read` returns the file's bytes as text: no newline translation (the
   interpreter used to turn `\r\n` into `\n`), the 16 MiB budget first, then
   strict UTF-8. `read_bytes` returns them as `Bytes`.
+- Only a regular file is read. A FIFO, socket or device is opened without
+  blocking and refused with `Dosya okunamadı: düzenli dosya değil: PATH`, in
+  `ks run` as in the broker, so a FIFO with no writer cannot hang a program
+  (a directory still gives `EISDIR`).
 - `list` returns UTF-8 names sorted by code point; a name that is not UTF-8,
   or more than 1,048,576 entries, is an Error value.
 - `env.get` refuses a value that is not UTF-8.

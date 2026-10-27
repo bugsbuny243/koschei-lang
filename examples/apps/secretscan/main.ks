@@ -7,7 +7,8 @@
 // finds cannot leave the machine; `ks caps` proves both. Each finding prints
 // FILE:LINE, the kind of credential and only its public prefix and length,
 // never the secret itself. Symbolic links are not followed; files that are
-// not UTF-8 text and the .git directory are skipped. A file that cannot be
+// not UTF-8 text, entries that are not regular files (FIFOs, sockets,
+// devices) and the .git directory are skipped. A file that cannot be
 // scanned in full (over the 16 MiB budget, more lines than one List holds,
 // unreadable) is reported as "not scanned". The program fails (exit status
 // 1) when anything is found or not scanned, so a CI step can gate on it and
@@ -168,6 +169,14 @@ fn scan(path: String, body: String) -> List<String> or Error {
     return findings
 }
 
+// A read failure that loses no file content: a symbolic link (never
+// followed) or an entry that is not a regular file (a FIFO, socket or
+// device, never opened as a stream). Matched on the message's fixed start,
+// never on the path it ends with.
+fn skipped_by_design(reason: String) -> Bool {
+    return text.starts_with(reason, "KS3402: Disk kapsamı sembolik bağ üzerinden aşılamaz; KS3405: ") || text.starts_with(reason, "Dosya okunamadı: düzenli dosya değil: ")
+}
+
 // The Error text of a failed read or scan, or "" when it succeeded.
 fn failure(result: Bytes or Error) -> String {
     let data = result or {
@@ -210,9 +219,9 @@ fn main(caps: SystemCaps) -> Void or Error {
             let children = disk.list(path) or {
                 let body = disk.read(path) or {
                     let reason = failure(disk.read_bytes(path))
-                    // Readable bytes that are not UTF-8 text, or a symbolic
-                    // link (KS3405, never followed): skipped by design.
-                    if reason == "" || reason.contains("KS3405") {
+                    // Readable bytes that are not UTF-8 text, a symbolic link
+                    // or a special entry: skipped by design.
+                    if reason == "" || skipped_by_design(reason) {
                         skipped = skipped + 1
                     } else {
                         println("{path}: not scanned: {reason}")
