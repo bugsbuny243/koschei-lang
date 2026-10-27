@@ -248,9 +248,9 @@ func _ksToString(value any) string {
 		return "<InputCaps>"
 	case _ksDiskRoot:
 		return "<DiskRoot>"
-	case _ksDiskReadCaps:
+	case *_ksDiskReadCaps:
 		return "<DiskReadCaps>"
-	case _ksDiskCaps:
+	case *_ksDiskCaps:
 		return "<DiskCaps>"
 	case _ksEnvRoot:
 		return "<EnvRoot>"
@@ -1122,9 +1122,9 @@ func _ksTypeName(value any) string {
 		return "InputCaps"
 	case _ksDiskRoot:
 		return "DiskRoot"
-	case _ksDiskReadCaps:
+	case *_ksDiskReadCaps:
 		return "DiskReadCaps"
-	case _ksDiskCaps:
+	case *_ksDiskCaps:
 		return "DiskCaps"
 	case _ksEnvRoot:
 		return "EnvRoot"
@@ -1331,9 +1331,9 @@ func _ksMatchPattern(value any, expected string, parameters map[string]bool, bin
 		return base == "InputCaps"
 	case _ksDiskRoot:
 		return base == "DiskRoot"
-	case _ksDiskReadCaps:
+	case *_ksDiskReadCaps:
 		return base == "DiskReadCaps"
-	case _ksDiskCaps:
+	case *_ksDiskCaps:
 		return base == "DiskCaps"
 	case _ksEnvRoot:
 		return base == "EnvRoot"

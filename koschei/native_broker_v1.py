@@ -183,7 +183,7 @@ def broker_runtime() -> str:
     )
 
 
-BROKER_IMPORTS = ("crypto/rand", "encoding/hex", "os/exec", "runtime", "sort", "syscall", "unsafe")
+BROKER_IMPORTS = ("crypto/rand", "encoding/hex", "os/exec", "runtime", "sort", "sync", "syscall", "time", "unsafe")
 
 _BROKER_RUNTIME = r'''
 // ---- native capability broker (native_broker_v1) ----------------------
@@ -320,10 +320,36 @@ func _ksConfine() {{
 	}}
 }}
 
+// Disk scopes whose last token was collected; sent to the broker before the
+// next request, from the program's goroutine (finalizers only queue them).
+var _ksReleaseMu sync.Mutex
+var _ksReleased []string
+
+func _ksQueueRelease(scope string) {{
+	_ksReleaseMu.Lock()
+	_ksReleased = append(_ksReleased, scope)
+	_ksReleaseMu.Unlock()
+}}
+
+func _ksTakeReleased() []string {{
+	_ksReleaseMu.Lock()
+	defer _ksReleaseMu.Unlock()
+	taken := _ksReleased
+	_ksReleased = nil
+	return taken
+}}
+
 func _ksAsk(fields ...string) (bool, []string) {{
 	if _ksBroker == nil {{
 		_ksAbort("KS5002", "native broker is not connected")
 	}}
+	for _, scope := range _ksTakeReleased() {{
+		_ksExchange("release", scope)
+	}}
+	return _ksExchange(fields...)
+}}
+
+func _ksExchange(fields ...string) (bool, []string) {{
 	if err := _ksWriteFrame(_ksBroker, fields); err != nil {{
 		_ksAbort("KS5002", "native broker request failed")
 	}}
@@ -356,8 +382,31 @@ func _ksDiskAllowReadOnly(receiver any, prefix any) any {{
 	if !ok {{
 		_ksAbort("KS5002", "DiskRoot.allow_read_only prefix drifted")
 	}}
-	_, answer := _ksAsk("scope", text)
-	return _ksDiskReadCaps{{scope: answer[0]}}
+	token := &_ksDiskReadCaps{{scope: _ksOpenDiskScope("scope", text)}}
+	runtime.SetFinalizer(token, func(token *_ksDiskReadCaps) {{ _ksQueueRelease(token.scope) }})
+	return token
+}}
+
+// Like Python closing a dropped token's descriptor, a collected token
+// releases its broker scope. When the broker is out of descriptors, the
+// worker collects garbage once, hands back what it released and retries.
+func _ksOpenDiskScope(kind string, prefix string) string {{
+	done, answer := _ksAsk(kind, prefix, "retry")
+	if done {{
+		return answer[0]
+	}}
+	runtime.GC()
+	for attempt := 0; attempt < 100; attempt++ {{
+		_ksReleaseMu.Lock()
+		pending := len(_ksReleased)
+		_ksReleaseMu.Unlock()
+		if pending > 0 {{
+			break
+		}}
+		time.Sleep(time.Millisecond)
+	}}
+	_, answer = _ksAsk(kind, prefix, "final")
+	return answer[0]
 }}
 
 func _ksDiskAllow(receiver any, prefix any) any {{
@@ -368,27 +417,30 @@ func _ksDiskAllow(receiver any, prefix any) any {{
 	if !ok {{
 		_ksAbort("KS5002", "DiskRoot.allow prefix drifted")
 	}}
-	_, answer := _ksAsk("scope_rw", text)
-	return _ksDiskCaps{{scope: answer[0]}}
+	token := &_ksDiskCaps{{scope: _ksOpenDiskScope("scope_rw", text)}}
+	runtime.SetFinalizer(token, func(token *_ksDiskCaps) {{ _ksQueueRelease(token.scope) }})
+	return token
 }}
 
-func _ksDiskScopeOf(receiver any) _ksDiskReadCaps {{
+// Callers keep the token alive (runtime.KeepAlive) until the broker has
+// answered, so its finalizer cannot release the scope mid-request.
+func _ksDiskScopeOf(receiver any) string {{
 	switch disk := receiver.(type) {{
-	case _ksDiskReadCaps:
-		return disk
-	case _ksDiskCaps:
-		return _ksDiskReadCaps{{scope: disk.scope}}
+	case *_ksDiskReadCaps:
+		return disk.scope
+	case *_ksDiskCaps:
+		return disk.scope
 	}}
 	_ksAbort("KS5002", "disk receiver drifted")
-	return _ksDiskReadCaps{{}}
+	return ""
 }}
 
-func _ksDiskWritableOf(receiver any) _ksDiskCaps {{
-	disk, ok := receiver.(_ksDiskCaps)
+func _ksDiskWritableOf(receiver any) string {{
+	disk, ok := receiver.(*_ksDiskCaps)
 	if !ok {{
 		_ksAbort("KS5002", "DiskCaps receiver drifted")
 	}}
-	return disk
+	return disk.scope
 }}
 
 func _ksDiskWrite(receiver any, path any, value any) any {{
@@ -396,7 +448,8 @@ func _ksDiskWrite(receiver any, path any, value any) any {{
 	if !ok {{
 		_ksAbort("KS5002", "disk write value drifted")
 	}}
-	done, answer := _ksAsk("write", _ksDiskWritableOf(receiver).scope, _ksDiskPath(path), text)
+	done, answer := _ksAsk("write", _ksDiskWritableOf(receiver), _ksDiskPath(path), text)
+	runtime.KeepAlive(receiver)
 	if !done {{
 		return _ksError{{message: answer[0]}}
 	}}
@@ -404,7 +457,8 @@ func _ksDiskWrite(receiver any, path any, value any) any {{
 }}
 
 func _ksDiskDelete(receiver any, path any) any {{
-	done, answer := _ksAsk("delete", _ksDiskWritableOf(receiver).scope, _ksDiskPath(path))
+	done, answer := _ksAsk("delete", _ksDiskWritableOf(receiver), _ksDiskPath(path))
+	runtime.KeepAlive(receiver)
 	if !done {{
 		return _ksError{{message: answer[0]}}
 	}}
@@ -420,7 +474,8 @@ func _ksDiskPath(path any) string {{
 }}
 
 func _ksDiskReadBytes(receiver any, path any) any {{
-	ok, answer := _ksAsk("read", _ksDiskScopeOf(receiver).scope, _ksDiskPath(path))
+	ok, answer := _ksAsk("read", _ksDiskScopeOf(receiver), _ksDiskPath(path))
+	runtime.KeepAlive(receiver)
 	if !ok {{
 		return _ksError{{message: answer[0]}}
 	}}
@@ -429,7 +484,8 @@ func _ksDiskReadBytes(receiver any, path any) any {{
 
 func _ksDiskReadText(receiver any, path any) any {{
 	text := _ksDiskPath(path)
-	ok, answer := _ksAsk("read", _ksDiskScopeOf(receiver).scope, text)
+	ok, answer := _ksAsk("read", _ksDiskScopeOf(receiver), text)
+	runtime.KeepAlive(receiver)
 	if !ok {{
 		if answer[0] == {bytes_message} {{
 			return _ksError{{message: {string_message}}}
@@ -443,7 +499,8 @@ func _ksDiskReadText(receiver any, path any) any {{
 }}
 
 func _ksDiskList(receiver any, path any) any {{
-	ok, answer := _ksAsk("list", _ksDiskScopeOf(receiver).scope, _ksDiskPath(path))
+	ok, answer := _ksAsk("list", _ksDiskScopeOf(receiver), _ksDiskPath(path))
+	runtime.KeepAlive(receiver)
 	if !ok {{
 		return _ksError{{message: answer[0]}}
 	}}
@@ -486,6 +543,23 @@ type _ksScope struct {{
 	writable bool
 	device   uint64
 	inode    uint64
+	tokens   int
+}}
+
+// True when open scope descriptors leave fewer than 32 of the process limit
+// for reads, writes, listings and sockets.
+func _ksScopesNearLimit(scopes []*_ksScope) bool {{
+	var limit syscall.Rlimit
+	if syscall.Getrlimit(syscall.RLIMIT_NOFILE, &limit) != nil {{
+		return false
+	}}
+	open := 0
+	for _, scope := range scopes {{
+		if scope != nil && scope.root >= 0 {{
+			open++
+		}}
+	}}
+	return uint64(open)+32 >= limit.Cur
 }}
 
 // A token narrowed again to the same directory (same resolved prefix, mode,
@@ -513,8 +587,10 @@ func _ksRegisterScope(scopes []*_ksScope, scope *_ksScope) ([]*_ksScope, int) {{
 		if scope.root >= 0 {{
 			syscall.Close(scope.root)
 		}}
+		other.tokens++
 		return scopes, index
 	}}
+	scope.tokens = 1
 	scopes = append(scopes, scope)
 	return scopes, len(scopes) - 1
 }}
@@ -562,16 +638,39 @@ func _ksBrokerLoop(channel *os.File) {{
 		}}
 		var answer []string
 		switch {{
-		case (request[0] == "scope" || request[0] == "scope_rw") && len(request) == 2:
+		case (request[0] == "scope" || request[0] == "scope_rw") && len(request) == 3 && (request[2] == "retry" || request[2] == "final"):
+			if request[2] == "retry" && _ksScopesNearLimit(scopes) {{
+				// Scope descriptors are close to the limit, leaving too few
+				// for file operations: the worker collects dropped tokens
+				// and asks again once.
+				answer = []string{{"busy"}}
+				break
+			}}
 			scope := _ksOpenScope(request[1])
+			if request[2] == "retry" && (scope.rootErr == syscall.EMFILE || scope.rootErr == syscall.ENFILE) {{
+				answer = []string{{"busy"}}
+				break
+			}}
 			scope.writable = request[0] == "scope_rw"
 			var index int
 			scopes, index = _ksRegisterScope(scopes, scope)
 			answer = []string{{"ok", strconv.Itoa(index)}}
+		case request[0] == "release" && len(request) == 2:
+			index, convErr := strconv.Atoi(request[1])
+			if convErr != nil || index < 1 || index >= len(scopes) || scopes[index] == nil {{
+				return
+			}}
+			if scopes[index].tokens--; scopes[index].tokens == 0 {{
+				if scopes[index].root >= 0 {{
+					syscall.Close(scopes[index].root)
+				}}
+				scopes[index] = nil
+			}}
+			answer = []string{{"ok"}}
 		case (request[0] == "write" && len(request) == 4) || (request[0] == "delete" && len(request) == 3):
 			index, convErr := strconv.Atoi(request[1])
 			// A read-only token's scope can never be written through.
-			if convErr != nil || index < 1 || index >= len(scopes) || !scopes[index].writable {{
+			if convErr != nil || index < 1 || index >= len(scopes) || scopes[index] == nil || !scopes[index].writable {{
 				return
 			}}
 			if request[0] == "write" {{
@@ -581,7 +680,7 @@ func _ksBrokerLoop(channel *os.File) {{
 			}}
 		case (request[0] == "read" || request[0] == "list") && len(request) == 3:
 			index, convErr := strconv.Atoi(request[1])
-			if convErr != nil || index < 1 || index >= len(scopes) {{
+			if convErr != nil || index < 1 || index >= len(scopes) || scopes[index] == nil {{
 				return
 			}}
 			if request[0] == "read" {{

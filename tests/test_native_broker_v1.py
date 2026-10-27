@@ -384,6 +384,44 @@ fn main(caps: SystemCaps) {
             self.assertEqual((native.returncode, native.stdout), (0, b"150\n"), native.stderr)
 
     @unittest.skipUnless(SUPPORTED, "broker confinement is linux/amd64")
+    def test_dropped_tokens_release_their_scopes(self) -> None:
+        # 150 different directories under a 64-descriptor limit: like ks run,
+        # where a dropped token closes its descriptor, collected tokens hand
+        # their scopes back to the broker.
+        source = (
+            "fn main(caps: SystemCaps) {\n    let mut i = 0\n    let mut ok = 0\n    while i < 150 {\n"
+            '        let disk = caps.disk.allow_read_only("d/{i}")\n'
+            '        let text = disk.read("d/{i}/a.txt") or ""\n'
+            '        if text == "hi" {\n            ok = ok + 1\n        }\n'
+            '        let writable = caps.disk.allow("d/{i}")\n'
+            '        let wrote = writable.write("d/{i}/b.txt", "x") or Error("no")\n'
+            "        i = i + 1\n    }\n    println(ok)\n"
+            '    let kept = caps.disk.allow_read_only("d/0")\n    println(kept.read("d/149/a.txt"))\n'
+            '    println(kept.read("d/0/b.txt"))\n}\n'
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            for index in range(150):
+                (base / "d" / str(index)).mkdir(parents=True)
+                (base / "d" / str(index) / "a.txt").write_text("hi", encoding="utf-8")
+            (base / "main.ks").write_text(source, encoding="utf-8")
+            binary = self.build(base / "main.ks")
+
+            def few_descriptors() -> None:
+                resource.setrlimit(resource.RLIMIT_NOFILE, (64, 64))
+
+            native = subprocess.run(
+                [str(binary)], cwd=base, capture_output=True, timeout=120, check=False,
+                preexec_fn=few_descriptors,
+            )
+            self.assertEqual(native.returncode, 0, native.stderr)
+            self.assertEqual(
+                native.stdout.decode().splitlines(),
+                ["150", "KS3402: Disk kapsamı dışında erişim reddedildi: d/149/a.txt", "x"],
+            )
+            self.assertEqual(sorted(path.name for path in (base / "d" / "149").iterdir()), ["a.txt", "b.txt"])
+
+    @unittest.skipUnless(SUPPORTED, "broker confinement is linux/amd64")
     def test_the_worker_dies_with_its_broker(self) -> None:
         source = (
             'fn main(caps: SystemCaps) {\n    println(caps.env.allow("HOME").get() or "?")\n'

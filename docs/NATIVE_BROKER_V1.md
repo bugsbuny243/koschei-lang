@@ -71,6 +71,12 @@ rules that do not depend on the host:
   are renamed over the target, which keeps its permission bits (a new file
   gets `0600`). A symlink, a directory, a missing parent or the scope root
   itself is refused with the same Error text as `ks run`.
+- A disk token that the program drops hands its scope back: the worker's
+  garbage collector finalizes it and the broker closes the scope's
+  descriptor once no token uses it, as `ks run` closes a dropped token's
+  descriptor. Narrowing again to the same directory shares one scope; when
+  scopes come within 32 of the descriptor limit, the worker collects before
+  the broker opens another.
 - `delete` removes a file, a symlink (not its target) or an empty directory;
   the scope root cannot be deleted. A token from `allow_read_only` cannot
   write or delete, in the broker as well as in the checker.
