@@ -849,38 +849,11 @@ class NetCaps(_NarrowedCapability):
             return KsError(net_v1.failure("EIO", url))
         redirects = 0
         while True:
-            request = urllib.request.Request(
-                current.text(),
-                method="GET",
-                headers={
-                    "User-Agent": net_v1.USER_AGENT,
-                    "Accept-Encoding": "identity",
-                    "Connection": "close",
-                },
-            )
-            try:
-                with self._opener.open(request, timeout=net_v1.TIMEOUT_SECONDS) as response:
-                    status = int(response.status)
-                    location = None
-                    if status in net_v1.REDIRECT_STATUSES:
-                        location = response.headers.get("Location") or None
-                    if location is None:
-                        try:
-                            payload = read_bounded_response_body_v1(response)
-                        except HttpResponseBudgetV1Error as error:
-                            return KsError(str(error))
-                        # http.client returns a short body silently when
-                        # the peer closes early; a missing tail is a failure.
-                        missing = getattr(response, "length", None)
-                        if isinstance(missing, int) and missing > 0:
-                            raise ConnectionResetError("response body ended early")
-            except (OSError, http.client.HTTPException, ValueError) as error:
-                return KsError(net_v1.failure(net_v1.failure_code(error), url))
-            if location is None:
-                try:
-                    return Response(payload.decode("utf-8"), status)
-                except UnicodeDecodeError:
-                    return KsError(net_v1.NOT_TEXT_PREFIX + url)
+            request = urllib.request.Request(current.text(), method="GET", headers=self._HEADERS)
+            sent = self._send(request, url, follow=True)
+            if not isinstance(sent, str):
+                return sent
+            location = sent
             target = net_v1.resolve_location(current, location, ALLOWED_NET_SCHEMES)
             if target is None or target.origin != self.origin_key:
                 return KsError(net_v1.redirect_refused(target.text() if target is not None else location))
@@ -889,9 +862,57 @@ class NetCaps(_NarrowedCapability):
                 return KsError(f"{net_v1.FAILED_PREFIX}{net_v1.TOO_MANY_REDIRECTS}: {url}")
             current = target
 
-    @staticmethod
-    def post(*arguments: Any) -> KsError:
-        return KsError("post henüz desteklenmiyor")
+    def post(self, url: str, content_type: str, body: str | bytes) -> Response | KsError:
+        payload = body.encode("utf-8") if isinstance(body, str) else body
+        refused = net_v1.post_refusal(content_type, payload)
+        if refused is not None:
+            return KsError(refused)
+        if not isinstance(url, str):
+            return KsError(net_v1.OUTSIDE_PREFIX + net_v1.INVALID_TARGET)
+        current = net_v1.parse_url(url, ALLOWED_NET_SCHEMES)
+        if self.origin_key is None or current is None or current.origin != self.origin_key:
+            return KsError(net_v1.OUTSIDE_PREFIX + url)
+        if self._opener is None:
+            return KsError(net_v1.failure("EIO", url))
+        request = urllib.request.Request(
+            current.text(),
+            data=bytes(payload),
+            method="POST",
+            headers=dict(self._HEADERS, **{"Content-Type": content_type}),
+        )
+        return self._send(request, url, follow=False)
+
+    _HEADERS = {
+        "User-Agent": net_v1.USER_AGENT,
+        "Accept-Encoding": "identity",
+        "Connection": "close",
+    }
+
+    def _send(self, request: urllib.request.Request, url: str, follow: bool) -> Response | KsError | str:
+        """One request: a Response, an Error, or the Location to follow."""
+
+        try:
+            with self._opener.open(request, timeout=net_v1.TIMEOUT_SECONDS) as response:
+                status = int(response.status)
+                if follow and status in net_v1.REDIRECT_STATUSES:
+                    location = response.headers.get("Location")
+                    if location:
+                        return location
+                try:
+                    payload = read_bounded_response_body_v1(response)
+                except HttpResponseBudgetV1Error as error:
+                    return KsError(str(error))
+                # http.client returns a short body silently when the peer
+                # closes early; a missing tail is a failure.
+                missing = getattr(response, "length", None)
+                if isinstance(missing, int) and missing > 0:
+                    raise ConnectionResetError("response body ended early")
+        except (OSError, http.client.HTTPException, ValueError) as error:
+            return KsError(net_v1.failure(net_v1.failure_code(error), url))
+        try:
+            return Response(payload.decode("utf-8"), status)
+        except UnicodeDecodeError:
+            return KsError(net_v1.NOT_TEXT_PREFIX + url)
 
     @staticmethod
     def put(*arguments: Any) -> KsError:

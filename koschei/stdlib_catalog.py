@@ -233,6 +233,18 @@ CATALOG: tuple[Family, ...] = (
                 "canonical full validation receipt proves cross-backend parity."
             ),
         ),
+        _reserved(
+            "post",
+            capability="NetCaps",
+            required=("deadline", "request_bytes", "response_bytes", "redirects"),
+            enforced=("deadline", "request_bytes", "response_bytes", "redirects"),
+            security_sensitive=True,
+            note=(
+                "Runs under ks run and natively with the get transport rules, a "
+                "checked content type, a 1 MiB request body and no redirects "
+                "followed; status remains reserved like get."
+            ),
+        ),
         *(
             _reserved(
                 name,
@@ -241,7 +253,7 @@ CATALOG: tuple[Family, ...] = (
                 security_sensitive=True,
                 note="Reserved API; runtime execution is intentionally unavailable.",
             )
-            for name in ("post", "put", "delete", "request")
+            for name in ("put", "delete", "request")
         ),
     ),
     _family(

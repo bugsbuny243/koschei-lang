@@ -1,11 +1,13 @@
 # Koschei Network v1
 
-Status: **`NetCaps.get` under `ks run` and in native binaries (linux/amd64,
-through the capability broker); third step of readiness gate G2.**
+Status: **`NetCaps.get` and `NetCaps.post` under `ks run` and in native
+binaries (linux/amd64, through the capability broker); third step of
+readiness gate G2.**
 
 `caps.net.allow(origin)` narrows the network to one origin (scheme, host,
-port). `net.get(url)` returns a `Response` (`status()`, `text()`) or an Error
-value. The same request gives the same bytes in every executor because none
+port). `net.get(url)` and `net.post(url, content_type, body)` return a
+`Response` (`status()`, `text()`) or an Error value. The checker requires a
+`String` URL and content type and a `String` or `Bytes` body (`KS1301`). The same request gives the same bytes in every executor because none
 of the rules below is left to a host HTTP library. They live in
 `koschei/net_v1.py`; the native port is `koschei/native_net_v1.py`.
 
@@ -35,6 +37,14 @@ request.
 `Connection: close` and `Host`. The host's language and version are never
 sent.
 
+`POST` sends the same headers plus `Content-Type` and `Content-Length` (also
+for an empty body; never chunked). Before the origin is consulted:
+
+- the content type must be 1–256 printable ASCII characters with no space at
+  either end (`KSNET_CONTENT_TYPE`), so no line break can add a header;
+- the body is a `String` (sent as UTF-8) or `Bytes`, at most 1 MiB
+  (`KSNET_REQUEST_BUDGET`).
+
 ## Redirects
 
 Koschei follows 301, 302, 303, 307 and 308 that carry a `Location` itself,
@@ -43,6 +53,9 @@ without dot-segment removal. A target outside the origin, or not a valid
 URL, is `KS3402: Ağ yönlendirmesi kapsam dışına çıktı: <target>`; a sixth
 redirect is `API isteği başarısız: çok fazla yönlendirme: <url>`. A redirect
 status without `Location` is an ordinary response.
+
+`POST` follows no redirect: every 3xx is its `Response`, so the body is
+never sent twice or to a second address.
 
 ## Responses
 
@@ -96,15 +109,19 @@ and `SSL_CERT_DIR` are honoured by both executors. HTTP/2 is not used.
 
 The worker cannot open sockets (seccomp, `docs/NATIVE_BROKER_V1.md`).
 `caps.net.allow` registers the origin with the broker, which also picks the
-proxy then. Each `get` is one request on the channel, and the broker answers
-with the status and the body or the Error text. Only programs that use the
-network link `net/http`.
+proxy then. Each `get` or `post` is one request on the channel, and the broker
+answers with the status and the body or the Error text. The worker checks a
+`post`'s content type and body before asking, and the broker checks them
+again and ends the conversation on a request that breaks them. The broker
+uses `net/http`'s transport, not its client, so a redirect's `Location` is
+read by Koschei's rules alone. Only programs that use the network link
+`net/http`.
 
 ## Not yet
 
-`post`, `put`, `delete` and `request` return `… henüz desteklenmiyor`
-under `ks run`, and `ks build` refuses them (`KS4004`). There are no request or response
-headers in the language and no `Bytes` body.
+`put`, `delete` and `request` return `… henüz desteklenmiyor` under `ks run`,
+and `ks build` refuses them (`KS4004`). There are no other request headers and
+no response headers in the language, and response bodies are text only.
 
 ## Evidence
 
@@ -119,7 +136,15 @@ headers in the language and no `Bytes` body.
 - a forwarding proxy sees the same absolute request, a refused `CONNECT` is
   `EIO`, an unsupported proxy is `EIO`, and loopback bypasses the proxy;
 - TLS against a self-signed certificate is `ETLS`, and passes in both once
-  `SSL_CERT_FILE` trusts it.
+  `SSL_CERT_FILE` trusts it;
+- a redirect whose `Location` is not a URL is `KS3402` in both;
+- 18 `post` calls give the same bytes: the headers and body the server saw
+  (text, empty, `Bytes`, exactly 1 MiB), the refused over-budget body and
+  content types (256 bytes accepted, 257 refused, surrounding space, CR/LF,
+  empty, non-ASCII), 302 and 307 returned as they are, the response budget,
+  a raw path, the origin check after the argument checks and a closed port;
+  a forwarding proxy sees the same `POST`;
+- the checker refuses a wrong argument count or type for `get` and `post`.
 
 A silent peer gave `ETIMEDOUT` after 10 s in both executors (manual check).
 So did requests through this environment's proxy to a real HTTPS host and a

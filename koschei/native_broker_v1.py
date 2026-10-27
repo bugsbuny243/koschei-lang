@@ -643,7 +643,9 @@ func _ksBrokerLoop(channel *os.File) {{
 	defer channel.Close()
 	scopes := []*_ksScope{{nil}}
 	for {{
-		request, err := _ksReadFrame(channel, 6, _ksBrokerMaxField+(1<<18))
+		// One value at the string budget plus a net_post body (1 MiB) and
+		// the small fields around them.
+		request, err := _ksReadFrame(channel, 6, _ksBrokerMaxField+(1<<21))
 		if err != nil || len(request) == 0 {{
 			return
 		}}

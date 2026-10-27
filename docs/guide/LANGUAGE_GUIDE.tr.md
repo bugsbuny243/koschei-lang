@@ -344,7 +344,7 @@ usage: greet NAME
 | `caps.random` | `allow(max_bytes)` | `hex(count)`, `below(bound)` |
 | `caps.disk` | `allow(prefix)`, `allow_read_only(prefix)` | `read`, `write`, `list`, `delete` |
 | `caps.env` | `allow(name)` | `get()` |
-| `caps.net` | `allow(origin)` | `get(url)` |
+| `caps.net` | `allow(origin)` | `get(url)`, `post(url, content_type, body)` |
 
 - Kök yetki doğrudan iş yapamaz (`KS2402`); daraltılmış jeton genişleyemez
   (`KS2403`) ve kendisine verilmeyeni yapamaz (`KS2404`).

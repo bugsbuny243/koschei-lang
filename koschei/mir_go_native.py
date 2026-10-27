@@ -208,6 +208,7 @@ _NATIVE_CAPABILITY_CALLS = {
     ("EnvCaps", "get"): ("_ksEnvGet", 0),
     ("NetRoot", "allow"): ("_ksNetAllow", 1),
     ("NetCaps", "get"): ("_ksNetGet", 1),
+    ("NetCaps", "post"): ("_ksNetPost", 3),
     ("ServeRoot", "allow"): ("_ksServeAllow", 5),
     ("ServeCaps", "accept"): ("_ksServeAccept", 0),
     ("ServeCaps", "reply"): ("_ksServeReply", 2),

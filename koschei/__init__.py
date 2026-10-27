@@ -325,6 +325,10 @@ from .serve_knowhere_v1 import install_serve_knowhere_v1
 
 install_serve_knowhere_v1()
 
+from .net_typing_v1 import install_net_typing_v1
+
+install_net_typing_v1()
+
 from .capability_opacity_v1 import install_capability_opacity_v1
 
 install_capability_opacity_v1()

@@ -344,7 +344,7 @@ usage: greet NAME
 | `caps.random` | `allow(max_bytes)` | `hex(count)`, `below(bound)` |
 | `caps.disk` | `allow(prefix)`, `allow_read_only(prefix)` | `read`, `write`, `list`, `delete` |
 | `caps.env` | `allow(name)` | `get()` |
-| `caps.net` | `allow(origin)` | `get(url)` |
+| `caps.net` | `allow(origin)` | `get(url)`, `post(url, content_type, body)` |
 
 - A root cannot act directly (`KS2402`); a narrowed token cannot widen
   (`KS2403`) or do what it was not given (`KS2404`).

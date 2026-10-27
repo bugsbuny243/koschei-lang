@@ -60,7 +60,7 @@ What works today is listed in the guide. What does not:
 | Limitation | Plan |
 |---|---|
 | `ks run` is slow: one to three orders of magnitude behind native code on compute-heavy work (see benchmarks) | performance was not a goal so far; the native binary is the fast path |
-| Native binaries reach the disk, the environment, the network (`GET`) and the loopback server through a confined broker on linux/amd64 only; the worker runs under a seccomp allow list; binaries still refuse processes (`KS4004`); `post`/`put` are not implemented anywhere; other platforms refuse broker programs (`KS4001`) | process authority and other platforms are not scheduled |
+| Native binaries reach the disk, the environment, the network (`GET`, `POST`) and the loopback server through a confined broker on linux/amd64 only; the worker runs under a seccomp allow list; binaries still refuse processes (`KS4004`); `put`/`delete` and request headers are not implemented anywhere; other platforms refuse broker programs (`KS4001`) | process authority and other platforms are not scheduled |
 | `ks run` is language enforcement inside CPython, not an OS sandbox | see residual risks in the threat model |
 | Runtime messages are Turkish; codes and English diagnostics exist | messages are marked experimental in the stability policy |
 | No independent security audit | needs an external party |

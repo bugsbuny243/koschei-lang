@@ -1,4 +1,4 @@
-"""Canonical network rules for ``NetCaps.get`` (readiness gate G2, third step).
+"""Canonical network rules for ``NetCaps.get`` and ``NetCaps.post`` (gate G2).
 
 ``ks run`` and native binaries must give the same answer to the same request,
 so nothing below is left to a host HTTP library's defaults:
@@ -12,10 +12,12 @@ so nothing below is left to a host HTTP library's defaults:
   sent. Anything else is outside every origin.
 * **Request.** ``GET`` with exactly ``User-Agent: koschei/1``,
   ``Accept-Encoding: identity`` and ``Connection: close``; the default port is
-  left out of the ``Host`` header.
+  left out of the ``Host`` header. ``POST`` adds ``Content-Type`` (checked by
+  :func:`post_refusal`) and ``Content-Length`` for a body of at most 1 MiB.
 * **Redirects.** 301, 302, 303, 307 and 308 with a ``Location`` are followed
-  by Koschei, at most five times, and every target must stay in the origin
-  (``KS3402``). Locations are resolved without dot-segment removal.
+  by Koschei for ``GET``, at most five times, and every target must stay in
+  the origin (``KS3402``). Locations are resolved without dot-segment
+  removal. ``POST`` follows none: its body is never sent twice.
 * **Status.** Every other status is a ``Response``: ``status()`` tells 200
   from 404; there is no host ``HTTP Error`` text.
 * **Body.** Identity encoding only, at most 1 MiB
@@ -48,6 +50,17 @@ FAILED_PREFIX = "API isteği başarısız: "
 TOO_MANY_REDIRECTS = "çok fazla yönlendirme"
 NOT_TEXT_PREFIX = "API yanıtı geçerli UTF-8 metin değil: "
 INVALID_TARGET = "<geçersiz adres>"
+
+REQUEST_BODY_MAX_BYTES = 1_048_576
+CONTENT_TYPE_MAX_BYTES = 256
+CONTENT_TYPE_ERROR = (
+    f"KSNET_CONTENT_TYPE: HTTP content type must be 1-{CONTENT_TYPE_MAX_BYTES} "
+    "printable ASCII characters with no space at either end"
+)
+REQUEST_BODY_ERROR = "KSNET_REQUEST_BODY: HTTP request body must be String or Bytes"
+REQUEST_BUDGET_ERROR = (
+    f"KSNET_REQUEST_BUDGET: HTTP request body exceeds {REQUEST_BODY_MAX_BYTES} byte budget"
+)
 
 FAILURE_CODES = (
     "ECONNREFUSED",  # nothing listens on the port
@@ -303,6 +316,34 @@ def failure_code(error: BaseException) -> str:
             break
         error = cause
     return "EIO"
+
+
+def valid_content_type(value: object) -> bool:
+    # Printable ASCII and no surrounding space: Go trims a header value and
+    # Python does not, so either would send something else.
+    return (
+        isinstance(value, str)
+        and 0 < len(value) <= CONTENT_TYPE_MAX_BYTES
+        and all("\x20" <= character <= "\x7e" for character in value)
+        and value[0] != " "
+        and value[-1] != " "
+    )
+
+
+def post_refusal(content_type: object, body: object) -> str | None:
+    """Why a ``post`` is refused before the origin is consulted, or None.
+
+    ``body`` is the encoded payload (bytes) or the value as the program gave
+    it when it is neither String nor Bytes.
+    """
+
+    if not valid_content_type(content_type):
+        return CONTENT_TYPE_ERROR
+    if not isinstance(body, bytes):
+        return REQUEST_BODY_ERROR
+    if len(body) > REQUEST_BODY_MAX_BYTES:
+        return REQUEST_BUDGET_ERROR
+    return None
 
 
 def failure(code: str, url: str) -> str:
