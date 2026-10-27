@@ -586,9 +586,9 @@ CATALOG: dict[str, Diagnostic] = {
     "KS3472": Diagnostic(
         code="KS3472",
         title='Yanıt kuralı ihlali',
-        summary='reply() desteklenmeyen bir durum koduyla veya gövdeli 204 ile çağrıldı.',
-        why='Desteklenen durum kodları sınırlı ve açıktır; geçersiz yanıt yerine istemci 500 alır.',
-        fix='200, 201, 204, 400, 403, 404, 405, 409, 413, 422, 429, 500 veya 503 kullanın.',
+        summary='reply() desteklenmeyen bir durum koduyla, gövdeli 204 ile veya reply_as() geçersiz bir içerik türüyle çağrıldı.',
+        why='Desteklenen durum kodları sınırlı ve açıktır ve içerik türü başlık ekleyemez; geçersiz yanıt yerine istemci 500 alır.',
+        fix='200, 201, 204, 400, 403, 404, 405, 409, 413, 422, 429, 500 veya 503 kullanın; içerik türü 1-256 yazdırılabilir ASCII karakter olsun, iki ucunda boşluk olmasın.',
         example='server.reply(404, "not found") or return',
     ),
     "KS3473": Diagnostic(
@@ -1026,9 +1026,9 @@ ENGLISH_TEXT: dict[str, tuple[str, str, str, str]] = {
     ),
     "KS3472": (
         'Response rule violated',
-        'reply() was called with an unsupported status code or a 204 with a body.',
-        'Supported status codes are a small explicit set; instead of an invalid response the client gets 500.',
-        'Use 200, 201, 204, 400, 403, 404, 405, 409, 413, 422, 429, 500 or 503.',
+        'reply() was called with an unsupported status code or a 204 with a body, or reply_as() with an invalid content type.',
+        'Supported status codes are a small explicit set and a content type cannot add a header; instead of an invalid response the client gets 500.',
+        'Use 200, 201, 204, 400, 403, 404, 405, 409, 413, 422, 429, 500 or 503, and a content type of 1-256 printable ASCII characters with no space at either end.',
     ),
     "KS3473": (
         'Request header missing',

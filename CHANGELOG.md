@@ -2,6 +2,8 @@
 
 ## Unreleased — Core Library v1
 
+- Add `ServeCaps.reply_as(status, content_type, body)` under `ks run` and in native binaries, so a server can answer JSON or HTML: the reply carries the given `Content-Type` instead of `text/plain; charset=utf-8`. The content type follows `NetCaps.post`'s rule (1–256 printable ASCII characters, no surrounding space), so it cannot add a header; otherwise the client gets `500` and the call returns `KS3472`.
+
 - End the program with the Error that `main` returns in every executor: `fn main()` may `return Error(...)` or pass a failure up with a bare `or return`, and the run prints `KOSCHEI RUNTIME ERROR: <message>` and exits 1. The direct MIR runtime and the checked-AST interpreter did so; the canonical MIR executor (most `ks run` programs) and native binaries stopped with a `KS3401` "capability type-integrity" violation instead, so `return Error("boom")` printed `boom` under `ks run` and `KS3401` from the binary.
 - Refuse an `or return` that a function cannot return at check time: in a function without a return type it is `KS1304`, and a bare `or return` that passes an Error up from a function that does not return one is `KS1301`. Both used to pass the checker and stop the program at run time with `KS3401`.
 

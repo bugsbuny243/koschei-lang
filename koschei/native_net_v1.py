@@ -44,7 +44,6 @@ def net_runtime() -> str:
         budget=_go(f"{HTTP_RESPONSE_BUDGET_ERROR_V1}: HTTP response body exceeds {HTTP_RESPONSE_MAX_BYTES_V1} byte budget"),
         encoding=_go(f"{HTTP_CONTENT_ENCODING_ERROR_V1}: unsupported HTTP content encoding: "),
         max_request=net_v1.REQUEST_BODY_MAX_BYTES,
-        max_content_type=net_v1.CONTENT_TYPE_MAX_BYTES,
         content_type_error=_go(net_v1.CONTENT_TYPE_ERROR),
         body_error=_go(net_v1.REQUEST_BODY_ERROR),
         request_budget=_go(net_v1.REQUEST_BUDGET_ERROR),
@@ -126,19 +125,6 @@ func _ksNetAnswer(done bool, answer []string) any {{
 		_ksAbort("KS5002", "native broker answer drifted")
 	}}
 	return _ksResponse{{status: status, body: answer[1]}}
-}}
-
-// net_v1.valid_content_type
-func _ksValidContentType(text string) bool {{
-	if len(text) == 0 || len(text) > {max_content_type} || text[0] == ' ' || text[len(text)-1] == ' ' {{
-		return false
-	}}
-	for index := 0; index < len(text); index++ {{
-		if text[index] < 0x20 || text[index] > 0x7e {{
-			return false
-		}}
-	}}
-	return true
 }}
 
 // ---- broker side ----------------------------------------------------------

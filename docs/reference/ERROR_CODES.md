@@ -1027,13 +1027,13 @@ let server = caps.serve.allow("127.0.0.1:8080", 1000, 65536, 65536, 5000)
 
 ### KS3472 — Response rule violated
 
-**EN.** reply() was called with an unsupported status code or a 204 with a body. Supported status codes are a small explicit set; instead of an invalid response the client gets 500.
+**EN.** reply() was called with an unsupported status code or a 204 with a body, or reply_as() with an invalid content type. Supported status codes are a small explicit set and a content type cannot add a header; instead of an invalid response the client gets 500.
 
-*Fix:* Use 200, 201, 204, 400, 403, 404, 405, 409, 413, 422, 429, 500 or 503.
+*Fix:* Use 200, 201, 204, 400, 403, 404, 405, 409, 413, 422, 429, 500 or 503, and a content type of 1-256 printable ASCII characters with no space at either end.
 
-**TR — Yanıt kuralı ihlali.** reply() desteklenmeyen bir durum koduyla veya gövdeli 204 ile çağrıldı. Desteklenen durum kodları sınırlı ve açıktır; geçersiz yanıt yerine istemci 500 alır.
+**TR — Yanıt kuralı ihlali.** reply() desteklenmeyen bir durum koduyla, gövdeli 204 ile veya reply_as() geçersiz bir içerik türüyle çağrıldı. Desteklenen durum kodları sınırlı ve açıktır ve içerik türü başlık ekleyemez; geçersiz yanıt yerine istemci 500 alır.
 
-*Düzeltme:* 200, 201, 204, 400, 403, 404, 405, 409, 413, 422, 429, 500 veya 503 kullanın.
+*Düzeltme:* 200, 201, 204, 400, 403, 404, 405, 409, 413, 422, 429, 500 veya 503 kullanın; içerik türü 1-256 yazdırılabilir ASCII karakter olsun, iki ucunda boşluk olmasın.
 
 ```ks
 server.reply(404, "not found") or return

@@ -1,11 +1,12 @@
 """The multi-request loopback server in native binaries (gates G4 and G2).
 
 The worker cannot create sockets, so the broker owns the listener and the one
-pending connection. ``accept()`` and ``reply()`` are requests on the broker
-channel; the broker ports ``serve_knowhere_v1`` exactly: the loopback bind
-rule, the strict HTTP/1.x request grammar of ``serve_loopback_exchange_v1``,
-the request, response, connection and deadline budgets, the Knowhere rule
-(one request per connection, answered once) and every Error text.
+pending connection. ``accept()``, ``reply()`` and ``reply_as()`` are requests
+on the broker channel; the broker ports ``serve_knowhere_v1`` exactly: the
+loopback bind rule, the strict HTTP/1.x request grammar of
+``serve_loopback_exchange_v1``, the request, response, connection and deadline
+budgets, the Knowhere rule (one request per connection, answered once), the
+content type rule and every Error text.
 """
 
 from __future__ import annotations
@@ -36,6 +37,8 @@ def serve_runtime() -> str:
         status_prefix=_go(status_prefix),
         status_suffix=_go(status_suffix),
         empty_body=_go(_serve.EMPTY_BODY_MESSAGE),
+        content_type=_go(_serve.CONTENT_TYPE_MESSAGE),
+        plain_text=_go(_serve.PLAIN_TEXT),
         max_header=_serve._exchange._MAX_HEADER_BYTES,
         min_connections=_authority._MIN_CONNECTIONS,
         max_connections=_authority._MAX_CONNECTIONS,
@@ -171,6 +174,17 @@ func _ksServeAccept(receiver any) any {{
 }}
 
 func _ksServeReply(receiver any, status any, body any) any {{
+	return _ksServeRespond(receiver, status, {plain_text}, body)
+}}
+
+func _ksServeReplyAs(receiver any, status any, contentType any, body any) any {{
+	// A content type that is not a String is refused like an invalid one,
+	// as under ks run; the broker checks it.
+	kind, _ := contentType.(string)
+	return _ksServeRespond(receiver, status, kind, body)
+}}
+
+func _ksServeRespond(receiver any, status any, contentType string, body any) any {{
 	code, ok := status.(int64)
 	if !ok {{
 		_ksAbort("KS5002", "ServeCaps.reply status drifted")
@@ -184,7 +198,7 @@ func _ksServeReply(receiver any, status any, body any) any {{
 	default:
 		_ksAbort("KS5002", "ServeCaps.reply body drifted")
 	}}
-	done, answer := _ksAsk("serve_reply", _ksServeScopeOf(receiver), strconv.FormatInt(code, 10), kind, payload)
+	done, answer := _ksAsk("serve_reply", _ksServeScopeOf(receiver), strconv.FormatInt(code, 10), contentType, kind, payload)
 	runtime.KeepAlive(receiver)
 	if !done {{
 		return _ksError{{message: answer[0]}}
@@ -357,9 +371,9 @@ func _ksServeListen(scope *_ksServeScope) error {{
 	return nil
 }}
 
-func _ksServeWire(status int64, body string) string {{
+func _ksServeWire(status int64, contentType string, body string) string {{
 	return "HTTP/1.1 " + strconv.FormatInt(status, 10) + " " + _ksReasons[status] + "\r\n" +
-		"Content-Type: text/plain; charset=utf-8\r\n" +
+		"Content-Type: " + contentType + "\r\n" +
 		"Content-Length: " + strconv.Itoa(len(body)) + "\r\n" +
 		"Connection: close\r\n\r\n" + body
 }}
@@ -375,7 +389,7 @@ func _ksServeClose(conn net.Conn, status int64, deadline time.Time) {{
 			}}
 		}}
 		conn.SetWriteDeadline(time.Now().Add(remaining))
-		io.WriteString(conn, _ksServeWire(status, _ksReasons[status]))
+		io.WriteString(conn, _ksServeWire(status, {plain_text}, _ksReasons[status]))
 	}}
 	conn.Close()
 }}
@@ -651,7 +665,7 @@ func _ksServeAcceptBroker(scope *_ksServeScope, retry bool) []string {{
 	return append([]string{{"ok"}}, fields...)
 }}
 
-func _ksServeReplyBroker(scope *_ksServeScope, statusText string, kind string, body string) []string {{
+func _ksServeReplyBroker(scope *_ksServeScope, statusText string, contentType string, kind string, body string) []string {{
 	if scope.pending == nil {{
 		return []string{{"err", {no_pending}}}
 	}}
@@ -662,6 +676,10 @@ func _ksServeReplyBroker(scope *_ksServeScope, statusText string, kind string, b
 		_ksServeClose(conn, 500, time.Time{{}})
 		return []string{{"err", {status_prefix} + statusText + {status_suffix}}}
 	}}
+	if !_ksValidContentType(contentType) {{
+		_ksServeClose(conn, 500, time.Time{{}})
+		return []string{{"err", {content_type}}}
+	}}
 	if kind != "s" && kind != "b" {{
 		return nil
 	}}
@@ -669,7 +687,7 @@ func _ksServeReplyBroker(scope *_ksServeScope, statusText string, kind string, b
 		_ksServeClose(conn, 500, time.Time{{}})
 		return []string{{"err", {empty_body}}}
 	}}
-	wire := _ksServeWire(status, body)
+	wire := _ksServeWire(status, contentType, body)
 	if len(wire) > scope.responseBytes {{
 		_ksServeClose(conn, 500, time.Time{{}})
 		return []string{{"err", _ksProtocolError("response exceeds max_response_bytes")}}
@@ -691,7 +709,7 @@ func _ksBrokerServeServe(request []string) ([]string, bool) {{
 		answer := _ksServeOpenScope(request)
 		return answer, answer != nil
 	case (request[0] == "serve_accept" && len(request) == 3 && (request[2] == "retry" || request[2] == "final")) ||
-		(request[0] == "serve_reply" && len(request) == 5) || (request[0] == "serve_release" && len(request) == 2):
+		(request[0] == "serve_reply" && len(request) == 6) || (request[0] == "serve_release" && len(request) == 2):
 		index, err := strconv.Atoi(request[1])
 		// A released server is never addressed again.
 		if err != nil || index < 1 || index >= len(_ksServeScopes) || _ksServeScopes[index] == nil {{
@@ -703,7 +721,7 @@ func _ksBrokerServeServe(request []string) ([]string, bool) {{
 		case "serve_accept":
 			answer = _ksServeAcceptBroker(scope, request[2] == "retry")
 		case "serve_reply":
-			answer = _ksServeReplyBroker(scope, request[2], request[3], request[4])
+			answer = _ksServeReplyBroker(scope, request[2], request[3], request[4], request[5])
 		default:
 			// serve_knowhere_v1: a dropped server's sockets close, the
 			// listener first (_Server's slot order); an unanswered client

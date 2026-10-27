@@ -212,6 +212,7 @@ _NATIVE_CAPABILITY_CALLS = {
     ("ServeRoot", "allow"): ("_ksServeAllow", 5),
     ("ServeCaps", "accept"): ("_ksServeAccept", 0),
     ("ServeCaps", "reply"): ("_ksServeReply", 2),
+    ("ServeCaps", "reply_as"): ("_ksServeReplyAs", 3),
 }
 _ADMITTED_INSTRUCTIONS = (
     MirConst,

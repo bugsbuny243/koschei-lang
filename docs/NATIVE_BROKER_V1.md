@@ -42,7 +42,7 @@ user ──▶ broker (holds the environment, the cwd, the right to open files)
    fails with `ENOSYS`, so callers fall back to `clone`. Every other call fails with
    `EPERM`; a foreign architecture or the x32 ABI kills the worker.
 3. Every `DiskReadCaps` and `DiskCaps` operation, every `EnvCaps.get`,
-   every `NetCaps.get`/`post` and every `ServeCaps.accept`/`reply` is a request on the
+   every `NetCaps.get`/`post` and every `ServeCaps.accept`/`reply`/`reply_as` is a request on the
    socket; the broker answers with the value or the Error text. A malformed
    request ends the conversation and the worker stops.
 4. The broker exits with the worker's status.

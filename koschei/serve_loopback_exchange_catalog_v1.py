@@ -65,12 +65,13 @@ def install_serve_loopback_exchange_catalog_v1() -> None:
                     security_sensitive=True,
                     note=(
                         "Multi-request loopback server (serve_knowhere_v1): every budget is "
-                        "enforced under ks run and tested with real clients; native builds "
-                        "refuse it with KS4004 until the native capability broker (G2), so "
-                        "the operation stays reserved."
+                        "enforced under ks run and in native binaries through the capability "
+                        "broker, tested with real clients; reply_as names the response "
+                        "content type. The operation stays reserved like the rest of the "
+                        "family."
                     ),
                 )
-                for name in ("accept", "reply")
+                for name in ("accept", "reply", "reply_as")
             ),
         ),
     )

@@ -28,6 +28,7 @@ build such a program. Disk writes and the network stay closed (``KS4004``).
 
 from __future__ import annotations
 
+from . import net_v1
 from .interpreter import DISK_ERRNO_NAMES, NOT_REGULAR_FILE
 from .value_budget_v1 import BYTES_MESSAGE, LIST_MESSAGE, MAX_LIST_ITEMS, MAX_STRING_BYTES, STRING_MESSAGE
 
@@ -181,6 +182,7 @@ def broker_runtime() -> str:
         list_name=_go(LIST_NAME_PREFIX),
         env_missing=_go(ENV_MISSING_PREFIX),
         env_not_text=_go(ENV_NOT_TEXT_PREFIX),
+        max_content_type=net_v1.CONTENT_TYPE_MAX_BYTES,
     )
 
 
@@ -190,6 +192,19 @@ _BROKER_RUNTIME = r'''
 // ---- native capability broker (native_broker_v1) ----------------------
 
 const _ksBrokerMaxField = {max_bytes} + 1
+
+// net_v1.valid_content_type, for NetCaps.post and ServeCaps.reply_as.
+func _ksValidContentType(text string) bool {{
+	if len(text) == 0 || len(text) > {max_content_type} || text[0] == ' ' || text[len(text)-1] == ' ' {{
+		return false
+	}}
+	for index := 0; index < len(text); index++ {{
+		if text[index] < 0x20 || text[index] > 0x7e {{
+			return false
+		}}
+	}}
+	return true
+}}
 
 var _ksErrnoNames = map[syscall.Errno]string{{
 {errnos}
