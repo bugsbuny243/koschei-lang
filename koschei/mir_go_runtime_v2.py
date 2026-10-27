@@ -1064,12 +1064,24 @@ func _ksTypeName(value any) string {
 	case _ksUnit:
 		return "Void"
 	case _ksEnumValue:
-		if item.owner == "Option" || item.owner == "Result" {
+		if item.owner == "Option" {
 			inner := "_"
 			if item.hasPayload {
 				inner = _ksTypeName(item.payload)
 			}
-			return item.owner + "<" + inner + ">"
+			return "Option<" + inner + ">"
+		}
+		if item.owner == "Result" {
+			// The payload fills only its own parameter: Ok(1) is
+			// Result<Int, _> and Err(e) is Result<_, Error>, so an Ok and an
+			// Err of one Result type bind the same type parameter.
+			okType, errType := "_", "_"
+			if item.hasPayload && item.variant == "Ok" {
+				okType = _ksTypeName(item.payload)
+			} else if item.hasPayload {
+				errType = _ksTypeName(item.payload)
+			}
+			return "Result<" + okType + ", " + errType + ">"
 		}
 		if len(item.typeArgs) > 0 {
 			return item.owner + "<" + strings.Join(item.typeArgs, ", ") + ">"

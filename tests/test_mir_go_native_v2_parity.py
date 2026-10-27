@@ -402,6 +402,28 @@ fn main() {
 """
 
 
+RESULT_EVIDENCE = """
+fn same<T>(a: T, b: T) -> Bool {
+    return true
+}
+
+fn count<T>(items: List<T>) -> Int {
+    return items.length()
+}
+
+fn main() {
+    let a: Result<Int, Error> = Ok(1)
+    let b: Result<Int, Error> = Err(Error("no"))
+    println(same(a, b))
+    println(same(b, a))
+    let c: Option<Int> = Some(1)
+    let d: Option<Int> = None()
+    println(same(c, d))
+    let results: List<Result<Int, Error>> = [a, b, Ok(2)]
+    println(count(results))
+}
+"""
+
 @unittest.skipUnless(GO, "Go toolchain is required for native parity")
 class MirGoNativeParityTests(unittest.TestCase):
     def workspace(self, files: dict[str, str]) -> Path:
@@ -482,6 +504,12 @@ class MirGoNativeParityTests(unittest.TestCase):
         native_ok, native_out, native_err = self.native_run(path)
         self.assertEqual(self.ks_run(path), (native_ok, native_out), native_err)
         self.assertEqual(native_out, "B(1)\n42\nB([1, 2])\nEmpty\n0\nB(B(2.5))\n")
+
+    def test_ok_and_err_of_one_result_type_bind_one_parameter(self) -> None:
+        # Ok(1) is Result<Int, _> and Err(e) is Result<_, Error>: each payload
+        # fills only its own position, so both bind T = Result<Int, Error>.
+        output = self.assert_parity(RESULT_EVIDENCE)
+        self.assertEqual(output, "true\ntrue\ntrue\n3\n")
 
     def test_prefix_and_suffix_work_on_long_and_self_overlapping_text(self) -> None:
         # No recursion bounded by the suffix length and no split of the whole
