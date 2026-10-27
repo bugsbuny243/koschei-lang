@@ -12,9 +12,10 @@ A capability-bearing binding may have at most one live owner.
 Ordinary method invocation **borrows** the binding:
 
 ```ks
-fn inspect(authority: NetCaps) {
+fn inspect(authority: NetCaps) -> Int or Error {
     let first = authority.get("https://example.com/a") or return
     let second = authority.get("https://example.com/b") or return
+    return first.status() + second.status()
 }
 ```
 
