@@ -445,6 +445,192 @@ CATALOG: dict[str, Diagnostic] = {
             "Error(\"Int sınırı aşıldı\")"
         ),
     ),
+    "KS3502": Diagnostic(
+        code="KS3502",
+        title="Bellek bütçesi aşıldı",
+        summary=(
+            "Bir işlem bütçeden büyük bir String veya List üretecekti ya da host "
+            "belleği programın değerlerine yetmedi."
+        ),
+        why=(
+            "Sınırsız büyüyen değerler hizmeti durdurur ve yarım kalmış durum "
+            "bırakabilir. Bir String en fazla 16777216 bayt UTF-8, bir List en "
+            "fazla 1048576 öğe olabilir; aşan işlem her çalıştırıcıda aynı "
+            "noktada KS3502 hata DEĞERİ üretir."
+        ),
+        fix=(
+            "Değeri parçalara bölün, girdinin boyutunu işlemeden önce sınırlayın "
+            "veya sonucu 'or' ile açıkça ele alın."
+        ),
+        example='let birlesik = parca + parca or Error("metin çok büyük")',
+    ),
+    "KS2407": Diagnostic(
+        code="KS2407",
+        title="Yetki değerleri karşılaştırılamaz",
+        summary="İki yetki jetonu (veya onları taşıyan struct'lar) == ya da != ile karşılaştırıldı.",
+        why=(
+            "Bu karşılaştırma host'a iki jetonun aynı nesne olup olmadığını sorardı. "
+            "Yetkinin kimliği Koschei'de tanımlı bir değer değildir ve çalıştırıcılar "
+            "bu soruya farklı cevap verirdi."
+        ),
+        fix="Jetonları değil, onlarla okuduğunuz değerleri karşılaştırın.",
+        example="let same = first.read_text() or \"\"",
+    ),
+    "KS2430": Diagnostic(
+        code="KS2430",
+        title="Program girdisi bütçesi statik değil",
+        summary="caps.input.allow() tek bir statik Int literal bayt bütçesi bekler.",
+        why=(
+            "Programın en fazla ne kadar standart girdi okuyabileceği kaynakta "
+            "görünmelidir; 'ks caps' bu sınırı derleme zamanında gösterir."
+        ),
+        fix="Bütçeyi bir sayı olarak yazın.",
+        example="let input = caps.input.allow(65536)",
+    ),
+    "KS2431": Diagnostic(
+        code="KS2431",
+        title="Program girdisi bütçesi aralık dışında",
+        summary="Standart girdi bütçesi 1 ile 16777216 bayt arasında olmalıdır.",
+        why=(
+            "Okunan metin bir String olur; String en fazla 16777216 bayt UTF-8 "
+            "olabilir. Sıfır veya negatif bütçe hiçbir anlam taşımaz."
+        ),
+        fix="1 ile 16777216 arasında bir bütçe seçin.",
+        example="let input = caps.input.allow(1048576)",
+    ),
+    "KS2440": Diagnostic(
+        code="KS2440",
+        title="Saat çözünürlüğü statik değil",
+        summary="caps.clock.allow() tek bir statik Int literal milisaniye çözünürlüğü bekler.",
+        why="Programın zamanı ne kadar ince görebileceği kaynakta ve 'ks caps' çıktısında görünmelidir.",
+        fix="Çözünürlüğü bir sayı olarak yazın.",
+        example="let clock = caps.clock.allow(1000)",
+    ),
+    "KS2441": Diagnostic(
+        code="KS2441",
+        title="Saat çözünürlüğü aralık dışında",
+        summary="Saat çözünürlüğü 1 ile 86400000 ms (bir gün) arasında olmalıdır.",
+        why="Kaba bir saat daha zayıf bir yetkidir; sıfır veya negatif çözünürlük anlam taşımaz.",
+        fix="1 ile 86400000 arasında bir çözünürlük seçin.",
+        example="let clock = caps.clock.allow(1)",
+    ),
+    "KS2450": Diagnostic(
+        code="KS2450",
+        title="Rastgele sayı bütçesi statik değil",
+        summary="caps.random.allow() tek bir statik Int literal bayt bütçesi bekler.",
+        why="Bir yetkinin en fazla ne kadar rastgelelik üretebileceği kaynakta görünmelidir.",
+        fix="Bütçeyi bir sayı olarak yazın.",
+        example="let random = caps.random.allow(64)",
+    ),
+    "KS2451": Diagnostic(
+        code="KS2451",
+        title="Rastgele sayı bütçesi aralık dışında",
+        summary="Rastgele sayı bütçesi 1 ile 1048576 bayt arasında olmalıdır.",
+        why="Bütçe bir yetkinin toplam üretebileceği rastgeleliği sınırlar.",
+        fix="1 ile 1048576 arasında bir bütçe seçin.",
+        example="let random = caps.random.allow(1024)",
+    ),
+    "KS3450": Diagnostic(
+        code="KS3450",
+        title="Rastgele sayı bütçesi tükendi",
+        summary="Yetki, caps.random.allow() ile verilen bayt bütçesini tüketti.",
+        why=(
+            "Bir kütüphaneye verilen rastgele sayı yetkisi sınırsız değildir. Bütçeyi aşan "
+            "çağrı hiçbir şey üretmez ve bütçeden düşmez; bir hata değeri döner."
+        ),
+        fix="Bütçeyi büyütün veya daha az rastgelelik isteyin.",
+        example="let token = random.hex(16) or return",
+    ),
+    "KS3451": Diagnostic(
+        code="KS3451",
+        title="Rastgele sayı isteği geçersiz",
+        summary="random.hex() 1..1024 bayt, random.below() en az 1 olan bir üst sınır bekler.",
+        why="Geçersiz istek bir hata değeridir; rastgelelik üretilmez ve bütçeden düşülmez.",
+        fix="Argümanı izin verilen aralıkta verin.",
+        example="let die = random.below(6) or return",
+    ),
+    "KS3460": Diagnostic(
+        code="KS3460",
+        title="Bytes aralığı geçersiz",
+        summary="Bytes.get() veya Bytes.slice() değerin uzunluğu dışında bir konum istedi.",
+        why="Aralık dışı erişim sessizce kırpılmaz veya başka bir bayt döndürmez; bir hata değeridir.",
+        fix="Konumu 0 ile length() arasında tutun veya hatayı 'or' ile ele alın.",
+        example="let first = data.get(0) or -1",
+    ),
+    "KS3461": Diagnostic(
+        code="KS3461",
+        title="Hex metni geçersiz",
+        summary="bytes_from_hex() çift uzunlukta ve yalnızca 0-9, a-f, A-F içeren bir metin bekler.",
+        why="Boşluk, ayraç veya tek kalan hane sessizce atlanmaz; anlamı belirsiz girdi hata değeridir.",
+        fix="Hex metnini ayraçsız ve çift uzunlukta verin.",
+        example='let key = bytes_from_hex("00ff") or return',
+    ),
+    "KS3470": Diagnostic(
+        code="KS3470",
+        title='Yanıtlanmamış istek',
+        summary='accept() önceki istek yanıtlanmadan çağrıldı veya reply() bekleyen istek yokken çağrıldı.',
+        why='Knowhere yasası: hiçbir şey istekten isteğe taşınmaz. Yanıtlanmamış istek 500 ile kapatılır; yanıt asla başka bir istemciye gitmez.',
+        fix='Her accept() için tam bir reply() çağırın.',
+        example='server.reply(200, "ok") or return',
+    ),
+    "KS3471": Diagnostic(
+        code="KS3471",
+        title='Sunucu istek bütçesi tükendi',
+        summary='Yetki, caps.serve.allow() ile verilen max_connections kadar isteği kabul etti.',
+        why='Bir sunucu yetkisinin ömrü boyunca kabul edebileceği istek sayısı sınırlıdır.',
+        fix='Bütçeyi büyütün veya yeni bir yetkiyle devam edin.',
+        example='let server = caps.serve.allow("127.0.0.1:8080", 1000, 65536, 65536, 5000)',
+    ),
+    "KS3472": Diagnostic(
+        code="KS3472",
+        title='Yanıt kuralı ihlali',
+        summary='reply() desteklenmeyen bir durum koduyla veya gövdeli 204 ile çağrıldı.',
+        why='Desteklenen durum kodları sınırlı ve açıktır; geçersiz yanıt yerine istemci 500 alır.',
+        fix='200, 201, 204, 400, 403, 404, 405, 409, 413, 422, 429, 500 veya 503 kullanın.',
+        example='server.reply(404, "not found") or return',
+    ),
+    "KS3473": Diagnostic(
+        code="KS3473",
+        title='İstek başlığı yok',
+        summary='request.header(name) istekte bulunmayan bir başlık istedi.',
+        why='Eksik başlık sessiz bir boş metin değil, açık bir hata değeridir.',
+        fix="Hatayı 'or' ile varsayılan değere çevirin.",
+        example='let name = request.header("X-Name") or "stranger"',
+    ),
+    "KS3430": Diagnostic(
+        code="KS3430",
+        title="Program girdisi metin değil",
+        summary="Bir program argümanı veya standart girdi geçerli UTF-8 metin değil.",
+        why=(
+            "String metin taşır. UTF-8 olmayan baytları sessizce değiştirmek, "
+            "programın gördüğü değeri gönderilenden farklı kılar; Koschei bunun "
+            "yerine 'or' ile yakalanabilen bir hata değeri verir."
+        ),
+        fix="Girdiyi UTF-8 olarak gönderin veya hatayı 'or' ile ele alın.",
+        example='let text = input.read_text() or return',
+    ),
+    "KS3431": Diagnostic(
+        code="KS3431",
+        title="Standart girdi bütçesi aşıldı",
+        summary="Standart girdi, caps.input.allow() ile verilen bayt bütçesinden büyük.",
+        why=(
+            "Sınırsız girdi belleği tüketir. Bütçeyi aşan girdi bir hata değeri "
+            "olur; okunan baytlar geri verilmez."
+        ),
+        fix="Bütçeyi büyütün veya girdiyi parçalara bölün.",
+        example="let input = caps.input.allow(1048576)",
+    ),
+    "KS3432": Diagnostic(
+        code="KS3432",
+        title="Standart girdi okunamadı",
+        summary="Standart girdi okunurken işletim sistemi hata verdi.",
+        why=(
+            "Okunamayan girdi sessiz bir boş metin değil, açık bir hata değeridir. "
+            "Kapalı bir standart girdi ise boş girdi sayılır."
+        ),
+        fix="Programa okunabilir bir standart girdi verin veya hatayı 'or' ile ele alın.",
+        example='let text = input.read_text() or ""',
+    ),
     "KS3402": Diagnostic(
         code="KS3402",
         title="Kapsam dışı erişim",
@@ -751,6 +937,120 @@ ENGLISH_TEXT: dict[str, tuple[str, str, str, str]] = {
         "An integer operation exceeded the signed 64-bit Int range.",
         "Overflow behavior is checked so interpreter and native targets cannot diverge.",
         "Keep the calculation within Int bounds or redesign it around smaller values.",
+    ),
+    "KS3502": (
+        "Memory budget exceeded",
+        "An operation would have built a String or List over the budget, or the host ran out of memory for the program's values.",
+        "Values that grow without bound stop a service and can leave half-built state behind. A String holds at most 16777216 bytes of UTF-8 and a List at most 1048576 items; an operation over the budget produces a KS3502 Error value at the same point in every executor.",
+        "Split the value, bound the input size before processing it, or handle the result explicitly with 'or'.",
+    ),
+    "KS2407": (
+        "Capability values cannot be compared",
+        "Two authority tokens, or structs carrying them, were compared with == or !=.",
+        "The comparison asked the host whether two tokens were the same object. Authority identity is not a Koschei value, and executors answered that question differently.",
+        "Compare the values you read through the tokens, not the tokens.",
+    ),
+    "KS2430": (
+        "Program input budget is not static",
+        "caps.input.allow() expects a single static Int literal byte budget.",
+        "How much standard input a program may read must be visible in the source; 'ks caps' shows the bound at compile time.",
+        "Write the budget as a number.",
+    ),
+    "KS2431": (
+        "Program input budget is out of range",
+        "The standard input budget must be between 1 and 16777216 bytes.",
+        "The text read becomes a String, and a String holds at most 16777216 bytes of UTF-8. A zero or negative budget means nothing.",
+        "Choose a budget between 1 and 16777216.",
+    ),
+    "KS2440": (
+        "Clock resolution is not static",
+        "caps.clock.allow() expects a single static Int literal resolution in milliseconds.",
+        "How finely a program may see time must be visible in the source and in 'ks caps'.",
+        "Write the resolution as a number.",
+    ),
+    "KS2441": (
+        "Clock resolution is out of range",
+        "The clock resolution must be between 1 and 86400000 ms (one day).",
+        "A coarse clock is weaker authority; a zero or negative resolution means nothing.",
+        "Choose a resolution between 1 and 86400000.",
+    ),
+    "KS2450": (
+        "Random budget is not static",
+        "caps.random.allow() expects a single static Int literal byte budget.",
+        "How much randomness a token may ever produce must be visible in the source.",
+        "Write the budget as a number.",
+    ),
+    "KS2451": (
+        "Random budget is out of range",
+        "The random budget must be between 1 and 1048576 bytes.",
+        "The budget bounds the total randomness one token can produce.",
+        "Choose a budget between 1 and 1048576.",
+    ),
+    "KS3450": (
+        "Random budget exhausted",
+        "The token used up the byte budget given to caps.random.allow().",
+        "Randomness handed to a library is not unlimited. A call over the budget produces nothing and is not charged; it returns an Error value.",
+        "Raise the budget or ask for less randomness.",
+    ),
+    "KS3451": (
+        "Invalid random request",
+        "random.hex() expects 1..1024 bytes and random.below() an upper bound of at least 1.",
+        "An invalid request is an Error value; nothing is drawn and nothing is charged.",
+        "Pass an argument in the allowed range.",
+    ),
+    "KS3460": (
+        "Bytes range is invalid",
+        "Bytes.get() or Bytes.slice() asked for a position outside the value's length.",
+        "An out-of-range access is not silently clipped and returns no other byte; it is an Error value.",
+        "Keep positions between 0 and length() or handle the error with 'or'.",
+    ),
+    "KS3461": (
+        "Hex text is invalid",
+        "bytes_from_hex() expects text of even length containing only 0-9, a-f and A-F.",
+        "Spaces, separators or a dangling digit are not silently skipped; ambiguous input is an Error value.",
+        "Pass hex without separators and of even length.",
+    ),
+    "KS3470": (
+        'Unanswered request',
+        'accept() was called before the previous request was answered, or reply() with no request pending.',
+        'The Knowhere law: nothing carries over between requests. An unanswered request is closed with 500; a reply never reaches another client.',
+        'Call reply() exactly once for every accept().',
+    ),
+    "KS3471": (
+        'Server request budget exhausted',
+        'The token has accepted max_connections requests, the number given to caps.serve.allow().',
+        'The number of requests one server token may accept in its lifetime is bounded.',
+        'Raise the budget or continue with a new token.',
+    ),
+    "KS3472": (
+        'Response rule violated',
+        'reply() was called with an unsupported status code or a 204 with a body.',
+        'Supported status codes are a small explicit set; instead of an invalid response the client gets 500.',
+        'Use 200, 201, 204, 400, 403, 404, 405, 409, 413, 422, 429, 500 or 503.',
+    ),
+    "KS3473": (
+        'Request header missing',
+        'request.header(name) asked for a header the request does not carry.',
+        'A missing header is an explicit Error value, not a silent empty text.',
+        "Turn the error into a default with 'or'.",
+    ),
+    "KS3430": (
+        "Program input is not text",
+        "A program argument or the standard input is not valid UTF-8 text.",
+        "A String carries text. Silently replacing bytes that are not UTF-8 would make the value the program sees differ from what was sent; Koschei returns an Error value that 'or' can handle instead.",
+        "Send the input as UTF-8 or handle the error with 'or'.",
+    ),
+    "KS3431": (
+        "Standard input budget exceeded",
+        "The standard input is larger than the byte budget given to caps.input.allow().",
+        "Unbounded input exhausts memory. Input over the budget becomes an Error value; the bytes read are not given back.",
+        "Raise the budget or split the input.",
+    ),
+    "KS3432": (
+        "Standard input could not be read",
+        "The operating system reported an error while reading the standard input.",
+        "Input that cannot be read is an explicit Error value, not a silent empty text. A closed standard input reads as empty.",
+        "Give the program a readable standard input or handle the error with 'or'.",
     ),
     "KS4001": (
         "Native target cannot safely implement the capability contract",

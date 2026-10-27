@@ -66,20 +66,26 @@ def _parse_loopback_bind(raw: str) -> tuple[str, int] | None:
         if not separator or not host:
             return None
 
-    try:
-        port = int(port_text, 10)
-    except ValueError:
+    # ASCII digits only and an exact loopback rule, so the bind never depends
+    # on the host's int() or ipaddress version (the native broker ports this).
+    if not port_text or len(port_text) > 5 or not port_text.isascii() or not port_text.isdigit():
         return None
+    port = int(port_text, 10)
     if not 1 <= port <= 65535:
         return None
 
     if host.lower() == "localhost":
         return host.lower(), port
+    if "%" in host:
+        return None
     try:
         address = ipaddress.ip_address(host)
     except ValueError:
         return None
-    if not address.is_loopback:
+    if address.version == 6:
+        if address != ipaddress.IPv6Address("::1"):
+            return None
+    elif not address.is_loopback:
         return None
     return address.compressed, port
 
@@ -217,10 +223,13 @@ class ServeRoot(_runtime._NarrowedCapability):
 
 
 class ServeCaps(_runtime._NarrowedCapability):
-    __slots__ = ("policy",)
+    # `_server` holds the open listener and the one pending request of the
+    # multi-request server (serve_knowhere_v1); None until accept() is used.
+    __slots__ = ("policy", "_server")
 
     def __init__(self, policy: ServePolicy) -> None:
         self.policy = policy
+        self._server = None
 
 
 class SystemCaps:

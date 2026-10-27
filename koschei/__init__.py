@@ -305,4 +305,33 @@ from .canonical_mir_budget_runtime_v1 import install_canonical_mir_budget_runtim
 
 install_canonical_mir_budget_runtime_v1()
 
+from .secure_hash_v1 import install_secure_hash_v1
+
+install_secure_hash_v1()
+
+from .program_input_v1 import install_program_input_v1
+
+install_program_input_v1()
+
+from .clock_random_v1 import install_clock_random_v1
+
+install_clock_random_v1()
+
+from .bytes_v1 import install_bytes_v1
+
+install_bytes_v1()
+
+from .serve_knowhere_v1 import install_serve_knowhere_v1
+
+install_serve_knowhere_v1()
+
+from .capability_opacity_v1 import install_capability_opacity_v1
+
+install_capability_opacity_v1()
+
+# Last: the value budget wraps the final behavior of every executor.
+from .value_budget_v1 import install_value_budget_v1
+
+install_value_budget_v1()
+
 __all__ = ["main"]

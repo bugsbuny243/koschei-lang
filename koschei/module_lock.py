@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+from .core_library_v1 import is_core_library_path
 from .modules import ModuleGraph, check_graph, load_graph
 
 _SCHEMA = "koschei.module-lock.v1"
@@ -244,6 +245,12 @@ def _relative_module_path(root: Path, path: Path) -> str:
     try:
         relative = resolved.relative_to(root)
     except ValueError as error:
+        if is_core_library_path(resolved):
+            raise ModuleLockError(
+                "KS1902",
+                "Core Library modules cannot be locked yet: lock v1 covers "
+                f"project-local files only ({resolved.name})",
+            ) from error
         raise ModuleLockError(
             "KS1902",
             f"module escapes the project root: {resolved}",

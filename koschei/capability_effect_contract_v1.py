@@ -24,6 +24,9 @@ PROCESS_EXEC = "process.exec"
 PERSIST_READ = "persist.read"
 PERSIST_WRITE = "persist.write"
 SERVE_EXCHANGE = "serve.exchange"
+INPUT_READ = "input.read"
+CLOCK_READ = "clock.read"
+RANDOM_READ = "random.read"
 
 POWER_DOMAIN_IDENTITY = "identity"
 POWER_DOMAIN_AUTHORITY = "authority"
@@ -53,6 +56,9 @@ _SYSTEM_CAPABILITY_MEMBERS = {
     "process": "ProcessRoot",
     "persist": "PersistRoot",
     "serve": "ServeRoot",
+    "input": "InputRoot",
+    "clock": "ClockRoot",
+    "random": "RandomRoot",
 }
 
 _ROOT_NARROWING = {
@@ -62,16 +68,22 @@ _ROOT_NARROWING = {
     "ProcessRoot": {"allow": "ProcessCaps"},
     "PersistRoot": {"allow": "PersistCaps"},
     "ServeRoot": {"allow": "ServeCaps"},
+    "InputRoot": {"allow": "InputCaps"},
+    "ClockRoot": {"allow": "ClockCaps"},
+    "RandomRoot": {"allow": "RandomCaps"},
 }
 
 _NARROWED_OPERATIONS = {
     "NetCaps": {"get", "post", "put", "delete", "request"},
-    "DiskCaps": {"read", "write", "delete", "list", "read_file", "write_file"},
-    "DiskReadCaps": {"read", "list", "read_file"},
+    "DiskCaps": {"read", "write", "delete", "list", "read_file", "write_file", "read_bytes"},
+    "DiskReadCaps": {"read", "list", "read_file", "read_bytes"},
     "EnvCaps": {"get"},
     "ProcessCaps": {"run", "spawn"},
     "PersistCaps": {"load", "commit"},
-    "ServeCaps": {"exchange"},
+    "ServeCaps": {"exchange", "accept", "reply"},
+    "InputCaps": {"args", "read_text", "read_bytes"},
+    "ClockCaps": {"now_ms", "monotonic_ms"},
+    "RandomCaps": {"hex", "below", "bytes"},
 }
 
 _CAPABILITY_METHOD_EFFECTS = {
@@ -84,6 +96,9 @@ _CAPABILITY_METHOD_EFFECTS = {
     "ProcessRoot": {"allow": AUTHORITY_DERIVE},
     "PersistRoot": {"allow": AUTHORITY_DERIVE},
     "ServeRoot": {"allow": AUTHORITY_DERIVE},
+    "InputRoot": {"allow": AUTHORITY_DERIVE},
+    "ClockRoot": {"allow": AUTHORITY_DERIVE},
+    "RandomRoot": {"allow": AUTHORITY_DERIVE},
     "NetCaps": {
         "get": NET_IO,
         "post": NET_IO,
@@ -94,11 +109,13 @@ _CAPABILITY_METHOD_EFFECTS = {
     "DiskReadCaps": {
         "read": DISK_READ,
         "read_file": DISK_READ,
+        "read_bytes": DISK_READ,
         "list": DISK_READ,
     },
     "DiskCaps": {
         "read": DISK_READ,
         "read_file": DISK_READ,
+        "read_bytes": DISK_READ,
         "list": DISK_READ,
         "write": DISK_WRITE,
         "write_file": DISK_WRITE,
@@ -107,7 +124,10 @@ _CAPABILITY_METHOD_EFFECTS = {
     "EnvCaps": {"get": ENV_READ},
     "ProcessCaps": {"run": PROCESS_EXEC, "spawn": PROCESS_EXEC},
     "PersistCaps": {"load": PERSIST_READ, "commit": PERSIST_WRITE},
-    "ServeCaps": {"exchange": SERVE_EXCHANGE},
+    "ServeCaps": {"exchange": SERVE_EXCHANGE, "accept": SERVE_EXCHANGE, "reply": SERVE_EXCHANGE},
+    "InputCaps": {"args": INPUT_READ, "read_text": INPUT_READ, "read_bytes": INPUT_READ},
+    "ClockCaps": {"now_ms": CLOCK_READ, "monotonic_ms": CLOCK_READ},
+    "RandomCaps": {"hex": RANDOM_READ, "below": RANDOM_READ, "bytes": RANDOM_READ},
 }
 
 # Power domains classify existing capability/effect semantics. They are not a
@@ -129,6 +149,16 @@ _CAPABILITY_POWER_DOMAINS = {
     "PersistCaps": POWER_DOMAIN_CONTINUITY,
     "ServeRoot": POWER_DOMAIN_NETWORK,
     "ServeCaps": POWER_DOMAIN_NETWORK,
+    # Program input is data the invoker hands over (argv, stdin); it reaches
+    # no resource of its own.
+    "InputRoot": POWER_DOMAIN_DATA,
+    "InputCaps": POWER_DOMAIN_DATA,
+    # Reading the clock or the operating system's random source reaches no
+    # resource either; both are data the host hands over.
+    "ClockRoot": POWER_DOMAIN_DATA,
+    "ClockCaps": POWER_DOMAIN_DATA,
+    "RandomRoot": POWER_DOMAIN_DATA,
+    "RandomCaps": POWER_DOMAIN_DATA,
 }
 
 _EFFECT_POWER_DOMAINS = {
@@ -140,6 +170,9 @@ _EFFECT_POWER_DOMAINS = {
     PERSIST_READ: POWER_DOMAIN_CONTINUITY,
     PERSIST_WRITE: POWER_DOMAIN_CONTINUITY,
     SERVE_EXCHANGE: POWER_DOMAIN_NETWORK,
+    INPUT_READ: POWER_DOMAIN_DATA,
+    CLOCK_READ: POWER_DOMAIN_DATA,
+    RANDOM_READ: POWER_DOMAIN_DATA,
 }
 
 SYSTEM_CAPABILITY_MEMBERS: Mapping[str, str] = MappingProxyType(

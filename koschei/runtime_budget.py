@@ -9,6 +9,8 @@ explicit step and call-depth budgets.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 import sys
 from typing import Any, Literal
@@ -34,6 +36,26 @@ from .mir_scope_safety import inspect_mir_scope_safety
 DEFAULT_MAX_STEPS = 1_000_000
 HARD_MAX_CALL_DEPTH = Interpreter.MAX_CALL_DEPTH
 RuntimeExecutionMode = Literal["mir_native_v1", "ast_compat_v1"]
+
+# One Koschei call costs up to ~15 host frames in the most wrapped executor
+# lane. The host limit must sit above the language limit so a program fails
+# with KS3105/KS3602 at depth HARD_MAX_CALL_DEPTH, never with a host
+# RecursionError far below it.
+_HOST_FRAMES_PER_KOSCHEI_CALL = 32
+_HOST_RECURSION_LIMIT = HARD_MAX_CALL_DEPTH * _HOST_FRAMES_PER_KOSCHEI_CALL + 1000
+
+
+@contextmanager
+def host_recursion_headroom() -> Iterator[None]:
+    """Let the host interpreter reach Koschei's own call-depth limit."""
+
+    previous = sys.getrecursionlimit()
+    if previous < _HOST_RECURSION_LIMIT:
+        sys.setrecursionlimit(_HOST_RECURSION_LIMIT)
+    try:
+        yield
+    finally:
+        sys.setrecursionlimit(previous)
 
 
 @dataclass(slots=True)
@@ -153,6 +175,19 @@ def run_mir_with_budget(
 ) -> int:
     """Execute a sealed MIR graph under explicit resource budgets."""
 
+    with host_recursion_headroom():
+        return _run_mir_with_budget(
+            mir_graph, argv, max_steps=max_steps, max_call_depth=max_call_depth
+        )
+
+
+def _run_mir_with_budget(
+    mir_graph,
+    argv: list[str] | None,
+    *,
+    max_steps: int,
+    max_call_depth: int,
+) -> int:
     mir_graph.assert_sealed()
     budget = RuntimeBudget(max_steps=max_steps, max_call_depth=max_call_depth)
     mode = runtime_execution_mode(mir_graph)

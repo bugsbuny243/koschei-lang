@@ -48,21 +48,29 @@ def install_serve_loopback_exchange_catalog_v1() -> None:
                     "The operation remains reserved until real CI executes those gates."
                 ),
             ),
-            _catalog.Operation(
-                name="listen",
-                status="planned",
-                capability="ServeCaps",
-                required_budgets=(
-                    "connections",
-                    "request_bytes",
-                    "response_bytes",
-                    "deadline",
-                ),
-                security_sensitive=True,
-                note=(
-                    "Long-running handler/listener API remains planned; callback lifetime "
-                    "and structured cancellation are not implied by exchange v1."
-                ),
+            *(
+                _catalog.Operation(
+                    name=name,
+                    status="reserved",
+                    interpreter=False,
+                    native_go=False,
+                    capability="ServeCaps",
+                    required_budgets=(
+                        "connections",
+                        "request_bytes",
+                        "response_bytes",
+                        "deadline",
+                    ),
+                    enforced_budgets=(),
+                    security_sensitive=True,
+                    note=(
+                        "Multi-request loopback server (serve_knowhere_v1): every budget is "
+                        "enforced under ks run and tested with real clients; native builds "
+                        "refuse it with KS4004 until the native capability broker (G2), so "
+                        "the operation stays reserved."
+                    ),
+                )
+                for name in ("accept", "reply")
             ),
         ),
     )

@@ -4,16 +4,20 @@ from __future__ import annotations
 
 import errno
 import os
+import re
+import secrets
 import stat
 import sys
+import base64
+import http.client
 import urllib.error
 import urllib.request
 from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import unquote
 
 from .ast_nodes import (
     AssignmentExpression,
@@ -45,6 +49,15 @@ from .ast_nodes import (
     UnaryExpression,
     WhileStatement,
 )
+from . import net_v1
+from .value_budget_v1 import (
+    BYTES_MESSAGE as VALUE_BUDGET_BYTES_MESSAGE,
+    LIST_MESSAGE as VALUE_BUDGET_LIST_MESSAGE,
+    MAX_LIST_ITEMS,
+    MAX_STRING_BYTES,
+    STRING_MESSAGE as VALUE_BUDGET_STRING_MESSAGE,
+    fits_texts,
+)
 from .http_response_budget_v1 import (
     HttpResponseBudgetV1Error,
     read_bounded_response_body_v1,
@@ -63,6 +76,26 @@ class KsError:
 
     def __str__(self) -> str:
         return self.message
+
+
+class Bytes(bytes):
+    """A Koschei ``Bytes`` value: immutable bytes, rendered as ``Bytes(hex)``.
+
+    A subclass so that a byte sequence never passes for a host ``bytes`` by
+    accident; concatenation keeps the type.
+    """
+
+    __slots__ = ()
+
+    def __add__(self, other):
+        if not isinstance(other, Bytes):
+            return NotImplemented
+        return Bytes(bytes.__add__(self, other))
+
+    def __str__(self) -> str:
+        return f"Bytes({self.hex()})"
+
+    __repr__ = __str__
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,7 +136,10 @@ class EnumValue:
     enum_name: str
     variant: str
     payload: Any = _NO_PAYLOAD
-    type_arguments: tuple[str, ...] = ()
+    # Runtime type evidence only. Equal values built at different sites carry
+    # different evidence (`()`, `("Int",)`, `("T",)`), so it must not take part
+    # in Koschei `==`: `[1].get(0) == Some(1)` is true.
+    type_arguments: tuple[str, ...] = field(default=(), compare=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -165,6 +201,34 @@ def ks_to_string(value: Any) -> str:
     return str(value)
 
 
+_INT_TEXT = re.compile(r"[+-]?[0-9]+")
+
+
+def ks_parse_int(text: str) -> int | None:
+    """Koschei's ``String.to_int`` rule, identical in every executor.
+
+    Surrounding whitespace is trimmed; then an optional sign and ASCII digits
+    only, within the signed 64-bit range. Python's ``int()`` also accepted
+    ``1_000`` and non-ASCII digits and returned values beyond Int; those are
+    host details, not Koschei numbers.
+    """
+
+    trimmed = text.strip()
+    if not _INT_TEXT.fullmatch(trimmed):
+        return None
+    # More than 19 significant digits is outside Int. Converting only the
+    # significant digits also keeps Python's int() digit limit (4,300, which
+    # counts leading zeros) from raising.
+    negative = trimmed.startswith("-")
+    digits = trimmed.lstrip("+-").lstrip("0") or "0"
+    if len(digits) > 19:
+        return None
+    value = -int(digits) if negative else int(digits)
+    if not -(1 << 63) <= value < (1 << 63):
+        return None
+    return value
+
+
 def _ks_repr(value: Any) -> str:
     """Kapsayıcı içindeki değerler: metinler tırnaklı gösterilir."""
     if isinstance(value, str):
@@ -201,11 +265,17 @@ class _Environment:
     def define(self, name: str, value: Any, is_mutable: bool) -> None:
         self.scopes[-1][name] = _Cell(value, is_mutable)
 
-    def resolve(self, name: str, location: SourceLocation) -> _Cell:
+    def lookup(self, name: str) -> _Cell | None:
         for scope in reversed(self.scopes):
             cell = scope.get(name)
             if cell is not None:
                 return cell
+        return None
+
+    def resolve(self, name: str, location: SourceLocation) -> _Cell:
+        cell = self.lookup(name)
+        if cell is not None:
+            return cell
         raise KoscheiRuntimeError(
             "KS3101", f"Tanımsız isim: '{name}'.", location
         )
@@ -304,6 +374,60 @@ def _is_symlink_at(name: str, dir_fd: int) -> bool:
         return False
 
 
+# Disk errors name the errno symbolically and repeat the program's own path,
+# so the text is the same in every executor and on every host (the strerror
+# wording and the host's view of the path are not). Native binaries use the
+# same table (native_broker_v1).
+DISK_ERRNO_NAMES = {
+    errno.EPERM: "EPERM",
+    errno.ENOENT: "ENOENT",
+    errno.EIO: "EIO",
+    errno.EBADF: "EBADF",
+    errno.EACCES: "EACCES",
+    errno.EBUSY: "EBUSY",
+    errno.EEXIST: "EEXIST",
+    errno.ENOTDIR: "ENOTDIR",
+    errno.EISDIR: "EISDIR",
+    errno.EINVAL: "EINVAL",
+    errno.ENFILE: "ENFILE",
+    errno.EMFILE: "EMFILE",
+    errno.EFBIG: "EFBIG",
+    errno.ENOSPC: "ENOSPC",
+    errno.EROFS: "EROFS",
+    errno.ENAMETOOLONG: "ENAMETOOLONG",
+    errno.ENOTEMPTY: "ENOTEMPTY",
+    errno.EXDEV: "EXDEV",
+}
+
+
+def os_error_text(error: OSError, path: str) -> str:
+    code = error.errno
+    return f"{DISK_ERRNO_NAMES.get(code, f'errno {code}')}: {path}"
+
+
+def _utf8_name(name: str) -> str | None:
+    """A host-decoded name as Koschei text, or None when it is not UTF-8."""
+
+    try:
+        return os.fsencode(name).decode("utf-8")
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        return None
+
+
+def _listing(names: list[str], path: str) -> list[str] | KsError:
+    """Directory entries sorted by code point; every name must be UTF-8 text."""
+
+    if len(names) > MAX_LIST_ITEMS:
+        return KsError(VALUE_BUDGET_LIST_MESSAGE)
+    texts = []
+    for name in names:
+        text = _utf8_name(name)
+        if text is None:
+            return KsError(f"Dizin listelenemedi: geçerli UTF-8 olmayan dosya adı: {path}")
+        texts.append(text)
+    return sorted(texts)
+
+
 class _SymlinkDenied(Exception):
     """Kapsam içinde bir yol bileşeni sembolik bağ çıktı.
 
@@ -320,6 +444,7 @@ _DIR_FD_SUPPORTED = (
     os.open in os.supports_dir_fd
     and os.stat in os.supports_dir_fd
     and os.unlink in os.supports_dir_fd
+    and os.rename in os.supports_dir_fd
     and os.rmdir in os.supports_dir_fd
     and os.listdir in os.supports_fd
     and hasattr(os, "O_NOFOLLOW")
@@ -383,6 +508,9 @@ class _DiskCapability(_NarrowedCapability):
         self._root_fd = None
 
     def _relative_parts(self, path: str) -> list[str] | None:
+        if "\x00" in path:
+            # No file name contains NUL; the host would raise instead.
+            return None
         target = os.path.abspath(os.fspath(path))
         try:
             relative = os.path.relpath(target, self.prefix)
@@ -457,6 +585,21 @@ class _DiskCapability(_NarrowedCapability):
         return self.read_file(path)
 
     def read_file(self, path: str) -> str | KsError:
+        # The file's bytes as text: no newline translation, the byte budget
+        # first, then strict UTF-8.
+        data = self.read_bytes(path)
+        if isinstance(data, KsError):
+            if data.message == VALUE_BUDGET_BYTES_MESSAGE:
+                return KsError(VALUE_BUDGET_STRING_MESSAGE)
+            return data
+        try:
+            return bytes(data).decode("utf-8")
+        except UnicodeDecodeError:
+            # A String holds text. Bytes that are not UTF-8 are an Error value
+            # the program can handle, not a host exception that ends it.
+            return KsError(f"Dosya okunamadı: geçerli UTF-8 metin değil: {path}")
+
+    def read_bytes(self, path: str) -> "Bytes | KsError":
         if not _DIR_FD_SUPPORTED:
             return self._unsupported()
         parts = self._relative_parts(path)
@@ -466,19 +609,19 @@ class _DiskCapability(_NarrowedCapability):
             return KsError(f"Dosya okunamadı: kapsam kökü bir dizindir: {path}")
         try:
             with self._parent_fd(parts) as parent:
-                handle = os.open(
-                    parts[-1],
-                    os.O_RDONLY | os.O_NOFOLLOW,
-                    dir_fd=parent,
-                )
-                with os.fdopen(handle, "r", encoding="utf-8") as stream:
-                    return stream.read()
+                handle = os.open(parts[-1], os.O_RDONLY | os.O_NOFOLLOW, dir_fd=parent)
+                with os.fdopen(handle, "rb") as stream:
+                    # One byte past the budget proves a file is too large.
+                    data = stream.read(MAX_STRING_BYTES + 1)
+            if len(data) > MAX_STRING_BYTES:
+                return KsError(VALUE_BUDGET_BYTES_MESSAGE)
+            return Bytes(data)
         except _SymlinkDenied as denied:
             return self._symlink_denied(denied.name)
         except OSError as error:
             if error.errno in (errno.ELOOP, errno.EMLINK):
                 return self._symlink_denied(parts[-1])
-            return KsError(f"Dosya okunamadı: {error}")
+            return KsError(f"Dosya okunamadı: {os_error_text(error, path)}")
 
     def list(self, path: str) -> list[str] | KsError:
         if not _DIR_FD_SUPPORTED:
@@ -489,7 +632,7 @@ class _DiskCapability(_NarrowedCapability):
         try:
             if not parts:
                 with self._scope_root_fd() as root:
-                    return sorted(os.listdir(root))
+                    return _listing(os.listdir(root), path)
             with self._parent_fd(parts) as parent:
                 handle = os.open(
                     parts[-1],
@@ -497,7 +640,7 @@ class _DiskCapability(_NarrowedCapability):
                     dir_fd=parent,
                 )
                 try:
-                    return sorted(os.listdir(handle))
+                    return _listing(os.listdir(handle), path)
                 finally:
                     os.close(handle)
         except _SymlinkDenied as denied:
@@ -505,7 +648,7 @@ class _DiskCapability(_NarrowedCapability):
         except OSError as error:
             if error.errno in (errno.ELOOP, errno.EMLINK):
                 return self._symlink_denied(parts[-1])
-            return KsError(f"Dizin listelenemedi: {error}")
+            return KsError(f"Dizin listelenemedi: {os_error_text(error, path)}")
 
 
 class DiskReadCaps(_DiskCapability):
@@ -532,6 +675,59 @@ class DiskReadCaps(_DiskCapability):
         return self._scope_then_deny(path, "delete")
 
 
+def _replace_file_atomically(parent: int, name: str, text: str) -> None:
+    """Nidavellir: replace ``name`` with ``text`` completely or not at all.
+
+    The text goes to a fresh file beside the target, reaches the disk with
+    ``fsync`` and then takes the target's place in one ``rename``. A write that
+    fails or is cut short (no space, a killed process, a crash) leaves the
+    previous file untouched and no half-written file for a later reader. The
+    directory is synced so the rename itself survives a crash.
+
+    The rename replaces the directory entry: a symlink at ``name`` is refused
+    as before, and a hard link to another file is never written through.
+    """
+
+    mode = 0o600
+    try:
+        current = os.stat(name, dir_fd=parent, follow_symlinks=False)
+    except FileNotFoundError:
+        current = None
+    if current is not None:
+        if stat.S_ISLNK(current.st_mode):
+            raise _SymlinkDenied(name)
+        if stat.S_ISDIR(current.st_mode):
+            raise IsADirectoryError(errno.EISDIR, os.strerror(errno.EISDIR), name)
+        mode = stat.S_IMODE(current.st_mode)
+    temporary = f".ks-write-{secrets.token_hex(16)}.tmp"
+    handle = os.open(
+        temporary,
+        os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+        0o600,
+        dir_fd=parent,
+    )
+    try:
+        with os.fdopen(handle, "w", encoding="utf-8") as stream:
+            stream.write(text)
+            stream.flush()
+            if mode != 0o600:
+                os.fchmod(stream.fileno(), mode)
+            os.fsync(stream.fileno())
+        os.rename(temporary, name, src_dir_fd=parent, dst_dir_fd=parent)
+    except BaseException:
+        try:
+            os.unlink(temporary, dir_fd=parent)
+        except OSError:
+            pass
+        raise
+    try:
+        os.fsync(parent)
+    except OSError as error:
+        # Some filesystems cannot sync a directory; the rename is complete.
+        if error.errno not in (errno.EINVAL, errno.ENOTSUP, errno.EOPNOTSUPP):
+            raise
+
+
 class DiskCaps(_DiskCapability):
     __slots__ = ()
 
@@ -548,20 +744,13 @@ class DiskCaps(_DiskCapability):
             return KsError(f"Dosya yazılamadı: kapsam kökü bir dizindir: {path}")
         try:
             with self._parent_fd(parts) as parent:
-                handle = os.open(
-                    parts[-1],
-                    os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW,
-                    0o600,
-                    dir_fd=parent,
-                )
-                with os.fdopen(handle, "w", encoding="utf-8") as stream:
-                    stream.write(str(value))
+                _replace_file_atomically(parent, parts[-1], str(value))
         except _SymlinkDenied as denied:
             return self._symlink_denied(denied.name)
         except OSError as error:
             if error.errno in (errno.ELOOP, errno.EMLINK):
                 return self._symlink_denied(parts[-1])
-            return KsError(f"Dosya yazılamadı: {error}")
+            return KsError(f"Dosya yazılamadı: {os_error_text(error, path)}")
         return KsUnit
 
     def delete(self, path: str) -> _KsUnit | KsError:
@@ -587,40 +776,36 @@ class DiskCaps(_DiskCapability):
         except OSError as error:
             if error.errno in (errno.ELOOP, errno.EMLINK):
                 return self._symlink_denied(parts[-1])
-            return KsError(f"Dosya silinemedi: {error}")
+            return KsError(f"Dosya silinemedi: {os_error_text(error, path)}")
         return KsUnit
 
 
-class _ScopedRedirectHandler(urllib.request.HTTPRedirectHandler):
-    max_redirections = 5
+class _CanonicalProxyHandler(urllib.request.ProxyHandler):
+    """A proxy chosen by net_v1.proxy_for; the host library's own bypass
+    rules (``no_proxy``) are not consulted a second time."""
 
-    def __init__(self, origin_key: tuple[str, str, int | None] | None) -> None:
-        self.origin_key = origin_key
-
-    def redirect_request(self, request, fp, code, msg, headers, newurl):
-        if self.origin_key is None or _origin_key(newurl) != self.origin_key:
-            raise _ScopedRedirectDenied(newurl)
-        return super().redirect_request(request, fp, code, msg, headers, newurl)
-
-
-class _ScopedRedirectDenied(Exception):
-    def __init__(self, target: str) -> None:
-        self.target = target
-        super().__init__(target)
+    def proxy_open(self, req, proxy, type):
+        orig_type = req.type
+        proxy_type, user, password, hostport = urllib.request._parse_proxy(proxy)
+        if proxy_type is None:
+            proxy_type = orig_type
+        if user and password:
+            credentials = f"{unquote(user)}:{unquote(password)}".encode()
+            req.add_header("Proxy-authorization", "Basic " + base64.b64encode(credentials).decode("ascii"))
+        req.set_proxy(unquote(hostport), proxy_type)
+        return None
 
 
-def _build_http_only_opener(
-    origin_key: tuple[str, str, int | None] | None,
-) -> urllib.request.OpenerDirector:
+def _build_http_only_opener(proxy: str | None) -> urllib.request.OpenerDirector:
+    # No redirect handler and no error processor: net_v1 follows redirects
+    # itself and every final status is a Response.
     opener = urllib.request.OpenerDirector()
+    proxies = {"http": proxy, "https": proxy} if proxy is not None else {}
     for handler in (
-        urllib.request.ProxyHandler(),
+        _CanonicalProxyHandler(proxies),
         urllib.request.UnknownHandler(),
         urllib.request.HTTPHandler(),
-        urllib.request.HTTPDefaultErrorHandler(),
-        _ScopedRedirectHandler(origin_key),
         urllib.request.HTTPSHandler(),
-        urllib.request.HTTPErrorProcessor(),
     ):
         opener.add_handler(handler)
     return opener
@@ -631,38 +816,67 @@ class NetCaps(_NarrowedCapability):
 
     def __init__(self, origin: str) -> None:
         self.origin = origin
-        self.origin_key = _origin_key(origin)
-        self._opener = _build_http_only_opener(self.origin_key)
+        parsed = net_v1.parse_url(origin, ALLOWED_NET_SCHEMES)
+        self.origin_key = parsed.origin if parsed is not None else None
+        proxy = net_v1.proxy_for(parsed) if parsed is not None else None
+        # Only plain HTTP proxies are supported; any other proxy fails every
+        # request instead of being used differently by each host library.
+        if proxy is not None and not proxy.lower().startswith("http://"):
+            self._opener = None
+        else:
+            self._opener = _build_http_only_opener(proxy)
 
     def _allows(self, url: str) -> bool:
-        return self.origin_key is not None and _origin_key(url) == self.origin_key
+        parsed = net_v1.parse_url(url, ALLOWED_NET_SCHEMES)
+        return self.origin_key is not None and parsed is not None and parsed.origin == self.origin_key
 
     def get(self, url: str) -> Response | KsError:
-        if not self._allows(url):
-            return KsError(
-                f"KS3402: Ağ origin kapsamı dışında erişim reddedildi: {url}"
+        current = net_v1.parse_url(url, ALLOWED_NET_SCHEMES)
+        if self.origin_key is None or current is None or current.origin != self.origin_key:
+            return KsError(net_v1.OUTSIDE_PREFIX + str(url))
+        if self._opener is None:
+            return KsError(net_v1.failure("EIO", url))
+        redirects = 0
+        while True:
+            request = urllib.request.Request(
+                current.text(),
+                method="GET",
+                headers={
+                    "User-Agent": net_v1.USER_AGENT,
+                    "Accept-Encoding": "identity",
+                    "Connection": "close",
+                },
             )
-        try:
-            request = urllib.request.Request(url, method="GET")
-            with self._opener.open(request, timeout=10) as response:
-                charset = response.headers.get_content_charset() or "utf-8"
+            try:
+                with self._opener.open(request, timeout=net_v1.TIMEOUT_SECONDS) as response:
+                    status = int(response.status)
+                    location = None
+                    if status in net_v1.REDIRECT_STATUSES:
+                        location = response.headers.get("Location") or None
+                    if location is None:
+                        try:
+                            payload = read_bounded_response_body_v1(response)
+                        except HttpResponseBudgetV1Error as error:
+                            return KsError(str(error))
+                        # http.client returns a short body silently when
+                        # the peer closes early; a missing tail is a failure.
+                        missing = getattr(response, "length", None)
+                        if isinstance(missing, int) and missing > 0:
+                            raise ConnectionResetError("response body ended early")
+            except (OSError, http.client.HTTPException, ValueError) as error:
+                return KsError(net_v1.failure(net_v1.failure_code(error), url))
+            if location is None:
                 try:
-                    payload = read_bounded_response_body_v1(response)
-                except HttpResponseBudgetV1Error as error:
-                    return KsError(str(error))
-                body = payload.decode(charset, errors="replace")
-                return Response(body, int(response.status))
-        except _ScopedRedirectDenied as denied:
-            return KsError(
-                f"KS3402: Ağ yönlendirmesi kapsam dışına çıktı: {denied.target}"
-            )
-        except (OSError, urllib.error.URLError) as error:
-            if isinstance(getattr(error, "reason", None), _ScopedRedirectDenied):
-                return KsError(
-                    "KS3402: Ağ yönlendirmesi kapsam dışına çıktı: "
-                    f"{error.reason.target}"
-                )
-            return KsError(f"API isteği başarısız: {error}")
+                    return Response(payload.decode("utf-8"), status)
+                except UnicodeDecodeError:
+                    return KsError(net_v1.NOT_TEXT_PREFIX + url)
+            target = net_v1.resolve_location(current, location, ALLOWED_NET_SCHEMES)
+            if target is None or target.origin != self.origin_key:
+                return KsError(net_v1.redirect_refused(target.text() if target is not None else location))
+            redirects += 1
+            if redirects > net_v1.MAX_REDIRECTS:
+                return KsError(f"{net_v1.FAILED_PREFIX}{net_v1.TOO_MANY_REDIRECTS}: {url}")
+            current = target
 
     @staticmethod
     def post(*arguments: Any) -> KsError:
@@ -691,7 +905,10 @@ class EnvCaps(_NarrowedCapability):
         value = os.environ.get(self.name)
         if value is None:
             return KsError(f"Ortam değişkeni bulunamadı: {self.name}")
-        return value
+        text = _utf8_name(value)
+        if text is None:
+            return KsError(f"Ortam değişkeni geçerli UTF-8 metin değil: {self.name}")
+        return text
 
 
 class ProcessCaps(_NarrowedCapability):
@@ -751,21 +968,9 @@ def _contains_capability(value: Any, seen: set[int] | None = None) -> bool:
     return False
 
 
-def _origin_key(url: str) -> tuple[str, str, int | None] | None:
-    try:
-        parsed = urlsplit(url)
-        if not parsed.scheme or not parsed.hostname:
-            return None
-        scheme = parsed.scheme.lower()
-        if scheme not in ALLOWED_NET_SCHEMES:
-            return None
-        host = parsed.hostname.lower()
-        port = parsed.port
-        if port is None:
-            port = 443 if scheme == "https" else 80 if scheme == "http" else None
-        return scheme, host, port
-    except ValueError:
-        return None
+def _origin_key(url: str) -> tuple[str, str, int] | None:
+    parsed = net_v1.parse_url(url, ALLOWED_NET_SCHEMES)
+    return parsed.origin if parsed is not None else None
 
 
 class Interpreter:
@@ -1036,6 +1241,11 @@ class Interpreter:
             return value
 
         if isinstance(expression, Identifier):
+            # A local binding shadows a function of the same name, as in
+            # sealed MIR (`let digest = ...` inside the `secure` module).
+            cell = self.environment.lookup(expression.name)
+            if cell is not None:
+                return cell.value
             if expression.name in self.functions:
                 return self.functions[expression.name]
             constructor = self.constructors.get(expression.name)
@@ -1048,9 +1258,12 @@ class Interpreter:
             return self.environment.resolve(expression.name, expression.location).value
 
         if isinstance(expression, InterpolatedString):
-            return "".join(
+            text = "".join(
                 ks_to_string(self._evaluate(part)) for part in expression.parts
             )
+            if not fits_texts([text]):
+                return KsError(VALUE_BUDGET_STRING_MESSAGE)
+            return text
 
         if isinstance(expression, ListLiteral):
             items: list[Any] = []
@@ -1278,7 +1491,12 @@ class Interpreter:
                 return self._int_overflow(operator)
             return result
         if operator == "+":
-            return left + right
+            result = left + right
+            if type(result) is str and not fits_texts([result]):
+                return KsError(VALUE_BUDGET_STRING_MESSAGE)
+            if isinstance(result, bytes) and len(result) > MAX_STRING_BYTES:
+                return KsError(VALUE_BUDGET_BYTES_MESSAGE)
+            return result
         if operator == "-":
             return left - right
         if operator == "*":
@@ -1362,8 +1580,8 @@ class Interpreter:
             EnvRoot: {"allow"},
             ProcessRoot: {"allow"},
             NetCaps: {"get", "post", "put", "delete", "request"},
-            DiskCaps: {"read", "read_file", "write", "write_file", "list", "delete"},
-            DiskReadCaps: {"read", "read_file", "write", "write_file", "list", "delete"},
+            DiskCaps: {"read", "read_file", "read_bytes", "write", "write_file", "list", "delete"},
+            DiskReadCaps: {"read", "read_file", "read_bytes", "write", "write_file", "list", "delete"},
             EnvCaps: {"get"},
             ProcessCaps: {"run", "spawn"},
             Response: {"text", "status"},
@@ -1465,10 +1683,10 @@ class Interpreter:
                 return len(receiver)
             if name == "to_int":
                 self._require_arity(name, arguments, 0, member.location)
-                try:
-                    return int(receiver.strip())
-                except ValueError:
+                parsed = ks_parse_int(receiver)
+                if parsed is None:
                     return KsError(f"Int dönüşümü başarısız: {receiver}")
+                return parsed
             if name == "to_float":
                 self._require_arity(name, arguments, 0, member.location)
                 try:
@@ -1838,6 +2056,8 @@ class Interpreter:
             return True
         if base == "String" and isinstance(value, str):
             return True
+        if base == "Bytes" and isinstance(value, Bytes):
+            return True
         if base == "Bool" and isinstance(value, bool):
             return True
         if base == "Int" and isinstance(value, int) and not isinstance(value, bool):
@@ -1919,6 +2139,7 @@ class Interpreter:
             (ProcessCaps, "ProcessCaps"),
             (Response, "Response"),
             (bool, "Bool"),
+            (Bytes, "Bytes"),
             (str, "String"),
             (float, "Float"),
             (int, "Int"),

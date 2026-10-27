@@ -271,7 +271,7 @@ CATALOG: tuple[Family, ...] = (
                 security_sensitive=True,
                 note="File content is not yet bounded identically in both bootstraps.",
             )
-            for name in ("read", "read_file", "write", "write_file")
+            for name in ("read", "read_file", "read_bytes", "write", "write_file")
         ),
         _reserved(
             "list",
@@ -331,10 +331,20 @@ CATALOG: tuple[Family, ...] = (
     ),
     _family(
         "clock",
-        "planned",
+        "partial",
         "v1",
         "Monotonic time, wall time and explicit deadlines.",
-        _planned("now", capability="ClockCaps", security_sensitive=True),
+        _supported("allow", capability="ClockRoot"),
+        _supported(
+            "now_ms",
+            capability="ClockCaps",
+            note="Wall-clock milliseconds since 1970-01-01 UTC, rounded down to the allow() resolution.",
+        ),
+        _supported(
+            "monotonic_ms",
+            capability="ClockCaps",
+            note="Milliseconds since an arbitrary start, never decreasing, rounded down to the resolution.",
+        ),
         _planned("deadline", capability="ClockCaps", security_sensitive=True),
     ),
     _family(
@@ -351,17 +361,47 @@ CATALOG: tuple[Family, ...] = (
     ),
     _family(
         "secure",
-        "planned",
+        "partial",
         "v1",
         "Hashing, signatures and constant-time verification.",
-        _planned("hash", required=("input_bytes", "work")),
+        _supported(
+            "hash",
+            required=("input_bytes", "work"),
+            enforced=("input_bytes",),
+            note=(
+                "Core Library `secure.hash`/`secure.digest` over the kernel `sha3_256`, "
+                "which delegates to audited host SHA3-256 (Python hashlib, Go crypto/sha3). "
+                "Input is bounded to 1 MiB of UTF-8, which also bounds the work of one "
+                "call; there is no separate work meter."
+            ),
+        ),
         _planned("verify", required=("input_bytes", "work")),
     ),
     _family(
         "random",
-        "planned",
+        "partial",
         "v1",
         "Cryptographically secure randomness only.",
+        _supported("allow", capability="RandomRoot"),
+        _supported(
+            "hex",
+            capability="RandomCaps",
+            required=("output_bytes",),
+            enforced=("output_bytes",),
+            security_sensitive=True,
+            note=(
+                "1..1024 bytes from the operating system's secure source (Python secrets, Go "
+                "crypto/rand) as lowercase hex, charged against the allow() byte budget."
+            ),
+        ),
+        _supported(
+            "below",
+            capability="RandomCaps",
+            required=("output_bytes",),
+            enforced=("output_bytes",),
+            security_sensitive=True,
+            note="Uniform Int in 0..bound-1 from the same source; costs eight budget bytes.",
+        ),
         _planned(
             "bytes",
             capability="RandomCaps",
@@ -595,6 +635,37 @@ CATALOG: tuple[Family, ...] = (
             enforced=("bytes",),
             security_sensitive=True,
             note="Atomic replace and fsync semantics exist; deadline parity remains reserved.",
+        ),
+    ),
+    _family(
+        "input",
+        "partial",
+        "v1",
+        "Command-line arguments and standard input as data handed over by the invoker, "
+        "behind one byte-budgeted capability.",
+        _supported("allow", capability="InputRoot"),
+        _supported(
+            "args",
+            capability="InputCaps",
+            required=("items",),
+            enforced=("items",),
+            security_sensitive=True,
+            note=(
+                "Arguments after the program path; a non-UTF-8 argument is a KS3430 Error "
+                "value. Item count is bounded by the List value budget."
+            ),
+        ),
+        _supported(
+            "read_text",
+            capability="InputCaps",
+            required=("bytes",),
+            enforced=("bytes",),
+            security_sensitive=True,
+            note=(
+                "Reads standard input to its end; more than the allow() byte budget is "
+                "KS3431 and non-UTF-8 bytes are KS3430. Interactive line reading is not "
+                "part of v1."
+            ),
         ),
     ),
 )

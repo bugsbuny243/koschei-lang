@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .ast_nodes import SourceLocation
-from .interpreter import EnumValue, KsError, KsUnit, KoscheiRuntimeError, SystemCaps
+from .interpreter import EnumValue, Interpreter, KsError, KsUnit, KoscheiRuntimeError, SystemCaps
 from .mir import MIR_VERSION, MirGraph, MirIntegrityError
 from .mir_container_staging_v1 import (
     MirIsRuntimeError,
@@ -41,6 +41,12 @@ from .mir_or_return_normalization_v1 import MirFallibleIsSuccess, MirFalliblePay
 from .mir_variant_runtime_v1 import MirVariantRuntimeError, split_canonical_variant_v1, variant_is_v1, variant_payload_v1
 from .runtime_primitive_facade_v1 import KoscheiFunctionRefV1, RuntimePrimitiveFacadeV1
 from .semantic import INT_MAX, INT_MIN
+from .value_budget_v1 import (
+    BYTES_MESSAGE as VALUE_BUDGET_BYTES_MESSAGE,
+    MAX_STRING_BYTES as VALUE_BUDGET_MAX_BYTES,
+    STRING_MESSAGE as VALUE_BUDGET_STRING_MESSAGE,
+    fits_texts,
+)
 from .type_system import GenericType, NamedType, alternatives, render_type
 
 
@@ -244,7 +250,7 @@ class MirExecutorV1:
                 values[instruction.target] = not bool(operand)
             elif instruction.operator == "-":
                 if type(operand) is int and operand == INT_MIN:
-                    values[instruction.target] = KsError("KS3501: Int taşması: 'unary -'")
+                    values[instruction.target] = Interpreter._int_overflow("unary -")
                 else:
                     values[instruction.target] = -operand
             else:
@@ -260,7 +266,8 @@ class MirExecutorV1:
             values[instruction.target] = items
             return
         if isinstance(instruction, MirInterpolate):
-            values[instruction.target] = "".join(self.primitives.to_string(values[item]) for item in instruction.items)
+            text = "".join(self.primitives.to_string(values[item]) for item in instruction.items)
+            values[instruction.target] = text if fits_texts([text]) else KsError(VALUE_BUDGET_STRING_MESSAGE)
             return
         if isinstance(instruction, MirIsRuntimeError):
             values[instruction.target] = self.primitives.is_runtime_error(values[instruction.source])
@@ -469,9 +476,15 @@ class MirExecutorV1:
         if op in {"+", "-", "*"} and type(left) is int and type(right) is int:
             result = left + right if op == "+" else left - right if op == "-" else left * right
             if not INT_MIN <= result <= INT_MAX:
-                return KsError(f"KS3501: Int taşması: '{op}'")
+                return Interpreter._int_overflow(op)
             return result
-        if op == "+": return left + right
+        if op == "+":
+            result = left + right
+            if type(result) is str and not fits_texts([result]):
+                return KsError(VALUE_BUDGET_STRING_MESSAGE)
+            if isinstance(result, bytes) and len(result) > VALUE_BUDGET_MAX_BYTES:
+                return KsError(VALUE_BUDGET_BYTES_MESSAGE)
+            return result
         if op == "-": return left - right
         if op == "*": return left * right
         if op == "/":
@@ -479,13 +492,16 @@ class MirExecutorV1:
                 return KsError("Sıfıra bölme")
             if type(left) is int and type(right) is int:
                 if left == INT_MIN and right == -1:
-                    return KsError("KS3501: Int taşması: '/'")
+                    return Interpreter._int_overflow("/")
                 quotient = abs(left) // abs(right)
                 return -quotient if (left < 0) != (right < 0) else quotient
             return left / right
         if op == "%" and type(left) is int and type(right) is int:
             if right == 0:
                 return KsError("Sıfıra bölme")
+            if left == INT_MIN and right == -1:
+                # Same checked-Int64 rule as the checked-AST interpreter.
+                return Interpreter._int_overflow("%")
             quotient = abs(left) // abs(right)
             if (left < 0) != (right < 0):
                 quotient = -quotient

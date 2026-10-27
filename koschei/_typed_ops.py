@@ -190,7 +190,7 @@ def _validate_pairs(
                 right_name = right_item.name if isinstance(right_item, NamedType) else ""
                 valid = left_name == right_name and (
                     left_name in {"Int", "Float"}
-                    or (left_name == "String" and operator == "+")
+                    or (left_name in {"String", "Bytes"} and operator == "+")
                 )
             if not valid:
                 raise SemanticError(

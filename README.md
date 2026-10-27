@@ -81,6 +81,10 @@ ks run .
 - **Capabilities narrow, never widen.** `caps.disk` is a root token that can only delegate; `caps.disk.allow(path)` produces a narrowed token that cannot re-widen (`KS2403`) and a root token cannot perform I/O directly (`KS2402`).
 - **No `null`.** Values that may be absent are `Option<T>` (`Some` / `None`).
 - **Errors are values.** `Result<T, E>` with a single `or` keyword in three forms: `or return`, `or default`, `or { block }`. An unhandled error value is a compile error (`KS1401`).
+- **Values are bounded.** A String holds at most 16 MiB of UTF-8 and a List at most 1,048,576 items; an operation over the bound produces a `KS3502` Error value at the same point in `ks run` and `ks build` ([Value Budget v1](docs/VALUE_BUDGET_V1.md)).
+- **Program input is a capability too.** `caps.input.allow(65536)` gives `args()` and a byte-bounded `read_text()` of standard input; `ks run app.ks a b` and the compiled `./app a b` return the same texts and the same Error values ([Program Input v1](docs/PROGRAM_INPUT_V1.md)).
+- **Time and randomness are capabilities.** `caps.clock.allow(1000)` reads a clock no finer than its resolution; `caps.random.allow(64)` draws at most 64 bytes from the operating system's secure source ([Clock and Random v1](docs/CLOCK_RANDOM_V1.md)).
+- **Learn it from tested docs.** The [language guide](docs/guide/LANGUAGE_GUIDE.en.md) runs every example in CI; [error codes](docs/reference/ERROR_CODES.md) and the [Core Library reference](docs/reference/CORE_LIBRARY.md) are generated from the toolchain; [`examples/apps`](examples/apps/README.md) holds three complete programs.
 - **Immutable by default.** Rebinding requires `let mut`.
 - **Every diagnostic is explainable.** 33 error codes with a bilingual catalog; `ks explain KS2401` prints the cause and a fix.
 
@@ -126,6 +130,8 @@ The `--deny` gate is designed for CI: a build fails if a dependency update silen
 ## Language features
 
 Implemented today: functions with typed parameters, inferred generic functions, generic structs and enums, `let` / `let mut`, structs, `List<T>`, immutable `Map<String, V>` (`get`/`set`/`keys`/`contains`), `for`-in, `if`/`else`/`while` with `Bool`-only conditions, enums with exhaustive `match`, real `Option<T>` / `Result<T, E>`, full expression interpolation (`"{items.length()}"`), a daily standard library (`String` `trim`/`split`/`join`, `List` `sort`/`filter`/`contains`), and a module system where `import risk` binds `risk.ks` next to the importing file — no manifest, no build script, no config.
+
+The Core Library is written in Koschei itself: `import text` and `import list` bind library modules shipped with the toolchain (`text.starts_with`, `text.replace`, `text.lines`, `list.first`, `list.reverse`, `list.slice`, …), checked and executed by the same pipeline as your own code. `import secure` adds domain-separated SHA3-256 digests from the audited host implementation, and the first library universe modules are Koschei too: the Marvel guardians `captain_marvel`, `hela`, `strange` and `wanda`. `ks run` executes the library and `ks build` compiles it from the same source; see [Core Library v1](docs/CORE_LIBRARY_V1.md) for the function list.
 
 ## Toolchain
 

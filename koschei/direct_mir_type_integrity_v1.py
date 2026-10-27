@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from . import mir_native_runtime as _mir
 from .data_language_v1 import DataValue
+from .interpreter import Interpreter
 from .semantic import INT_MAX, INT_MIN
 from .type_system import (
     GenericType,
@@ -136,9 +137,7 @@ def _binary(operator, left, right):
         else:
             result = left * right
         if not INT_MIN <= result <= INT_MAX:
-            return _mir._ErrorValue(
-                f"KS3501: Int overflow: '{operator}' exceeded signed 64-bit range"
-            )
+            return _mir._ErrorValue(_int_overflow_message(operator))
         return result
 
     return _ORIGINAL_BINARY(operator, left, right)
@@ -148,10 +147,13 @@ def _unary(operator, operand):
     if isinstance(operand, _mir._ErrorValue):
         return operand
     if operator == "-" and type(operand) is int and operand == INT_MIN:
-        return _mir._ErrorValue(
-            "KS3501: Int overflow: unary '-' exceeded signed 64-bit range"
-        )
+        return _mir._ErrorValue(_int_overflow_message("unary -"))
     return _ORIGINAL_UNARY(operator, operand)
+
+
+def _int_overflow_message(operation: str) -> str:
+    # One text for one error in every executor and in native binaries.
+    return Interpreter._int_overflow(operation).message
 
 
 def install_direct_mir_type_integrity_v1() -> None:

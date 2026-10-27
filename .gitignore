@@ -3,3 +3,7 @@ __pycache__/
 
 # Native acceptance scratch
 .native-test/
+
+# Packaging outputs: never tracked, so wheels build from the sources
+build/
+*.egg-info/

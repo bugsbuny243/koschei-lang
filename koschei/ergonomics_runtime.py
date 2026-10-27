@@ -74,7 +74,10 @@ def _evaluate(self, expression):
         if declaration is not None:
             field = next((x for x in declaration.fields if x.name == target.member), None)
             if field is not None and not self._runtime_matches_type(value, field.type_ref.names): self._raise_runtime_contract_error(f"'{cell.value.type_name}.{target.member}' alan ataması", field.type_ref.names, value, expression.location)
-        cell.value.fields[target.member] = value; return value
+        # Value semantics: rebind a copy and leave every other holder of the
+        # old struct value (an immutable binding, a List, a caller) unchanged.
+        current = cell.value
+        cell.value = runtime.StructValue(current.type_name, {**current.fields, target.member: value}, current.type_arguments); return value
     return _evaluate.original(self, expression)
 
 def _binary(self, expression):
