@@ -114,6 +114,7 @@ type _ksNetCaps struct {
 // Loopback server tokens (native_serve_v1); the listener lives in the broker.
 type _ksServeRoot struct{}
 
+// A pointer, so a collected token can release its listener (native_serve_v1).
 type _ksServeCaps struct {
 	scope string
 }
@@ -264,7 +265,7 @@ func _ksToString(value any) string {
 		return "<Response>"
 	case _ksServeRoot:
 		return "<ServeRoot>"
-	case _ksServeCaps:
+	case *_ksServeCaps:
 		return "<ServeCaps>"
 	case _ksHttpRequest:
 		return "HttpRequest(" + item.method + " " + item.path + ")"
@@ -1150,7 +1151,7 @@ func _ksTypeName(value any) string {
 		return "Response"
 	case _ksServeRoot:
 		return "ServeRoot"
-	case _ksServeCaps:
+	case *_ksServeCaps:
 		return "ServeCaps"
 	case _ksHttpRequest:
 		return "HttpRequest"
@@ -1359,7 +1360,7 @@ func _ksMatchPattern(value any, expected string, parameters map[string]bool, bin
 		return base == "Response"
 	case _ksServeRoot:
 		return base == "ServeRoot"
-	case _ksServeCaps:
+	case *_ksServeCaps:
 		return base == "ServeCaps"
 	case _ksHttpRequest:
 		return base == "HttpRequest"

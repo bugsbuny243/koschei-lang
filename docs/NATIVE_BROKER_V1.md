@@ -76,7 +76,8 @@ rules that do not depend on the host:
   descriptor once no token uses it, as `ks run` closes a dropped token's
   descriptor. Narrowing again to the same directory shares one scope; when
   scopes come within 32 of the descriptor limit, the worker collects before
-  the broker opens another.
+  the broker opens another. A dropped `ServeCaps` closes its listener and
+  pending connection the same way (`docs/SERVE_KNOWHERE_V1.md`).
 - `delete` removes a file, a symlink (not its target) or an empty directory;
   the scope root cannot be deleted. A token from `allow_read_only` cannot
   write or delete, in the broker as well as in the checker.

@@ -94,12 +94,23 @@ socket codes (`KS3411: listener failed: EADDRINUSE`), never host messages,
 in both executors. Header names are tokens, so `request.header()` folds ASCII
 letters only.
 
+A server lives as long as the program holds it, in both executors: a MIR
+slot holding the `ServeCaps` keeps its listener open. When the program drops
+it, `ks run` closes the listener and an unanswered connection at once; in a
+binary the worker's garbage collector finalizes the token and the broker
+closes both. If a later server's bind is taken by an earlier server of the
+same program, the worker collects first and asks again once, so a server
+opened anew each round of a loop listens under both. While a server is still
+held, another one on its bind gets `KS3411: listener failed: EADDRINUSE`
+under both.
+
 `tests/test_native_serve_v1.py` sends 24 requests to the same server under
 `ks run` and as a binary: well-formed, binary and Latin-1 requests, every
 protocol refusal, both size budgets, a client that stalls past the deadline,
 a client that stops half way through its body, unsupported and empty-body
 statuses, an oversized reply, the unanswered-request rule and the accept
 deadline. The replies the clients read and the program's output are the same
-bytes. Two more cases cover the connection budget (`KS3471`) and a port
-already in use. The worker runs under seccomp and holds no socket but its
+bytes. More cases cover the connection budget (`KS3471`), a port already in
+use, and forty servers opened in turn on two binds: dropped servers close
+their unanswered connections and free their bind, a held one does not. The worker runs under seccomp and holds no socket but its
 broker channel while serving.

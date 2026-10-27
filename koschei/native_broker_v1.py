@@ -320,18 +320,19 @@ func _ksConfine() {{
 	}}
 }}
 
-// Disk scopes whose last token was collected; sent to the broker before the
+// Release requests for scopes whose token was collected ("release" for a
+// disk scope, "serve_release" for a server); sent to the broker before the
 // next request, from the program's goroutine (finalizers only queue them).
 var _ksReleaseMu sync.Mutex
-var _ksReleased []string
+var _ksReleased [][]string
 
-func _ksQueueRelease(scope string) {{
+func _ksQueueRelease(fields ...string) {{
 	_ksReleaseMu.Lock()
-	_ksReleased = append(_ksReleased, scope)
+	_ksReleased = append(_ksReleased, fields)
 	_ksReleaseMu.Unlock()
 }}
 
-func _ksTakeReleased() []string {{
+func _ksTakeReleased() [][]string {{
 	_ksReleaseMu.Lock()
 	defer _ksReleaseMu.Unlock()
 	taken := _ksReleased
@@ -339,12 +340,30 @@ func _ksTakeReleased() []string {{
 	return taken
 }}
 
+// Collects garbage once and waits briefly for the finalizers of dropped
+// tokens to queue a release of the given kind.
+func _ksCollectReleases(kind string) {{
+	runtime.GC()
+	for attempt := 0; attempt < 100; attempt++ {{
+		_ksReleaseMu.Lock()
+		queued := false
+		for _, request := range _ksReleased {{
+			queued = queued || request[0] == kind
+		}}
+		_ksReleaseMu.Unlock()
+		if queued {{
+			return
+		}}
+		time.Sleep(time.Millisecond)
+	}}
+}}
+
 func _ksAsk(fields ...string) (bool, []string) {{
 	if _ksBroker == nil {{
 		_ksAbort("KS5002", "native broker is not connected")
 	}}
-	for _, scope := range _ksTakeReleased() {{
-		_ksExchange("release", scope)
+	for _, request := range _ksTakeReleased() {{
+		_ksExchange(request...)
 	}}
 	return _ksExchange(fields...)
 }}
@@ -383,7 +402,7 @@ func _ksDiskAllowReadOnly(receiver any, prefix any) any {{
 		_ksAbort("KS5002", "DiskRoot.allow_read_only prefix drifted")
 	}}
 	token := &_ksDiskReadCaps{{scope: _ksOpenDiskScope("scope", text)}}
-	runtime.SetFinalizer(token, func(token *_ksDiskReadCaps) {{ _ksQueueRelease(token.scope) }})
+	runtime.SetFinalizer(token, func(token *_ksDiskReadCaps) {{ _ksQueueRelease("release", token.scope) }})
 	return token
 }}
 
@@ -395,16 +414,7 @@ func _ksOpenDiskScope(kind string, prefix string) string {{
 	if done {{
 		return answer[0]
 	}}
-	runtime.GC()
-	for attempt := 0; attempt < 100; attempt++ {{
-		_ksReleaseMu.Lock()
-		pending := len(_ksReleased)
-		_ksReleaseMu.Unlock()
-		if pending > 0 {{
-			break
-		}}
-		time.Sleep(time.Millisecond)
-	}}
+	_ksCollectReleases("release")
 	_, answer = _ksAsk(kind, prefix, "final")
 	return answer[0]
 }}
@@ -418,7 +428,7 @@ func _ksDiskAllow(receiver any, prefix any) any {{
 		_ksAbort("KS5002", "DiskRoot.allow prefix drifted")
 	}}
 	token := &_ksDiskCaps{{scope: _ksOpenDiskScope("scope_rw", text)}}
-	runtime.SetFinalizer(token, func(token *_ksDiskCaps) {{ _ksQueueRelease(token.scope) }})
+	runtime.SetFinalizer(token, func(token *_ksDiskCaps) {{ _ksQueueRelease("release", token.scope) }})
 	return token
 }}
 

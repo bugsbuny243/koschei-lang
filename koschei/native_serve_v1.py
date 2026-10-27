@@ -130,11 +130,17 @@ func _ksServeAllow(receiver any, bind any, connections any, requestBytes any, re
 	if !done {{
 		return _ksError{{message: answer[0]}}
 	}}
-	return _ksServeCaps{{scope: answer[0]}}
+	// Like Python dropping a server, a collected token closes its listener
+	// and pending connection in the broker.
+	token := &_ksServeCaps{{scope: answer[0]}}
+	runtime.SetFinalizer(token, func(token *_ksServeCaps) {{ _ksQueueRelease("serve_release", token.scope) }})
+	return token
 }}
 
+// Callers keep the token alive (runtime.KeepAlive) until the broker has
+// answered, so its finalizer cannot release the server mid-request.
 func _ksServeScopeOf(receiver any) string {{
-	caps, ok := receiver.(_ksServeCaps)
+	caps, ok := receiver.(*_ksServeCaps)
 	if !ok {{
 		_ksAbort("KS5002", "ServeCaps receiver drifted")
 	}}
@@ -142,7 +148,15 @@ func _ksServeScopeOf(receiver any) string {{
 }}
 
 func _ksServeAccept(receiver any) any {{
-	done, answer := _ksAsk("serve_accept", _ksServeScopeOf(receiver))
+	scope := _ksServeScopeOf(receiver)
+	done, answer := _ksAsk("serve_accept", scope, "retry")
+	if !done && len(answer) == 0 {{
+		// The bind is held by a dropped server of this program: collect it
+		// and ask once more.
+		_ksCollectReleases("serve_release")
+		done, answer = _ksAsk("serve_accept", scope, "final")
+	}}
+	runtime.KeepAlive(receiver)
 	if !done {{
 		return _ksError{{message: answer[0]}}
 	}}
@@ -171,6 +185,7 @@ func _ksServeReply(receiver any, status any, body any) any {{
 		_ksAbort("KS5002", "ServeCaps.reply body drifted")
 	}}
 	done, answer := _ksAsk("serve_reply", _ksServeScopeOf(receiver), strconv.FormatInt(code, 10), kind, payload)
+	runtime.KeepAlive(receiver)
 	if !done {{
 		return _ksError{{message: answer[0]}}
 	}}
@@ -580,9 +595,32 @@ func _ksServeRead(conn net.Conn, scope *_ksServeScope, deadline time.Time) ([]st
 	return fields, 0, ""
 }}
 
-func _ksServeAcceptBroker(scope *_ksServeScope) []string {{
+// The address a scope's listener binds.
+func _ksServeAddress(scope *_ksServeScope) string {{
+	if scope.host == "localhost" {{
+		return "127.0.0.1:" + strconv.Itoa(scope.port)
+	}}
+	return scope.host + ":" + strconv.Itoa(scope.port)
+}}
+
+// Another live server of this program listens on the scope's address.
+func _ksServeAddressHeld(scope *_ksServeScope) bool {{
+	for _, other := range _ksServeScopes {{
+		if other != nil && other != scope && other.listener != nil && _ksServeAddress(other) == _ksServeAddress(scope) {{
+			return true
+		}}
+	}}
+	return false
+}}
+
+func _ksServeAcceptBroker(scope *_ksServeScope, retry bool) []string {{
 	if scope.listener == nil {{
 		if err := _ksServeListen(scope); err != nil {{
+			if retry && errors.Is(err, syscall.EADDRINUSE) && _ksServeAddressHeld(scope) {{
+				// Perhaps by a server whose token was dropped but not yet
+				// collected: the worker collects and asks again once.
+				return []string{{"busy"}}
+			}}
 			return []string{{"err", _ksIOError("listener failed: " + _ksSocketCode(err))}}
 		}}
 	}}
@@ -652,16 +690,32 @@ func _ksBrokerServeServe(request []string) ([]string, bool) {{
 	case request[0] == "serve_scope" && len(request) == 6:
 		answer := _ksServeOpenScope(request)
 		return answer, answer != nil
-	case (request[0] == "serve_accept" && len(request) == 2) || (request[0] == "serve_reply" && len(request) == 5):
+	case (request[0] == "serve_accept" && len(request) == 3 && (request[2] == "retry" || request[2] == "final")) ||
+		(request[0] == "serve_reply" && len(request) == 5) || (request[0] == "serve_release" && len(request) == 2):
 		index, err := strconv.Atoi(request[1])
-		if err != nil || index < 1 || index >= len(_ksServeScopes) {{
+		// A released server is never addressed again.
+		if err != nil || index < 1 || index >= len(_ksServeScopes) || _ksServeScopes[index] == nil {{
 			return nil, false
 		}}
+		scope := _ksServeScopes[index]
 		var answer []string
-		if request[0] == "serve_accept" {{
-			answer = _ksServeAcceptBroker(_ksServeScopes[index])
-		}} else {{
-			answer = _ksServeReplyBroker(_ksServeScopes[index], request[2], request[3], request[4])
+		switch request[0] {{
+		case "serve_accept":
+			answer = _ksServeAcceptBroker(scope, request[2] == "retry")
+		case "serve_reply":
+			answer = _ksServeReplyBroker(scope, request[2], request[3], request[4])
+		default:
+			// serve_knowhere_v1: a dropped server's sockets close, the
+			// listener first (_Server's slot order); an unanswered client
+			// sees its connection close.
+			if scope.listener != nil {{
+				scope.listener.Close()
+			}}
+			if scope.pending != nil {{
+				scope.pending.Close()
+			}}
+			_ksServeScopes[index] = nil
+			answer = []string{{"ok"}}
 		}}
 		return answer, answer != nil
 	}}

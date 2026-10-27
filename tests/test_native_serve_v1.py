@@ -74,6 +74,29 @@ fn main(caps: SystemCaps) {
 }
 """
 
+# A fresh server on the same bind each round: a dropped server closes its
+# listener and its unanswered connection, so the next one can listen. A server
+# lives as long as a MIR slot holds it, in both executors: each round's slots
+# are overwritten before the next accept(), and the last server of the 10 ms
+# rounds is still held when `held` asks for the same bind.
+ROUNDS_PROGRAM = """
+fn main(caps: SystemCaps) {
+    let mut index = 0
+    while index < 6 {
+        index = index + 1
+        let server = caps.serve.allow("127.0.0.1:PORT", 4, 4096, 4096, 4000)
+        println(server.accept())
+    }
+    while index < 40 {
+        index = index + 1
+        let server = caps.serve.allow("127.0.0.1:SECOND", 4, 4096, 4096, 10)
+        println(server.accept())
+    }
+    let held = caps.serve.allow("127.0.0.1:SECOND", 1, 4096, 4096, 10)
+    println(held.accept())
+}
+"""
+
 HOST = b"Host: a\r\n"
 REQUESTS: list[tuple[bytes, float]] = [
     (b"GET /ok?a=%41 HTTP/1.1\r\nHost: x\r\nX-Name: Ada\r\n\r\n", 0),
@@ -230,6 +253,20 @@ class NativeServeParityTests(unittest.TestCase):
             source = SERVER.replace("PORT", str(taken)).replace("CONNECTIONS", "1").replace("ROUNDS", "1")
             _replies, output = self.both(source, taken, [])
         self.assertTrue(output.startswith("KS3411: listener failed: EADDRINUSE\n"), output)
+
+    def test_dropped_servers_release_their_bind(self) -> None:
+        port, second = free_port(), free_port()
+        source = ROUNDS_PROGRAM.replace("SECOND", str(second)).replace("PORT", str(port))
+        requests = [(f"GET /{index} HTTP/1.1\r\n".encode() + HOST + b"\r\n", 0.0) for index in range(6)]
+        replies, output = self.both(source, port, requests)
+        # Unanswered: each connection closed with its server.
+        self.assertEqual(replies, [b""] * 6)
+        self.assertEqual(
+            output,
+            "".join(f"HttpRequest(GET /{index})\n" for index in range(6))
+            + "KS3411: accept exceeded the I/O deadline\n" * 34
+            + "KS3411: listener failed: EADDRINUSE\n",
+        )
 
     def test_the_worker_holds_no_listener(self) -> None:
         port = free_port()
