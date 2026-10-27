@@ -38,7 +38,7 @@ python3 -m pytest -q tests                      # the full suite
 |---|---|---|
 | Language guide, English and Turkish, every example executed | `docs/guide/` | `tests/test_language_guide_v1.py` |
 | Error-code catalog (all diagnostics, both languages) and Core Library reference, generated | `docs/reference/` | `tests/test_reference_docs_v1.py` |
-| Three complete applications | `examples/apps/` | `tests/test_example_apps_v1.py` |
+| Five complete applications, including a secret scanner and a file-integrity checker | `examples/apps/` | `tests/test_example_apps_v1.py` |
 | Core Library written in Koschei (`text`, `list`, `secure`, admission modules) | `koschei/core_library/` | `tests/test_core_library_v1.py`, `tests/test_morag_xandar_v1.py` |
 | Interpreter / native parity | `koschei/mir_go_native.py` | `tests/test_mir_go_native_v2_parity.py` and every `*_v1` test that builds binaries |
 | Threat model with evidence per threat | `docs/THREAT_MODEL_V1.md` | tests named in the table |

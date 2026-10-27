@@ -395,11 +395,11 @@ Bütün tanı kodları [`../reference/ERROR_CODES.md`](../reference/ERROR_CODES.
 
 ## 11. Native derleme
 
-`ks build`; çekirdek dili, struct, enum, generic, modül, Core Library, program
+`ks build`; çekirdek dili, struct, enum, generic, Map, modül, Core Library, program
 girdisi, saat ve rastgelelik kullanan programları; linux/amd64'te ayrıca
 kilitli bir aracı üzerinden disk (okuma, yazma, silme), ortam değişkenleri, ağ ve yerel sunucuyu derler
 ([`../NATIVE_BROKER_V1.md`](../NATIVE_BROKER_V1.md), [`../NET_V1.md`](../NET_V1.md)). İkili `ks run` ile aynı
-baytları ve aynı hata değerlerini yazdırır. Map, geri çağrılı üyeler
+baytları ve aynı hata değerlerini yazdırır. Geri çağrılı üyeler
 (`filter`, `map`, `sort`) ve süreçler farklı derlenmek yerine `KS4004`
 ile reddedilir; bkz.
 [`../MIR_GO_CONFORMANCE_ADAPTER_V2.md`](../MIR_GO_CONFORMANCE_ADAPTER_V2.md).

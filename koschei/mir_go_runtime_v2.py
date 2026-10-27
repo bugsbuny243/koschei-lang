@@ -231,6 +231,12 @@ func _ksToString(value any) string {
 			parts[index] = name + ": " + _ksRepr(item.values[index])
 		}
 		return item.name + " { " + strings.Join(parts, ", ") + " }"
+	case _ksMap:
+		parts := make([]string, len(item.keys))
+		for index, key := range item.keys {
+			parts[index] = "\"" + key + "\": " + _ksRepr(item.values[index])
+		}
+		return "{" + strings.Join(parts, ", ") + "}"
 	case int64:
 		return strconv.FormatInt(item, 10)
 	case string:
@@ -349,6 +355,17 @@ func _ksEqual(left any, right any) bool {
 		}
 		for index := range a {
 			if !_ksEqual(a[index], b[index]) {
+				return false
+			}
+		}
+		return true
+	case _ksMap:
+		b, ok := right.(_ksMap)
+		if !ok || len(a.keys) != len(b.keys) {
+			return false
+		}
+		for index := range a.keys {
+			if a.keys[index] != b.keys[index] || !_ksEqual(a.values[index], b.values[index]) {
 				return false
 			}
 		}
@@ -808,6 +825,109 @@ func _ksField(receiver any, name string) any {
 	return nil
 }
 
+// ---- maps ---------------------------------------------------------------
+
+// A String-keyed map in insertion order (mir_native_runtime._MapValue): set
+// keeps a replaced key's position and appends a new key; equality compares
+// the entries in order. A map is never written after it is built, so maps
+// may share their key and value slices.
+type _ksMap struct {
+	keys   []string
+	values []any
+}
+
+type _ksMapBuilder struct {
+	keys     []string
+	values   []any
+	consumed bool
+}
+
+func _ksMapNew() any {
+	return &_ksMapBuilder{}
+}
+
+func _ksMapKey(key any) string {
+	text, ok := key.(string)
+	if !ok {
+		_ksAbort("KS5002", "MIR Map key must be String")
+	}
+	return text
+}
+
+func _ksMapInsert(builder any, key any, value any) {
+	open, ok := builder.(*_ksMapBuilder)
+	if !ok || open.consumed {
+		_ksAbort("KS5002", "invalid MIR Map builder")
+	}
+	text := _ksMapKey(key)
+	for _, existing := range open.keys {
+		if existing == text {
+			_ksAbort("KS5002", "duplicate Map key insertion")
+		}
+	}
+	open.keys = append(open.keys, text)
+	open.values = append(open.values, value)
+}
+
+func _ksMapFinish(builder any) any {
+	open, ok := builder.(*_ksMapBuilder)
+	if !ok || open.consumed {
+		_ksAbort("KS5002", "invalid MIR Map builder")
+	}
+	open.consumed = true
+	return _ksMap{keys: open.keys, values: open.values}
+}
+
+func _ksMapOf(value any) _ksMap {
+	entries, ok := value.(_ksMap)
+	if !ok {
+		_ksAbort("KS5002", "invalid MIR Map value")
+	}
+	return entries
+}
+
+func _ksMapGet(value any, key any) any {
+	entries, text := _ksMapOf(value), _ksMapKey(key)
+	for index, existing := range entries.keys {
+		if existing == text {
+			return entries.values[index]
+		}
+	}
+	return _ksError{message: "Map anahtarı bulunamadı: " + text}
+}
+
+func _ksMapSet(value any, key any, item any) any {
+	entries, text := _ksMapOf(value), _ksMapKey(key)
+	values := append([]any(nil), entries.values...)
+	for index, existing := range entries.keys {
+		if existing == text {
+			values[index] = item
+			return _ksMap{keys: entries.keys, values: values}
+		}
+	}
+	keys := append([]string(nil), entries.keys...)
+	return _ksMap{keys: append(keys, text), values: append(values, item)}
+}
+
+func _ksMapKeys(value any) any {
+	entries := _ksMapOf(value)
+	keys := make([]any, len(entries.keys))
+	for index, key := range entries.keys {
+		keys[index] = key
+	}
+	return keys
+}
+
+func _ksMapContains(value any, key any) any {
+	entries, text := _ksMapOf(value), _ksMapKey(key)
+	for _, existing := range entries.keys {
+		if existing == text {
+			return true
+		}
+	}
+	return false
+}
+
 // ---- iteration -----------------------------------------------------------
 
 func _ksIterInit(value any) any {
@@ -1117,6 +1237,20 @@ func _ksTypeName(value any) string {
 			return "List<" + names[0] + ">"
 		}
 		return "List<_>"
+	case _ksMap:
+		// runtime_alignment: Map<keys, values>, "_" when empty or mixed.
+		keyType, valueType := "_", "_"
+		if len(item.keys) > 0 {
+			keyType = "String"
+			valueType = _ksTypeName(item.values[0])
+			for _, element := range item.values[1:] {
+				if _ksTypeName(element) != valueType {
+					valueType = "_"
+					break
+				}
+			}
+		}
+		return "Map<" + keyType + ", " + valueType + ">"
 	case bool:
 		return "Bool"
 	case string:
@@ -1262,7 +1396,16 @@ func _ksMatchPattern(value any, expected string, parameters map[string]bool, bin
 		return true
 	}
 	if base == "Map" && len(arguments) == 2 {
-		return false
+		entries, ok := value.(_ksMap)
+		if !ok {
+			return false
+		}
+		for index, key := range entries.keys {
+			if !_ksMatchPattern(key, arguments[0], parameters, bindings) || !_ksMatchPattern(entries.values[index], arguments[1], parameters, bindings) {
+				return false
+			}
+		}
+		return true
 	}
 	if base == "Option" && len(arguments) == 1 {
 		item, ok := value.(_ksEnumValue)
@@ -1334,6 +1477,8 @@ func _ksMatchPattern(value any, expected string, parameters map[string]bool, bin
 		return base == "Float"
 	case []any:
 		return base == "List"
+	case _ksMap:
+		return base == "Map"
 	case _ksBytes:
 		return base == "Bytes"
 	case _ksSystemCaps:

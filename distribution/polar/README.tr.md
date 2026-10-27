@@ -32,6 +32,17 @@ ks check examples/supply_chain/main.ks         # reddedilir: bir bağımlılık 
 ks build examples/apps/keygen/main.ks -o keygen && ./keygen 2
 ```
 
+Hazır iki güvenlik aracı; her biri yalnızca verdiğiniz klasörü okuyabilir ve
+ağa çıkamaz (`ks caps` bunu gösterir):
+
+```sh
+ks build examples/apps/secretscan/main.ks -o secretscan
+./secretscan proje/klasoru        # sızmış anahtar ve token'lar; bulursa çıkış kodu 1
+ks build examples/apps/integrity/main.ks -o integrity
+./integrity snapshot site > manifest.txt
+./integrity verify site < manifest.txt   # CHANGED / MISSING / NEW; fark varsa çıkış kodu 1
+```
+
 ## Belgeler
 
 - `docs/guide/LANGUAGE_GUIDE.tr.md`: dil rehberi (İngilizcesi

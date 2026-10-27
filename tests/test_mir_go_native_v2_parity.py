@@ -424,6 +424,56 @@ fn main() {
 }
 """
 
+MAPS = """
+struct Inventory {
+    owner: String,
+    counts: Map<String, Int>,
+}
+
+fn total(counts: Map<String, Int>) -> Int {
+    let mut sum = 0
+    for name in counts.keys() {
+        sum = sum + (counts.get(name) or 0)
+    }
+    return sum
+}
+
+fn first_or<T>(items: List<T>, fallback: T) -> T {
+    let item = items.get(0) or return fallback
+    return item
+}
+
+fn main() {
+    println(first_or([3, 4], 0))
+    let ages = {"ada": 36, "alan": 41}
+    println(ages.get("ada") or 0)
+    let older = ages.set("grace", 85)
+    println(older.keys())
+    println(ages.contains("nobody"))
+    println(ages)
+    let replaced = older.set("ada", 37)
+    println(replaced)
+    println(replaced.get("nobody"))
+    let empty: Map<String, Int> = {}
+    println(empty)
+    println(empty.keys())
+    let nested = {"xs": [1, 2], "ys": []}
+    println("nested {nested}")
+    let stock = Inventory { owner: "ada", counts: {"bolt": 3, "nut": 4} }
+    println(total(stock.counts))
+    println(stock)
+    println(older == ages.set("grace", 85))
+    println(older == ages)
+}
+"""
+
+MAP_ORDER = """
+fn main() {
+    println({"a": 1, "b": 2} == {"a": 1, "b": 2})
+    println({"a": 1, "b": 2} == {"b": 2, "a": 1})
+}
+"""
+
 @unittest.skipUnless(GO, "Go toolchain is required for native parity")
 class MirGoNativeParityTests(unittest.TestCase):
     def workspace(self, files: dict[str, str]) -> Path:
@@ -510,6 +560,19 @@ class MirGoNativeParityTests(unittest.TestCase):
         # fills only its own position, so both bind T = Result<Int, Error>.
         output = self.assert_parity(RESULT_EVIDENCE)
         self.assertEqual(output, "true\ntrue\ntrue\n3\n")
+
+    def test_maps_compile_natively(self) -> None:
+        output = self.assert_parity(MAPS)
+        self.assertIn('{"ada": 37, "alan": 41, "grace": 85}\n', output)
+        self.assertIn("Map anahtarı bulunamadı: nobody\n", output)
+
+    def test_map_equality_follows_insertion_order(self) -> None:
+        # Maps keep insertion order, and the direct MIR lane that ks run uses
+        # compares their entries in order; the binary does the same.
+        path = self.workspace({"main.ks": MAP_ORDER}) / "main.ks"
+        native_ok, native_out, native_err = self.native_run(path)
+        self.assertEqual(self.ks_run(path), (native_ok, native_out), native_err)
+        self.assertEqual(native_out, "true\nfalse\n")
 
     def test_prefix_and_suffix_work_on_long_and_self_overlapping_text(self) -> None:
         # No recursion bounded by the suffix length and no split of the whole

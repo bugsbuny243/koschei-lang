@@ -30,6 +30,17 @@ ks check examples/supply_chain/main.ks         # rejected: a dependency reaches 
 ks build examples/apps/keygen/main.ks -o keygen && ./keygen 2
 ```
 
+Two ready-made security tools, each limited to reading the directory you
+give it, with no network access (`ks caps` shows it):
+
+```sh
+ks build examples/apps/secretscan/main.ks -o secretscan
+./secretscan path/to/repo        # leaked keys and tokens; exit 1 on a finding
+ks build examples/apps/integrity/main.ks -o integrity
+./integrity snapshot site > manifest.txt
+./integrity verify site < manifest.txt   # CHANGED / MISSING / NEW; exit 1 on a difference
+```
+
 ## Documentation
 
 - `docs/guide/LANGUAGE_GUIDE.en.md`: the language guide (Turkish:

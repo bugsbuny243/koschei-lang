@@ -29,6 +29,13 @@ from .mir_extension_instructions_v4 import (
     MirFalliblePayload,
     MirInterpolate,
     MirIsRuntimeError,
+    MirMapContains,
+    MirMapFinish,
+    MirMapGet,
+    MirMapInsert,
+    MirMapKeys,
+    MirMapNew,
+    MirMapSet,
     MirStructFieldSet,
     MirStructFinish,
     MirStructNew,
@@ -231,6 +238,13 @@ _ADMITTED_INSTRUCTIONS = (
     MirStructFinish,
     MirStructFieldSet,
     MirCapabilityCall,
+    MirMapNew,
+    MirMapInsert,
+    MirMapFinish,
+    MirMapGet,
+    MirMapSet,
+    MirMapKeys,
+    MirMapContains,
 )
 _GO_IDENTIFIER = re.compile(r"[^A-Za-z0-9_]")
 _ENUM_GO_TYPE = "_ksEnumValue"
@@ -847,6 +861,16 @@ def _operands(instruction: Any) -> tuple[int, ...]:
         return () if instruction.source is None else (instruction.source,)
     if isinstance(instruction, MirCapabilityCall):
         return (instruction.object, *instruction.arguments)
+    if isinstance(instruction, MirMapInsert):
+        return (instruction.object, *instruction.arguments)
+    if isinstance(instruction, MirMapFinish):
+        return (instruction.source,)
+    if isinstance(instruction, (MirMapGet, MirMapContains)):
+        return (instruction.object, instruction.key)
+    if isinstance(instruction, MirMapSet):
+        return (instruction.object, instruction.key, instruction.value)
+    if isinstance(instruction, MirMapKeys):
+        return (instruction.object,)
     return ()
 
 
@@ -1065,6 +1089,30 @@ def _emit_instruction(
     if isinstance(instruction, MirList):
         items = ", ".join(value(item) for item in instruction.items)
         return [f"{prefix}{value(instruction.target)} = []any{{{items}}}"]
+    if isinstance(instruction, MirMapNew):
+        return [f"{prefix}{value(instruction.target)} = _ksMapNew()"]
+    if isinstance(instruction, MirMapInsert):
+        key, item = instruction.arguments
+        return [f"{prefix}_ksMapInsert({value(instruction.object)}, {value(key)}, {value(item)})"]
+    if isinstance(instruction, MirMapFinish):
+        return [f"{prefix}{value(instruction.target)} = _ksMapFinish({value(instruction.source)})"]
+    if isinstance(instruction, MirMapGet):
+        return [
+            f"{prefix}{value(instruction.target)} = "
+            f"_ksMapGet({value(instruction.object)}, {value(instruction.key)})"
+        ]
+    if isinstance(instruction, MirMapSet):
+        return [
+            f"{prefix}{value(instruction.target)} = _ksMapSet({value(instruction.object)}, "
+            f"{value(instruction.key)}, {value(instruction.value)})"
+        ]
+    if isinstance(instruction, MirMapKeys):
+        return [f"{prefix}{value(instruction.target)} = _ksMapKeys({value(instruction.object)})"]
+    if isinstance(instruction, MirMapContains):
+        return [
+            f"{prefix}{value(instruction.target)} = "
+            f"_ksMapContains({value(instruction.object)}, {value(instruction.key)})"
+        ]
     if isinstance(instruction, MirInterpolate):
         parts = " + ".join(f"_ksToString({value(item)})" for item in instruction.items)
         return [f"{prefix}{value(instruction.target)} = _ksBudgetText({parts or chr(34) * 2})"]

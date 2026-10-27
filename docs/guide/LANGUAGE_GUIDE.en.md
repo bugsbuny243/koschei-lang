@@ -396,11 +396,11 @@ Every diagnostic is listed in [`../reference/ERROR_CODES.md`](../reference/ERROR
 ## 11. Native builds
 
 `ks build` compiles programs that use the core language, structs, enums,
-generics, modules, the Core Library, program input, the clock and randomness,
+generics, maps, modules, the Core Library, program input, the clock and randomness,
 and on linux/amd64 the disk (read, write, delete), the environment, the
 network and the loopback server through a confined broker ([`../NATIVE_BROKER_V1.md`](../NATIVE_BROKER_V1.md),
 [`../NET_V1.md`](../NET_V1.md)). The binary prints
-the same bytes and the same Error values as `ks run`. Maps, callback members
+the same bytes and the same Error values as `ks run`. Callback members
 (`filter`, `map`, `sort`) and processes are refused with
 `KS4004` instead of compiled differently; see [`../MIR_GO_CONFORMANCE_ADAPTER_V2.md`](../MIR_GO_CONFORMANCE_ADAPTER_V2.md).
 
