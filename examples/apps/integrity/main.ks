@@ -8,13 +8,14 @@
 // Every file is named by its SHA3-256 digest (`secure.hash_bytes`), so a
 // change to any byte shows. The audited digest takes at most 1 MiB, so a
 // larger file is digested in 1 MiB chunks and recorded as the
-// domain-separated digest of those chunk digests (`secure.digest`); a file
-// over the 16 MiB value budget cannot be read and is recorded as "skipped". The tool reads DIR read-only and has neither
+// domain-separated digest of those chunk digests (`secure.digest`). The tool reads DIR read-only and has neither
 // write nor network authority: the manifest goes to standard output and
 // comes back on standard input. A manifest line is "DIGEST PATH", with PATH
-// relative to DIR. An entry that is neither a readable file nor a directory
-// (a symbolic link, which is never followed, or an unreadable file) is
-// recorded as "skipped", so a change of kind shows too; .git is left out.
+// relative to DIR. A symbolic link is never followed and is recorded as
+// "skipped", so a change of kind shows; .git is left out. Any other entry
+// that cannot be digested (over the 16 MiB value budget, unreadable) or
+// whose name holds a newline (a manifest line cannot) fails the run rather
+// than leaving a file unchecked.
 //
 // `verify` prints CHANGED, MISSING and NEW lines and fails (exit status 1)
 // when there is any difference, so a CI step or a server can gate on it.
@@ -44,6 +45,14 @@ fn file_digest(data: Bytes) -> String or Error {
     return combined
 }
 
+// The Error text of a failed read, or "" when it succeeded.
+fn failure(result: Bytes or Error) -> String {
+    let data = result or {
+        return "{result}"
+    }
+    return ""
+}
+
 // Every entry under root, by path relative to root, walking each directory
 // in name order. Error when root itself cannot be listed.
 fn digests(disk: DiskReadCaps, root: String) -> Map<String, String> or Error {
@@ -60,14 +69,18 @@ fn digests(disk: DiskReadCaps, root: String) -> Map<String, String> or Error {
             directory = "{root}/{relative}"
             prefix = "{relative}/"
         }
-        let entries = disk.list(directory) or {
-            found = found.set(relative, "skipped")
-            continue
-        }
+        let entries = disk.list(directory) or return Error("integrity: {relative} cannot be listed")
         for name in entries {
             let path = "{prefix}{name}"
+            if path.contains("\n") {
+                return Error("integrity: a name holds a newline, which a manifest line cannot: {path}")
+            }
             let children = disk.list("{root}/{path}") or {
                 let data = disk.read_bytes("{root}/{path}") or {
+                    let reason = failure(disk.read_bytes("{root}/{path}"))
+                    if !reason.contains("KS3405") {
+                        return Error("integrity: {path} cannot be digested: {reason}")
+                    }
                     found = found.set(path, "skipped")
                     continue
                 }

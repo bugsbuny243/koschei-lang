@@ -27,4 +27,4 @@ the environment. `secretscan` and `integrity` may only read the directory they
 are given: their manifests list read-only disk access and no network, so what
 they read cannot leave the machine, and the checker refuses any code that
 tries. Both fail with exit status 1 when they find something, so a CI step can
-gate on them.
+gate on them, and neither lets a file it could not check pass as a clean one.

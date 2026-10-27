@@ -54,6 +54,9 @@ SLACK_TOKEN = "xo" + "xb-" + "123456789012-abcdef"
 STRIPE_KEY = "sk_" + "live_" + "0123456789abcdefABCDEF"
 GOOGLE_KEY = "AI" + "zaSyA-1234567890abcdefghijklmnopqrstu"
 PEM_HEADER = "-----BEGIN RSA " + "PRIVATE KEY-----"
+PKCS8_HEADER = "-----BEGIN " + "PRIVATE KEY-----"
+OVER_BUDGET = b"a" * (16 * 1024 * 1024 + 10)  # past the 16 MiB value budget
+BUDGET_MESSAGE = "KS3502: Bellek bütçesi aşıldı: bir Bytes en fazla 16777216 bayt olabilir."
 
 
 def chunked_digest(data: bytes) -> str:
@@ -170,22 +173,29 @@ class ExampleAppTests(unittest.TestCase):
             "src/scanner.py": b'if line.contains("-----BEGIN ") && line.contains("PRIVATE KEY-----")\n',
             ".git/config": AWS_KEY.encode(),
             "bin.dat": b"\xff\xfe",
+            "deploy.sh": f"git clone https://{GITHUB_TOKEN}@github.com/acme/private.git\n".encode(),
+            # Files that cannot be scanned in full fail the run, never pass.
+            "many.txt": b"\n" * 1048576 + GITHUB_TOKEN.encode(),
+            "big.txt": OVER_BUDGET,
         })
         os.symlink(root / "src" / "app.py", root / "src" / "link.py")
         self.assertEqual(self.outcome("secretscan", [str(root)]), (
             1,
+            f"{root}/big.txt: not scanned: {BUDGET_MESSAGE}\n"
+            f"{root}/deploy.sh:1: github-token ghp_... (40 characters)\n"
+            f"{root}/many.txt: not scanned: more lines than one List may hold (KS3502)\n"
             f"{root}/conf/ci.yml:1: github-token ghp_... (40 characters)\n"
             f"{root}/conf/ci.yml:2: slack-token xoxb-... (24 characters)\n"
             f"{root}/conf/id_rsa:1: private-key {PEM_HEADER}\n"
-            f"{root}/conf/sa.json:1: private-key -----BEGIN PRIVATE KEY-----\n"
+            f"{root}/conf/sa.json:1: private-key {PKCS8_HEADER}\n"
             f"{root}/src/app.py:1: aws-access-key-id AKIA... (20 characters)\n"
             f"{root}/src/keys.js:1: google-api-key AIza... (39 characters)\n"
             f"{root}/src/keys.js:2: stripe-live-key sk_live_... (30 characters)\n"
-            "6 files scanned, 2 skipped, 7 findings\n",
-            "KOSCHEI RUNTIME ERROR: secretscan: 7 credential(s) found\n",
+            "7 files scanned, 2 skipped, 2 not scanned, 8 findings\n",
+            "KOSCHEI RUNTIME ERROR: secretscan: 8 credential(s) found, 2 entries not scanned\n",
         ))
         clean = self.tree({"a.txt": b"nothing here\n"})
-        self.assertEqual(self.outcome("secretscan", [str(clean)]), (0, "1 files scanned, 0 skipped, 0 findings\n", ""))
+        self.assertEqual(self.outcome("secretscan", [str(clean)]), (0, "1 files scanned, 0 skipped, 0 not scanned, 0 findings\n", ""))
         missing = str(clean / "missing")
         self.assertEqual(self.outcome("secretscan", [missing]), (1, "", f"KOSCHEI RUNTIME ERROR: secretscan: {missing} is not a readable directory\n"))
         self.assertEqual(self.outcome("secretscan", []), (1, "", "KOSCHEI RUNTIME ERROR: usage: secretscan DIR\n"))
@@ -217,6 +227,16 @@ class ExampleAppTests(unittest.TestCase):
             (1, "", "KOSCHEI RUNTIME ERROR: integrity: malformed manifest line: garbage\n"),
         )
         self.assertEqual(self.outcome("integrity", ["check", str(root)])[0], 1)
+        # Names a manifest line cannot hold, and files that cannot be
+        # digested, fail the snapshot instead of leaving a file unchecked.
+        newline = self.tree({"a\nb.txt": b"x"})
+        self.assertEqual(self.outcome("integrity", ["snapshot", str(newline)]), (
+            1, "", "KOSCHEI RUNTIME ERROR: integrity: a name holds a newline, which a manifest line cannot: a\nb.txt\n",
+        ))
+        big = self.tree({"big.bin": OVER_BUDGET})
+        self.assertEqual(self.outcome("integrity", ["snapshot", str(big)]), (
+            1, "", f"KOSCHEI RUNTIME ERROR: integrity: big.bin cannot be digested: {BUDGET_MESSAGE}\n",
+        ))
 
     def test_manifests_grant_only_what_each_app_needs(self) -> None:
         expected = {

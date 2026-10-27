@@ -6,9 +6,12 @@
 // The scan reads DIR read-only and has no network authority, so whatever it
 // finds cannot leave the machine; `ks caps` proves both. Each finding prints
 // FILE:LINE, the kind of credential and only its public prefix and length,
-// never the secret itself. The program fails (exit status 1) when anything
-// is found, so a CI step can gate on it. Symbolic links are not followed;
-// files that are not UTF-8 text and the .git directory are skipped.
+// never the secret itself. Symbolic links are not followed; files that are
+// not UTF-8 text and the .git directory are skipped. A file that cannot be
+// scanned in full (over the 16 MiB budget, more lines than one List holds,
+// unreadable) is reported as "not scanned". The program fails (exit status
+// 1) when anything is found or not scanned, so a CI step can gate on it and
+// an unscanned file never passes as a clean one.
 //
 // Recognised: private key blocks, AWS access key IDs, GitHub tokens, Slack
 // tokens, Stripe live secret keys and Google API keys.
@@ -18,7 +21,7 @@ import text
 // Characters that never occur inside these credentials and separate them
 // from the surrounding code.
 fn separators() -> String {
-    return "\"'`=:,;()[]\{\}<>\t\r"
+    return "\"'`=:,;()[]\{\}<>\t\r/@?&#+*|!$%^~.\\"
 }
 
 // The ASCII code of each byte, or -1 past the end.
@@ -122,25 +125,25 @@ fn suspicious(line: String) -> Bool {
     return false
 }
 
-fn words(line: String) -> List<String> {
-    let none: List<String> = []
+fn words(line: String) -> List<String> or Error {
     let mut spaced = line
     let marks = separators().to_bytes()
     let mut index = 0
     while index < marks.length() {
-        let mark = marks.slice(index, index + 1) or return none
-        let separator = mark.to_text() or return none
-        spaced = text.replace(spaced, separator, " ") or return none
+        let mark = marks.slice(index, index + 1) or return
+        let separator = mark.to_text() or return
+        spaced = text.replace(spaced, separator, " ") or return Error("a line has more separators than one List may hold (KS3502)")
         index = index + 1
     }
-    let parts = spaced.split(" ") or return none
+    let parts = spaced.split(" ") or return
     return parts
 }
 
-// One line per finding: "FILE:LINE: KIND PREFIX... (N characters)".
-fn scan(path: String, body: String) -> List<String> {
+// One line per finding: "FILE:LINE: KIND PREFIX... (N characters)". Error
+// when the file cannot be scanned in full.
+fn scan(path: String, body: String) -> List<String> or Error {
     let mut findings: List<String> = []
-    let lines = body.split("\n") or return findings
+    let lines = body.split("\n") or return Error("more lines than one List may hold (KS3502)")
     let mut number = 0
     for line in lines {
         number = number + 1
@@ -152,7 +155,8 @@ fn scan(path: String, body: String) -> List<String> {
             findings = findings.push("{path}:{number}: private-key {header}")
             continue
         }
-        for word in words(line) {
+        let candidates = words(line) or return
+        for word in candidates {
             let found = classify(word)
             let kind = found.get(0) or ""
             let prefix = found.get(1) or ""
@@ -162,6 +166,21 @@ fn scan(path: String, body: String) -> List<String> {
         }
     }
     return findings
+}
+
+// The Error text of a failed read or scan, or "" when it succeeded.
+fn failure(result: Bytes or Error) -> String {
+    let data = result or {
+        return "{result}"
+    }
+    return ""
+}
+
+fn scan_failure(result: List<String> or Error) -> String {
+    let findings = result or {
+        return "{result}"
+    }
+    return ""
 }
 
 fn main(caps: SystemCaps) -> Void or Error {
@@ -176,23 +195,38 @@ fn main(caps: SystemCaps) -> Void or Error {
     let mut next = 0
     let mut files = 0
     let mut skipped = 0
+    let mut unscanned = 0
     let mut found = 0
     while next < pending.length() {
         let directory = pending.get(next) or ""
         next = next + 1
         let entries = disk.list(directory) or {
-            skipped = skipped + 1
+            println("{directory}: not scanned: the directory cannot be listed")
+            unscanned = unscanned + 1
             continue
         }
         for name in entries {
             let path = "{directory}/{name}"
             let children = disk.list(path) or {
                 let body = disk.read(path) or {
-                    skipped = skipped + 1
+                    let reason = failure(disk.read_bytes(path))
+                    // Readable bytes that are not UTF-8 text, or a symbolic
+                    // link (KS3405, never followed): skipped by design.
+                    if reason == "" || reason.contains("KS3405") {
+                        skipped = skipped + 1
+                    } else {
+                        println("{path}: not scanned: {reason}")
+                        unscanned = unscanned + 1
+                    }
+                    continue
+                }
+                let findings = scan(path, body) or {
+                    println("{path}: not scanned: {scan_failure(scan(path, body))}")
+                    unscanned = unscanned + 1
                     continue
                 }
                 files = files + 1
-                for finding in scan(path, body) {
+                for finding in findings {
                     println(finding)
                     found = found + 1
                 }
@@ -203,7 +237,10 @@ fn main(caps: SystemCaps) -> Void or Error {
             }
         }
     }
-    println("{files} files scanned, {skipped} skipped, {found} findings")
+    println("{files} files scanned, {skipped} skipped, {unscanned} not scanned, {found} findings")
+    if unscanned > 0 {
+        return Error("secretscan: {found} credential(s) found, {unscanned} entries not scanned")
+    }
     if found > 0 {
         return Error("secretscan: {found} credential(s) found")
     }
