@@ -611,9 +611,16 @@ class _DiskCapability(_NarrowedCapability):
             return KsError(f"Dosya okunamadı: kapsam kökü bir dizindir: {path}")
         try:
             with self._parent_fd(parts) as parent:
-                # O_NONBLOCK: opening a FIFO without a writer must not hang;
-                # only regular files (and directories, which fail with
-                # EISDIR below) are read.
+                # Only regular files (and directories, which fail with EISDIR
+                # below) are read. A FIFO, socket or device is never opened:
+                # opening a socket fails with ENXIO, and a device may act on
+                # open. O_NONBLOCK and the fstat after the open cover an entry
+                # replaced in between.
+                mode = os.stat(parts[-1], dir_fd=parent, follow_symlinks=False).st_mode
+                if stat.S_ISLNK(mode):
+                    return self._symlink_denied(parts[-1])
+                if not (stat.S_ISREG(mode) or stat.S_ISDIR(mode)):
+                    return KsError(f"Dosya okunamadı: {NOT_REGULAR_FILE}: {path}")
                 handle = os.open(
                     parts[-1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent
                 )
@@ -632,6 +639,8 @@ class _DiskCapability(_NarrowedCapability):
         except OSError as error:
             if error.errno in (errno.ELOOP, errno.EMLINK):
                 return self._symlink_denied(parts[-1])
+            if error.errno == errno.ENXIO:
+                return KsError(f"Dosya okunamadı: {NOT_REGULAR_FILE}: {path}")
             return KsError(f"Dosya okunamadı: {os_error_text(error, path)}")
 
     def list(self, path: str) -> list[str] | KsError:

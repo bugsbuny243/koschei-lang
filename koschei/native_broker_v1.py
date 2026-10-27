@@ -1145,13 +1145,29 @@ func _ksBrokerRead(scope *_ksScope, path string) []string {{
 	}}
 	defer syscall.Close(parent)
 	name := parts[len(parts)-1]
-	// O_NONBLOCK: opening a FIFO without a writer must not hang; only
-	// regular files (and directories, which fail with EISDIR below) are read.
+	// Only regular files (and directories, which fail with EISDIR below) are
+	// read. A FIFO, socket or device is never opened: opening a socket fails
+	// with ENXIO, and a device may act on open. O_NONBLOCK and the fstat
+	// after the open cover an entry replaced in between.
+	var entry syscall.Stat_t
+	if code := _ksLstatAt(parent, name, &entry); code != 0 {{
+		return []string{{"error", {read_prefix} + _ksErrnoText(code, path)}}
+	}}
+	switch entry.Mode & syscall.S_IFMT {{
+	case syscall.S_IFLNK:
+		return []string{{"error", {symlink} + name}}
+	case syscall.S_IFREG, syscall.S_IFDIR:
+	default:
+		return []string{{"error", {read_prefix} + {not_regular} + ": " + path}}
+	}}
 	fd, err := syscall.Openat(parent, name, syscall.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_CLOEXEC|syscall.O_NONBLOCK, 0)
 	if err != nil {{
 		code := _ksAsErrno(err)
 		if code == syscall.ELOOP || code == syscall.EMLINK {{
 			return []string{{"error", {symlink} + name}}
+		}}
+		if code == syscall.ENXIO {{
+			return []string{{"error", {read_prefix} + {not_regular} + ": " + path}}
 		}}
 		return []string{{"error", {read_prefix} + _ksErrnoText(code, path)}}
 	}}

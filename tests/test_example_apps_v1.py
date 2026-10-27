@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -84,6 +85,14 @@ def chunk_serialization(data: bytes) -> bytes:
 
 def digest_bytes(data: bytes) -> str:
     return "sha3-256:" + hashlib.sha3_256(data).hexdigest()
+
+
+
+def _unix_socket(path: Path) -> None:
+    """A Unix-domain socket file; it stays in the tree after it is closed."""
+
+    with socket.socket(socket.AF_UNIX) as bound:
+        bound.bind(str(path))
 
 
 class ExampleAppTests(unittest.TestCase):
@@ -196,6 +205,7 @@ class ExampleAppTests(unittest.TestCase):
         })
         os.symlink(root / "src" / "app.py", root / "src" / "link.py")
         os.mkfifo(root / "a.pipe")  # never opened as a stream: no hang
+        _unix_socket(root / "app.sock")  # opening one fails with ENXIO: never opened
         self.assertEqual(self.outcome("secretscan", [str(root)]), (
             1,
             f"{root}/big.txt: not scanned: {BUDGET_MESSAGE}\n"
@@ -208,7 +218,7 @@ class ExampleAppTests(unittest.TestCase):
             f"{root}/src/app.py:1: aws-access-key-id AKIA... (20 characters)\n"
             f"{root}/src/keys.js:1: google-api-key AIza... (39 characters)\n"
             f"{root}/src/keys.js:2: stripe-live-key sk_live_... (30 characters)\n"
-            "7 files scanned, 3 skipped, 2 not scanned, 8 findings\n",
+            "7 files scanned, 4 skipped, 2 not scanned, 8 findings\n",
             "KOSCHEI RUNTIME ERROR: secretscan: 8 credential(s) found, 2 entries not scanned\n",
         ))
         clean = self.tree({"a.txt": b"nothing here\n"})
@@ -236,17 +246,19 @@ class ExampleAppTests(unittest.TestCase):
         root = self.tree(files)
         os.symlink(root / "a.txt", root / "sub" / "link")
         os.mkfifo(root / "sub" / "pipe")
+        _unix_socket(root / "sub" / "app.sock")
         code, manifest, errors = self.outcome("integrity", ["snapshot", str(root)])
         self.assertEqual((code, errors), (0, ""))
         self.assertEqual(manifest, (
             f"{digest_bytes(b'alpha' + bytes([10]))} a.txt\n"
+            "skipped sub/app.sock\n"
             f"{digest_bytes(b'beta' + bytes([10]))} sub/b.txt\n"
             f"{chunked_digest(large)} sub/large.bin\n"
             "skipped sub/link\n"
             "skipped sub/pipe\n"
         ))
-        self.assertTrue(manifest.splitlines()[2].startswith("sha3-256-chunks:"))
-        self.assertEqual(self.outcome("integrity", ["verify", str(root)], manifest.encode()), (0, "5 entries checked, 0 differences\n", ""))
+        self.assertTrue(manifest.splitlines()[3].startswith("sha3-256-chunks:"))
+        self.assertEqual(self.outcome("integrity", ["verify", str(root)], manifest.encode()), (0, "6 entries checked, 0 differences\n", ""))
         # A small file holding the serialized chunk digests does not pass
         # for the large file: the two kinds of digest are tagged apart.
         (root / "sub" / "large.bin").write_bytes(chunk_serialization(large))
@@ -255,7 +267,7 @@ class ExampleAppTests(unittest.TestCase):
         (root / "new.txt").write_bytes(b"new\n")
         self.assertEqual(self.outcome("integrity", ["verify", str(root)], manifest.encode()), (
             1,
-            "CHANGED a.txt\nNEW new.txt\nCHANGED sub/large.bin\nMISSING sub/b.txt\n5 entries checked, 4 differences\n",
+            "CHANGED a.txt\nNEW new.txt\nCHANGED sub/large.bin\nMISSING sub/b.txt\n6 entries checked, 4 differences\n",
             "KOSCHEI RUNTIME ERROR: integrity: 4 difference(s)\n",
         ))
         self.assertEqual(
