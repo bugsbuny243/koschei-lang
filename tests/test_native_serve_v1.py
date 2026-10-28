@@ -17,6 +17,8 @@ import tempfile
 import time
 import unittest
 
+from koschei import serve_knowhere_v1 as _serve
+
 ROOT = Path(__file__).resolve().parent.parent
 GO = shutil.which("go")
 SUPPORTED = GO is not None and sys.platform == "linux" and platform.machine() in {"x86_64", "AMD64"}
@@ -59,6 +61,22 @@ fn handle(server: ServeCaps) -> Int {
         }
         if path == "/twice" {
             println(server.accept())
+            continue
+        }
+        if path == "/json" {
+            println(server.reply_as(200, "application/json", "\\{\\"ok\\": true\\}"))
+            continue
+        }
+        if path == "/html" {
+            println(server.reply_as(201, "text/html; charset=utf-8", request.body_bytes()))
+            continue
+        }
+        if path == "/inject" {
+            println(server.reply_as(200, "text/html\\r\\nX-Injected: 1", "x"))
+            continue
+        }
+        if path == "/spaced" {
+            println(server.reply_as(200, " text/html", "x"))
             continue
         }
         println(server.reply(200, "{request.method()} {path} merhaba"))
@@ -125,6 +143,10 @@ REQUESTS: list[tuple[bytes, float]] = [
     (b"GET /nothing HTTP/1.1\r\n" + HOST + b"\r\n", 0),
     (b"GET /big HTTP/1.1\r\n" + HOST + b"\r\n", 0),
     (b"GET /twice HTTP/1.1\r\n" + HOST + b"\r\n", 0),
+    (b"GET /json HTTP/1.1\r\n" + HOST + b"\r\n", 0),
+    (b"POST /html HTTP/1.1\r\n" + HOST + b"Content-Length: 4\r\n\r\n<b>!", 0),
+    (b"GET /inject HTTP/1.1\r\n" + HOST + b"\r\n", 0),
+    (b"GET /spaced HTTP/1.1\r\n" + HOST + b"\r\n", 0),
 ]
 
 
@@ -222,6 +244,20 @@ class NativeServeParityTests(unittest.TestCase):
         for index in (19, 20, 22, 23):
             self.assertTrue(replies[index].startswith(b"HTTP/1.1 500 Internal Server Error\r\n"), index)
         self.assertTrue(replies[21].startswith(b"HTTP/1.1 204 No Content\r\n"))
+        self.assertEqual(replies[24], (
+            b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 12\r\n"
+            b'Connection: close\r\n\r\n{"ok": true}'
+        ))
+        self.assertEqual(replies[25], (
+            b"HTTP/1.1 201 Created\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: 4\r\n"
+            b"Connection: close\r\n\r\n<b>!"
+        ))
+        # A content type that could add a header is never sent: the client
+        # gets 500 and reply_as() the Error value.
+        for index in (26, 27):
+            self.assertTrue(replies[index].startswith(b"HTTP/1.1 500 Internal Server Error\r\n"), index)
+            self.assertNotIn(b"X-Injected", replies[index])
+        self.assertEqual(output.count(_serve.CONTENT_TYPE_MESSAGE + "\n"), 2)
         for expected in (
             "KS3410: Host header may not be empty",
             "KS3410: exchange v1 accepts uppercase alphabetic HTTP methods only",

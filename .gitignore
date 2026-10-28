@@ -7,3 +7,4 @@ __pycache__/
 # Packaging outputs: never tracked, so wheels build from the sources
 build/
 *.egg-info/
+dist/

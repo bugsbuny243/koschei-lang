@@ -14,6 +14,7 @@ import platform
 import re
 import resource
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -52,6 +53,9 @@ fn main(caps: SystemCaps) {
     println(disk.read("root/sub/../a.txt"))
     println(disk.read("./root/sub/inner.txt"))
     println(disk.read("root/missing"))
+    println(disk.read("root/pipe"))
+    println(disk.read("root/app.sock"))
+    println(disk.read_bytes("root/app.sock"))
     println(disk.read("root/sub"))
     println(disk.read("root"))
     println(disk.read("/etc/passwd"))
@@ -145,6 +149,11 @@ def workspace() -> tempfile.TemporaryDirectory:
     (base / "root" / "link").symlink_to("a.txt")
     (base / "root" / "sublink").symlink_to("sub")
     (base / "rootlink").symlink_to("root")
+    # Special files are refused without being opened: a FIFO with no writer
+    # would block, and opening a socket fails with ENXIO.
+    os.mkfifo(base / "root" / "pipe")
+    with socket.socket(socket.AF_UNIX) as bound:
+        bound.bind(str(base / "root" / "app.sock"))
     (base / "rootless").mkdir()
     (base / "rootless" / "a.txt").write_text("outside", encoding="utf-8")
     (base / "main.ks").write_text(PROGRAM, encoding="utf-8")
@@ -182,6 +191,8 @@ class NativeBrokerTests(unittest.TestCase):
             self.assertEqual(lines[0], "merhaba\r")
             self.assertIn("KS3405", expected)
             self.assertIn("Dosya okunamadı: ENOENT: root/missing", expected)
+            for name in ("pipe", "app.sock", "app.sock"):
+                self.assertIn(f"Dosya okunamadı: düzenli dosya değil: root/{name}\n", expected)
             self.assertIn("Ortam değişkeni geçerli UTF-8 metin değil: KS_TEST_BINARY", expected)
             binary = self.build(base / "main.ks")
             native = subprocess.run([str(binary)], cwd=base, env=env, capture_output=True, timeout=60, check=False)

@@ -6,7 +6,7 @@ Koschei Lang is an independent programming language and library ecosystem for cy
 
 **Koschei Lang is sold and licensed separately from Koschei Sentinel and Koschei Web3 Hub.** Interoperability may use explicit SDKs, adapters and versioned contracts, but it does not create shared pricing, entitlement or runtime authority. See [the standalone product charter](docs/PRODUCT_CHARTER_LANG_V1.md), [product direction](docs/PRODUCT_DIRECTION_2026-09-10.md) and the [legacy compatibility bundle contract](docs/COMMERCIAL_BUNDLE_V1.md).
 
-> **Private commercial development repository. Koschei is proprietary software. Access to this repository does not grant redistribution, sublicensing, resale, or publication rights. See `LICENSE`.**
+> **Private development repository. Koschei Lang is free for personal use; commercial use needs a perpetual commercial license (see [`LICENSING.md`](LICENSING.md)). Access to this repository does not grant redistribution, sublicensing, resale, or publication rights. See `LICENSE`.**
 
 **A capability-secure programming language. An imported package cannot touch your disk, network, or environment unless you hand it a token.**
 
@@ -170,11 +170,11 @@ Security boundaries currently enforced in the native path include capability den
 
 The protected-source/deception architecture is being hardened through staged attack waves. Canonical source identity remains separate from physical source locators, and decoy views are non-deployable by construction.
 
-## Commercial development
+## Licensing and distribution
 
-Koschei Lang is being developed as standalone proprietary commercial software. Public redistribution of the current repository, compiler/runtime security implementation, deception mechanisms, model integrations, or derivative commercial products is not authorized unless a separate written license expressly permits it.
+Koschei Lang is free for personal, non-commercial use. Commercial use needs a commercial license, paid once and valid without time limit, covering every version released within 12 months of purchase: Individual 49 USD, Team (up to 10 developers) 249 USD, Enterprise 999 USD. Programs written in Koschei, and the binaries `ks build` produces, belong to their authors. See [`LICENSING.md`](LICENSING.md).
 
-Future customer-facing distribution may include licensed SDK/tooling, signed binaries, private package/artifact channels, enterprise policy management, audit evidence, and support/SLA offerings. Those distribution rights will be defined by Lang-specific commercial terms rather than repository access or purchase of another Koschei product.
+Users download Koschei from its store on Polar (polar.sh). `python tools/polar_bundle_v1.py` builds that download, `dist/polar/koschei-lang-<version>.zip`: the `koschei` package, the installer, the license, the customer README (`distribution/polar/`), the language guide, the references and the examples it runs. This repository and its internal documents stay private.
 
 ## Contributions
 
@@ -182,4 +182,4 @@ Contributions are accepted only through authorized private collaboration. Before
 
 ## License
 
-**Proprietary — all rights reserved for current and future proprietary Koschei revisions.** See `LICENSE` for the historical MIT notice covering only revisions previously released under MIT and for the current proprietary terms.
+**Koschei Lang License 1.0** — free for personal use; commercial use needs a perpetual commercial license. See [`LICENSE`](LICENSE) (Turkish: [`LICENSE.tr.md`](LICENSE.tr.md)). Revisions previously released under the MIT License stay under the MIT License.

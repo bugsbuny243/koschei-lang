@@ -29,6 +29,13 @@ from .mir_extension_instructions_v4 import (
     MirFalliblePayload,
     MirInterpolate,
     MirIsRuntimeError,
+    MirMapContains,
+    MirMapFinish,
+    MirMapGet,
+    MirMapInsert,
+    MirMapKeys,
+    MirMapNew,
+    MirMapSet,
     MirStructFieldSet,
     MirStructFinish,
     MirStructNew,
@@ -201,9 +208,11 @@ _NATIVE_CAPABILITY_CALLS = {
     ("EnvCaps", "get"): ("_ksEnvGet", 0),
     ("NetRoot", "allow"): ("_ksNetAllow", 1),
     ("NetCaps", "get"): ("_ksNetGet", 1),
+    ("NetCaps", "post"): ("_ksNetPost", 3),
     ("ServeRoot", "allow"): ("_ksServeAllow", 5),
     ("ServeCaps", "accept"): ("_ksServeAccept", 0),
     ("ServeCaps", "reply"): ("_ksServeReply", 2),
+    ("ServeCaps", "reply_as"): ("_ksServeReplyAs", 3),
 }
 _ADMITTED_INSTRUCTIONS = (
     MirConst,
@@ -231,6 +240,13 @@ _ADMITTED_INSTRUCTIONS = (
     MirStructFinish,
     MirStructFieldSet,
     MirCapabilityCall,
+    MirMapNew,
+    MirMapInsert,
+    MirMapFinish,
+    MirMapGet,
+    MirMapSet,
+    MirMapKeys,
+    MirMapContains,
 )
 _GO_IDENTIFIER = re.compile(r"[^A-Za-z0-9_]")
 _ENUM_GO_TYPE = "_ksEnumValue"
@@ -344,7 +360,7 @@ def generate_go_mir_native(mir: MirGraph) -> str:
     if "serve" in domains:
         lines.append(serve_runtime())
     for plan in plans:
-        lines.extend(_emit_function(plan, symbols))
+        lines.extend(_emit_function(plan, symbols, process_error=plan.symbol == root_main))
         lines.append("")
     main = next(item for item in mir.root_module.functions if item.name == "main")
     entry_arguments = "_ksSystemCaps{}" if main.parameters else ""
@@ -847,6 +863,16 @@ def _operands(instruction: Any) -> tuple[int, ...]:
         return () if instruction.source is None else (instruction.source,)
     if isinstance(instruction, MirCapabilityCall):
         return (instruction.object, *instruction.arguments)
+    if isinstance(instruction, MirMapInsert):
+        return (instruction.object, *instruction.arguments)
+    if isinstance(instruction, MirMapFinish):
+        return (instruction.source,)
+    if isinstance(instruction, (MirMapGet, MirMapContains)):
+        return (instruction.object, instruction.key)
+    if isinstance(instruction, MirMapSet):
+        return (instruction.object, instruction.key, instruction.value)
+    if isinstance(instruction, MirMapKeys):
+        return (instruction.object,)
     return ()
 
 
@@ -906,7 +932,9 @@ def _variant_type_arguments(instruction: MirVariantConstruct) -> tuple[str, ...]
 # ---- emission --------------------------------------------------------------
 
 
-def _emit_function(plan: _FunctionPlan, symbols: dict[tuple[str, str], str]) -> list[str]:
+def _emit_function(
+    plan: _FunctionPlan, symbols: dict[tuple[str, str], str], *, process_error: bool = False
+) -> list[str]:
     function = plan.function
     parameter_symbols = {
         parameter.name: f"_ks_p_{index}_{_safe_identifier(parameter.name)}"
@@ -958,7 +986,12 @@ def _emit_function(plan: _FunctionPlan, symbols: dict[tuple[str, str], str]) -> 
         ]
     )
 
-    return_contract = _go_string_slice(_runtime_names(function.return_type))
+    return_names = _runtime_names(function.return_type)
+    # Root main may return an Error whatever it declares: _ksFinish ends the
+    # run with it, as the canonical executor does.
+    if process_error and "Error" not in return_names:
+        return_names = (*return_names, "Error")
+    return_contract = _go_string_slice(return_names)
     lines.extend(["\t_ks_pc := 0", "\tfor {", "\t\tswitch _ks_pc {"])
     for block in function.blocks:
         lines.append(f"\t\tcase {block.id}:")
@@ -1065,6 +1098,30 @@ def _emit_instruction(
     if isinstance(instruction, MirList):
         items = ", ".join(value(item) for item in instruction.items)
         return [f"{prefix}{value(instruction.target)} = []any{{{items}}}"]
+    if isinstance(instruction, MirMapNew):
+        return [f"{prefix}{value(instruction.target)} = _ksMapNew()"]
+    if isinstance(instruction, MirMapInsert):
+        key, item = instruction.arguments
+        return [f"{prefix}_ksMapInsert({value(instruction.object)}, {value(key)}, {value(item)})"]
+    if isinstance(instruction, MirMapFinish):
+        return [f"{prefix}{value(instruction.target)} = _ksMapFinish({value(instruction.source)})"]
+    if isinstance(instruction, MirMapGet):
+        return [
+            f"{prefix}{value(instruction.target)} = "
+            f"_ksMapGet({value(instruction.object)}, {value(instruction.key)})"
+        ]
+    if isinstance(instruction, MirMapSet):
+        return [
+            f"{prefix}{value(instruction.target)} = _ksMapSet({value(instruction.object)}, "
+            f"{value(instruction.key)}, {value(instruction.value)})"
+        ]
+    if isinstance(instruction, MirMapKeys):
+        return [f"{prefix}{value(instruction.target)} = _ksMapKeys({value(instruction.object)})"]
+    if isinstance(instruction, MirMapContains):
+        return [
+            f"{prefix}{value(instruction.target)} = "
+            f"_ksMapContains({value(instruction.object)}, {value(instruction.key)})"
+        ]
     if isinstance(instruction, MirInterpolate):
         parts = " + ".join(f"_ksToString({value(item)})" for item in instruction.items)
         return [f"{prefix}{value(instruction.target)} = _ksBudgetText({parts or chr(34) * 2})"]

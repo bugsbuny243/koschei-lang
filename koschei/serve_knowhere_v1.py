@@ -15,8 +15,10 @@ The program stays in control; there is no callback::
 
 ``accept()`` opens the sealed loopback listener on first use and keeps it,
 accepts one connection, reads one strict HTTP/1.x request and returns it as an
-``HttpRequest`` value. ``reply(status, body)`` answers that request and closes
-its connection.
+``HttpRequest`` value. ``reply(status, body)`` answers that request as
+``text/plain; charset=utf-8`` and closes its connection;
+``reply_as(status, content_type, body)`` names the content type, checked by
+``net_v1.valid_content_type``.
 
 **Knowhere: nothing survives from one request to the next.** Each connection
 carries exactly one request. A request is answered once; ``accept()`` while
@@ -45,6 +47,7 @@ from typing import Any
 
 from . import effect_contracts_v1 as _effects
 from . import interpreter as _runtime
+from . import net_v1
 from . import semantic as _semantic
 from . import serve_loopback_exchange_v1 as _exchange
 from . import type_contracts as _contracts
@@ -62,6 +65,11 @@ NO_PENDING_MESSAGE = "KS3470: Yanıtlanacak bekleyen bir istek yok."
 BUDGET_MESSAGE = "KS3471: Sunucunun istek bütçesi tükendi: en fazla {count} istek kabul edilebilir."
 STATUS_MESSAGE = "KS3472: Desteklenmeyen HTTP durum kodu: {status}."
 EMPTY_BODY_MESSAGE = "KS3472: 204 yanıtı gövde taşıyamaz."
+CONTENT_TYPE_MESSAGE = (
+    f"KS3472: Yanıtın içerik türü 1-{net_v1.CONTENT_TYPE_MAX_BYTES} yazdırılabilir ASCII "
+    "karakter olmalı ve iki ucunda boşluk olmamalı."
+)
+PLAIN_TEXT = "text/plain; charset=utf-8"
 HEADER_MESSAGE = "KS3473: İstekte '{name}' başlığı yok."
 BODY_TEXT_MESSAGE = "KS3430: İstek gövdesi geçerli UTF-8 metin değil."
 
@@ -102,10 +110,10 @@ class _Server:
         self.accepted = 0
 
 
-def _wire(status: int, body: bytes) -> bytes:
+def _wire(status: int, body: bytes, content_type: str = PLAIN_TEXT) -> bytes:
     head = (
         f"HTTP/1.1 {status} {REASONS[status]}\r\n"
-        "Content-Type: text/plain; charset=utf-8\r\n"
+        f"Content-Type: {content_type}\r\n"
         f"Content-Length: {len(body)}\r\n"
         "Connection: close\r\n\r\n"
     ).encode("ascii")
@@ -228,6 +236,14 @@ def _accept(self: ServeCaps):
 
 
 def _reply(self: ServeCaps, status: Any, body: Any):
+    return _respond(self, status, PLAIN_TEXT, body)
+
+
+def _reply_as(self: ServeCaps, status: Any, content_type: Any, body: Any):
+    return _respond(self, status, content_type, body)
+
+
+def _respond(self: ServeCaps, status: Any, content_type: Any, body: Any):
     server = self._server
     if server is None or server.pending is None:
         return _runtime.KsError(NO_PENDING_MESSAGE)
@@ -236,6 +252,9 @@ def _reply(self: ServeCaps, status: Any, body: Any):
     if type(status) is not int or status not in REASONS:
         _close(connection, 500)
         return _runtime.KsError(STATUS_MESSAGE.format(status=status))
+    if not net_v1.valid_content_type(content_type):
+        _close(connection, 500)
+        return _runtime.KsError(CONTENT_TYPE_MESSAGE)
     if not isinstance(body, (str, bytes)):
         _close(connection, 500)
         return _exchange._protocol_error("ServeCaps.reply() body must be String or Bytes")
@@ -243,7 +262,7 @@ def _reply(self: ServeCaps, status: Any, body: Any):
     if status == 204 and payload:
         _close(connection, 500)
         return _runtime.KsError(EMPTY_BODY_MESSAGE)
-    wire = _wire(status, payload)
+    wire = _wire(status, payload, content_type)
     if len(wire) > self.policy.max_response_bytes:
         _close(connection, 500)
         return _exchange._protocol_error("response exceeds max_response_bytes")
@@ -290,15 +309,18 @@ def request_method(request: HttpRequest, name: str, arguments: list[Any]) -> Any
 
 def _check_method_call(self, receiver_type, method_name, location, argument_types=None, arguments=None):
     values = argument_types or []
-    if receiver_type == "ServeCaps" and method_name in {"accept", "reply"}:
-        expected = 0 if method_name == "accept" else 2
+    if receiver_type == "ServeCaps" and method_name in {"accept", "reply", "reply_as"}:
+        expected = {"accept": 0, "reply": 2, "reply_as": 3}[method_name]
         if len(values) != expected:
             raise _semantic.SemanticError(
                 "KS1301", f"ServeCaps.{method_name}() {expected} argüman bekler, {len(values)} verildi.", location
             )
-        if method_name == "reply":
-            self._require_assignable(("Int",), values[0], "ServeCaps.reply() durum kodu", location)
-            self._require_assignable(("String", "Bytes"), values[1], "ServeCaps.reply() gövdesi", location)
+        if method_name != "accept":
+            subject = f"ServeCaps.{method_name}()"
+            self._require_assignable(("Int",), values[0], f"{subject} durum kodu", location)
+            if method_name == "reply_as":
+                self._require_assignable(("String",), values[1], f"{subject} içerik türü", location)
+            self._require_assignable(("String", "Bytes"), values[-1], f"{subject} gövdesi", location)
             return "Void or Error"
         return "HttpRequest or Error"
     if receiver_type == "HttpRequest":
@@ -337,6 +359,7 @@ def _semantic_fallible(self, expression):
 _TYPED = {
     ("ServeCaps", "accept"): (0, union_type(HTTP_REQUEST, ERROR)),
     ("ServeCaps", "reply"): (2, union_type(VOID, ERROR)),
+    ("ServeCaps", "reply_as"): (3, union_type(VOID, ERROR)),
     ("HttpRequest", "method"): (0, STRING),
     ("HttpRequest", "path"): (0, STRING),
     ("HttpRequest", "body"): (0, union_type(STRING, ERROR)),
@@ -366,7 +389,7 @@ def _method_type(receiver, method, arguments, location):
 
 
 def _member(self, receiver, name, location):
-    if isinstance(receiver, ServeCaps) and name in {"accept", "reply"}:
+    if isinstance(receiver, ServeCaps) and name in {"accept", "reply", "reply_as"}:
         return _runtime._BoundMember(receiver, name, location)
     if isinstance(receiver, HttpRequest) and name in REQUEST_METHODS:
         return _runtime._BoundMember(receiver, name, location)
@@ -400,6 +423,7 @@ def install_serve_knowhere_v1() -> None:
         return
     ServeCaps.accept = _accept
     ServeCaps.reply = _reply
+    ServeCaps.reply_as = _reply_as
     _runtime.HttpRequest = HttpRequest
     _effects._PURE_VALUE_METHODS.update({"method", "path", "body", "body_bytes", "header"})
     _contracts.RESERVED_TYPE_PARAMETERS.add("HttpRequest")

@@ -68,8 +68,12 @@ Admitted: scalars and their operators, `List<T>`, `for`/`while`/`break`/
 (local siblings and the Core Library), `print`/`println`/`Error`, the kernel
 `sha3_256` digest (Go `crypto/sha3`, so building a program that uses it
 needs Go 1.24 or later), and the members
-`String.length/contains/trim/split/join/to_int` and
-`List.length/get/push/contains/take`.
+`String.length/contains/trim/split/join/to_int`,
+`List.length/get/push/contains/take`, and `Map<String, V>` literals with
+`get/set/keys/contains`. A map keeps insertion order: `set` keeps a replaced
+key's position and appends a new one, `get` of a missing key is the Error value
+`Map anahtarı bulunamadı: KEY`, and `==` compares the entries in order, as the
+direct MIR executor that `ks run` uses does (`mir_native_runtime._MapValue`).
 
 Program input is the one authority a binary may carry: `main(caps:
 SystemCaps)`, `caps.input.allow`, `InputCaps.args` and `InputCaps.read_text`
@@ -79,8 +83,9 @@ same way (`CLOCK_RANDOM_V1.md`). These types and `SystemCaps` may appear in
 signatures.
 
 Fails closed with `KS4004`: generic structs, struct fields of capability type,
-`Map`, every other capability (disk, network, environment, process, serve,
-persist) and its signatures, callback members
+processes, `persist` and the one-shot `serve.exchange` (disk, environment,
+network and the loopback server compile through the broker on linux/amd64:
+`NATIVE_BROKER_V1.md`), callback members
 (`filter`, `map`, `sort`, …), `to_float`, function or constructor values, and any instruction outside the
 list above. The legacy AST-Go backend is never used as a fallback.
 

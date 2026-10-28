@@ -137,6 +137,13 @@ fn main() {
 refused: out of range: 70000
 ```
 
+Yalın `or return` hatanın kendisini çağırana verir; bu yüzden fonksiyon onu
+döndürebilmelidir: hata bir Error ise `-> T or Error`, `None` ya da `Err`
+ise `Option` ya da `Result` dönüş tipi. Dönüş tipi olmayan bir fonksiyon
+döndüremez (`KS1304`).
+Yalnızca `main`, bildirmediği bir Error'u döndürebilir: program
+`KOSCHEI RUNTIME ERROR: <mesaj>` yazar ve 1 koduyla biter.
+
 Çalışma zamanı hataları da değerdir: Int taşması (`KS3501`), sıfıra bölme ve
 bellek bütçesini aşan değer (`KS3502`) her çalıştırıcıda aynı noktada hata
 değeri üretir ve `or` bunları yakalar.
@@ -344,7 +351,7 @@ usage: greet NAME
 | `caps.random` | `allow(max_bytes)` | `hex(count)`, `below(bound)` |
 | `caps.disk` | `allow(prefix)`, `allow_read_only(prefix)` | `read`, `write`, `list`, `delete` |
 | `caps.env` | `allow(name)` | `get()` |
-| `caps.net` | `allow(origin)` | `get(url)` |
+| `caps.net` | `allow(origin)` | `get(url)`, `post(url, content_type, body)` |
 
 - Kök yetki doğrudan iş yapamaz (`KS2402`); daraltılmış jeton genişleyemez
   (`KS2403`) ve kendisine verilmeyeni yapamaz (`KS2404`).
@@ -395,11 +402,11 @@ Bütün tanı kodları [`../reference/ERROR_CODES.md`](../reference/ERROR_CODES.
 
 ## 11. Native derleme
 
-`ks build`; çekirdek dili, struct, enum, generic, modül, Core Library, program
+`ks build`; çekirdek dili, struct, enum, generic, Map, modül, Core Library, program
 girdisi, saat ve rastgelelik kullanan programları; linux/amd64'te ayrıca
 kilitli bir aracı üzerinden disk (okuma, yazma, silme), ortam değişkenleri, ağ ve yerel sunucuyu derler
 ([`../NATIVE_BROKER_V1.md`](../NATIVE_BROKER_V1.md), [`../NET_V1.md`](../NET_V1.md)). İkili `ks run` ile aynı
-baytları ve aynı hata değerlerini yazdırır. Map, geri çağrılı üyeler
+baytları ve aynı hata değerlerini yazdırır. Geri çağrılı üyeler
 (`filter`, `map`, `sort`) ve süreçler farklı derlenmek yerine `KS4004`
 ile reddedilir; bkz.
 [`../MIR_GO_CONFORMANCE_ADAPTER_V2.md`](../MIR_GO_CONFORMANCE_ADAPTER_V2.md).

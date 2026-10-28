@@ -130,12 +130,16 @@ fn main() {
             self.assertEqual(completed.returncode, 0)
             self.assertEqual(completed.stdout, "1\n2\n3\n")
 
-    def test_unsupported_map_program_fails_closed_instead_of_legacy_ast_codegen(self) -> None:
+    def test_unsupported_program_fails_closed_instead_of_legacy_ast_codegen(self) -> None:
+        # Callback members are still outside MIR-Go (maps compiled since).
         _, mir = self.checked_mir(
             """
+fn positive(value: Int) -> Bool {
+    return value > 0
+}
+
 fn main() {
-    let scores: Map<String, Int> = {"a": 1}
-    println(scores)
+    println([1, -2, 3].filter(positive))
 }
 """
         )
@@ -144,8 +148,20 @@ fn main() {
         self.assertEqual(native_build_mode(mir), "blocked_ambient_ast_go_v1")
         self.assertFalse(any("AST fallback" in reason for reason in support.reasons))
         self.assertTrue(
-            any("MirMap" in reason for reason in support.reasons), support.reasons
+            any("'filter' is not MIR-Go yet" in reason for reason in support.reasons), support.reasons
         )
+
+    def test_map_programs_compile_through_mir_go(self) -> None:
+        _, mir = self.checked_mir(
+            """
+fn main() {
+    let scores: Map<String, Int> = {"a": 1}
+    println(scores)
+}
+"""
+        )
+        self.assertEqual(inspect_mir_go_support(mir).reasons, ())
+        self.assertEqual(native_build_mode(mir), "mir_go_v1")
 
     def test_local_calls_and_loop_cfg_are_emitted_from_mir(self) -> None:
         _, mir = self.checked_mir(

@@ -18,7 +18,7 @@ struct FakeRoot { net: NetRoot }
 
 fn steal(fake: FakeRoot) {
     let net = fake.net.allow("https://evil.example.com")
-    let response = net.get("https://evil.example.com/loot") or return
+    let response = net.get("https://evil.example.com/loot") or { return }
     println(response.text())
 }
 
@@ -47,7 +47,7 @@ class CapabilityTypeIntegrityTests(unittest.TestCase):
             """
             struct NetBox { net: NetCaps }
             fn use(box: NetBox) {
-                let response = box.net.get("https://evil.example.com") or return
+                let response = box.net.get("https://evil.example.com") or { return }
             }
             fn main(caps: SystemCaps) { use(caps) }
             """
@@ -77,7 +77,7 @@ class CapabilityTypeIntegrityTests(unittest.TestCase):
             """
             struct NetBox { net: NetCaps }
             fn use(box: NetBox) {
-                let response = box.net.get("https://api.example.com") or return
+                let response = box.net.get("https://api.example.com") or { return }
             }
             fn main(caps: SystemCaps) {
                 let net = caps.net.allow("https://api.example.com")
@@ -105,7 +105,7 @@ class CapabilityTypeIntegrityTests(unittest.TestCase):
         source = """
         struct NetBox { net: NetCaps }
         fn use(box: NetBox) {
-            let response = box.net.get("https://api.example.com") or return
+            let response = box.net.get("https://api.example.com") or { return }
         }
         fn main() { println("safe") }
         """
@@ -123,7 +123,7 @@ class CapabilityTypeIntegrityTests(unittest.TestCase):
         source = """
         struct NetBox { net: NetCaps }
         fn use(box: NetBox) {
-            let response = box.net.get("https://api.example.com") or return
+            let response = box.net.get("https://api.example.com") or { return }
         }
         fn main() { println("safe") }
         """

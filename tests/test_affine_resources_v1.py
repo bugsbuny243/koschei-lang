@@ -34,8 +34,8 @@ fn main() {
         self._check(
             """
 fn inspect_twice(authority: NetCaps) {
-    let first = authority.get("https://example.com/a") or return
-    let second = authority.get("https://example.com/b") or return
+    let first = authority.get("https://example.com/a") or { return }
+    let second = authority.get("https://example.com/b") or { return }
     println(first.status())
     println(second.status())
 }

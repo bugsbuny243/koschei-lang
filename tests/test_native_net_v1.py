@@ -2,7 +2,9 @@
 
 `ks run` and the binary must give the same bytes for the same requests:
 statuses, redirects, budgets, encodings, transport failures, proxies and TLS
-follow net_v1 in both, and the request the server sees is the same.
+follow net_v1 in both, and the request the server sees is the same. `post`
+is checked the same way: its refusals, its body and headers on the wire, and
+the redirects it does not follow.
 """
 from __future__ import annotations
 
@@ -91,8 +93,24 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         elif path == "/garbage":
             self.wfile.write(b"HELLO THERE\r\n\r\n")
             self.close_connection = True
+        elif path == "/badloc":
+            # Not a URL; net/http's client would fail on it before Koschei
+            # could report the refused redirect.
+            self._send(302, headers={"Location": "%zz"})
         else:
             self._send(200, ("seen " + path).encode())
+
+    def do_POST(self) -> None:  # noqa: N802 - http.server API
+        data = self.rfile.read(int(self.headers.get("Content-Length", "0")))
+        if self.path == "/r":
+            self._send(302, b"moved", {"Location": "ok"})
+        elif self.path == "/badloc":
+            self._send(307, b"moved", {"Location": "%zz"})
+        elif self.path == "/big":
+            self._send(200, b"a" * 1_048_577)
+        else:
+            seen = (self.path, sorted(self.headers.items()), len(data), data[:24])
+            self._send(200, repr(seen).encode())
 
 
 class _Proxy(http.server.BaseHTTPRequestHandler):
@@ -103,6 +121,14 @@ class _Proxy(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802
         body = f"proxy {self.requestline} host={self.headers.get('Host')}".encode()
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_POST(self) -> None:  # noqa: N802
+        data = self.rfile.read(int(self.headers.get("Content-Length", "0")))
+        body = f"proxy {self.requestline} host={self.headers.get('Host')} {data!r}".encode()
         self.send_response(200)
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
@@ -143,6 +169,36 @@ fn main(caps: SystemCaps) {{
     }}
 {extra}}}
 """
+
+
+def _post_program(calls: list[tuple[str, str, str]], extra: str = "") -> str:
+    """One post per call; a body is a Koschei expression."""
+
+    lines = []
+    for url, kind, body in calls:
+        lines.append(
+            "    for attempt in [1] {\n"
+            f'        let response = net.post("{url}", "{kind}", {body}) or {{\n'
+            f'            println(net.post("{url}", "{kind}", {body}))\n'
+            "            continue\n"
+            "        }\n"
+            '        println("{response.status()} {response.text()}")\n'
+            "    }\n"
+        )
+    return (
+        "fn main(caps: SystemCaps) {\n"
+        '    let net = caps.net.allow("ORIGIN")\n'
+        '    let mut mib = "a"\n'
+        "    let mut doublings = 0\n"
+        "    while doublings < 20 {\n"
+        "        mib = mib + mib\n"
+        "        doublings = doublings + 1\n"
+        "    }\n"
+        '    let over = mib + "a"\n'
+        + "".join(lines)
+        + extra
+        + "}\n"
+    )
 
 
 class NetRulesTests(unittest.TestCase):
@@ -186,6 +242,33 @@ class NetRulesTests(unittest.TestCase):
         for location, expected in cases.items():
             with self.subTest(location):
                 self.assertEqual(net_v1.resolve_location(base, location, SCHEMES).text(), expected)
+
+    def test_post_refusals(self) -> None:
+        self.assertIsNone(net_v1.post_refusal("application/json; charset=utf-8", b"{}"))
+        self.assertIsNone(net_v1.post_refusal("x/" + "a" * 254, b"a" * 1_048_576))
+        for kind in ("", " text/plain", "text/plain ", "text/plain\r\nX-Injected: 1", "metin/ğ", "x/" + "a" * 255, 5):
+            with self.subTest(kind=kind):
+                self.assertEqual(net_v1.post_refusal(kind, b""), net_v1.CONTENT_TYPE_ERROR)
+        self.assertEqual(net_v1.post_refusal("text/plain", "not encoded"), net_v1.REQUEST_BODY_ERROR)
+        self.assertEqual(net_v1.post_refusal("text/plain", b"a" * 1_048_577), net_v1.REQUEST_BUDGET_ERROR)
+
+    def test_checker_types_get_and_post_arguments(self) -> None:
+        calls = ['net.get(5)', 'net.get()', 'net.post("u", "t")', 'net.post("u", 5, "b")', 'net.post("u", "t", 5)']
+        for call in calls:
+            with self.subTest(call):
+                with tempfile.TemporaryDirectory() as directory:
+                    path = Path(directory) / "main.ks"
+                    path.write_text(
+                        'fn main(caps: SystemCaps) {\n    let net = caps.net.allow("http://127.0.0.1")\n'
+                        f"    println({call})\n}}\n",
+                        encoding="utf-8",
+                    )
+                    checked = subprocess.run(
+                        [sys.executable, "-m", "koschei", "check", str(path)],
+                        env=dict(os.environ, PYTHONPATH=str(ROOT)), capture_output=True, timeout=120, check=False,
+                    )
+                    self.assertEqual(checked.returncode, 1, checked.stdout.decode())
+                    self.assertIn("KS1301", checked.stdout.decode() + checked.stderr.decode())
 
     def test_proxy_choice(self) -> None:
         def proxy(url: str, **environ: str) -> str | None:
@@ -264,6 +347,7 @@ class NativeNetParityTests(unittest.TestCase):
             "/ok", "/404", "/r", "/abs", "/out", "/scheme", "/chain/5", "/chain/6", "/noloc",
             "/gz", "/identity", "/latin", "/exact", "/big", "/headers", "/close", "/short",
             "/garbage", "/a(b)/../c?x=1&y=%41", "/ok#fragment", "//different.example/p%2Fq?q=1",
+            "/badloc",
         ]
         others = [
             f"HTTP://127.0.0.1:{self.server.server_port}/ok",
@@ -305,20 +389,78 @@ class NativeNetParityTests(unittest.TestCase):
         self.assertEqual(lines[18], "200 25 seen /a(b)/../c?x=1&y=%41")
         # A leading "//" stays a path; it never becomes an authority.
         self.assertEqual(lines[20], "200 42 GET //different.example/p%2Fq?q=1 HTTP/1.1")
+        self.assertEqual(lines[21], "KS3402: Ağ yönlendirmesi kapsam dışına çıktı: %zz")
         self.assertEqual(lines[-4], f"API isteği başarısız: ECONNREFUSED: http://127.0.0.1:{closed}/")
         self.assertEqual(lines[-3], "KS3402: Ağ origin kapsamı dışında erişim reddedildi: file:///etc/passwd")
         self.assertEqual(lines[-2:], ["<NetCaps>", "<Response>"])
+
+    def test_posts_match_ks_run(self) -> None:
+        origin = f"http://127.0.0.1:{self.server.server_port}"
+        json = '"\\{\\"a\\": 1, \\"ğ\\": \\"ü\\"\\}"'
+        calls = [
+            (origin + "/echo", "application/json", json),
+            (origin + "/echo", "text/plain; charset=utf-8", '""'),
+            (origin + "/echo", "application/octet-stream", '"abc".to_bytes()'),
+            (origin + "/echo", "text/plain", "mib"),
+            (origin + "/echo", "text/plain", "over"),
+            (origin + "/echo", "x/" + "a" * 254, '"x"'),
+            (origin + "/echo", "x/" + "a" * 255, '"x"'),
+            (origin + "/echo", " text/plain", '"x"'),
+            (origin + "/echo", "text/plain\\r\\nX-Injected: 1", '"x"'),
+            (origin + "/echo", "", '"x"'),
+            (origin + "/echo", "metin/ğ", '"x"'),
+            (origin + "/r", "text/plain", '"x"'),
+            (origin + "/badloc", "text/plain", '"x"'),
+            (origin + "/big", "text/plain", '"x"'),
+            (origin + "/a(b)/../c?x=1&y=%41", "text/plain", '"x"'),
+            ("http://example.com/", "text/plain", '"x"'),
+            ("http://example.com/", " text/plain", '"x"'),
+        ]
+        closed = _closed_port()
+        extra = (
+            f'    println(caps.net.allow("http://127.0.0.1:{closed}").post("http://127.0.0.1:{closed}/", "text/plain", "x"))\n'
+        )
+        output = self.both(_post_program(calls, extra).replace("ORIGIN", origin)).decode()
+        lines = output.splitlines()
+        host = f"('Host', '127.0.0.1:{self.server.server_port}')"
+        common = f"('Accept-Encoding', 'identity'), ('Connection', 'close'), "
+        self.assertEqual(lines[0], (
+            f"200 ('/echo', [{common}('Content-Length', '20'), ('Content-Type', 'application/json'), {host}, "
+            "('User-Agent', 'koschei/1')], 20, b'{\"a\": 1, \"\\xc4\\x9f\": \"\\xc3\\xbc\"}')"
+        ))
+        self.assertIn("('Content-Length', '0')", lines[1])
+        self.assertTrue(lines[1].endswith("0, b'')"))
+        self.assertTrue(lines[2].endswith("3, b'abc')"))
+        self.assertTrue(lines[3].endswith("1048576, b'aaaaaaaaaaaaaaaaaaaaaaaa')"))
+        self.assertEqual(lines[4], net_v1.REQUEST_BUDGET_ERROR)
+        self.assertTrue(lines[5].endswith("1, b'x')"))
+        self.assertEqual(lines[6:11], [net_v1.CONTENT_TYPE_ERROR] * 5)
+        # POST follows no redirect, valid or not.
+        self.assertEqual(lines[11:13], ["302 moved", "307 moved"])
+        self.assertIn("KSNET_RESPONSE_BUDGET", lines[13])
+        self.assertTrue(lines[14].startswith("200 ('/a(b)/../c?x=1&y=%41', "))
+        self.assertEqual(lines[15], "KS3402: Ağ origin kapsamı dışında erişim reddedildi: http://example.com/")
+        # The arguments are refused before the origin is consulted.
+        self.assertEqual(lines[16], net_v1.CONTENT_TYPE_ERROR)
+        self.assertEqual(lines[17], f"API isteği başarısız: ECONNREFUSED: http://127.0.0.1:{closed}/")
+        self.assertEqual(len(lines), 18)
 
     def test_proxies_match_ks_run(self) -> None:
         proxy = f"http://127.0.0.1:{self.proxy.server_port}"
         source = _program("http://koschei.proxy.test:8080", ["http://koschei.proxy.test:8080/p?q"], (
             '    println(caps.net.allow("https://koschei.proxy.test").get("https://koschei.proxy.test/"))\n'
+            '    let posted = net.post("http://koschei.proxy.test:8080/f", "text/plain", "hi") or {\n'
+            '        println(net.post("http://koschei.proxy.test:8080/f", "text/plain", "hi"))\n'
+            "        return\n"
+            "    }\n"
+            "    println(posted.text())\n"
         ))
         output = self.both(source, {"http_proxy": proxy, "HTTPS_PROXY": proxy, "no_proxy": "example.org"}).decode()
         seen = "proxy GET http://koschei.proxy.test:8080/p?q HTTP/1.1 host=koschei.proxy.test:8080"
         self.assertEqual(output.splitlines(), [
             f"200 {len(seen)} {seen}",
             "API isteği başarısız: EIO: https://koschei.proxy.test/",
+            "proxy POST http://koschei.proxy.test:8080/f HTTP/1.1 host=koschei.proxy.test:8080 b'hi'",
         ])
         output = self.both(source, {"http_proxy": "socks5://127.0.0.1:1", "https_proxy": proxy}).decode()
         self.assertEqual(output.splitlines()[0], "API isteği başarısız: EIO: http://koschei.proxy.test:8080/p?q")

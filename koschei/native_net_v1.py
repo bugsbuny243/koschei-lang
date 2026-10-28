@@ -1,10 +1,12 @@
-"""Native ``NetCaps.get`` through the capability broker (readiness gate G2).
+"""Native ``NetCaps.get`` and ``NetCaps.post`` through the capability broker.
 
 The worker cannot open sockets (``native_broker_v1``), so a request is a
 message to the broker, which applies ``net_v1``'s rules: the same URL
 grammar, origin check, headers, redirect loop, status handling, body budget,
-UTF-8 rule, proxy choice and failure codes as ``ks run``. Only programs that
-use the network carry this fragment and ``net/http``.
+UTF-8 rule, proxy choice and failure codes as ``ks run``. The worker checks a
+``post``'s content type and body first, as ``ks run`` does, and the broker
+checks them again. Only programs that use the network carry this fragment and
+``net/http``.
 """
 
 from __future__ import annotations
@@ -41,6 +43,10 @@ def net_runtime() -> str:
         max_body=HTTP_RESPONSE_MAX_BYTES_V1,
         budget=_go(f"{HTTP_RESPONSE_BUDGET_ERROR_V1}: HTTP response body exceeds {HTTP_RESPONSE_MAX_BYTES_V1} byte budget"),
         encoding=_go(f"{HTTP_CONTENT_ENCODING_ERROR_V1}: unsupported HTTP content encoding: "),
+        max_request=net_v1.REQUEST_BODY_MAX_BYTES,
+        content_type_error=_go(net_v1.CONTENT_TYPE_ERROR),
+        body_error=_go(net_v1.REQUEST_BODY_ERROR),
+        request_budget=_go(net_v1.REQUEST_BUDGET_ERROR),
     )
 
 
@@ -75,7 +81,39 @@ func _ksNetGet(receiver any, address any) any {{
 	if !ok {{
 		_ksAbort("KS5002", "NetCaps.get url drifted")
 	}}
-	done, answer := _ksAsk("net_get", caps.scope, text)
+	return _ksNetAnswer(_ksAsk("net_get", caps.scope, text))
+}}
+
+// net_v1.post_refusal comes first, then the origin, as under ks run.
+func _ksNetPost(receiver any, address any, contentType any, body any) any {{
+	caps, ok := receiver.(_ksNetCaps)
+	if !ok {{
+		_ksAbort("KS5002", "NetCaps receiver drifted")
+	}}
+	kind, ok := contentType.(string)
+	if !ok || !_ksValidContentType(kind) {{
+		return _ksError{{message: {content_type_error}}}
+	}}
+	var payload string
+	switch value := body.(type) {{
+	case string:
+		payload = value
+	case _ksBytes:
+		payload = value.data
+	default:
+		return _ksError{{message: {body_error}}}
+	}}
+	if len(payload) > {max_request} {{
+		return _ksError{{message: {request_budget}}}
+	}}
+	text, ok := address.(string)
+	if !ok {{
+		return _ksError{{message: {outside} + {invalid_target}}}
+	}}
+	return _ksNetAnswer(_ksAsk("net_post", caps.scope, text, kind, payload))
+}}
+
+func _ksNetAnswer(done bool, answer []string) any {{
 	if !done {{
 		return _ksError{{message: answer[0]}}
 	}}
@@ -362,10 +400,10 @@ func _ksProxyFor(target _ksURL) string {{
 }}
 
 type _ksNetScope struct {{
-	origin   _ksURL
-	valid    bool
-	broken   bool
-	client   *http.Client
+	origin    _ksURL
+	valid     bool
+	broken    bool
+	transport *http.Transport
 }}
 
 // Every read and write on a connection must make progress within the
@@ -424,12 +462,9 @@ func _ksNetOpenScope(origin string) *_ksNetScope {{
 		DisableKeepAlives:   true,
 		TLSNextProto:        map[string]func(string, *tls.Conn) http.RoundTripper{{}},
 	}}
-	scope.client = &http.Client{{
-		Transport: transport,
-		CheckRedirect: func(*http.Request, []*http.Request) error {{
-			return http.ErrUseLastResponse
-		}},
-	}}
+	// The transport, not an http.Client: a client parses a redirect's
+	// Location itself and fails on one net_v1 reports as KS3402.
+	scope.transport = transport
 	return scope
 }}
 
@@ -486,30 +521,11 @@ func _ksBrokerNetGet(scope *_ksNetScope, raw string) []string {{
 	}}
 	redirects := 0
 	for {{
-		path, query, hasQuery := strings.Cut(current.target, "?")
-		// Path plus RawPath sends the path exactly as written (the grammar
-		// admits only characters Go keeps unescaped), including a leading
-		// "//". A forwarding proxy gets the absolute URL from net/http, as
-		// Python sends it.
-		decoded, err := url.PathUnescape(path)
-		if err != nil {{
+		request, ok := _ksNetRequest(current, http.MethodGet)
+		if !ok {{
 			return []string{{"err", {failed} + "EIO: " + raw}}
 		}}
-		requestURL := &url.URL{{Scheme: current.scheme, Host: current.authority(), Path: decoded, RawPath: path, RawQuery: query, ForceQuery: hasQuery && query == ""}}
-		if requestURL.EscapedPath() != path {{
-			return []string{{"err", {failed} + "EIO: " + raw}}
-		}}
-		request := &http.Request{{
-			Method:     http.MethodGet,
-			URL:        requestURL,
-			Host:       current.authority(),
-			Header:     http.Header{{"User-Agent": {{{user_agent}}}, "Accept-Encoding": {{"identity"}}}},
-			Close:      true,
-			Proto:      "HTTP/1.1",
-			ProtoMajor: 1,
-			ProtoMinor: 1,
-		}}
-		response, err := scope.client.Do(request)
+		response, err := scope.transport.RoundTrip(request)
 		if err != nil {{
 			return []string{{"err", {failed} + _ksNetFailure(err) + ": " + raw}}
 		}}
@@ -518,23 +534,7 @@ func _ksBrokerNetGet(scope *_ksNetScope, raw string) []string {{
 			location = response.Header.Get("Location")
 		}}
 		if location == "" {{
-			encoding := strings.TrimSpace(response.Header.Get("Content-Encoding"))
-			if lowered := strings.ToLower(encoding); lowered != "" && lowered != "identity" {{
-				response.Body.Close()
-				return []string{{"err", {encoding} + encoding}}
-			}}
-			body, err := io.ReadAll(io.LimitReader(response.Body, {max_body}+1))
-			response.Body.Close()
-			if err != nil {{
-				return []string{{"err", {failed} + _ksNetFailure(err) + ": " + raw}}
-			}}
-			if len(body) > {max_body} {{
-				return []string{{"err", {budget}}}
-			}}
-			if !utf8.Valid(body) {{
-				return []string{{"err", {not_text} + raw}}
-			}}
-			return []string{{"ok", strconv.Itoa(response.StatusCode), string(body)}}
+			return _ksNetRead(response, raw)
 		}}
 		response.Body.Close()
 		target, ok := _ksResolveLocation(current, location)
@@ -555,6 +555,80 @@ func _ksBrokerNetGet(scope *_ksNetScope, raw string) []string {{
 	}}
 }}
 
+// POST follows no redirect: a 3xx is the Response, and the body is sent once.
+func _ksBrokerNetPost(scope *_ksNetScope, raw string, contentType string, body string) []string {{
+	current, ok := _ksParseURL(raw)
+	if !scope.valid || !ok || current.origin() != scope.origin.origin() {{
+		return []string{{"err", {outside} + raw}}
+	}}
+	if scope.broken {{
+		return []string{{"err", {failed} + "EIO: " + raw}}
+	}}
+	request, ok := _ksNetRequest(current, http.MethodPost)
+	if !ok {{
+		return []string{{"err", {failed} + "EIO: " + raw}}
+	}}
+	request.Header["Content-Type"] = []string{{contentType}}
+	// NoBody, not an empty reader: net/http sends an empty reader chunked,
+	// and Python sends Content-Length: 0.
+	request.Body = http.NoBody
+	if body != "" {{
+		request.Body = io.NopCloser(strings.NewReader(body))
+	}}
+	request.ContentLength = int64(len(body))
+	response, err := scope.transport.RoundTrip(request)
+	if err != nil {{
+		return []string{{"err", {failed} + _ksNetFailure(err) + ": " + raw}}
+	}}
+	return _ksNetRead(response, raw)
+}}
+
+func _ksNetRequest(current _ksURL, method string) (*http.Request, bool) {{
+	path, query, hasQuery := strings.Cut(current.target, "?")
+	// Path plus RawPath sends the path exactly as written (the grammar
+	// admits only characters Go keeps unescaped), including a leading "//".
+	// A forwarding proxy gets the absolute URL from net/http, as Python
+	// sends it.
+	decoded, err := url.PathUnescape(path)
+	if err != nil {{
+		return nil, false
+	}}
+	requestURL := &url.URL{{Scheme: current.scheme, Host: current.authority(), Path: decoded, RawPath: path, RawQuery: query, ForceQuery: hasQuery && query == ""}}
+	if requestURL.EscapedPath() != path {{
+		return nil, false
+	}}
+	return &http.Request{{
+		Method:     method,
+		URL:        requestURL,
+		Host:       current.authority(),
+		Header:     http.Header{{"User-Agent": {{{user_agent}}}, "Accept-Encoding": {{"identity"}}}},
+		Close:      true,
+		Proto:      "HTTP/1.1",
+		ProtoMajor: 1,
+		ProtoMinor: 1,
+	}}, true
+}}
+
+// The final response: identity encoding, the body budget, then UTF-8.
+func _ksNetRead(response *http.Response, raw string) []string {{
+	defer response.Body.Close()
+	encoding := strings.TrimSpace(response.Header.Get("Content-Encoding"))
+	if lowered := strings.ToLower(encoding); lowered != "" && lowered != "identity" {{
+		return []string{{"err", {encoding} + encoding}}
+	}}
+	body, err := io.ReadAll(io.LimitReader(response.Body, {max_body}+1))
+	if err != nil {{
+		return []string{{"err", {failed} + _ksNetFailure(err) + ": " + raw}}
+	}}
+	if len(body) > {max_body} {{
+		return []string{{"err", {budget}}}
+	}}
+	if !utf8.Valid(body) {{
+		return []string{{"err", {not_text} + raw}}
+	}}
+	return []string{{"ok", strconv.Itoa(response.StatusCode), string(body)}}
+}}
+
 var _ksNetScopes = []*_ksNetScope{{nil}}
 
 func _ksBrokerNetServe(request []string) ([]string, bool) {{
@@ -568,6 +642,14 @@ func _ksBrokerNetServe(request []string) ([]string, bool) {{
 			return nil, false
 		}}
 		return _ksBrokerNetGet(_ksNetScopes[index], request[2]), true
+	case request[0] == "net_post" && len(request) == 5:
+		index, err := strconv.Atoi(request[1])
+		// The worker checked the content type and body; a request that
+		// breaks them did not come from the runtime.
+		if err != nil || index < 1 || index >= len(_ksNetScopes) || !_ksValidContentType(request[3]) || len(request[4]) > {max_request} {{
+			return nil, false
+		}}
+		return _ksBrokerNetPost(_ksNetScopes[index], request[2], request[3], request[4]), true
 	}}
 	return nil, false
 }}

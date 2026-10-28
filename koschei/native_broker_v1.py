@@ -28,7 +28,8 @@ build such a program. Disk writes and the network stay closed (``KS4004``).
 
 from __future__ import annotations
 
-from .interpreter import DISK_ERRNO_NAMES
+from . import net_v1
+from .interpreter import DISK_ERRNO_NAMES, NOT_REGULAR_FILE
 from .value_budget_v1 import BYTES_MESSAGE, LIST_MESSAGE, MAX_LIST_ITEMS, MAX_STRING_BYTES, STRING_MESSAGE
 
 # x86-64 system calls the worker may make once confined: what the Go runtime
@@ -170,6 +171,7 @@ def broker_runtime() -> str:
         reject=_go(REJECT_MESSAGE),
         symlink=_go(SYMLINK_MESSAGE),
         read_prefix=_go(READ_PREFIX),
+        not_regular=_go(NOT_REGULAR_FILE),
         root_read=_go(ROOT_READ_MESSAGE),
         not_text=_go(NOT_TEXT_PREFIX),
         list_prefix=_go(LIST_PREFIX),
@@ -180,6 +182,7 @@ def broker_runtime() -> str:
         list_name=_go(LIST_NAME_PREFIX),
         env_missing=_go(ENV_MISSING_PREFIX),
         env_not_text=_go(ENV_NOT_TEXT_PREFIX),
+        max_content_type=net_v1.CONTENT_TYPE_MAX_BYTES,
     )
 
 
@@ -189,6 +192,19 @@ _BROKER_RUNTIME = r'''
 // ---- native capability broker (native_broker_v1) ----------------------
 
 const _ksBrokerMaxField = {max_bytes} + 1
+
+// net_v1.valid_content_type, for NetCaps.post and ServeCaps.reply_as.
+func _ksValidContentType(text string) bool {{
+	if len(text) == 0 || len(text) > {max_content_type} || text[0] == ' ' || text[len(text)-1] == ' ' {{
+		return false
+	}}
+	for index := 0; index < len(text); index++ {{
+		if text[index] < 0x20 || text[index] > 0x7e {{
+			return false
+		}}
+	}}
+	return true
+}}
 
 var _ksErrnoNames = map[syscall.Errno]string{{
 {errnos}
@@ -642,7 +658,9 @@ func _ksBrokerLoop(channel *os.File) {{
 	defer channel.Close()
 	scopes := []*_ksScope{{nil}}
 	for {{
-		request, err := _ksReadFrame(channel, 6, _ksBrokerMaxField+(1<<18))
+		// One value at the string budget plus a net_post body (1 MiB) and
+		// the small fields around them.
+		request, err := _ksReadFrame(channel, 6, _ksBrokerMaxField+(1<<21))
 		if err != nil || len(request) == 0 {{
 			return
 		}}
@@ -1127,15 +1145,40 @@ func _ksBrokerRead(scope *_ksScope, path string) []string {{
 	}}
 	defer syscall.Close(parent)
 	name := parts[len(parts)-1]
-	fd, err := syscall.Openat(parent, name, syscall.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_CLOEXEC, 0)
+	// Only regular files (and directories, which fail with EISDIR below) are
+	// read. A FIFO, socket or device is never opened: opening a socket fails
+	// with ENXIO, and a device may act on open. O_NONBLOCK and the fstat
+	// after the open cover an entry replaced in between.
+	var entry syscall.Stat_t
+	if code := _ksLstatAt(parent, name, &entry); code != 0 {{
+		return []string{{"error", {read_prefix} + _ksErrnoText(code, path)}}
+	}}
+	switch entry.Mode & syscall.S_IFMT {{
+	case syscall.S_IFLNK:
+		return []string{{"error", {symlink} + name}}
+	case syscall.S_IFREG, syscall.S_IFDIR:
+	default:
+		return []string{{"error", {read_prefix} + {not_regular} + ": " + path}}
+	}}
+	fd, err := syscall.Openat(parent, name, syscall.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_CLOEXEC|syscall.O_NONBLOCK, 0)
 	if err != nil {{
 		code := _ksAsErrno(err)
 		if code == syscall.ELOOP || code == syscall.EMLINK {{
 			return []string{{"error", {symlink} + name}}
 		}}
+		if code == syscall.ENXIO {{
+			return []string{{"error", {read_prefix} + {not_regular} + ": " + path}}
+		}}
 		return []string{{"error", {read_prefix} + _ksErrnoText(code, path)}}
 	}}
 	defer syscall.Close(fd)
+	var info syscall.Stat_t
+	if err := syscall.Fstat(fd, &info); err != nil {{
+		return []string{{"error", {read_prefix} + _ksErrnoText(_ksAsErrno(err), path)}}
+	}}
+	if kind := info.Mode & syscall.S_IFMT; kind != syscall.S_IFREG && kind != syscall.S_IFDIR {{
+		return []string{{"error", {read_prefix} + {not_regular} + ": " + path}}
+	}}
 	data := make([]byte, 0, 65536)
 	chunk := make([]byte, 65536)
 	for len(data) <= {max_bytes} {{

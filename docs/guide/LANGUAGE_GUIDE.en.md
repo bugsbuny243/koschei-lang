@@ -137,6 +137,13 @@ fn main() {
 refused: out of range: 70000
 ```
 
+A bare `or return` hands the failure itself to the caller, so the function
+must be able to return it: `-> T or Error` when the failure is an Error, an
+`Option` or `Result` return type when it is `None` or `Err`. A function
+without a return type cannot (`KS1304`).
+Only `main` may return an Error it does not declare: the program ends with
+`KOSCHEI RUNTIME ERROR: <message>` and exit status 1.
+
 Runtime failures are values too: Int overflow (`KS3501`), division by zero
 and a value over the memory budget (`KS3502`) produce Error values at the
 same point in every executor, and `or` catches them.
@@ -344,7 +351,7 @@ usage: greet NAME
 | `caps.random` | `allow(max_bytes)` | `hex(count)`, `below(bound)` |
 | `caps.disk` | `allow(prefix)`, `allow_read_only(prefix)` | `read`, `write`, `list`, `delete` |
 | `caps.env` | `allow(name)` | `get()` |
-| `caps.net` | `allow(origin)` | `get(url)` |
+| `caps.net` | `allow(origin)` | `get(url)`, `post(url, content_type, body)` |
 
 - A root cannot act directly (`KS2402`); a narrowed token cannot widen
   (`KS2403`) or do what it was not given (`KS2404`).
@@ -396,11 +403,11 @@ Every diagnostic is listed in [`../reference/ERROR_CODES.md`](../reference/ERROR
 ## 11. Native builds
 
 `ks build` compiles programs that use the core language, structs, enums,
-generics, modules, the Core Library, program input, the clock and randomness,
+generics, maps, modules, the Core Library, program input, the clock and randomness,
 and on linux/amd64 the disk (read, write, delete), the environment, the
 network and the loopback server through a confined broker ([`../NATIVE_BROKER_V1.md`](../NATIVE_BROKER_V1.md),
 [`../NET_V1.md`](../NET_V1.md)). The binary prints
-the same bytes and the same Error values as `ks run`. Maps, callback members
+the same bytes and the same Error values as `ks run`. Callback members
 (`filter`, `map`, `sort`) and processes are refused with
 `KS4004` instead of compiled differently; see [`../MIR_GO_CONFORMANCE_ADAPTER_V2.md`](../MIR_GO_CONFORMANCE_ADAPTER_V2.md).
 

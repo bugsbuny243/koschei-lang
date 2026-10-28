@@ -167,13 +167,13 @@ fn sign(x: Int) -> Int {
 
 ### KS1304 — A Void function cannot return a value
 
-**EN.** A function without a return type used 'return value'. The absence of a result is part of the function contract; a hidden value would make that contract ambiguous.
+**EN.** A function without a return type used 'return value', or a bare 'or return' that returns the failure. The absence of a result is part of the function contract; a hidden value would make that contract ambiguous.
 
-*Fix:* Use a bare return or declare an explicit return type.
+*Fix:* Use a bare return, declare an explicit return type ('-> Void or Error'), or handle the failure with 'or value' or 'or { ... }'. Only main may end the program by returning an Error.
 
-**TR — Void fonksiyon değer döndüremez.** Dönüş tipi olmayan bir fonksiyonda 'return değer' kullanıldı. Void fonksiyonun çağıranına değer vermeyeceği sözleşmenin parçasıdır; gizli bir sonuç bu sözleşmeyi belirsizleştirir.
+**TR — Void fonksiyon değer döndüremez.** Dönüş tipi olmayan bir fonksiyonda 'return değer' ya da hatayı döndüren çıplak 'or return' kullanıldı. Void fonksiyonun çağıranına değer vermeyeceği sözleşmenin parçasıdır; gizli bir sonuç bu sözleşmeyi belirsizleştirir.
 
-*Düzeltme:* Yalnız 'return' kullanın veya fonksiyona açık bir dönüş tipi ekleyin.
+*Düzeltme:* Yalnız 'return' kullanın, fonksiyona açık bir dönüş tipi ekleyin ('-> Void or Error') veya hatayı 'or değer' ya da 'or { ... }' ile ele alın. Yalnız main bir Error döndürerek programı bitirebilir.
 
 ```ks
 fn log_done() {
@@ -709,17 +709,18 @@ total = total + 1
 
 ### KS3401 — Runtime capability type-integrity violation
 
-**EN.** A capability or capability-carrying value was disguised, stored, or returned as an ordinary value. Capability laundering would bypass explicit authority flow and containment rules.
+**EN.** A value did not match a function's declared parameter or return type, or a capability or capability-carrying value was disguised, stored, or returned as an ordinary value. Capability laundering would bypass explicit authority flow and containment rules.
 
 *Fix:* Keep capability values in capability-typed variables and never place them in structs, enums, Lists, or Maps.
 
-**TR — Çalışma anı: capability tip bütünlüğü ihlali.** Runtime, bir capability veya capability taşıyan değerin başka bir tip gibi geçirildiğini ya da döndürüldüğünü tespit etti. Semantic denetim normalde bu kodu derlemeden reddeder. Runtime aynı sözleşmeyi savunma derinliği için yeniden kontrol eder; bu hata, tip denetiminin atlatıldığı veya bozuk bir AST çalıştırıldığı anlamına gelir.
+**TR — Çalışma anı: capability tip bütünlüğü ihlali.** Runtime, bir değerin fonksiyonun bildirdiği parametre veya dönüş tipine uymadığını ya da bir capability veya capability taşıyan değerin başka bir tip gibi geçirildiğini tespit etti. Semantic denetim normalde bu kodu derlemeden reddeder. Runtime aynı sözleşmeyi savunma derinliği için yeniden kontrol eder; bu hata, tip denetiminin atlatıldığı veya bozuk bir AST çalıştırıldığı anlamına gelir.
 
 *Düzeltme:* SystemCaps'i yalnızca main parametresi olarak kullanın. Kök yetkiyi main içinde allow/allow_read_only ile daraltın ve fonksiyonlara gerçek NetCaps, DiskCaps gibi jetonları, bildirilen tiple birebir uyumlu olarak geçirin.
 
 ```ks
-fn fetch(net: NetCaps) {
+fn fetch(net: NetCaps) -> String or Error {
     let response = net.get("https://api.example.com") or return
+    return response.text()
 }
 ```
 
@@ -1026,13 +1027,13 @@ let server = caps.serve.allow("127.0.0.1:8080", 1000, 65536, 65536, 5000)
 
 ### KS3472 — Response rule violated
 
-**EN.** reply() was called with an unsupported status code or a 204 with a body. Supported status codes are a small explicit set; instead of an invalid response the client gets 500.
+**EN.** reply() was called with an unsupported status code or a 204 with a body, or reply_as() with an invalid content type. Supported status codes are a small explicit set and a content type cannot add a header; instead of an invalid response the client gets 500.
 
-*Fix:* Use 200, 201, 204, 400, 403, 404, 405, 409, 413, 422, 429, 500 or 503.
+*Fix:* Use 200, 201, 204, 400, 403, 404, 405, 409, 413, 422, 429, 500 or 503, and a content type of 1-256 printable ASCII characters with no space at either end.
 
-**TR — Yanıt kuralı ihlali.** reply() desteklenmeyen bir durum koduyla veya gövdeli 204 ile çağrıldı. Desteklenen durum kodları sınırlı ve açıktır; geçersiz yanıt yerine istemci 500 alır.
+**TR — Yanıt kuralı ihlali.** reply() desteklenmeyen bir durum koduyla, gövdeli 204 ile veya reply_as() geçersiz bir içerik türüyle çağrıldı. Desteklenen durum kodları sınırlı ve açıktır ve içerik türü başlık ekleyemez; geçersiz yanıt yerine istemci 500 alır.
 
-*Düzeltme:* 200, 201, 204, 400, 403, 404, 405, 409, 413, 422, 429, 500 veya 503 kullanın.
+*Düzeltme:* 200, 201, 204, 400, 403, 404, 405, 409, 413, 422, 429, 500 veya 503 kullanın; içerik türü 1-256 yazdırılabilir ASCII karakter olsun, iki ucunda boşluk olmasın.
 
 ```ks
 server.reply(404, "not found") or return

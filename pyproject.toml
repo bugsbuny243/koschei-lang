@@ -8,7 +8,7 @@ version = "0.10.0"
 description = "Koschei — a native security programming language with constitutional execution physics and optional Khar-bounded Lang intelligence"
 readme = "README.md"
 requires-python = ">=3.12"
-license = { text = "Proprietary" }
+license = { text = "Koschei Lang License 1.0 (free for personal use; commercial use needs a license)" }
 authors = [{ name = "Onur Sel" }]
 keywords = [
     "programming-language",

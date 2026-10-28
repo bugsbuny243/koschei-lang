@@ -213,6 +213,9 @@ fn main(caps: SystemCaps) {
         head = 'fn main(caps: SystemCaps) {\n    let s = caps.serve.allow("127.0.0.1:9", 1, 64, 64, 10)\n'
         self.assertEqual(self.check_error(head + '    let x = s.reply("200", "a")\n}\n'), "KS1301")
         self.assertEqual(self.check_error(head + "    let x = s.accept(1)\n}\n"), "KS1301")
+        for call in ('s.reply_as(200, "a")', 's.reply_as("200", "text/html", "a")', 's.reply_as(200, 5, "a")', 's.reply_as(200, "text/html", 5)'):
+            with self.subTest(call):
+                self.assertEqual(self.check_error(head + f"    let x = {call}\n}}\n"), "KS1301")
         self.assertEqual(
             self.check_error(head + "    let r = s.accept() or return\n    let q = r.query()\n}\n"),
             "KS1306",
