@@ -266,6 +266,39 @@ KS3430: Bytes geçerli UTF-8 metin değil.
 Bytes(00ff68c3)
 ```
 
+### JSON
+
+`parse_json(text)` returns an opaque `Data` (`KS370x` when the text is not
+JSON or breaks a budget). Read it with `kind()`, `get(key)`, `at(index)`,
+`length()`, `keys()`, `text()`, `number()`, `int()`, `bool()` and
+`is_null()`; a value of the wrong kind or a missing key is a `KS3709` Error
+value, never a silent default. `json_quote(text)` writes a String as a JSON
+string literal, so a program builds JSON replies without escaping by hand.
+Inside a Koschei string, `\{` and `\}` are literal braces. See
+[`../data-language-v1.md`](../data-language-v1.md).
+
+```ks
+fn main() {
+    let order = parse_json("\{\"id\": 7, \"items\": [\{\"sku\": \"tea\", \"qty\": 2\}]\}") or return
+    let items = order.get("items") or return
+    let first = items.at(0) or return
+    let sku = first.get("sku") or return
+    let qty = first.get("qty") or return
+    println(sku.text())
+    println(qty.int())
+    println(order.get("total"))
+    let name = json_quote("Ayşe \"A\"") or return
+    println("\{\"customer\": {name}, \"lines\": {items.length() or 0}\}")
+}
+```
+
+```output
+tea
+2
+KS3709: JSON nesnesinde "total" anahtarı yok
+{"customer": "Ayşe \"A\"", "lines": 1}
+```
+
 ## 7. Modules and the Core Library
 
 `import name` binds a sibling file `name.ks` or a Core Library module. The

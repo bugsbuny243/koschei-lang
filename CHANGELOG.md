@@ -2,6 +2,10 @@
 
 ## Unreleased — Core Library v1
 
+- Read JSON: `Data` gets `kind()`, `get(key)`, `at(index)`, `length()`, `keys()`, `text()`, `number()`, `int()`, `bool()` and `is_null()`, and `json_quote(text)` writes a String as a JSON string literal so programs build JSON replies without escaping by hand (`docs/data-language-v1.md`). A read of the wrong kind, a missing key or index, or a number that is not an Int is a `KS3709` Error value. Data used to be parse-and-re-encode only.
+- Compile JSON programs with `ks build`: binaries embed the `native/datajson` core when a program uses `parse_json`, `encode_json` or `json_quote`, and give the same bytes as `ks run`. `ks build` refused every JSON program, and the canonical MIR executor stopped with `KS3101` on `parse_json`, so `ks run` failed on any JSON program it could not run on the direct MIR runtime.
+- Report the documented `KS370x` codes for JSON failures in every executor: the direct MIR runtime, which runs most small `ks run` programs, printed the codec's internal `KS360x` codes, two of which mean step and call-depth budgets elsewhere. A duplicate key is now quoted as JSON (`"a"`) by both the Python and the Go codec, which used to disagree.
+
 - Add `ServeCaps.reply_as(status, content_type, body)` under `ks run` and in native binaries, so a server can answer JSON or HTML: the reply carries the given `Content-Type` instead of `text/plain; charset=utf-8`. The content type follows `NetCaps.post`'s rule (1–256 printable ASCII characters, no surrounding space), so it cannot add a header; otherwise the client gets `500` and the call returns `KS3472`.
 
 - End the program with the Error that `main` returns in every executor: `fn main()` may `return Error(...)` or pass a failure up with a bare `or return`, and the run prints `KOSCHEI RUNTIME ERROR: <message>` and exits 1. The direct MIR runtime and the checked-AST interpreter did so; the canonical MIR executor (most `ks run` programs) and native binaries stopped with a `KS3401` "capability type-integrity" violation instead, so `return Error("boom")` printed `boom` under `ks run` and `KS3401` from the binary.

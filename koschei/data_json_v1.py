@@ -259,7 +259,7 @@ class _Parser:
             key_offset = self.index
             key = self._string()
             if key in result:
-                raise self.error("KS3604", f"duplicate JSON object key {key!r}", key_offset)
+                raise self.error("KS3604", f"duplicate JSON object key {quote(key)}", key_offset)
             self._skip_space()
             if self.index >= self.length or self.text[self.index] != ":":
                 raise self.error("KS3605", "expected ':' after JSON object key")
@@ -475,23 +475,7 @@ class _Writer:
         self.add('"')
         start = 0
         for index, char in enumerate(value):
-            replacement: str | None = None
-            if char == '"':
-                replacement = '\\"'
-            elif char == "\\":
-                replacement = "\\\\"
-            elif char == "\b":
-                replacement = "\\b"
-            elif char == "\f":
-                replacement = "\\f"
-            elif char == "\n":
-                replacement = "\\n"
-            elif char == "\r":
-                replacement = "\\r"
-            elif char == "\t":
-                replacement = "\\t"
-            elif ord(char) < 0x20:
-                replacement = f"\\u{ord(char):04x}"
+            replacement = _escape(char)
             if replacement is None:
                 continue
             if start < index:
@@ -501,6 +485,34 @@ class _Writer:
         if start < len(value):
             self.add(value[start:])
         self.add('"')
+
+
+_ESCAPES: Final = {
+    '"': '\\"',
+    "\\": "\\\\",
+    "\b": "\\b",
+    "\f": "\\f",
+    "\n": "\\n",
+    "\r": "\\r",
+    "\t": "\\t",
+}
+
+
+def _escape(char: str) -> str | None:
+    replacement = _ESCAPES.get(char)
+    if replacement is None and ord(char) < 0x20:
+        replacement = f"\\u{ord(char):04x}"
+    return replacement
+
+
+def quote(value: str) -> str:
+    """The JSON string literal for ``value``, escaped as ``encode`` writes it."""
+    parts = ['"']
+    for char in value:
+        replacement = _escape(char)
+        parts.append(char if replacement is None else replacement)
+    parts.append('"')
+    return "".join(parts)
 
 
 def encode(value: JsonValue, limits: Limits = DEFAULT_LIMITS) -> str:

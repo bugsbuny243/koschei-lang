@@ -79,7 +79,9 @@ from .mir_ir import (
     MirUnary,
     MirUnreachable,
 )
+from .data_access_v1 import METHODS as DATA_METHODS
 from .native_broker_v1 import BROKER_IMPORTS, broker_runtime
+from .native_data_v1 import BUILTINS as DATA_BUILTINS, DATA_IMPORTS, data_runtime
 from .native_net_v1 import NET_IMPORTS, net_runtime
 from .native_serve_v1 import SERVE_IMPORTS, request_runtime, serve_runtime
 from .mir_variant_runtime_v1 import MirVariantRuntimeError, split_canonical_variant_v1
@@ -106,14 +108,21 @@ _BUILTINS = {
     SECURE_HASH_NAME: "_ksSha3_256",
     "bytes_from_hex": "_ksBytesFromHex",
     "sha3_256_bytes": "_ksSha3_256Bytes",
+    **DATA_BUILTINS,
 }
 _STRING_METHODS = frozenset({"length", "contains", "trim", "split", "join", "to_int", "to_bytes"})
 _LIST_METHODS = frozenset({"length", "get", "push", "contains", "take"})
 _BYTES_METHODS = frozenset({"length", "hex", "to_text", "slice", "get"})
 _RESPONSE_METHODS = frozenset({"text", "status"})
 _REQUEST_METHODS = frozenset({"method", "path", "header", "body", "body_bytes"})
+_DATA_METHODS = frozenset(DATA_METHODS)
 _VALUE_METHODS = (
-    _STRING_METHODS | _LIST_METHODS | _BYTES_METHODS | _RESPONSE_METHODS | _REQUEST_METHODS
+    _STRING_METHODS
+    | _LIST_METHODS
+    | _BYTES_METHODS
+    | _RESPONSE_METHODS
+    | _REQUEST_METHODS
+    | _DATA_METHODS
 )
 _BUILTIN_VARIANTS = {
     "Option": {"Some": True, "None": False},
@@ -302,6 +311,7 @@ def generate_go_mir_native(mir: MirGraph) -> str:
         ref.name for plan in plans for ref in plan.refs.values() if ref.kind == "builtin"
     }
     uses_bytes_digest = "sha3_256_bytes" in builtins_used
+    uses_data = bool(builtins_used & set(DATA_BUILTINS))
     uses_digest = SECURE_HASH_NAME in builtins_used or uses_bytes_digest
     domains = _used_domains(plans)
     imports = sorted(
@@ -314,6 +324,7 @@ def generate_go_mir_native(mir: MirGraph) -> str:
             *(BROKER_IMPORTS if "broker" in domains else ()),
             *(NET_IMPORTS if "net" in domains else ()),
             *(SERVE_IMPORTS if "serve" in domains else ()),
+            *(DATA_IMPORTS if uses_data else ()),
         }
     )
 
@@ -359,6 +370,8 @@ def generate_go_mir_native(mir: MirGraph) -> str:
         lines.append(net_runtime())
     if "serve" in domains:
         lines.append(serve_runtime())
+    if uses_data:
+        lines.append(data_runtime())
     for plan in plans:
         lines.extend(_emit_function(plan, symbols, process_error=plan.symbol == root_main))
         lines.append("")

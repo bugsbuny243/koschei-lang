@@ -31,8 +31,51 @@ from becoming part of the language contract. In particular:
 - a `Data` value cannot be printed, interpolated, or passed to `Error` without
   first being explicitly encoded.
 
-Future typed accessors and schema validation will operate on this same opaque
+The accessors below and future schema validation operate on this same opaque
 value rather than revealing the bootstrap representation.
+
+## Reading Data
+
+| Method | Result |
+|---|---|
+| `kind()` | `String`: `object`, `array`, `string`, `number`, `bool` or `null` |
+| `get(key)` | `Data or Error`: an object's member |
+| `at(index)` | `Data or Error`: an array's item, counted from 0 |
+| `length()` | `Int or Error`: an array's items or an object's members |
+| `keys()` | `List<String> or Error`: an object's keys, in code point order (the order `encode_json` writes) |
+| `text()` | `String or Error`: a string |
+| `number()` | `String or Error`: a number's canonical text, for `decimal()` or display |
+| `int()` | `Int or Error`: an integer number in the signed 64-bit range |
+| `bool()` | `Bool or Error` |
+| `is_null()` | `Bool` |
+
+A method called on the wrong kind, a missing key or index, and a number that
+is not an Int (`2.5`, `1e30`) are `KS3709` Error values naming what was
+expected and what was found:
+
+```text
+KS3709: JSON değeri string değil: null
+KS3709: JSON nesnesinde "total" anahtarı yok
+KS3709: JSON dizisinde 2 indeksi yok (uzunluk 2)
+KS3709: JSON sayısı Int değil: 2.5
+```
+
+Two `Data` values are equal when their JSON values are: objects by members,
+arrays in order, numbers by canonical text.
+
+## Writing JSON text
+
+`json_quote(text)` returns the JSON string literal for a String: quotes and
+the escapes `encode_json` writes (`\"`, `\\`, `\b`, `\f`, `\n`, `\r`, `\t`,
+`\u00XX` for other control characters). A program builds a JSON reply from
+quoted strings and numbers without escaping by hand:
+
+```ks
+let name = json_quote(customer) or return
+let reply = "\{\"customer\": {name}, \"lines\": {count}\}"
+```
+
+Its result obeys the 16 MiB String budget (`KS3502`).
 
 ## Enforced budgets
 
@@ -50,8 +93,9 @@ first create an unbounded host object and inspect it afterwards.
 
 ## Errors
 
-The public ABI returns explicit KS370x error values. KS3601 and KS3602 remain
-reserved for execution step and call-depth budgets.
+The public ABI returns explicit KS370x error values in every executor and in
+native binaries; the shared codec core numbers them KS360x internally, and
+KS3601 and KS3602 remain reserved for execution step and call-depth budgets.
 
 - `KS3701` input byte limit
 - `KS3702` depth limit
@@ -60,16 +104,21 @@ reserved for execution step and call-depth budgets.
 - `KS3705` malformed JSON or invalid Unicode
 - `KS3707` output byte limit
 - `KS3708` invalid Data encoding boundary
+- `KS3709` a read of the wrong kind, a missing key or index, or a number that
+  is not an Int
 
 These are ordinary fallible values and use the same `or return`, `or value`, or
 `or { ... }` handling model as the rest of Koschei.
 
 ## Interpreter/native parity
 
-Both execution paths consume the `koschei.data-json/v1` contract. Generated
-binaries embed the audited native Go core and do not import a third-party JSON
-library. Shared fixtures and language-level tests require identical canonical
-output and the same KS370x public error class.
+Both execution paths consume the `koschei.data-json/v1` contract. Binaries
+built by `ks build` (MIR-Go) embed the audited native Go core
+(`native/datajson`) only when the program uses JSON, and import no third-party
+JSON library. The Python and Go cores give the same bytes for the same input,
+error messages and byte offsets included; `tests/test_data_access_v1.py`
+compares the methods, `json_quote` and the failures under the checked-AST
+interpreter, the canonical MIR executor, `ks run` and the binary.
 
 Run the example with:
 
@@ -88,7 +137,8 @@ Expected output:
 
 ## Deliberate boundary
 
-V1 does not yet expose field lookup, arrays, constructors, mutation, or schema
-validation. Those operations will be added only with typed contracts, explicit
-resource bounds, and interpreter/native parity. The opacity is a security
-property, not an unfinished host-object cast.
+V1 reads Data but does not yet construct or change it, and has no schema
+validation; JSON output is built as text with `json_quote`. Those operations
+will be added only with typed contracts, explicit resource bounds, and
+interpreter/native parity. The opacity is a security property, not an
+unfinished host-object cast.

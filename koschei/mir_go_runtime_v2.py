@@ -127,6 +127,16 @@ type _ksHttpRequest struct {
 	body    string
 }
 
+// A parse_json result (data_access_v1): opaque, read through its methods.
+// Its operations come from native_data_v1, which programs that make Data
+// carry; the hooks stay nil in every other program, where no Data exists.
+type _ksData struct {
+	value any
+}
+
+var _ksDataMemberHook func(_ksData, string, []any) any
+var _ksDataEqualHook func(any, any) bool
+
 // The result of NetCaps.get: read through text() and status() only.
 type _ksResponse struct {
 	status int64
@@ -275,6 +285,8 @@ func _ksToString(value any) string {
 		return "<ServeCaps>"
 	case _ksHttpRequest:
 		return "HttpRequest(" + item.method + " " + item.path + ")"
+	case _ksData:
+		return "<data>"
 	case _ksClockRoot:
 		return "<ClockRoot>"
 	case _ksClockCaps:
@@ -412,6 +424,9 @@ func _ksEqual(left any, right any) bool {
 	case _ksUnit:
 		_, ok := right.(_ksUnit)
 		return ok
+	case _ksData:
+		b, ok := right.(_ksData)
+		return ok && _ksDataEqualHook(a.value, b.value)
 	case _ksHttpRequest:
 		// A frozen dataclass: every field, headers in order.
 		b, ok := right.(_ksHttpRequest)
@@ -1000,6 +1015,11 @@ func _ksMemberOf(receiver any, name string) any {
 		case "method", "path", "header", "body", "body_bytes":
 			return _ksMember{receiver: receiver, name: name}
 		}
+	case _ksData:
+		switch name {
+		case "kind", "get", "at", "length", "keys", "text", "number", "int", "bool", "is_null":
+			return _ksMember{receiver: receiver, name: name}
+		}
 	case []any:
 		switch name {
 		case "length", "get", "push", "contains", "take":
@@ -1038,6 +1058,8 @@ func _ksInvokeMember(callee any, arguments ...any) any {
 		return _ksBytesMember(receiver, member.name, arguments)
 	case _ksHttpRequest:
 		return _ksRequestMember(receiver, member.name, arguments)
+	case _ksData:
+		return _ksDataMemberHook(receiver, member.name, arguments)
 	case _ksResponse:
 		_ksArity(member.name, arguments, 0)
 		if member.name == "status" {
@@ -1289,6 +1311,8 @@ func _ksTypeName(value any) string {
 		return "ServeCaps"
 	case _ksHttpRequest:
 		return "HttpRequest"
+	case _ksData:
+		return "Data"
 	case _ksClockRoot:
 		return "ClockRoot"
 	case _ksClockCaps:
@@ -1509,6 +1533,8 @@ func _ksMatchPattern(value any, expected string, parameters map[string]bool, bin
 		return base == "ServeCaps"
 	case _ksHttpRequest:
 		return base == "HttpRequest"
+	case _ksData:
+		return base == "Data"
 	case _ksClockRoot:
 		return base == "ClockRoot"
 	case _ksClockCaps:

@@ -329,6 +329,10 @@ from .net_typing_v1 import install_net_typing_v1
 
 install_net_typing_v1()
 
+from .data_access_v1 import install_data_access_v1
+
+install_data_access_v1()
+
 from .capability_opacity_v1 import install_capability_opacity_v1
 
 install_capability_opacity_v1()

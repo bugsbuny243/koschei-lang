@@ -266,6 +266,39 @@ KS3430: Bytes geçerli UTF-8 metin değil.
 Bytes(00ff68c3)
 ```
 
+### JSON
+
+`parse_json(metin)` opak bir `Data` döndürür (metin JSON değilse ya da bir
+bütçeyi aşarsa `KS370x`). Onu `kind()`, `get(anahtar)`, `at(indeks)`,
+`length()`, `keys()`, `text()`, `number()`, `int()`, `bool()` ve
+`is_null()` ile okuyun; yanlış türde bir değer ya da olmayan bir anahtar
+sessiz bir varsayılan değil, `KS3709` hata değeridir. `json_quote(metin)`
+bir String'i JSON metin değeri olarak yazar; program JSON yanıtlarını elle
+kaçışlamadan kurar. Koschei metninde `\{` ve `\}` düz süslü paranteztir.
+Bkz. [`../data-language-v1.md`](../data-language-v1.md).
+
+```ks
+fn main() {
+    let order = parse_json("\{\"id\": 7, \"items\": [\{\"sku\": \"tea\", \"qty\": 2\}]\}") or return
+    let items = order.get("items") or return
+    let first = items.at(0) or return
+    let sku = first.get("sku") or return
+    let qty = first.get("qty") or return
+    println(sku.text())
+    println(qty.int())
+    println(order.get("total"))
+    let name = json_quote("Ayşe \"A\"") or return
+    println("\{\"customer\": {name}, \"lines\": {items.length() or 0}\}")
+}
+```
+
+```output
+tea
+2
+KS3709: JSON nesnesinde "total" anahtarı yok
+{"customer": "Ayşe \"A\"", "lines": 1}
+```
+
 ## 7. Modüller ve Core Library
 
 `import ad`, yandaki `ad.ks` dosyasını veya bir Core Library modülünü bağlar.

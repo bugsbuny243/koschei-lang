@@ -298,7 +298,7 @@ func (p *parser) object(depth int) (map[string]any, error) {
 			return nil, err
 		}
 		if _, exists := result[key]; exists {
-			return nil, p.fail("KS3604", fmt.Sprintf("duplicate JSON object key %q", key), keyOffset)
+			return nil, p.fail("KS3604", "duplicate JSON object key "+Quote(key), keyOffset)
 		}
 		p.skipSpace()
 		if p.index >= len(p.text) || p.text[p.index] != ':' {
@@ -587,27 +587,7 @@ func (w *writer) string(value string) error {
 	}
 	start := 0
 	for index, r := range value {
-		replacement := ""
-		switch r {
-		case '"':
-			replacement = "\\\""
-		case '\\':
-			replacement = "\\\\"
-		case '\b':
-			replacement = "\\b"
-		case '\f':
-			replacement = "\\f"
-		case '\n':
-			replacement = "\\n"
-		case '\r':
-			replacement = "\\r"
-		case '\t':
-			replacement = "\\t"
-		default:
-			if r < 0x20 {
-				replacement = fmt.Sprintf("\\u%04x", r)
-			}
-		}
+		replacement := escapeRune(r)
 		if replacement == "" {
 			continue
 		}
@@ -627,4 +607,42 @@ func (w *writer) string(value string) error {
 		}
 	}
 	return w.add("\"")
+}
+
+func escapeRune(r rune) string {
+	switch r {
+	case '"':
+		return "\\\""
+	case '\\':
+		return "\\\\"
+	case '\b':
+		return "\\b"
+	case '\f':
+		return "\\f"
+	case '\n':
+		return "\\n"
+	case '\r':
+		return "\\r"
+	case '\t':
+		return "\\t"
+	}
+	if r < 0x20 {
+		return fmt.Sprintf("\\u%04x", r)
+	}
+	return ""
+}
+
+// Quote returns the JSON string literal for value, escaped as Encode writes it.
+func Quote(value string) string {
+	var text strings.Builder
+	text.WriteByte('"')
+	for _, r := range value {
+		if replacement := escapeRune(r); replacement != "" {
+			text.WriteString(replacement)
+		} else {
+			text.WriteRune(r)
+		}
+	}
+	text.WriteByte('"')
+	return text.String()
 }
