@@ -67,11 +67,11 @@ def install_serve_loopback_exchange_catalog_v1() -> None:
                         "Multi-request loopback server (serve_knowhere_v1): every budget is "
                         "enforced under ks run and in native binaries through the capability "
                         "broker, tested with real clients; reply_as names the response "
-                        "content type. The operation stays reserved like the rest of the "
+                        "content type and reply_with adds checked headers. The operation stays reserved like the rest of the "
                         "family."
                     ),
                 )
-                for name in ("accept", "reply", "reply_as")
+                for name in ("accept", "reply", "reply_as", "reply_with")
             ),
         ),
     )

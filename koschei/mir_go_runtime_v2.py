@@ -1012,7 +1012,7 @@ func _ksMemberOf(receiver any, name string) any {
 		}
 	case _ksHttpRequest:
 		switch name {
-		case "method", "path", "header", "body", "body_bytes":
+		case "method", "path", "header", "cookie", "body", "body_bytes":
 			return _ksMember{receiver: receiver, name: name}
 		}
 	case _ksData:

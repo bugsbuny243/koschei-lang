@@ -114,7 +114,7 @@ _STRING_METHODS = frozenset({"length", "contains", "trim", "split", "join", "to_
 _LIST_METHODS = frozenset({"length", "get", "push", "contains", "take"})
 _BYTES_METHODS = frozenset({"length", "hex", "to_text", "slice", "get"})
 _RESPONSE_METHODS = frozenset({"text", "status"})
-_REQUEST_METHODS = frozenset({"method", "path", "header", "body", "body_bytes"})
+_REQUEST_METHODS = frozenset({"method", "path", "header", "cookie", "body", "body_bytes"})
 _DATA_METHODS = frozenset(DATA_METHODS)
 _VALUE_METHODS = (
     _STRING_METHODS
@@ -222,6 +222,7 @@ _NATIVE_CAPABILITY_CALLS = {
     ("ServeCaps", "accept"): ("_ksServeAccept", 0),
     ("ServeCaps", "reply"): ("_ksServeReply", 2),
     ("ServeCaps", "reply_as"): ("_ksServeReplyAs", 3),
+    ("ServeCaps", "reply_with"): ("_ksServeReplyWith", 4),
 }
 _ADMITTED_INSTRUCTIONS = (
     MirConst,

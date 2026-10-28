@@ -18,7 +18,10 @@ accepts one connection, reads one strict HTTP/1.x request and returns it as an
 ``HttpRequest`` value. ``reply(status, body)`` answers that request as
 ``text/plain; charset=utf-8`` and closes its connection;
 ``reply_as(status, content_type, body)`` names the content type, checked by
-``net_v1.valid_content_type``.
+``net_v1.valid_content_type``, and ``reply_with(status, content_type, headers,
+body)`` adds response headers (``Set-Cookie`` among them) given as ``Name:
+value`` lines and checked by :func:`header_refusal`. ``request.cookie(name)``
+reads a cookie the client sent.
 
 **Knowhere: nothing survives from one request to the next.** Each connection
 carries exactly one request. A request is answered once; ``accept()`` while
@@ -55,10 +58,12 @@ from . import _typed_expr
 from . import _typed_ops
 from .runtime_primitive_facade_v1 import RuntimePrimitiveFacadeV1
 from .serve_authority_v1 import ServeCaps, _parse_loopback_bind
-from .type_system import ERROR, STRING, NamedType, VOID, union_type
+from .type_system import ERROR, STRING, GenericType, NamedType, VOID, union_type
 
 HTTP_REQUEST = NamedType("HttpRequest")
-REQUEST_METHODS = {"method": 0, "path": 0, "body": 0, "body_bytes": 0, "header": 1}
+# ServeCaps methods of this module and their argument counts.
+SERVE_METHODS = {"accept": 0, "reply": 2, "reply_as": 3, "reply_with": 4}
+REQUEST_METHODS = {"method": 0, "path": 0, "body": 0, "body_bytes": 0, "header": 1, "cookie": 1}
 
 PENDING_MESSAGE = "KS3470: Önceki istek yanıtlanmadan yeni istek kabul edilemez; önceki istek 500 ile kapatıldı."
 NO_PENDING_MESSAGE = "KS3470: Yanıtlanacak bekleyen bir istek yok."
@@ -70,7 +75,33 @@ CONTENT_TYPE_MESSAGE = (
     "karakter olmalı ve iki ucunda boşluk olmamalı."
 )
 PLAIN_TEXT = "text/plain; charset=utf-8"
+MAX_RESPONSE_HEADERS = 32
+MAX_HEADER_NAME_BYTES = 64
+MAX_HEADER_VALUE_BYTES = 4096
+# Koschei writes these itself: a program's copy could contradict the body,
+# keep a connection alive or switch protocols.
+RESERVED_RESPONSE_HEADERS = frozenset(
+    {
+        "connection",
+        "content-length",
+        "content-type",
+        "keep-alive",
+        "proxy-connection",
+        "te",
+        "trailer",
+        "transfer-encoding",
+        "upgrade",
+    }
+)
+HEADER_COUNT_MESSAGE = f"KS3472: Bir yanıt en fazla {MAX_RESPONSE_HEADERS} başlık taşıyabilir."
+HEADER_LINE_MESSAGE = (
+    "KS3472: {index}. yanıt başlığı 'Ad: değer' biçiminde değil: ad en fazla "
+    f"{MAX_HEADER_NAME_BYTES} baytlık bir HTTP token'ı, değer en fazla "
+    f"{MAX_HEADER_VALUE_BYTES} bayt yazdırılabilir ASCII olmalı ve iki ucunda boşluk olmamalı."
+)
+RESERVED_HEADER_MESSAGE = "KS3472: {index}. yanıt başlığını ({name}) Koschei yazar; reply_with ile verilemez."
 HEADER_MESSAGE = "KS3473: İstekte '{name}' başlığı yok."
+COOKIE_MESSAGE = "KS3473: İstekte '{name}' çerezi yok."
 BODY_TEXT_MESSAGE = "KS3430: İstek gövdesi geçerli UTF-8 metin değil."
 
 REASONS = {
@@ -110,11 +141,12 @@ class _Server:
         self.accepted = 0
 
 
-def _wire(status: int, body: bytes, content_type: str = PLAIN_TEXT) -> bytes:
+def _wire(status: int, body: bytes, content_type: str = PLAIN_TEXT, headers: tuple[str, ...] = ()) -> bytes:
     head = (
         f"HTTP/1.1 {status} {REASONS[status]}\r\n"
         f"Content-Type: {content_type}\r\n"
-        f"Content-Length: {len(body)}\r\n"
+        + "".join(f"{line}\r\n" for line in headers)
+        + f"Content-Length: {len(body)}\r\n"
         "Connection: close\r\n\r\n"
     ).encode("ascii")
     return head + body
@@ -235,15 +267,52 @@ def _accept(self: ServeCaps):
     return request
 
 
+def header_refusal(headers: Any) -> str | None:
+    """Why a reply_with header list is refused, or None.
+
+    Each line is ``Name: value``: one colon and one space after a token name,
+    a value of printable ASCII with no space at either end. A line break can
+    therefore never start another header, and Koschei's own headers cannot
+    be repeated.
+    """
+
+    if not isinstance(headers, list):
+        return HEADER_LINE_MESSAGE.format(index=1)
+    if len(headers) > MAX_RESPONSE_HEADERS:
+        return HEADER_COUNT_MESSAGE
+    for index, line in enumerate(headers, start=1):
+        if not isinstance(line, str):
+            return HEADER_LINE_MESSAGE.format(index=index)
+        name, separator, value = line.partition(": ")
+        if (
+            not separator
+            or not name
+            or len(name) > MAX_HEADER_NAME_BYTES
+            or any(char not in _exchange._TOKEN_CHARS for char in name)
+            or len(value) > MAX_HEADER_VALUE_BYTES
+            or any(not "\x20" <= char <= "\x7e" for char in value)
+            or value[:1] == " "
+            or value[-1:] == " "
+        ):
+            return HEADER_LINE_MESSAGE.format(index=index)
+        if name.translate(_ASCII_LOWER) in RESERVED_RESPONSE_HEADERS:
+            return RESERVED_HEADER_MESSAGE.format(index=index, name=name)
+    return None
+
+
 def _reply(self: ServeCaps, status: Any, body: Any):
-    return _respond(self, status, PLAIN_TEXT, body)
+    return _respond(self, status, PLAIN_TEXT, [], body)
 
 
 def _reply_as(self: ServeCaps, status: Any, content_type: Any, body: Any):
-    return _respond(self, status, content_type, body)
+    return _respond(self, status, content_type, [], body)
 
 
-def _respond(self: ServeCaps, status: Any, content_type: Any, body: Any):
+def _reply_with(self: ServeCaps, status: Any, content_type: Any, headers: Any, body: Any):
+    return _respond(self, status, content_type, headers, body)
+
+
+def _respond(self: ServeCaps, status: Any, content_type: Any, headers: Any, body: Any):
     server = self._server
     if server is None or server.pending is None:
         return _runtime.KsError(NO_PENDING_MESSAGE)
@@ -255,6 +324,10 @@ def _respond(self: ServeCaps, status: Any, content_type: Any, body: Any):
     if not net_v1.valid_content_type(content_type):
         _close(connection, 500)
         return _runtime.KsError(CONTENT_TYPE_MESSAGE)
+    refused = header_refusal(headers)
+    if refused is not None:
+        _close(connection, 500)
+        return _runtime.KsError(refused)
     if not isinstance(body, (str, bytes)):
         _close(connection, 500)
         return _exchange._protocol_error("ServeCaps.reply() body must be String or Bytes")
@@ -262,7 +335,7 @@ def _respond(self: ServeCaps, status: Any, content_type: Any, body: Any):
     if status == 204 and payload:
         _close(connection, 500)
         return _runtime.KsError(EMPTY_BODY_MESSAGE)
-    wire = _wire(status, payload, content_type)
+    wire = _wire(status, payload, content_type, tuple(headers))
     if len(wire) > self.policy.max_response_bytes:
         _close(connection, 500)
         return _exchange._protocol_error("response exceeds max_response_bytes")
@@ -278,6 +351,23 @@ def _respond(self: ServeCaps, status: Any, content_type: Any, body: Any):
     return _runtime.KsUnit
 
 
+def request_cookie(request: HttpRequest, wanted: Any) -> Any:
+    """The value of the first cookie named ``wanted`` in the Cookie headers.
+
+    ``name=value`` pairs are split at ``;`` and the first ``=``, with spaces
+    and tabs around names and values removed; names match exactly.
+    """
+
+    for header, value in request.headers:
+        if header != "cookie":
+            continue
+        for pair in value.split(";"):
+            name, separator, rest = pair.partition("=")
+            if separator and name.strip(" \t") == wanted:
+                return rest.strip(" \t")
+    return _runtime.KsError(COOKIE_MESSAGE.format(name=wanted))
+
+
 def request_method(request: HttpRequest, name: str, arguments: list[Any]) -> Any:
     if name == "method":
         return request.method_name
@@ -290,6 +380,9 @@ def request_method(request: HttpRequest, name: str, arguments: list[Any]) -> Any
             return _runtime.KsError(BODY_TEXT_MESSAGE)
     if name == "body_bytes":
         return _runtime.Bytes(request.body)
+    if name == "cookie":
+        (wanted,) = arguments
+        return request_cookie(request, wanted)
     if name == "header":
         (wanted,) = arguments
         if not isinstance(wanted, str):
@@ -309,8 +402,8 @@ def request_method(request: HttpRequest, name: str, arguments: list[Any]) -> Any
 
 def _check_method_call(self, receiver_type, method_name, location, argument_types=None, arguments=None):
     values = argument_types or []
-    if receiver_type == "ServeCaps" and method_name in {"accept", "reply", "reply_as"}:
-        expected = {"accept": 0, "reply": 2, "reply_as": 3}[method_name]
+    if receiver_type == "ServeCaps" and method_name in SERVE_METHODS:
+        expected = SERVE_METHODS[method_name]
         if len(values) != expected:
             raise _semantic.SemanticError(
                 "KS1301", f"ServeCaps.{method_name}() {expected} argüman bekler, {len(values)} verildi.", location
@@ -318,8 +411,12 @@ def _check_method_call(self, receiver_type, method_name, location, argument_type
         if method_name != "accept":
             subject = f"ServeCaps.{method_name}()"
             self._require_assignable(("Int",), values[0], f"{subject} durum kodu", location)
-            if method_name == "reply_as":
+            if method_name in {"reply_as", "reply_with"}:
                 self._require_assignable(("String",), values[1], f"{subject} içerik türü", location)
+            if method_name == "reply_with":
+                # The legacy checker types a list literal as plain List; Typed
+                # HIR checks the items (_method_type).
+                self._require_assignable(("List<String>", "List"), values[2], f"{subject} başlıkları", location)
             self._require_assignable(("String", "Bytes"), values[-1], f"{subject} gövdesi", location)
             return "Void or Error"
         return "HttpRequest or Error"
@@ -336,21 +433,22 @@ def _check_method_call(self, receiver_type, method_name, location, argument_type
             raise _semantic.SemanticError(
                 "KS1301", f"HttpRequest.{method_name}() {expected} argüman bekler, {len(values)} verildi.", location
             )
-        if method_name == "header":
-            self._require_assignable(("String",), values[0], "HttpRequest.header() adı", location)
+        if method_name in {"header", "cookie"}:
+            self._require_assignable(("String",), values[0], f"HttpRequest.{method_name}() adı", location)
         return {
             "method": "String",
             "path": "String",
             "body": "String or Error",
             "body_bytes": "Bytes",
             "header": "String or Error",
+            "cookie": "String or Error",
         }[method_name]
     return _ORIGINALS["check_method_call"](self, receiver_type, method_name, location, argument_types, arguments)
 
 
 def _semantic_fallible(self, expression):
     callee = getattr(expression, "callee", None)
-    if hasattr(callee, "member") and callee.member in {"body", "header"}:
+    if hasattr(callee, "member") and callee.member in {"body", "header", "cookie"}:
         if self._receiver_type(callee.object) == "HttpRequest":
             return True
     return _ORIGINALS["semantic_fallible"](self, expression)
@@ -360,11 +458,13 @@ _TYPED = {
     ("ServeCaps", "accept"): (0, union_type(HTTP_REQUEST, ERROR)),
     ("ServeCaps", "reply"): (2, union_type(VOID, ERROR)),
     ("ServeCaps", "reply_as"): (3, union_type(VOID, ERROR)),
+    ("ServeCaps", "reply_with"): (4, union_type(VOID, ERROR)),
     ("HttpRequest", "method"): (0, STRING),
     ("HttpRequest", "path"): (0, STRING),
     ("HttpRequest", "body"): (0, union_type(STRING, ERROR)),
     ("HttpRequest", "body_bytes"): (0, NamedType("Bytes")),
     ("HttpRequest", "header"): (1, union_type(STRING, ERROR)),
+    ("HttpRequest", "cookie"): (1, union_type(STRING, ERROR)),
 }
 
 
@@ -376,6 +476,10 @@ def _method_type(receiver, method, arguments, location):
             if len(arguments) != expected:
                 raise _semantic.SemanticError(
                     "KS1301", f"{receiver.name}.{method}() {expected} argüman bekler, {len(arguments)} verildi.", location
+                )
+            if (receiver.name, method) == ("ServeCaps", "reply_with"):
+                _contracts.require_assignable(
+                    GenericType("List", (STRING,)), arguments[2], "ServeCaps.reply_with() başlıkları", location
                 )
             return result
         if receiver.name == "HttpRequest":
@@ -389,7 +493,7 @@ def _method_type(receiver, method, arguments, location):
 
 
 def _member(self, receiver, name, location):
-    if isinstance(receiver, ServeCaps) and name in {"accept", "reply", "reply_as"}:
+    if isinstance(receiver, ServeCaps) and name in SERVE_METHODS:
         return _runtime._BoundMember(receiver, name, location)
     if isinstance(receiver, HttpRequest) and name in REQUEST_METHODS:
         return _runtime._BoundMember(receiver, name, location)
@@ -424,8 +528,9 @@ def install_serve_knowhere_v1() -> None:
     ServeCaps.accept = _accept
     ServeCaps.reply = _reply
     ServeCaps.reply_as = _reply_as
+    ServeCaps.reply_with = _reply_with
     _runtime.HttpRequest = HttpRequest
-    _effects._PURE_VALUE_METHODS.update({"method", "path", "body", "body_bytes", "header"})
+    _effects._PURE_VALUE_METHODS.update({"method", "path", "body", "body_bytes", "header", "cookie"})
     _contracts.RESERVED_TYPE_PARAMETERS.add("HttpRequest")
 
     _ORIGINALS["check_method_call"] = _semantic.SemanticChecker._check_method_call

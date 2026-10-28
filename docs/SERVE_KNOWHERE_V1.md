@@ -37,8 +37,10 @@ fn main(caps: SystemCaps) {
 | `server.accept()` | `HttpRequest or Error` | opens the listener on first use, accepts and reads one request |
 | `server.reply(status, body)` | `Void or Error` | answers the pending request as `text/plain; charset=utf-8` (`String` or `Bytes` body) and closes it |
 | `server.reply_as(status, content_type, body)` | `Void or Error` | the same with the given content type, such as `application/json` or `text/html; charset=utf-8` |
+| `server.reply_with(status, content_type, headers, body)` | `Void or Error` | the same with response headers, a `List<String>` of `Name: value` lines (`Set-Cookie`, `Cache-Control`, `Location`, …) |
 | `request.method()`, `request.path()` | `String` | raw request line parts |
 | `request.header(name)` | `String or Error` | case-insensitive name; `KS3473` when absent |
+| `request.cookie(name)` | `String or Error` | the first cookie of that exact name in the `Cookie` headers; `KS3473` when absent |
 | `request.body()` | `String or Error` | `KS3430` when the body is not UTF-8 |
 | `request.body_bytes()` | `Bytes` | the body as received |
 
@@ -49,6 +51,20 @@ printable ASCII characters with no space at either end, the rule of
 Otherwise the client gets `500` and `reply_as()` returns `KS3472`. Koschei
 does not build JSON or HTML for the program; the body is the text or bytes
 it gives.
+
+A `reply_with` header is exactly `Name: value`: a token name of at most 64
+bytes, one colon and one space, then a value of at most 4096 bytes of
+printable ASCII with no space at either end. A line break can therefore never
+start another header. Koschei writes `Content-Type`, `Content-Length` and
+`Connection` itself, so those and the hop-by-hop headers (`Keep-Alive`,
+`Transfer-Encoding`, `Upgrade`, `TE`, `Trailer`, `Proxy-Connection`) are
+refused in any case. A reply holds at most 32 headers, in the order given,
+and repeated names (several `Set-Cookie`) are kept. A refused header gives
+the client `500` and returns `KS3472` naming the line.
+
+`request.cookie(name)` splits each `Cookie` header at `;` and at the first
+`=`, removes spaces and tabs around names and values, and returns the first
+value whose name matches exactly. It does not decode or unquote values.
 
 ## The Knowhere law: nothing carries over
 
@@ -110,12 +126,14 @@ opened anew each round of a loop listens under both. While a server is still
 held, another one on its bind gets `KS3411: listener failed: EADDRINUSE`
 under both.
 
-`tests/test_native_serve_v1.py` sends 28 requests to the same server under
+`tests/test_native_serve_v1.py` sends 32 requests to the same server under
 `ks run` and as a binary: well-formed, binary and Latin-1 requests, every
 protocol refusal, both size budgets, a client that stalls past the deadline,
 a client that stops half way through its body, unsupported and empty-body
 statuses, an oversized reply, the unanswered-request rule, the accept
-deadline, JSON and HTML replies and two refused content types. The replies the clients read and the program's output are the same
+deadline, JSON and HTML replies, two refused content types, two `Set-Cookie`
+headers in one reply, a header line that would smuggle another header, a
+reserved header and a cookie read from a spaced `Cookie` header. The replies the clients read and the program's output are the same
 bytes. More cases cover the connection budget (`KS3471`), a port already in
 use, and forty servers opened in turn on two binds: dropped servers close
 their unanswered connections and free their bind, a held one does not. The worker runs under seccomp and holds no socket but its

@@ -38,6 +38,7 @@ fn handle(server: ServeCaps) -> Int {
         println(request.header("Missing"))
         println(request.body())
         println(request.body_bytes())
+        println("cookie {request.cookie("s") or "-"}")
         let path = request.path()
         if path == "/teapot" {
             println(server.reply(418, "x"))
@@ -77,6 +78,18 @@ fn handle(server: ServeCaps) -> Int {
         }
         if path == "/spaced" {
             println(server.reply_as(200, " text/html", "x"))
+            continue
+        }
+        if path == "/login" {
+            println(server.reply_with(200, "text/plain", ["Set-Cookie: s=1", "Set-Cookie: t=2"], ""))
+            continue
+        }
+        if path == "/smuggle" {
+            println(server.reply_with(200, "text/plain", ["X-Evil: a\\r\\nX-Injected: 1"], "x"))
+            continue
+        }
+        if path == "/reserved" {
+            println(server.reply_with(200, "text/plain", ["content-length: 1"], "x"))
             continue
         }
         println(server.reply(200, "{request.method()} {path} merhaba"))
@@ -147,6 +160,10 @@ REQUESTS: list[tuple[bytes, float]] = [
     (b"POST /html HTTP/1.1\r\n" + HOST + b"Content-Length: 4\r\n\r\n<b>!", 0),
     (b"GET /inject HTTP/1.1\r\n" + HOST + b"\r\n", 0),
     (b"GET /spaced HTTP/1.1\r\n" + HOST + b"\r\n", 0),
+    (b"GET /login HTTP/1.1\r\n" + HOST + b"\r\n", 0),
+    (b"GET /smuggle HTTP/1.1\r\n" + HOST + b"\r\n", 0),
+    (b"GET /reserved HTTP/1.1\r\n" + HOST + b"\r\n", 0),
+    (b"GET /me HTTP/1.1\r\n" + HOST + b"Cookie: t=2;  s = 1 ; x=\r\n\r\n", 0),
 ]
 
 
@@ -258,6 +275,19 @@ class NativeServeParityTests(unittest.TestCase):
             self.assertTrue(replies[index].startswith(b"HTTP/1.1 500 Internal Server Error\r\n"), index)
             self.assertNotIn(b"X-Injected", replies[index])
         self.assertEqual(output.count(_serve.CONTENT_TYPE_MESSAGE + "\n"), 2)
+        self.assertEqual(replies[28], (
+            b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nSet-Cookie: s=1\r\nSet-Cookie: t=2\r\n"
+            b"Content-Length: 0\r\nConnection: close\r\n\r\n"
+        ))
+        # A header line that would start another header, or repeat one
+        # Koschei writes, is never sent.
+        for index in (29, 30):
+            self.assertTrue(replies[index].startswith(b"HTTP/1.1 500 Internal Server Error\r\n"), index)
+            self.assertNotIn(b"X-Injected", replies[index])
+        self.assertIn(_serve.HEADER_LINE_MESSAGE.format(index=1) + "\n", output)
+        self.assertIn(_serve.RESERVED_HEADER_MESSAGE.format(index=1, name="content-length") + "\n", output)
+        self.assertTrue(replies[31].endswith(b"GET /me merhaba"))
+        self.assertEqual(output.count("cookie 1\n"), 1)
         for expected in (
             "KS3410: Host header may not be empty",
             "KS3410: exchange v1 accepts uppercase alphabetic HTTP methods only",

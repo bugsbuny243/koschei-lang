@@ -28,7 +28,21 @@ def serve_runtime() -> str:
     reasons = "\n".join(f"\t{code}: {_go(text)}," for code, text in sorted(_serve.REASONS.items()))
     budget_prefix, budget_suffix = _serve.BUDGET_MESSAGE.split("{count}")
     status_prefix, status_suffix = _serve.STATUS_MESSAGE.split("{status}")
+    line_prefix, line_suffix = _serve.HEADER_LINE_MESSAGE.split("{index}")
+    reserved_prefix, reserved_rest = _serve.RESERVED_HEADER_MESSAGE.split("{index}")
+    reserved_middle, reserved_suffix = reserved_rest.split("{name}")
+    reserved = ", ".join(f"{_go(name)}: true" for name in sorted(_serve.RESERVED_RESPONSE_HEADERS))
     return _SERVE_RUNTIME.format(
+        max_headers=_serve.MAX_RESPONSE_HEADERS,
+        max_header_name=_serve.MAX_HEADER_NAME_BYTES,
+        max_header_value=_serve.MAX_HEADER_VALUE_BYTES,
+        reserved_headers=reserved,
+        header_count=_go(_serve.HEADER_COUNT_MESSAGE),
+        line_prefix=_go(line_prefix),
+        line_suffix=_go(line_suffix),
+        reserved_prefix=_go(reserved_prefix),
+        reserved_middle=_go(reserved_middle),
+        reserved_suffix=_go(reserved_suffix),
         reasons=reasons,
         pending=_go(_serve.PENDING_MESSAGE),
         no_pending=_go(_serve.NO_PENDING_MESSAGE),
@@ -53,9 +67,12 @@ def request_runtime() -> str:
     """HttpRequest members; part of the base runtime (no imports)."""
 
     header_prefix, header_suffix = _serve.HEADER_MESSAGE.split("{name}")
+    cookie_prefix, cookie_suffix = _serve.COOKIE_MESSAGE.split("{name}")
     return _REQUEST_RUNTIME.format(
         header_prefix=_go(header_prefix),
         header_suffix=_go(header_suffix),
+        cookie_prefix=_go(cookie_prefix),
+        cookie_suffix=_go(cookie_suffix),
         body_text=_go(_serve.BODY_TEXT_MESSAGE),
     )
 
@@ -78,6 +95,25 @@ func _ksRequestMember(request _ksHttpRequest, name string, arguments []any) any 
 	case "body_bytes":
 		_ksArity("body_bytes", arguments, 0)
 		return _ksBytes{{data: request.body}}
+	case "cookie":
+		// serve_knowhere_v1.request_cookie
+		_ksArity("cookie", arguments, 1)
+		wanted, ok := arguments[0].(string)
+		if !ok {{
+			_ksAbort("KS5002", "HttpRequest.cookie name drifted")
+		}}
+		for _, header := range request.headers {{
+			if header[0] != "cookie" {{
+				continue
+			}}
+			for _, pair := range strings.Split(header[1], ";") {{
+				name, value, found := strings.Cut(pair, "=")
+				if found && strings.Trim(name, " \t") == wanted {{
+					return strings.Trim(value, " \t")
+				}}
+			}}
+		}}
+		return _ksError{{message: {cookie_prefix} + wanted + {cookie_suffix}}}
 	case "header":
 		_ksArity("header", arguments, 1)
 		wanted, ok := arguments[0].(string)
@@ -174,17 +210,60 @@ func _ksServeAccept(receiver any) any {{
 }}
 
 func _ksServeReply(receiver any, status any, body any) any {{
-	return _ksServeRespond(receiver, status, {plain_text}, body)
+	return _ksServeRespond(receiver, status, []string{{{plain_text}}}, body)
 }}
 
 func _ksServeReplyAs(receiver any, status any, contentType any, body any) any {{
 	// A content type that is not a String is refused like an invalid one,
 	// as under ks run; the broker checks it.
 	kind, _ := contentType.(string)
-	return _ksServeRespond(receiver, status, kind, body)
+	return _ksServeRespond(receiver, status, []string{{kind}}, body)
 }}
 
-func _ksServeRespond(receiver any, status any, contentType string, body any) any {{
+func _ksServeReplyWith(receiver any, status any, contentType any, headers any, body any) any {{
+	kind, _ := contentType.(string)
+	lines, ok := headers.([]any)
+	if !ok {{
+		_ksAbort("KS5002", "ServeCaps.reply_with headers drifted")
+	}}
+	head := []string{{kind}}
+	for _, line := range lines {{
+		text, ok := line.(string)
+		if !ok {{
+			_ksAbort("KS5002", "ServeCaps.reply_with header drifted")
+		}}
+		head = append(head, text)
+	}}
+	return _ksServeRespond(receiver, status, head, body)
+}}
+
+// The content type and the response headers in one broker field: each item
+// as its byte length, ':' and its bytes, so no item can split another.
+func _ksPackFields(items []string) string {{
+	var packed strings.Builder
+	for _, item := range items {{
+		packed.WriteString(strconv.Itoa(len(item)))
+		packed.WriteByte(':')
+		packed.WriteString(item)
+	}}
+	return packed.String()
+}}
+
+func _ksUnpackFields(packed string) ([]string, bool) {{
+	var items []string
+	for packed != "" {{
+		size, rest, found := strings.Cut(packed, ":")
+		length, err := strconv.Atoi(size)
+		if !found || err != nil || length < 0 || length > len(rest) || strconv.Itoa(length) != size {{
+			return nil, false
+		}}
+		items = append(items, rest[:length])
+		packed = rest[length:]
+	}}
+	return items, true
+}}
+
+func _ksServeRespond(receiver any, status any, head []string, body any) any {{
 	code, ok := status.(int64)
 	if !ok {{
 		_ksAbort("KS5002", "ServeCaps.reply status drifted")
@@ -198,7 +277,7 @@ func _ksServeRespond(receiver any, status any, contentType string, body any) any
 	default:
 		_ksAbort("KS5002", "ServeCaps.reply body drifted")
 	}}
-	done, answer := _ksAsk("serve_reply", _ksServeScopeOf(receiver), strconv.FormatInt(code, 10), contentType, kind, payload)
+	done, answer := _ksAsk("serve_reply", _ksServeScopeOf(receiver), strconv.FormatInt(code, 10), _ksPackFields(head), kind, payload)
 	runtime.KeepAlive(receiver)
 	if !done {{
 		return _ksError{{message: answer[0]}}
@@ -371,9 +450,13 @@ func _ksServeListen(scope *_ksServeScope) error {{
 	return nil
 }}
 
-func _ksServeWire(status int64, contentType string, body string) string {{
+func _ksServeWire(status int64, contentType string, body string, headers ...string) string {{
+	extra := ""
+	for _, line := range headers {{
+		extra += line + "\r\n"
+	}}
 	return "HTTP/1.1 " + strconv.FormatInt(status, 10) + " " + _ksReasons[status] + "\r\n" +
-		"Content-Type: " + contentType + "\r\n" +
+		"Content-Type: " + contentType + "\r\n" + extra +
 		"Content-Length: " + strconv.Itoa(len(body)) + "\r\n" +
 		"Connection: close\r\n\r\n" + body
 }}
@@ -665,7 +748,37 @@ func _ksServeAcceptBroker(scope *_ksServeScope, retry bool) []string {{
 	return append([]string{{"ok"}}, fields...)
 }}
 
-func _ksServeReplyBroker(scope *_ksServeScope, statusText string, contentType string, kind string, body string) []string {{
+var _ksReservedResponseHeaders = map[string]bool{{{reserved_headers}}}
+
+// serve_knowhere_v1.header_refusal
+func _ksServeHeaderRefusal(headers []string) string {{
+	if len(headers) > {max_headers} {{
+		return {header_count}
+	}}
+	for position, line := range headers {{
+		index := strconv.Itoa(position + 1)
+		name, value, found := strings.Cut(line, ": ")
+		valid := found && name != "" && len(name) <= {max_header_name} && strings.Trim(name, _ksTokenChars) == "" &&
+			len(value) <= {max_header_value} && (value == "" || (value[0] != ' ' && value[len(value)-1] != ' '))
+		for at := 0; valid && at < len(value); at++ {{
+			valid = value[at] >= 0x20 && value[at] <= 0x7e
+		}}
+		if !valid {{
+			return {line_prefix} + index + {line_suffix}
+		}}
+		if _ksReservedResponseHeaders[strings.ToLower(name)] {{
+			return {reserved_prefix} + index + {reserved_middle} + name + {reserved_suffix}
+		}}
+	}}
+	return ""
+}}
+
+func _ksServeReplyBroker(scope *_ksServeScope, statusText string, packedHead string, kind string, body string) []string {{
+	head, unpacked := _ksUnpackFields(packedHead)
+	if !unpacked || len(head) == 0 {{
+		return nil
+	}}
+	contentType, headers := head[0], head[1:]
 	if scope.pending == nil {{
 		return []string{{"err", {no_pending}}}
 	}}
@@ -680,6 +793,10 @@ func _ksServeReplyBroker(scope *_ksServeScope, statusText string, contentType st
 		_ksServeClose(conn, 500, time.Time{{}})
 		return []string{{"err", {content_type}}}
 	}}
+	if refused := _ksServeHeaderRefusal(headers); refused != "" {{
+		_ksServeClose(conn, 500, time.Time{{}})
+		return []string{{"err", refused}}
+	}}
 	if kind != "s" && kind != "b" {{
 		return nil
 	}}
@@ -687,7 +804,7 @@ func _ksServeReplyBroker(scope *_ksServeScope, statusText string, contentType st
 		_ksServeClose(conn, 500, time.Time{{}})
 		return []string{{"err", {empty_body}}}
 	}}
-	wire := _ksServeWire(status, contentType, body)
+	wire := _ksServeWire(status, contentType, body, headers...)
 	if len(wire) > scope.responseBytes {{
 		_ksServeClose(conn, 500, time.Time{{}})
 		return []string{{"err", _ksProtocolError("response exceeds max_response_bytes")}}
