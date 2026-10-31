@@ -197,6 +197,45 @@ class StrangeLaunchReconciliationV1Tests(unittest.TestCase):
         self.now = 602
         self.assertEqual(self.outcome(False).state, "REPORTED_FAILED")
 
+    def test_tampered_stage_cannot_be_reported_as_success(self):
+        self.activate()
+        self.claim()
+        self.store._db.execute(
+            "UPDATE strange_handoffs_v1 SET source_sha256=? "
+            "WHERE continuity_id=? AND old_epoch=?",
+            ("0" * 64, "tenant-a", 4),
+        )
+        with self.assertRaises(StrangeLaunchReconciliationError):
+            self.outcome(True)
+        self.assertEqual(self.journal.read(epoch=5).state, "CLAIMED")
+
+    def test_two_competing_reporters_cannot_both_commit_an_outcome(self):
+        self.activate()
+        self.claim()
+        with StrangeDurableContinuityV1(self.db_path, continuity_id="tenant-a") as other_store:
+            other = StrangeDurableLaunchReconciliationV1(other_store)
+
+            def report(journal, outcome):
+                try:
+                    journal.record_result(
+                        epoch=5,
+                        expected_handoff_mac=self.stage.handoff_mac,
+                        reported_success=outcome,
+                        seconds_reader=lambda: 600,
+                        handoff_key=KEY,
+                    )
+                    return "reported"
+                except StrangeLaunchReconciliationError:
+                    return "rejected"
+
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                results = list(executor.map(
+                    lambda item: report(*item),
+                    ((self.journal, True), (other, False)),
+                ))
+            self.assertEqual(sorted(results), ["rejected", "reported"])
+            self.assertIn(self.journal.read(epoch=5).state, ("REPORTED_OK", "REPORTED_FAILED"))
+
     def test_claimed_record_survives_crash_without_roll_back(self):
         self.activate()
         self.claim()
