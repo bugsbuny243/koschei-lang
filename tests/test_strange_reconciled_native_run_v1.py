@@ -124,6 +124,19 @@ class StrangeReconciledNativeRunV1Tests(unittest.TestCase):
         with self.assertRaises(StrangeLaunchReconciliationError):
             self.journal.read(epoch=5)
 
+    def test_bad_clock_rejected_before_claim_and_spawn(self):
+        self.activate()
+        with patch(
+            "koschei.strange_reconciled_native_run_v1.run_activated_prebuilt_strange_native_v1",
+        ) as launched:
+            with self.assertRaises(StrangeReconciledNativeRunError):
+                run_reconciled_prebuilt_strange_native_v1(
+                    self.mir, **(self.args | {"seconds_reader": None}),
+                )
+            launched.assert_not_called()
+        with self.assertRaises(StrangeLaunchReconciliationError):
+            self.journal.read(epoch=5)
+
     def test_one_success_and_no_second_execution_after_restart(self):
         self.activate()
         result, calls = self.run_with_stub()
