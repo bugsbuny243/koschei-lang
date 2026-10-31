@@ -30,9 +30,19 @@ the exact canonical MIR source and output bytes, and obtain a fresh active
 attestation. Tests prove the pending generated source is byte-for-byte equal
 to the active source generated after the epoch transition.
 
-A pending projection can help feed a **separate** candidate build-and-stage
-pipeline, but this module does not call the Go compiler, issue HMAC native
-attestations, store candidate bytes in SQLite or perform process handoff.
+The companion builder-only `strange_pending_native_build_v1.py` **does**
+compile the pending Go source using a SHA-256-pinned local Go executable and
+offline build settings (no module downloads, ambient Go flags or cgo). It
+returns exact future native bytes and their digest with `authority=False`.
+It does not issue an active native attestation; its result can be passed as
+**candidate input only** to the separate #326 stage/activate metadata protocol.
+It rechecks the old epoch after the build and rejects a window that closed
+mid-compilation. The exact real native bytes are not stored in SQLite.
+
+Neither this module nor the companion builder swaps any running process.
+Only the active-epoch builder and an isolated signer gate can later issue
+a deployment-scoped authorization after activation. No such authorization
+is part of these pending types.
 
 ## Important limits
 
@@ -53,3 +63,10 @@ Veyra/seed separation, old/next epoch boundary, current epoch drift mid-build,
 untrusted clock rejection and attestation type isolation.
 
 Related: PR #326 metadata handoff and issue #317.
+
+## Companion Go compilation tests
+
+`python -m unittest discover -s tests -p 'test_strange_pending_native_build_v1.py' -v`
+
+Runs real Go source->native parity, staged metadata digest comparison, wrong
+Go pin, compiler failure, expiration and backward time during compilation.
