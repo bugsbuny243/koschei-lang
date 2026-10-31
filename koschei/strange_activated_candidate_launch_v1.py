@@ -14,6 +14,7 @@ import hmac
 from typing import Callable
 
 from .mir import MirGraph
+from .strange_verified_native_build_v1 import _hex256, StrangeVerifiedNativeBuildError
 from .strange_durable_continuity_v1 import (
     StrangeDurableContinuityError,
     StrangeDurableContinuityV1,
@@ -72,6 +73,12 @@ def run_activated_prebuilt_strange_native_v1(
     Never pass a signing key, a Library secret or an effect capability to the
     child. Caller-controlled Python keys/clock are not independent trust roots.
     """
+    if not isinstance(mir, MirGraph):
+        raise StrangeActivatedCandidateError("sealed canonical MIR required")
+    try:
+        mir.assert_sealed()
+    except ValueError as exc:
+        raise StrangeActivatedCandidateError("canonical MIR not sealed") from exc
     if not isinstance(continuity_store, StrangeDurableContinuityV1):
         raise StrangeActivatedCandidateError("durable Continuity store required")
     if not isinstance(pending, PendingStrangeNativeBuildV1):
@@ -86,9 +93,13 @@ def run_activated_prebuilt_strange_native_v1(
     ) as exc:
         raise StrangeActivatedCandidateError("invalid pending candidate or trust inputs") from exc
     proposal = pending.pending_projection
+    try:
+        _hex256(expected_go_sha256)
+        _hex256(expected_handoff_mac)
+    except StrangeVerifiedNativeBuildError as exc:
+        raise StrangeActivatedCandidateError("canonical pinned digest required") from exc
     if (
         proposal.target_epoch != proposal.previous_epoch + 1
-        or not isinstance(expected_go_sha256, str)
         or not hmac.compare_digest(pending.go_executable_sha256, expected_go_sha256)
     ):
         raise StrangeActivatedCandidateError("pending compiler/epoch binding mismatch")
