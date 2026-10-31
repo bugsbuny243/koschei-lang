@@ -77,9 +77,11 @@ def run_reconciled_prebuilt_strange_native_v1(
             handoff_key=handoff_key,
             seconds_reader=clock,
         )
-    except (StrangeLaunchReconciliationError, StrangeRuntimeObservationError) as exc:
+    except Exception as exc:
+        # SQLite I/O/lock failures are also hard denials. A launch must never
+        # begin unless its one-time claim has definitely committed.
         raise StrangeReconciledNativeError(
-            "local launch already claimed, or candidate not activated"
+            "launch claim not confirmed; native worker was not started"
         ) from exc
 
     runner_error: Exception | None = None
@@ -119,7 +121,7 @@ def run_reconciled_prebuilt_strange_native_v1(
             seconds_reader=clock,
             handoff_key=handoff_key,
         )
-    except (StrangeLaunchReconciliationError, StrangeRuntimeObservationError) as exc:
+    except Exception as exc:
         # A late positive result or missing clock cannot count as success.
         # Leave the CLAIMED state unresolved; no automatic replay.
         raise StrangeReconciledNativeError(
