@@ -154,18 +154,29 @@ class StrangeReconciledNativeRunV1Tests(unittest.TestCase):
         self.assertEqual(self.journal.read(epoch=5).state, "REPORTED_FAILED")
         self.assertEqual(self.store.read_snapshot().epoch, 5)
 
-    def test_nonzero_exit_and_mismatched_observation_never_report_ok(self):
-        for result in (
-            self.observed(exit_code=12),
-            self.observed(epoch=4),
-            self.observed(native_sha="0" * 64),
-        ):
-            with self.subTest(result=result.exit_code):
-                # Each scenario gets its own clean activated epoch.
-                # New fixture per subtest avoids making retries implicitly legal.
-                with self.subTest():
-                    if self.journal.read(epoch=5).state != "missing":
-                        pass
+    def test_nonzero_worker_exit_reports_failure_and_does_not_retry(self):
+        self.activate()
+        with self.assertRaises(StrangeReconciledNativeRunError):
+            self.run_with_stub(self.observed(exit_code=12))
+        self.assertEqual(self.journal.read(epoch=5).state, "REPORTED_FAILED")
+        with patch(
+            "koschei.strange_reconciled_native_run_v1.run_activated_prebuilt_strange_native_v1",
+        ) as launched:
+            with self.assertRaises(StrangeReconciledNativeRunError):
+                run_reconciled_prebuilt_strange_native_v1(self.mir, **self.args)
+            launched.assert_not_called()
+
+    def test_wrong_worker_epoch_reports_failure(self):
+        self.activate()
+        with self.assertRaises(StrangeReconciledNativeRunError):
+            self.run_with_stub(self.observed(epoch=4))
+        self.assertEqual(self.journal.read(epoch=5).state, "REPORTED_FAILED")
+
+    def test_wrong_worker_binary_digest_reports_failure(self):
+        self.activate()
+        with self.assertRaises(StrangeReconciledNativeRunError):
+            self.run_with_stub(self.observed(native_sha="0" * 64))
+        self.assertEqual(self.journal.read(epoch=5).state, "REPORTED_FAILED")
 
     def test_expired_success_report_leaves_unknown_claim(self):
         self.activate()
@@ -185,16 +196,16 @@ class StrangeReconciledNativeRunV1Tests(unittest.TestCase):
         self.activate()
         def attempt(_):
             try:
-                with patch(
-                    "koschei.strange_reconciled_native_run_v1.run_activated_prebuilt_strange_native_v1",
-                    return_value=self.observed(),
-                ):
-                    run_reconciled_prebuilt_strange_native_v1(self.mir, **self.args)
+                run_reconciled_prebuilt_strange_native_v1(self.mir, **self.args)
                 return "ok"
             except StrangeReconciledNativeRunError:
                 return "rejected"
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            results = list(executor.map(attempt, (1, 2)))
+        with patch(
+            "koschei.strange_reconciled_native_run_v1.run_activated_prebuilt_strange_native_v1",
+            return_value=self.observed(),
+        ):
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                results = list(executor.map(attempt, (1, 2)))
         self.assertEqual(sorted(results), ["ok", "rejected"])
         self.assertEqual(self.journal.read(epoch=5).state, "REPORTED_OK")
 
