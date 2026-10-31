@@ -207,6 +207,24 @@ class StrangeActivatedCandidateV1Tests(unittest.TestCase):
             with self.assertRaises(StrangeActivatedCandidateError):
                 self.launch()
 
+    def test_clock_expiry_between_attestation_and_process_spawn_fails_closed(self):
+        self.activate()
+        from koschei.strange_activated_candidate_launch_v1 import (
+            issue_strange_native_attestation_v1 as issue,
+        )
+
+        def issue_then_expire(**params):
+            proof = issue(**params)
+            self.now = 720
+            return proof
+
+        with patch(
+            "koschei.strange_activated_candidate_launch_v1.issue_strange_native_attestation_v1",
+            side_effect=issue_then_expire,
+        ):
+            with self.assertRaises(StrangeActivatedCandidateError):
+                self.launch()
+
     def test_backward_clock_during_promotion_rejected(self):
         self.activate()
         readings = iter((600, 600, 599, 600, 600, 600, 600))
