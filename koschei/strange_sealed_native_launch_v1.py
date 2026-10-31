@@ -23,6 +23,7 @@ from .strange_durable_continuity_v1 import StrangeDurableContinuityV1
 from .strange_native_admission_v1 import StrangeNativeAttestationV1
 from .strange_runtime_observation_v1 import (
     StrangeRuntimeObservationError,
+    _verified_seconds,
     require_strange_runtime_observation_v1,
 )
 
@@ -126,6 +127,9 @@ def run_strange_sealed_native_v1(
         or not 1 <= timeout_seconds <= 30
     ):
         raise StrangeSealedNativeLaunchError("invalid bounded native run timeout")
+    # Both verification rounds share one monotonic read history. Using a
+    # fresh verifier for each round would miss a clock rollback during copy.
+    clock = _verified_seconds(seconds_reader)
     verify = dict(
         continuity_store=continuity_store,
         attestation=attestation,
@@ -136,7 +140,7 @@ def run_strange_sealed_native_v1(
         mir_fingerprint=mir_fingerprint,
         expected_epoch=expected_epoch,
         expected_start_seconds=expected_start_seconds,
-        seconds_reader=seconds_reader,
+        seconds_reader=clock,
         attestation_key=attestation_key,
     )
     try:
