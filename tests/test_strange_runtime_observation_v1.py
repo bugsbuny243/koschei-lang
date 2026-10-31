@@ -135,6 +135,21 @@ class StrangeRuntimeObservationV1Tests(unittest.TestCase):
             results = list(executor.map(lambda _: attempt(), (1, 2)))
         self.assertEqual(sorted(results), ["recorded", "rejected"])
 
+    def test_old_request_digest_cannot_be_reused_in_new_epoch(self):
+        previous = self.consume(request_digest="9" * 64)
+        self.store.advance(
+            expected_current_epoch=4, next_epoch=5,
+            starts_at_seconds=600, observed_seconds=600,
+        )
+        with self.assertRaisesRegex(Exception, "already claimed"):
+            self.store.claim_observation_once(
+                request_digest=previous.request_digest,
+                attestation_digest=previous.attestation_digest,
+                expected_epoch=5,
+                expected_start_seconds=600,
+                seconds_reader=lambda: 600,
+            )
+
     def test_epoch_advances_after_verification_but_before_claim(self):
         original = self.store.claim_observation_once
 
