@@ -186,6 +186,12 @@ class StrangeSupervisedNativeV1Tests(unittest.TestCase):
             self.run_native(binary=native, proof=proof, run_timeout_seconds=1)
         self.assertLess(time.monotonic() - start, 3.5)
 
+    def test_native_output_exceeding_local_limit_is_not_accepted(self) -> None:
+        # The canonical hello binary emits more than one byte. Its result
+        # must not become a successful supervisor observation at this limit.
+        with self.assertRaisesRegex(StrangeSupervisedNativeError, "output bound"):
+            self.run_native(max_output_bytes=1)
+
     def test_invalid_supervision_limits_fail_closed(self) -> None:
         for value in (0, True, 121):
             with self.subTest(timeout=value), self.assertRaises(StrangeSupervisedNativeError):
