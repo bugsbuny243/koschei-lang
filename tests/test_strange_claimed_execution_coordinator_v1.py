@@ -188,6 +188,55 @@ class StrangeClaimedExecutionV1Tests(unittest.TestCase):
         self.assertEqual(self.journal.read(epoch=5).state, "CLAIMED")
         self.assertEqual(self.store.read_snapshot().epoch, 6)
 
+    def test_outcome_record_write_failure_keeps_unresolved_claim(self):
+        self.activate()
+        with patch(
+            "koschei.strange_claimed_execution_coordinator_v1.run_activated_prebuilt_strange_native_v1",
+            return_value=self.report(),
+        ), patch(
+            "koschei.strange_claimed_execution_coordinator_v1.StrangeDurableLaunchReconciliationV1.record_result",
+            side_effect=OSError("disk unavailable"),
+        ):
+            with self.assertRaisesRegex(StrangeClaimedExecutionError, "unreconciled"):
+                self.execute()
+        self.assertEqual(self.journal.read(epoch=5).state, "CLAIMED")
+        self.assertEqual(self.store.read_snapshot().epoch, 5)
+        with patch(
+            "koschei.strange_claimed_execution_coordinator_v1.run_activated_prebuilt_strange_native_v1",
+        ) as runner:
+            with self.assertRaises(StrangeClaimedExecutionError):
+                self.execute()
+            runner.assert_not_called()
+
+    def test_failed_run_report_is_durable_even_after_epoch_advance(self):
+        self.activate()
+        def failed_at_expiry(*args, **kwargs):
+            self.store.advance(
+                expected_current_epoch=5, next_epoch=6,
+                starts_at_seconds=720, observed_seconds=720,
+            )
+            self.now = 720
+            raise RuntimeError("worker was terminated")
+
+        with patch(
+            "koschei.strange_claimed_execution_coordinator_v1.run_activated_prebuilt_strange_native_v1",
+            side_effect=failed_at_expiry,
+        ):
+            with self.assertRaisesRegex(StrangeClaimedExecutionError, "not rolled back"):
+                self.execute()
+        self.assertEqual(self.journal.read(epoch=5).state, "REPORTED_FAILED")
+        self.assertEqual(self.store.read_snapshot().epoch, 6)
+
+    def test_expired_epoch_cannot_reserve_execution(self):
+        self.activate()
+        self.now = 720
+        with patch(
+            "koschei.strange_claimed_execution_coordinator_v1.run_activated_prebuilt_strange_native_v1",
+        ) as runner:
+            with self.assertRaises(StrangeClaimedExecutionError):
+                self.execute()
+            runner.assert_not_called()
+
     def test_wrong_key_candidate_and_clock_cannot_claim(self):
         self.activate()
         cases = (
