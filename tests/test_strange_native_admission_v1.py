@@ -107,6 +107,15 @@ class StrangeNativeAdmissionV1Tests(unittest.TestCase):
             with self.subTest(changed=changed), self.assertRaises(StrangeNativeAdmissionError):
                 self.verify(changed)
 
+    def test_malformed_caller_fields_fail_closed(self):
+        original = self.attestation()
+        for field in ("source_sha256", "native_sha256", "scope_binding", "attestation_mac"):
+            for invalid in (None, 123, "", "Z" * 64):
+                with self.subTest(field=field, invalid=invalid):
+                    forged = replace(original, **{field: invalid})
+                    with self.assertRaises(StrangeNativeAdmissionError):
+                        self.verify(forged)
+
     def test_boundary_t119_valid_t120_invalid(self):
         evidence = self.attestation()
         self.now = 599
