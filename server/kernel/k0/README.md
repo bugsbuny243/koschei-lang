@@ -43,14 +43,13 @@ Acceptance requires:
 
 ## Honest limits
 ExitBootServices handoff is attempted and must succeed in the QEMU boot
-probe. There is NO owned physical memory allocator, page tables, interrupts,
-scheduler, storage, network, isolated processes or Koschei sealed-MIR runner
-exist here. UEFI firmware remains an external physical trust input.
+probe. There is NO owned physical memory allocator, page tables, interrupt
+controller, scheduler, storage, network, isolated process isolation or
+Koschei sealed-MIR runner here. UEFI firmware remains an external physical trust input.
 The prototype is x86-64/QEMU-focused, not proof of booting physical devices,
 and cannot yet host customer applications or claim zero attack risk.
 
 Next: independently verify owned physical pages after the firmware exit,
 reserve protected kernel ranges, build own page tables and page-fault
-isolation; K1 own
-domain/IPC/handle enforcement using canonical Koschei Library decisions.
+isolation; K1 owns domain/IPC/handle enforcement using canonical Koschei Library decisions.
 Issue #331 tracks these requirements.
