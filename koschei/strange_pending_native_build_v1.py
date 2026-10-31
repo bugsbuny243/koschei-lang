@@ -19,6 +19,7 @@ from .strange_pending_epoch_projection_v1 import (
 from .strange_runtime_observation_v1 import _verified_seconds, StrangeRuntimeObservationError
 from .strange_verified_native_build_v1 import (
     StrangeVerifiedNativeBuildError,
+    _hex256,
     _pinned_go,
 )
 
@@ -45,9 +46,21 @@ class PendingStrangeNativeBuildV1:
             or self.pending_projection.authority is not False
             or self.pending_projection.version != 1
             or not isinstance(self.binary, bytes) or not self.binary
+            or not isinstance(self.pending_projection.previous_epoch, int)
+            or isinstance(self.pending_projection.previous_epoch, bool)
+            or self.pending_projection.previous_epoch < 1
+            or self.pending_projection.target_epoch != self.pending_projection.previous_epoch + 1
+            or self.pending_projection.expires_before_seconds
+                != self.pending_projection.starts_at_seconds + 120
             or hashlib.sha256(self.binary).hexdigest() != self.native_sha256
         ):
             raise StrangePendingNativeBuildError("pending native candidate integrity mismatch")
+        try:
+            _hex256(self.go_executable_sha256)
+            _hex256(self.native_sha256)
+            _hex256(self.pending_projection.source_sha256)
+        except StrangeVerifiedNativeBuildError as exc:
+            raise StrangePendingNativeBuildError("invalid pending candidate digests") from exc
 
 
 def prebuild_next_strange_native_v1(
