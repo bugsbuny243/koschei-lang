@@ -125,6 +125,20 @@ class StrangeRepresentationEpochV1Tests(unittest.TestCase):
         with self.assertRaises(StrangeRepresentationEpochError):
             project_strange_epoch_go_v1(self.mir, **p)
 
+    def test_time_race_at_projection_fails_closed(self):
+        p = self.params()
+        p.pop("mir_fingerprint")
+        underlying = generate_go_mir_native
+
+        def expire_window(mir, *, representation_seed=None):
+            source = underlying(mir, representation_seed=representation_seed)
+            self.seconds = 620
+            return source
+
+        with patch("koschei.strange_representation_epoch_v1.generate_go_mir_native", expire_window):
+            with self.assertRaises(StrangeRepresentationEpochError):
+                project_strange_epoch_go_v1(self.mir, **p)
+
     def test_epoch_race_at_projection_fails_closed(self):
         p = self.params()
         p.pop("mir_fingerprint")
