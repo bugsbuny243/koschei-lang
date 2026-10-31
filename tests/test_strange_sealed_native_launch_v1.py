@@ -163,6 +163,12 @@ class StrangeSealedNativeLaunchV1Tests(unittest.TestCase):
             with self.assertRaises(StrangeSealedNativeLaunchError):
                 self.launch()
 
+    def test_clock_rollback_between_precheck_and_copy_is_rejected(self):
+        # First observation uses four time readings; second begins at 479.
+        readings = iter((480, 480, 480, 480, 479, 480, 480, 480))
+        with self.assertRaises(StrangeSealedNativeLaunchError):
+            self.launch(seconds_reader=lambda: next(readings))
+
     def test_invalid_timeout_and_empty_binary_fail_closed(self):
         for timeout in (0, True, -1, 31):
             with self.subTest(timeout=timeout), self.assertRaises(StrangeSealedNativeLaunchError):
