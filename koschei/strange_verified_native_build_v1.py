@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import hashlib
+import hmac
 import os
 from pathlib import Path
 import subprocess
@@ -45,8 +46,32 @@ class StrangeVerifiedNativeBuildV1:
     projection: StrangeEpochProjectionV1
     attestation: StrangeNativeAttestationV1
     go_executable_sha256: str
+    provenance_mac: str
     authority: bool = False
     version: int = 1
+
+    def assert_authenticated(self, *, attestation_key: bytes) -> None:
+        """Check exact binary/toolchain/source evidence, not execution authority."""
+        if self.version != 1 or self.authority is not False:
+            raise StrangeVerifiedNativeBuildError("build report cannot confer authority")
+        if not isinstance(self.binary, bytes) or not self.binary:
+            raise StrangeVerifiedNativeBuildError("invalid build report native bytes")
+        if hashlib.sha256(self.binary).hexdigest() != self.attestation.native_sha256:
+            raise StrangeVerifiedNativeBuildError("native bytes differ from attested binary")
+        if (
+            self.projection.source_sha256 != self.attestation.source_sha256
+            or self.projection.epoch != self.attestation.epoch
+            or self.projection.starts_at_seconds != self.attestation.starts_at_seconds
+            or self.projection.expires_before_seconds != self.attestation.expires_before_seconds
+        ):
+            raise StrangeVerifiedNativeBuildError("projection and attestation mismatch")
+        expected = _provenance_mac(
+            attestation_key, self.attestation, self.go_executable_sha256
+        )
+        if not isinstance(self.provenance_mac, str) or not hmac.compare_digest(
+            self.provenance_mac, expected
+        ):
+            raise StrangeVerifiedNativeBuildError("build provenance authentication failed")
 
 
 def _hex256(value: str) -> str:
@@ -57,6 +82,29 @@ def _hex256(value: str) -> str:
     ):
         raise StrangeVerifiedNativeBuildError("canonical pinned Go executable SHA256 required")
     return value
+
+
+def _provenance_mac(
+    attestation_key: bytes,
+    attestation: StrangeNativeAttestationV1,
+    go_executable_sha256: str,
+) -> str:
+    if not isinstance(attestation_key, bytes) or len(attestation_key) < 32:
+        raise StrangeVerifiedNativeBuildError("independent attestation key required")
+    if attestation.version != 1 or attestation.authority is not False:
+        raise StrangeVerifiedNativeBuildError("invalid native attestation for provenance")
+    # All components are fixed-width canonical SHA-256/HMAC hex digests.
+    fields = (
+        _hex256(go_executable_sha256),
+        _hex256(attestation.source_sha256),
+        _hex256(attestation.native_sha256),
+        _hex256(attestation.scope_binding),
+        _hex256(attestation.attestation_mac),
+    )
+    material = b"koschei/strange-verified-native-build/v1\x00" + b"".join(
+        bytes.fromhex(value) for value in fields
+    )
+    return hmac.new(attestation_key, material, hashlib.sha256).hexdigest()
 
 
 def _pinned_go(executable: str | Path, pinned_sha256: str) -> Path:
@@ -190,9 +238,12 @@ def verified_strange_native_build_v1(
         )
     except (ValueError, TypeError) as exc:
         raise StrangeVerifiedNativeBuildError("post-build epoch or attestation rejected") from exc
-    return StrangeVerifiedNativeBuildV1(
+    result = StrangeVerifiedNativeBuildV1(
         binary=native_binary,
         projection=receipt,
         attestation=proof,
         go_executable_sha256=expected_go_sha256,
+        provenance_mac=_provenance_mac(attestation_key, proof, expected_go_sha256),
     )
+    result.assert_authenticated(attestation_key=attestation_key)
+    return result
