@@ -143,6 +143,20 @@ class StrangeRuntimeObservationV1Tests(unittest.TestCase):
             with self.assertRaises(StrangeRuntimeObservationError):
                 self.check()
 
+    def test_window_expiry_during_native_verification_fails_closed(self):
+        real_verify = verify_strange_native_admission_v1
+
+        def verify_then_expire(**arguments):
+            real_verify(**arguments)
+            self.now = 600
+
+        with patch(
+            "koschei.strange_runtime_observation_v1.verify_strange_native_admission_v1",
+            side_effect=verify_then_expire,
+        ):
+            with self.assertRaises(StrangeRuntimeObservationError):
+                self.check()
+
     def test_backward_clock_during_verification_fails_closed(self):
         values = iter((480, 480, 479, 480))
         with self.assertRaises(StrangeRuntimeObservationError):
