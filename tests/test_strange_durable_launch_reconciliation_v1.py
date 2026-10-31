@@ -65,6 +65,7 @@ class StrangeLaunchReconciliationV1Tests(unittest.TestCase):
             expected_handoff_mac=self.stage.handoff_mac,
             reported_success=success,
             seconds_reader=lambda: self.now,
+            handoff_key=KEY,
         )
         args.update(changes)
         return self.journal.record_result(**args)
@@ -106,6 +107,7 @@ class StrangeLaunchReconciliationV1Tests(unittest.TestCase):
                 expected_handoff_mac=self.stage.handoff_mac,
                 reported_success=False,
                 seconds_reader=lambda: 601,
+                handoff_key=KEY,
             )
             self.assertEqual(after.state, "REPORTED_FAILED")
             self.assertEqual(self.journal.read(epoch=5), after)
@@ -187,6 +189,7 @@ class StrangeLaunchReconciliationV1Tests(unittest.TestCase):
         for bad in (
             {"reported_success": 1},
             {"expected_handoff_mac": "BAD"},
+            {"handoff_key": b"Z" * 32},
             {"seconds_reader": lambda: True},
         ):
             with self.subTest(bad=bad), self.assertRaises(ValueError):
