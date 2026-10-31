@@ -203,6 +203,30 @@ class StrangeDurableContinuityV1:
             expires_before_seconds=starts_at_seconds + _WINDOW_SECONDS,
         )
 
+    def require_active_window(
+        self,
+        *,
+        expected_epoch: int,
+        expected_start_seconds: int,
+        observed_seconds: int,
+    ) -> StrangeDurableEpochSnapshotV1:
+        """Verify the exact stored epoch AND its start, not just a caller epoch.
+
+        Snapshot admission is not an atomic permission to perform a later
+        critical effect. A separate isolated gate must re-verify Continuity
+        and consume the exact execution authorization immediately at use time.
+        """
+        _window(expected_epoch, expected_start_seconds, observed_seconds)
+        snapshot = self.read_snapshot()
+        if (
+            snapshot.epoch != expected_epoch
+            or snapshot.starts_at_seconds != expected_start_seconds
+        ):
+            raise StrangeDurableContinuityError(
+                "requested epoch/window differs from durable Continuity"
+            )
+        return snapshot
+
     def as_continuity_authority(self) -> ContinuityEpochAuthorityV1:
         """Bind the existing typed epoch reader; grants NO effect authority."""
         return bind_continuity_epoch_authority_v1(
