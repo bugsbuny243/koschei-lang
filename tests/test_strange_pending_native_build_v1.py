@@ -73,6 +73,18 @@ class StrangePendingNativeBuildV1Tests(unittest.TestCase):
             replace(item, authority=True).assert_consistent()
         with self.assertRaises(StrangePendingNativeBuildError):
             replace(item, native_sha256="0" * 64).assert_consistent()
+        with self.assertRaises(StrangePendingNativeBuildError):
+            replace(item, go_executable_sha256="f" * 63).assert_consistent()
+        with self.assertRaises(StrangePendingNativeBuildError):
+            replace(
+                item,
+                pending_projection=replace(item.pending_projection, target_epoch=7),
+            ).assert_consistent()
+        with self.assertRaises(StrangePendingNativeBuildError):
+            replace(
+                item,
+                pending_projection=replace(item.pending_projection, authority=True),
+            ).assert_consistent()
         with tempfile.TemporaryDirectory() as directory:
             native_path = Path(directory) / "candidate"
             native_path.write_bytes(item.binary)
