@@ -55,8 +55,9 @@ and recording, restart persistence and concurrent duplicate launches.
 
 `python -m unittest discover -s tests -p 'test_strange_reconciled_native_run_v1.py' -v`
 
-This code sits on a preparation branch while PR #328 and PR #329 finish
-exact-head canonical GitHub CI. It must be rebased/copy-ported onto the
-merged `main` before creating a separate PR.
+This code is staged on a branch based on the merged PR #328.
+PR #329 supplies the separately reviewed launch-attempt journal; this driver
+must remain unmerged until that dependency lands and the full exact-head
+canonical GitHub CI validates the combined behavior.
 
 Tracked in issue #317.
