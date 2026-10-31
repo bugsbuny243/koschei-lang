@@ -6,10 +6,8 @@
  * Firmware remains a boot dependency; this does NOT prove trusted firmware,
  * MMU isolation, canonical sealed MIR execution, or device-level effect gates.
  */
-typedef unsigned char K_U8;
+#include "memory_map.h"
 typedef unsigned short K_U16;
-typedef unsigned int K_U32;
-typedef unsigned long long K_U64;
 typedef void *EFI_HANDLE;
 typedef K_U64 EFI_STATUS;
 
@@ -20,6 +18,19 @@ typedef struct {
     K_U32 crc32;
     K_U32 reserved;
 } EFI_TABLE_HEADER;
+
+typedef EFI_STATUS (__attribute__((ms_abi)) *EFI_GET_MEMORY_MAP)(
+    K_U64 *map_size, void *map, K_U64 *map_key,
+    K_U64 *descriptor_size, K_U32 *descriptor_version);
+
+typedef struct {
+    EFI_TABLE_HEADER hdr;
+    void *raise_tpl;
+    void *restore_tpl;
+    void *allocate_pages;
+    void *free_pages;
+    EFI_GET_MEMORY_MAP get_memory_map;
+} EFI_BOOT_SERVICES_SLICE;
 
 typedef struct {
     EFI_TABLE_HEADER hdr;
@@ -32,7 +43,7 @@ typedef struct {
     EFI_HANDLE standard_error_handle;
     void *std_err;
     void *runtime_services;
-    void *boot_services;
+    EFI_BOOT_SERVICES_SLICE *boot_services;
     K_U64 table_entries;
     void *configuration_table;
 } EFI_SYSTEM_TABLE;
@@ -40,6 +51,9 @@ typedef struct {
 _Static_assert(sizeof(EFI_TABLE_HEADER) == 24, "UEFI table header");
 _Static_assert(__builtin_offsetof(EFI_SYSTEM_TABLE, boot_services) == 96, "UEFI boot services offset");
 _Static_assert(sizeof(EFI_SYSTEM_TABLE) == 120, "UEFI system table layout");
+_Static_assert(__builtin_offsetof(EFI_BOOT_SERVICES_SLICE, get_memory_map) == 56,
+               "UEFI GetMemoryMap ABI offset");
+static K_U8 k0_map_buffer[K0_MEMORY_MAP_LIMIT] __attribute__((aligned(16)));
 
 static inline void port_out(K_U16 port, K_U8 value) {
     __asm__ __volatile__("outb %0, %1" : : "a"(value), "Nd"(port));
@@ -88,12 +102,34 @@ EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system) {
     (void)image;
     serial_init();
     if (!system || system->hdr.signature != 0x5453595320494249ULL ||
-        !system->boot_services) {
+        !system->boot_services ||
+        system->boot_services->hdr.signature != 0x56524553544f4f42ULL ||
+        system->boot_services->hdr.header_size < 64 ||
+        !system->boot_services->get_memory_map) {
         serial_line("KOSCHEI-KERNEL REJECT/1 INVALID-UEFI");
         stop(0x11);
     }
     serial_line("KOSCHEI-KERNEL BOOT/1 X86_64-UEFI");
     serial_line("KOSCHEI-KERNEL K0 SERIAL-OWNED");
+    K_U64 map_size = sizeof(k0_map_buffer);
+    K_U64 map_key = 0;
+    K_U64 stride = 0;
+    K_U32 version = 0;
+    EFI_STATUS result = system->boot_services->get_memory_map(
+        &map_size, k0_map_buffer, &map_key, &stride, &version);
+    K0_MEMORY_PLAN plan;
+    if (result != 0 || map_key == 0 ||
+        !k0_memory_validate_plan(k0_map_buffer, map_size, stride, version, &plan)) {
+        serial_line("KOSCHEI-KERNEL REJECT/1 MEMORY-MAP");
+        stop(0x11);
+    }
+    /* Only a deterministic plan; physical pages still belong to UEFI. */
+    serial_line("KOSCHEI-KERNEL K0 MEMORY-MAP-VALIDATED");
+    if (plan.candidate_pages != K0_PLAN_PAGES || plan.candidate_start < 0x100000ULL) {
+        serial_line("KOSCHEI-KERNEL REJECT/1 MEMORY-PLAN");
+        stop(0x11);
+    }
+    serial_line("KOSCHEI-KERNEL K0 FREE-PAGES-PLANNED");
     serial_line("KOSCHEI-KERNEL K0 HALT-NO-POLICY");
     stop(0x10);
 }
