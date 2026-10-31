@@ -1,6 +1,7 @@
 """Sealed MIR-Go native provenance and failed-build negative tests."""
 from __future__ import annotations
 
+from dataclasses import replace
 import hashlib
 from pathlib import Path
 import shutil
@@ -95,6 +96,18 @@ class StrangeVerifiedNativeBuildV1Tests(unittest.TestCase):
             self.mir, **self.parameters(), **self.pinned_go(),
         )
         self.assertFalse(result.authority)
+        result.assert_authenticated(attestation_key=KEY)
+        for mutated in (
+            replace(result, go_executable_sha256="0" * 64),
+            replace(result, provenance_mac="0" * 64),
+            replace(result, binary=result.binary + b"tampered"),
+            replace(result, authority=True),
+            replace(result, attestation=replace(result.attestation, native_sha256="f" * 64)),
+        ):
+            with self.subTest(mutated=mutated.provenance_mac), self.assertRaises(StrangeVerifiedNativeBuildError):
+                mutated.assert_authenticated(attestation_key=KEY)
+        with self.assertRaises(StrangeVerifiedNativeBuildError):
+            result.assert_authenticated(attestation_key=b"B" * 32)
         self.assertEqual(result.attestation.native_sha256, hashlib.sha256(result.binary).hexdigest())
         self.assertEqual(result.projection.source_sha256, result.attestation.source_sha256)
         self.assertNotIn(result.binary[:100].hex(), repr(result))
