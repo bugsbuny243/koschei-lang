@@ -17,6 +17,7 @@ from typing import Callable
 from .strange_durable_continuity_v1 import (
     StrangeDurableContinuityError,
     StrangeDurableContinuityV1,
+    StrangeDurableObservationClaimV1,
 )
 from .strange_native_admission_v1 import (
     StrangeNativeAdmissionError,
@@ -132,3 +133,52 @@ def require_strange_runtime_observation_v1(
         observed_epoch=final.epoch,
         expires_before_seconds=final.expires_before_seconds,
     )
+
+
+def consume_strange_runtime_observation_once_v1(
+    *,
+    continuity_store: StrangeDurableContinuityV1,
+    attestation: StrangeNativeAttestationV1,
+    native_binary: bytes,
+    expected_source_sha256: str,
+    deployment_id: str,
+    veyra_digest: str,
+    mir_fingerprint: str,
+    expected_epoch: int,
+    expected_start_seconds: int,
+    seconds_reader: Callable[[], int],
+    attestation_key: bytes,
+    request_digest: str,
+) -> StrangeDurableObservationClaimV1:
+    """Check native evidence then atomically tombstone one LOCAL observation.
+
+    The clock wrapper spans both verification and the SQLite write. The latter
+    rechecks epoch/start/time *inside* BEGIN IMMEDIATE before committing a
+    unique request digest. A subsequent effect is NOT approved by this result.
+    """
+    clock = _verified_seconds(seconds_reader)
+    require_strange_runtime_observation_v1(
+        continuity_store=continuity_store,
+        attestation=attestation,
+        native_binary=native_binary,
+        expected_source_sha256=expected_source_sha256,
+        deployment_id=deployment_id,
+        veyra_digest=veyra_digest,
+        mir_fingerprint=mir_fingerprint,
+        expected_epoch=expected_epoch,
+        expected_start_seconds=expected_start_seconds,
+        seconds_reader=clock,
+        attestation_key=attestation_key,
+    )
+    try:
+        return continuity_store.claim_observation_once(
+            request_digest=request_digest,
+            attestation_digest=attestation.attestation_mac,
+            expected_epoch=expected_epoch,
+            expected_start_seconds=expected_start_seconds,
+            seconds_reader=clock,
+        )
+    except StrangeDurableContinuityError as exc:
+        raise StrangeRuntimeObservationError(
+            "durable observation claim failed closed"
+        ) from exc

@@ -1,6 +1,7 @@
 """Integration tests: runtime observation spans native evidence and durable epoch."""
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
 import tempfile
@@ -17,6 +18,7 @@ from koschei.strange_native_admission_v1 import (
 from koschei.strange_representation_epoch_v1 import project_strange_epoch_go_v1
 from koschei.strange_runtime_observation_v1 import (
     StrangeRuntimeObservationError,
+    consume_strange_runtime_observation_once_v1,
     require_strange_runtime_observation_v1,
 )
 
@@ -84,6 +86,108 @@ class StrangeRuntimeObservationV1Tests(unittest.TestCase):
             expected_source_sha256=self.projection.source_sha256,
             **params,
         )
+
+    def consume(self, *, request_digest: str = "1" * 64, **changes):
+        params = dict(self.claim)
+        params.update(changes)
+        return consume_strange_runtime_observation_once_v1(
+            continuity_store=self.store,
+            native_binary=self.native,
+            attestation=self.proof,
+            expected_source_sha256=self.projection.source_sha256,
+            request_digest=request_digest,
+            **params,
+        )
+
+    def test_single_use_observation_replay_denied(self):
+        record = self.consume()
+        self.assertEqual(record.request_digest, "1" * 64)
+        self.assertEqual(record.epoch, 4)
+        self.assertFalse(record.authority)
+        with self.assertRaises(StrangeRuntimeObservationError):
+            self.consume()
+        self.assertEqual(self.consume(request_digest="2" * 64).epoch, 4)
+
+    def test_duplicate_observation_rejected_across_database_connections(self):
+        first = self.consume(request_digest="3" * 64)
+        with StrangeDurableContinuityV1(
+            Path(self.directory.name) / "continuity.sqlite3",
+            continuity_id="galaxy-a",
+        ) as reopened:
+            with self.assertRaisesRegex(Exception, "already claimed"):
+                reopened.claim_observation_once(
+                    request_digest=first.request_digest,
+                    attestation_digest=first.attestation_digest,
+                    expected_epoch=4,
+                    expected_start_seconds=480,
+                    seconds_reader=lambda: 480,
+                )
+
+    def test_two_simultaneous_local_observation_claims_allow_exactly_one(self):
+        def attempt():
+            try:
+                self.consume(request_digest="4" * 64)
+                return "recorded"
+            except StrangeRuntimeObservationError:
+                return "rejected"
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            results = list(executor.map(lambda _: attempt(), (1, 2)))
+        self.assertEqual(sorted(results), ["recorded", "rejected"])
+
+    def test_old_request_digest_cannot_be_reused_in_new_epoch(self):
+        previous = self.consume(request_digest="9" * 64)
+        self.store.advance(
+            expected_current_epoch=4, next_epoch=5,
+            starts_at_seconds=600, observed_seconds=600,
+        )
+        with self.assertRaisesRegex(Exception, "already claimed"):
+            self.store.claim_observation_once(
+                request_digest=previous.request_digest,
+                attestation_digest=previous.attestation_digest,
+                expected_epoch=5,
+                expected_start_seconds=600,
+                seconds_reader=lambda: 600,
+            )
+
+    def test_epoch_advances_after_verification_but_before_claim(self):
+        original = self.store.claim_observation_once
+
+        def rotate_before_claim(**arguments):
+            self.store.advance(
+                expected_current_epoch=4, next_epoch=5,
+                starts_at_seconds=600, observed_seconds=600,
+            )
+            return original(**arguments)
+
+        with patch.object(self.store, "claim_observation_once", side_effect=rotate_before_claim):
+            with self.assertRaises(StrangeRuntimeObservationError):
+                self.consume(request_digest="5" * 64)
+
+    def test_window_expires_after_verification_but_before_claim(self):
+        original = self.store.claim_observation_once
+
+        def expire_before_claim(**arguments):
+            self.now = 600
+            return original(**arguments)
+
+        with patch.object(self.store, "claim_observation_once", side_effect=expire_before_claim):
+            with self.assertRaises(StrangeRuntimeObservationError):
+                self.consume(request_digest="6" * 64)
+
+    def test_invalid_digest_and_rejected_binary_never_create_claim(self):
+        with self.assertRaises(StrangeRuntimeObservationError):
+            self.consume(request_digest="invalid")
+        with self.assertRaises(StrangeRuntimeObservationError):
+            consume_strange_runtime_observation_once_v1(
+                continuity_store=self.store,
+                native_binary=b"tampered-native",
+                attestation=self.proof,
+                expected_source_sha256=self.projection.source_sha256,
+                request_digest="7" * 64,
+                **self.claim,
+            )
+        self.assertEqual(self.consume(request_digest="7" * 64).epoch, 4)
 
     def test_current_native_artifact_is_observed_without_authority(self):
         observed = self.check()
