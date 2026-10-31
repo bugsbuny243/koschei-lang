@@ -7,6 +7,7 @@
  * MMU isolation, canonical sealed MIR execution, or device-level effect gates.
  */
 #include "memory_map.h"
+#include "page_pool.h"
 typedef unsigned short K_U16;
 typedef void *EFI_HANDLE;
 typedef K_U64 EFI_STATUS;
@@ -60,6 +61,7 @@ _Static_assert(__builtin_offsetof(EFI_BOOT_SERVICES_SLICE, get_memory_map) == 56
 _Static_assert(__builtin_offsetof(EFI_BOOT_SERVICES_SLICE, exit_boot_services) == 232,
                "UEFI ExitBootServices ABI offset");
 static K_U8 k0_map_buffer[K0_MEMORY_MAP_LIMIT] __attribute__((aligned(16)));
+static K0_PAGE_POOL k0_pool;
 
 static inline void port_out(K_U16 port, K_U8 value) {
     __asm__ __volatile__("outb %0, %1" : : "a"(value), "Nd"(port));
@@ -101,6 +103,36 @@ __attribute__((noreturn)) static void stop(K_U8 code) {
     port_out(0xf4, code);
 #endif
     for (;;) __asm__ __volatile__("cli; hlt");
+}
+
+/*
+ * QEMU K0.3 diagnostic only. The firmware-provided current address mapping
+ * is used here: this is NOT an own-MMU or address-space isolation proof.
+ * Two distinct claimed pages are written, read, zeroed and compared to
+ * detect aliasing before returning them to the ledger. No firmware calls.
+ */
+static int k0_probe_claimed_pages(K0_PAGE_POOL *pool) {
+    K_U64 first = 0, second = 0;
+    if (!k0_pool_claim(pool, &first) || !k0_pool_claim(pool, &second) ||
+        first == second || !k0_pool_is_claimed(pool, first) ||
+        !k0_pool_is_claimed(pool, second)) return 0;
+    volatile K_U8 *a = (volatile K_U8 *)(unsigned long long)first;
+    volatile K_U8 *b = (volatile K_U8 *)(unsigned long long)second;
+    for (K_U32 i = 0; i < K0_PAGE_SIZE; ++i) {
+        a[i] = (K_U8)(i ^ 0xa5U);
+        b[i] = (K_U8)((i * 3U) ^ 0x5aU);
+    }
+    for (K_U32 i = 0; i < K0_PAGE_SIZE; ++i)
+        if (a[i] != (K_U8)(i ^ 0xa5U) ||
+            b[i] != (K_U8)((i * 3U) ^ 0x5aU)) return 0;
+    for (K_U32 i = 0; i < K0_PAGE_SIZE; ++i) a[i] = 0;
+    for (K_U32 i = 0; i < K0_PAGE_SIZE; ++i)
+        if (a[i] != 0 || b[i] != (K_U8)((i * 3U) ^ 0x5aU)) return 0;
+    for (K_U32 i = 0; i < K0_PAGE_SIZE; ++i) b[i] = 0;
+    for (K_U32 i = 0; i < K0_PAGE_SIZE; ++i)
+        if (b[i] != 0) return 0;
+    return k0_pool_release(pool, second) && k0_pool_release(pool, first) &&
+           pool->active == 0;
 }
 
 /* x86_64-pc-windows-msvc target supplies required UEFI Microsoft x64 ABI. */
@@ -155,6 +187,12 @@ EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system) {
     serial_line("KOSCHEI-KERNEL K0 MEMORY-MAP-VALIDATED");
     serial_line("KOSCHEI-KERNEL K0 FREE-PAGES-PLANNED");
     serial_line("KOSCHEI-KERNEL K0 BOOT-SERVICES-EXITED");
+    if (!k0_pool_init(&k0_pool, &plan, exited) ||
+        !k0_probe_claimed_pages(&k0_pool)) {
+        serial_line("KOSCHEI-KERNEL REJECT/1 PAGE-POOL");
+        stop(0x11);
+    }
+    serial_line("KOSCHEI-KERNEL K0 PAGE-POOL-PROBED");
     serial_line("KOSCHEI-KERNEL K0 HALT-NO-POLICY");
     stop(0x10);
 }
