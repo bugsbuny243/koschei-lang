@@ -2,13 +2,13 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from threading import Event
 from dataclasses import replace
 import hashlib
 from pathlib import Path
 import shutil
 import subprocess
 import sys
-import time
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -155,7 +155,7 @@ class StrangeActivatedCandidateV1Tests(unittest.TestCase):
         self.assertTrue(self.journal.retired(4))
 
     def test_old_supervised_worker_is_stopped_and_new_prebuilt_worker_runs(self):
-        old_source, old_receipt = project_strange_epoch_go_v1(
+        _old_source, old_receipt = project_strange_epoch_go_v1(
             self.mir,
             trust_plane_seed=b"S" * 32,
             continuity=self.store.as_continuity_authority(),
@@ -189,12 +189,24 @@ class StrangeActivatedCandidateV1Tests(unittest.TestCase):
                 run_timeout_seconds=5, poll_interval_seconds=0.02,
             )
 
-        with ThreadPoolExecutor(max_workers=1) as pool:
-            old_future = pool.submit(run_old_worker)
-            time.sleep(0.2)
-            self.activate()
-            with self.assertRaises(StrangeSupervisedNativeError):
-                old_future.result(timeout=5)
+        started = Event()
+        native_popen = subprocess.Popen
+
+        def record_old_spawn(*args, **kwargs):
+            worker = native_popen(*args, **kwargs)
+            started.set()
+            return worker
+
+        with patch(
+            "koschei.strange_supervised_native_v1.subprocess.Popen",
+            side_effect=record_old_spawn,
+        ):
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                old_future = pool.submit(run_old_worker)
+                self.assertTrue(started.wait(timeout=3), "old worker never spawned")
+                self.activate()
+                with self.assertRaises(StrangeSupervisedNativeError):
+                    old_future.result(timeout=5)
         new_result = self.launch()
         self.assertEqual(new_result.stdout, b"Koschei\n1\n")
         self.assertEqual(new_result.observed_epoch, 5)
