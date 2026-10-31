@@ -60,8 +60,7 @@ class K0ProofFailClosedTests(unittest.TestCase):
             serial.verify(file)
             # Real OVMF emits a non-Koschei firmware preface on COM1.
             file.write_bytes(
-                b"\\x1b[2JBdsDxe: starting UEFI USB boot\\r\\n".replace(b"\\\\", b"\\")
-                + b"".join(serial.EXPECTED)
+                b"OVMF UEFI BOOT PREFIX" + b"".join(serial.EXPECTED)
             )
             serial.verify(file)
 
