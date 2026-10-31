@@ -17,6 +17,10 @@ source-to-binary build chain. This module narrows the **trusted producer path**:
    120-second Continuity window expires or changes during compilation.
 6. Only **after those checks** issue the existing scoped native HMAC
    attestation for the actual compiled binary bytes.
+7. MAC a second builder-only provenance receipt binding the pinned Go executable
+   digest, canonical source digest, native-byte digest, scope binding and native
+   attestation MAC. `assert_authenticated` checks the receipt and exact native
+   bytes; it **does not** elevate this record to execution authority.
 
 The function returns a **trusted-builder-only** binary and an authority-free
 attestation. No public `ks build` path is modified. The binary is deliberately
