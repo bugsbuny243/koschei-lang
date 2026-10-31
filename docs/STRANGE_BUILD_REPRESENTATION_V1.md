@@ -28,7 +28,7 @@ equal MIR + distinct seed yields different symbol representations.
 
 ## Acceptance tests
 
-`python -m unittest tests.test_strange_build_representation_v1 -v`
+`python -m unittest discover -s tests -p 'test_strange_build_representation_v1.py' -v`
 
 The tests check same-seed determinism, different-seed diversification,
 domain separation, malformed seed denial, canonical MIR stability, and native
