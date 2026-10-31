@@ -9,9 +9,11 @@ The journal stores NO source code, secret seeds, signing keys or Galaxy authorit
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
 from pathlib import Path
 import sqlite3
 from threading import RLock
+from typing import Callable
 
 from .continuity_epoch_authority_v1 import (
     ContinuityEpochAuthorityV1,
@@ -24,6 +26,19 @@ _MAX_INTEGER = 2**63 - 1
 
 class StrangeDurableContinuityError(ValueError):
     """Missing, inconsistent, or non-monotonic durable Continuity state."""
+
+
+@dataclass(frozen=True, slots=True)
+class StrangeDurableObservationClaimV1:
+    """Local replay tombstone; NOT a credential, token or execution approval."""
+
+    continuity_id: str
+    request_digest: str
+    attestation_digest: str
+    epoch: int
+    observed_seconds: int
+    authority: bool = False
+    version: int = 1
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,6 +62,25 @@ def _integer(value: int, field: str, *, zero_allowed: bool = False) -> int:
     if not isinstance(value, int) or isinstance(value, bool) or not low <= value <= _MAX_INTEGER:
         raise StrangeDurableContinuityError(f"invalid {field}")
     return value
+
+
+def _hex_digest(value: str, label: str) -> str:
+    if (
+        not isinstance(value, str) or len(value) != 64
+        or any(character not in "0123456789abcdef" for character in value)
+    ):
+        raise StrangeDurableContinuityError(f"invalid {label}")
+    return value
+
+
+def _trusted_seconds(reader: Callable[[], int]) -> int:
+    if not callable(reader):
+        raise StrangeDurableContinuityError("trusted seconds reader required")
+    try:
+        value = reader()
+    except Exception as exc:
+        raise StrangeDurableContinuityError("trusted clock read failed closed") from exc
+    return _integer(value, "trusted seconds", zero_allowed=True)
 
 
 def _window(epoch: int, start: int, observed: int) -> None:
@@ -84,6 +118,18 @@ class StrangeDurableContinuityV1:
                 continuity_id TEXT PRIMARY KEY,
                 epoch INTEGER NOT NULL CHECK(epoch > 0),
                 starts_at_seconds INTEGER NOT NULL CHECK(starts_at_seconds >= 0)
+            )
+            """
+        )
+        self._db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS strange_observation_claims_v1 (
+                continuity_id TEXT NOT NULL,
+                request_digest TEXT NOT NULL,
+                attestation_digest TEXT NOT NULL,
+                epoch INTEGER NOT NULL CHECK(epoch > 0),
+                observed_seconds INTEGER NOT NULL CHECK(observed_seconds >= 0),
+                PRIMARY KEY (continuity_id, request_digest)
             )
             """
         )
@@ -226,6 +272,69 @@ class StrangeDurableContinuityV1:
                 "requested epoch/window differs from durable Continuity"
             )
         return snapshot
+
+    def claim_observation_once(
+        self,
+        *,
+        request_digest: str,
+        attestation_digest: str,
+        expected_epoch: int,
+        expected_start_seconds: int,
+        seconds_reader: Callable[[], int],
+    ) -> StrangeDurableObservationClaimV1:
+        """Atomically fence a non-authoritative local observation request.
+
+        The active epoch and its EXACT canonical start are checked inside the
+        same SQLite write transaction that inserts a permanent replay tombstone.
+        The trusted time reader is called while the transaction is held so an
+        old time captured before a contended lock cannot authorize the claim.
+        This does not authorize the *underlying effect* or synchronize it with
+        a remote signer. Never treat a claim as a transferable credential.
+        """
+        request = _hex_digest(request_digest, "request digest")
+        attestation = _hex_digest(attestation_digest, "attestation digest")
+        _integer(expected_epoch, "expected epoch")
+        _integer(expected_start_seconds, "expected start", zero_allowed=True)
+        with self._lock:
+            try:
+                self._db.execute("BEGIN IMMEDIATE")
+                row = self._db.execute(
+                    "SELECT continuity_id,epoch,starts_at_seconds "
+                    "FROM strange_continuity_v1 WHERE continuity_id=?",
+                    (self.continuity_id,),
+                ).fetchone()
+                snapshot = self._snapshot(row)
+                if (
+                    snapshot.epoch != expected_epoch
+                    or snapshot.starts_at_seconds != expected_start_seconds
+                ):
+                    raise StrangeDurableContinuityError(
+                        "observation request uses stale or substituted Continuity"
+                    )
+                now = _trusted_seconds(seconds_reader)
+                _window(expected_epoch, expected_start_seconds, now)
+                self._db.execute(
+                    "INSERT INTO strange_observation_claims_v1 "
+                    "(continuity_id,request_digest,attestation_digest,epoch,observed_seconds) "
+                    "VALUES (?,?,?,?,?)",
+                    (self.continuity_id, request, attestation, expected_epoch, now),
+                )
+                self._db.execute("COMMIT")
+            except sqlite3.IntegrityError as exc:
+                self._db.execute("ROLLBACK")
+                raise StrangeDurableContinuityError(
+                    "observation request already claimed; replay denied"
+                ) from exc
+            except Exception:
+                self._db.execute("ROLLBACK")
+                raise
+        return StrangeDurableObservationClaimV1(
+            continuity_id=self.continuity_id,
+            request_digest=request,
+            attestation_digest=attestation,
+            epoch=expected_epoch,
+            observed_seconds=now,
+        )
 
     def as_continuity_authority(self) -> ContinuityEpochAuthorityV1:
         """Bind the existing typed epoch reader; grants NO effect authority."""
