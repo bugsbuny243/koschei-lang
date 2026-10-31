@@ -55,9 +55,8 @@ and recording, restart persistence and concurrent duplicate launches.
 
 `python -m unittest discover -s tests -p 'test_strange_reconciled_native_run_v1.py' -v`
 
-This code is staged on a branch based on the merged PR #328.
-PR #329 supplies the separately reviewed launch-attempt journal; this driver
-must remain unmerged until that dependency lands and the full exact-head
-canonical GitHub CI validates the combined behavior.
+This integration is based on the merged #328 and #329 implementation.
+It must pass its own exact-head canonical GitHub CI, including the real Linux
+Go worker and the error/restart/duplicate-run regression tests, before merge.
 
 Tracked in issue #317.
