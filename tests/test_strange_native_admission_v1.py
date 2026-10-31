@@ -3,6 +3,9 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
+import shutil
+import subprocess
+import tempfile
 import unittest
 
 from koschei.continuity_epoch_authority_v1 import bind_continuity_epoch_authority_v1
@@ -75,6 +78,35 @@ class StrangeNativeAdmissionV1Tests(unittest.TestCase):
         self.assertEqual(evidence.expires_before_seconds, 600)
         self.assertNotIn(self.arguments["deployment_id"], repr(evidence))
         self.assertNotIn(self.mir.fingerprint, repr(evidence))
+
+    @unittest.skipUnless(shutil.which("go"), "Go toolchain required for native artifact parity")
+    def test_real_native_executable_provenance_and_tamper_denial(self):
+        """Exercise source->Go build->native bytes->attestation->runtime parity."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source_file = root / "main.go"
+            binary_file = root / "hello"
+            source_file.write_text(self.source, encoding="utf-8")
+            build = subprocess.run(
+                [
+                    shutil.which("go"), "build", "-trimpath", "-buildvcs=false",
+                    "-ldflags=-buildid=", "-o", str(binary_file), str(source_file),
+                ],
+                capture_output=True, text=True, check=False, timeout=90,
+            )
+            self.assertEqual(build.returncode, 0, build.stderr)
+            binary = binary_file.read_bytes()
+            evidence = issue_strange_native_attestation_v1(
+                receipt=self.receipt, native_binary=binary, **self.arguments,
+            )
+            self.verify(evidence, binary=binary)
+            completed = subprocess.run(
+                [str(binary_file)], capture_output=True, check=False, timeout=10,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(completed.stdout, b"Koschei\n1\n")
+            with self.assertRaises(StrangeNativeAdmissionError):
+                self.verify(evidence, binary=binary + b"tampered")
 
     def test_wrong_binary_source_scope_or_attestation_key_fail_closed(self):
         evidence = self.attestation()
