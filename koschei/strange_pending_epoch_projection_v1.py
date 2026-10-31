@@ -23,6 +23,10 @@ from .strange_durable_continuity_v1 import (
     StrangeDurableContinuityError,
     StrangeDurableContinuityV1,
 )
+from .strange_runtime_observation_v1 import (
+    StrangeRuntimeObservationError,
+    _verified_seconds,
+)
 from .strange_representation_epoch_v1 import (
     StrangeRepresentationEpochError,
     _CTX,
@@ -89,11 +93,12 @@ def project_next_strange_epoch_go_v1(
         raise StrangePendingRepresentationError("invalid current epoch/window")
     target_epoch = expected_current_epoch + 1
     next_start = expected_current_start_seconds + _WINDOW_SECONDS
+    clock = _verified_seconds(clock)
     try:
         before = continuity_store.require_active_window(
             expected_epoch=expected_current_epoch,
             expected_start_seconds=expected_current_start_seconds,
-            observed_seconds=_seconds(seconds_reader),
+            observed_seconds=_seconds(clock),
         )
         fields = (
             _text(deployment_id, "deployment identity"),
@@ -114,9 +119,14 @@ def project_next_strange_epoch_go_v1(
         after = continuity_store.require_active_window(
             expected_epoch=expected_current_epoch,
             expected_start_seconds=expected_current_start_seconds,
-            observed_seconds=_seconds(seconds_reader),
+            observed_seconds=_seconds(clock),
         )
-    except (StrangeDurableContinuityError, StrangeRepresentationEpochError, ValueError) as exc:
+    except (
+        StrangeDurableContinuityError,
+        StrangeRepresentationEpochError,
+        StrangeRuntimeObservationError,
+        ValueError,
+    ) as exc:
         raise StrangePendingRepresentationError(
             "next-epoch preparation requires unchanged, current Continuity"
         ) from exc
