@@ -34,7 +34,12 @@ durably activated.
 
 Integration tests compile the actual Koschei/MIR-Go binary *before* the
 boundary, stage it, activate the next epoch, and then execute those exact bytes
-from a sealed Linux memfd. Negative cases test premature activation,
+from a sealed Linux memfd. A separate integration test keeps a **sleeping Go
+fixture** running in old epoch under the existing supervisor, commits the
+epoch change, confirms the old supervised worker is rejected/stopped, and
+runs the prebuilt new worker. The sleeping fixture is not claimed to be
+canonical MIR -> native build provenance and holds no privileged authority.
+Negative cases test premature activation,
 modified candidate, changed Go pin, wrong Veyra/deployment/seed/key, forged
 handoff record, expired epoch and epoch rotation between attestation and run.
 
