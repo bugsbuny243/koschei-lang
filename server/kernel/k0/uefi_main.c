@@ -1,0 +1,99 @@
+/*
+ * Koschei Server K0: independent x86-64 UEFI boot PROBE, NOT a full kernel.
+ * Freestanding: no hosted runtime, libc, Linux/Windows/Go/Python dependency.
+ * This first slice owns its COM1 UART operations via x86 I/O ports.
+ *
+ * Firmware remains a boot dependency; this does NOT prove trusted firmware,
+ * MMU isolation, canonical sealed MIR execution, or device-level effect gates.
+ */
+typedef unsigned char K_U8;
+typedef unsigned short K_U16;
+typedef unsigned int K_U32;
+typedef unsigned long long K_U64;
+typedef void *EFI_HANDLE;
+typedef K_U64 EFI_STATUS;
+
+typedef struct {
+    K_U64 signature;
+    K_U32 revision;
+    K_U32 header_size;
+    K_U32 crc32;
+    K_U32 reserved;
+} EFI_TABLE_HEADER;
+
+typedef struct {
+    EFI_TABLE_HEADER hdr;
+    K_U16 *firmware_vendor;
+    K_U32 firmware_revision;
+    EFI_HANDLE console_in_handle;
+    void *con_in;
+    EFI_HANDLE console_out_handle;
+    void *con_out;
+    EFI_HANDLE standard_error_handle;
+    void *std_err;
+    void *runtime_services;
+    void *boot_services;
+    K_U64 table_entries;
+    void *configuration_table;
+} EFI_SYSTEM_TABLE;
+
+_Static_assert(sizeof(EFI_TABLE_HEADER) == 24, "UEFI table header");
+_Static_assert(__builtin_offsetof(EFI_SYSTEM_TABLE, boot_services) == 96, "UEFI boot services offset");
+_Static_assert(sizeof(EFI_SYSTEM_TABLE) == 120, "UEFI system table layout");
+
+static inline void port_out(K_U16 port, K_U8 value) {
+    __asm__ __volatile__("outb %0, %1" : : "a"(value), "Nd"(port));
+}
+static inline K_U8 port_in(K_U16 port) {
+    K_U8 value;
+    __asm__ __volatile__("inb %1, %0" : "=a"(value) : "Nd"(port));
+    return value;
+}
+
+#define COM1 0x3f8u
+static void serial_init(void) {
+    port_out(COM1 + 1, 0);      /* no UART interrupts */
+    port_out(COM1 + 3, 0x80);   /* DLAB */
+    port_out(COM1, 1);         /* divisor 1: 115200 baud */
+    port_out(COM1 + 1, 0);
+    port_out(COM1 + 3, 3);      /* 8N1 */
+    port_out(COM1 + 2, 0xc7);   /* FIFO reset */
+    port_out(COM1 + 4, 0x0b);   /* DTR, RTS, OUT2 */
+}
+static void serial_char(char ch) {
+    for (K_U32 i = 0; i < 1000000u; ++i) {
+        if ((port_in(COM1 + 5) & 0x20u) != 0) {
+            port_out(COM1, (K_U8)ch);
+            return;
+        }
+    }
+}
+static void serial_line(const char *text) {
+    while (*text) serial_char(*text++);
+    serial_char('\r');
+    serial_char('\n');
+}
+
+__attribute__((noreturn)) static void stop(K_U8 code) {
+    (void)code;
+#ifdef KOSCHEI_QEMU_TEST
+    /* Only present in test image; QEMU ISA debug-exit = (code << 1) | 1. */
+    port_out(0xf4, code);
+#endif
+    for (;;) __asm__ __volatile__("cli; hlt");
+}
+
+/* x86_64-pc-windows-msvc target supplies required UEFI Microsoft x64 ABI. */
+EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system) {
+    (void)image;
+    serial_init();
+    if (!system || system->hdr.signature != 0x5453595320494249ULL ||
+        !system->boot_services) {
+        serial_line("KOSCHEI-KERNEL REJECT/1 INVALID-UEFI");
+        stop(0x11);
+    }
+    serial_line("KOSCHEI-KERNEL BOOT/1 X86_64-UEFI");
+    serial_line("KOSCHEI-KERNEL K0 SERIAL-OWNED");
+    serial_line("KOSCHEI-KERNEL K0 HALT-NO-POLICY");
+    stop(0x10);
+}
