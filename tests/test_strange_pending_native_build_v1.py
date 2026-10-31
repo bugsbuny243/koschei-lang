@@ -134,6 +134,24 @@ class StrangePendingNativeBuildV1Tests(unittest.TestCase):
             with self.assertRaises(StrangePendingNativeBuildError):
                 self.build()
 
+    def test_epoch_advanced_during_compilation_discards_candidate(self):
+        def complete_after_advance(command, *, cwd, env, capture_output, timeout, check):
+            Path(cwd, "native-program").write_bytes(b"future-fixture")
+            self.store.advance(
+                expected_current_epoch=4,
+                next_epoch=5,
+                starts_at_seconds=600,
+                observed_seconds=600,
+            )
+            return subprocess.CompletedProcess(command, 0, b"", b"")
+
+        with patch(
+            "koschei.strange_pending_native_build_v1.subprocess.run",
+            side_effect=complete_after_advance,
+        ):
+            with self.assertRaises(StrangePendingNativeBuildError):
+                self.build()
+
     def test_bad_time_and_clock_rollback_during_build_rejected(self):
         for bad in (0, True, 121):
             with self.subTest(value=bad), self.assertRaises(StrangePendingNativeBuildError):
