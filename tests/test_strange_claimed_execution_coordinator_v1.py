@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 import hashlib
 from pathlib import Path
 import shutil
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -139,21 +140,30 @@ class StrangeClaimedExecutionV1Tests(unittest.TestCase):
             self.execute()
 
     def test_failed_process_or_fabricated_observation_is_not_success(self):
-        cases = (
-            self.report(code=1),
-            self.report(epoch=4),
-            self.report(native_sha="0" * 64),
-        )
-        for scenario in cases:
-            with self.subTest(scenario=scenario):
-                with tempfile.TemporaryDirectory() as directory:
-                    # Independent DB for each case; use fresh, deterministic
-                    # stage and attempt state.
-                    pass
         self.activate()
         with patch(
             "koschei.strange_claimed_execution_coordinator_v1.run_activated_prebuilt_strange_native_v1",
             return_value=self.report(code=1),
+        ):
+            with self.assertRaises(StrangeClaimedExecutionError):
+                self.execute()
+        self.assertEqual(self.journal.read(epoch=5).state, "REPORTED_FAILED")
+
+    def test_fake_success_with_wrong_epoch_is_reported_failed(self):
+        self.activate()
+        with patch(
+            "koschei.strange_claimed_execution_coordinator_v1.run_activated_prebuilt_strange_native_v1",
+            return_value=self.report(epoch=4),
+        ):
+            with self.assertRaises(StrangeClaimedExecutionError):
+                self.execute()
+        self.assertEqual(self.journal.read(epoch=5).state, "REPORTED_FAILED")
+
+    def test_fake_success_with_wrong_native_hash_is_reported_failed(self):
+        self.activate()
+        with patch(
+            "koschei.strange_claimed_execution_coordinator_v1.run_activated_prebuilt_strange_native_v1",
+            return_value=self.report(native_sha="0" * 64),
         ):
             with self.assertRaises(StrangeClaimedExecutionError):
                 self.execute()
@@ -221,7 +231,10 @@ class StrangeClaimedExecutionV1Tests(unittest.TestCase):
         self.assertEqual(sorted(results), ["denied", "ok"])
         worker.assert_called_once()
 
-    @unittest.skipUnless(GO, "Go toolchain required for actual native integration")
+    @unittest.skipUnless(
+        sys.platform == "linux" and GO,
+        "Linux and Go required for sealed-memfd native integration",
+    )
     def test_real_prebuilt_go_native_is_claimed_and_reported(self):
         # Separate database rooted in the same current epoch, preparing real
         # canonical source and binary before stage/activation.
