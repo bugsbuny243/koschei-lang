@@ -36,6 +36,7 @@ No existing public `ks` commands or privileged execution APIs are changed.
   or exploit the host. Killing one process group is **not reliable containment**
   of every descendant. Production needs Linux cgroups, isolated process
   credentials, a native supervisor and a separately enforced policy.
+- Output limits are **checked at polling intervals**, not enforced by a kernel quota; a hostile process could transiently write beyond the configured maximum and exhaust local storage. An OS-level filesystem quota and cgroup controls are required for hard resource limits.
 - A process launched before expiry may perform actions before it is killed.
   No sensitive credentials or permissions are released to these workers.
 - Local monotonic wall-runtime bounding is not a hardware trusted clock;
