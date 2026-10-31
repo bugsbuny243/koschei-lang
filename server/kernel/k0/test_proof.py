@@ -58,6 +58,23 @@ class K0ProofFailClosedTests(unittest.TestCase):
             file = Path(temp) / "uart.log"
             file.write_bytes(b"".join(serial.EXPECTED))
             serial.verify(file)
+            # Real OVMF emits a non-Koschei firmware preface on COM1.
+            file.write_bytes(
+                b"\\x1b[2JBdsDxe: starting UEFI USB boot\\r\\n".replace(b"\\\\", b"\\")
+                + b"".join(serial.EXPECTED)
+            )
+            serial.verify(file)
+
+    def test_reject_forged_or_repeated_koschei_prefix(self):
+        with TemporaryDirectory() as temp:
+            file = Path(temp) / "uart.log"
+            for prefix in (
+                serial.EXPECTED[0],
+                b"KOSCHEI-KERNEL REJECT/1 INVALID-UEFI\\r\\n",
+            ):
+                file.write_bytes(prefix + b"".join(serial.EXPECTED))
+                with self.subTest(prefix=prefix), self.assertRaises(ValueError):
+                    serial.verify(file)
 
 
 if __name__ == "__main__":
