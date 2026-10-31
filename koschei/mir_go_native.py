@@ -566,8 +566,8 @@ def _plan(
                             seed=representation_seed,
                             role="function",
                             identity=(
-                                f"{module.key}\\x00{function.name}\\x00"
-                                f"{module_index}\\x00{function_index}"
+                                f"{module.key}\x00{function.name}\x00"
+                                f"{module_index}\x00{function_index}"
                             ),
                         )
                     ),
@@ -976,8 +976,8 @@ def _emit_function(
                 seed=representation_seed,
                 role="parameter",
                 identity=(
-                    f"{plan.module.key}\\x00{function.name}\\x00"
-                    f"{index}\\x00{parameter.name}"
+                    f"{plan.module.key}\x00{function.name}\x00"
+                    f"{index}\x00{parameter.name}"
                 ),
             )
         )
