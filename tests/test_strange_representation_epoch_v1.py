@@ -83,6 +83,19 @@ class StrangeRepresentationEpochV1Tests(unittest.TestCase):
         with self.assertRaises(StrangeRepresentationEpochError):
             derive_strange_epoch_seed_v1(**p)
 
+    def test_noncanonical_digest_and_unrepresentable_epoch_fail_closed(self):
+        for fingerprint in ("F" * 64, "ab " * 20 + "abab", "x" * 64):
+            params = self.params()
+            params["mir_fingerprint"] = fingerprint
+            with self.subTest(fingerprint=fingerprint), self.assertRaises(StrangeRepresentationEpochError):
+                derive_strange_epoch_seed_v1(**params)
+        for epoch, start in ((2**64, 500), (9, 2**64)):
+            params = self.params()
+            params["expected_epoch"] = epoch
+            params["starts_at_seconds"] = start
+            with self.subTest(epoch=epoch, start=start), self.assertRaises(StrangeRepresentationEpochError):
+                derive_strange_epoch_seed_v1(**params)
+
     def test_seed_is_scoped_by_epoch_customer_and_deployment(self):
         original = derive_strange_epoch_seed_v1(**self.params())
         self.assertEqual(original, derive_strange_epoch_seed_v1(**self.params()))
