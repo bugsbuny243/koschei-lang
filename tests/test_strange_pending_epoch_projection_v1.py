@@ -9,6 +9,7 @@ from unittest.mock import patch
 from koschei.mir import require_mir
 from koschei.modules import check_graph, load_graph
 from koschei.strange_durable_continuity_v1 import StrangeDurableContinuityV1
+from koschei.strange_epoch_handoff_v1 import StrangeEpochHandoffV1
 from koschei.strange_native_admission_v1 import (
     StrangeNativeAdmissionError,
     issue_strange_native_attestation_v1,
@@ -93,6 +94,45 @@ class StrangePendingProjectionV1Tests(unittest.TestCase):
         )
         self.assertEqual(pending_source, active_source)
         self.assertEqual(candidate.source_sha256, active.source_sha256)
+
+    def test_pending_source_can_be_staged_then_activated_as_metadata(self):
+        future_source, pending = self.project()
+        handoff = StrangeEpochHandoffV1(self.store)
+        stage = handoff.stage(
+            expected_old_epoch=4,
+            expected_old_start_seconds=480,
+            deployment_id="tenant-a/worker",
+            veyra_digest="a" * 64,
+            mir_fingerprint=self.mir.fingerprint,
+            source_sha256=pending.source_sha256,
+            # Fixture bytes, not a source->binary provenance assertion.
+            native_binary=b"unprivileged-test-candidate",
+            seconds_reader=lambda: self.now,
+            handoff_key=b"H" * 32,
+        )
+        self.assertEqual(self.store.read_snapshot().epoch, 4)
+        self.assertEqual(stage.source_sha256, pending.source_sha256)
+        self.now = 600
+        activated = handoff.activate(
+            expected_old_epoch=4,
+            expected_handoff_mac=stage.handoff_mac,
+            seconds_reader=lambda: self.now,
+            handoff_key=b"H" * 32,
+        )
+        self.assertEqual(activated.state, "ACTIVATED")
+        real_source, real = project_strange_epoch_go_v1(
+            self.mir,
+            trust_plane_seed=b"S" * 32,
+            continuity=self.store.as_continuity_authority(),
+            expected_epoch=5,
+            starts_at_seconds=600,
+            seconds_reader=lambda: self.now,
+            deployment_id="tenant-a/worker",
+            veyra_digest="a" * 64,
+        )
+        self.assertEqual(future_source, real_source)
+        self.assertEqual(activated.source_sha256, real.source_sha256)
+        self.assertTrue(handoff.retired(4))
 
     def test_prep_does_not_advance_epoch_and_is_scoped(self):
         source, _ = self.project()
