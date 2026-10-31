@@ -9,6 +9,7 @@ on:
     branches:
       - main
       - production/runtime-variant-parity-v1
+      - 'staging/k0-*'
   pull_request:
     branches:
       - main
