@@ -216,6 +216,12 @@ def verify_strange_native_admission_v1(
     if not isinstance(native_binary, bytes) or not native_binary:
         raise StrangeNativeAdmissionError("native binary bytes required")
     _digest(expected_source_sha256, "expected source SHA256")
+    # Dataclasses can be constructed by untrusted callers. Validate both type
+    # and canonical digest format before constant-time comparisons.
+    _digest(attestation.source_sha256, "attested source SHA256")
+    _digest(attestation.native_sha256, "attested native SHA256")
+    _digest(attestation.scope_binding, "attested scope binding")
+    _digest(attestation.attestation_mac, "attestation MAC")
     if not hmac.compare_digest(attestation.source_sha256, expected_source_sha256):
         raise StrangeNativeAdmissionError("source provenance mismatch")
     binary_digest = hashlib.sha256(native_binary).hexdigest()
