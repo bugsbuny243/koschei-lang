@@ -17,6 +17,7 @@ local SQLite database using WAL, synchronous=FULL, and BEGIN IMMEDIATE.
   **externally trusted** `observed_seconds` supplied by the caller.
 - Two SQLite connections against the same database path cannot both commit
   the same expected-epoch transition.
+- `require_active_window` also compares the caller's claimed epoch **and start** against the canonical SQLite snapshot, preventing a caller from substituting a new start within the same epoch. It is a snapshot check, **not an atomic side-effect gate**.
 - A typed `ContinuityEpochAuthorityV1` reader can retrieve the stored epoch;
   existing Strange build/attestation gates can reject old epochs.
 - No secret data or executable code is stored in the journal.
