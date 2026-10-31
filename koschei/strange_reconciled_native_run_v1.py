@@ -69,7 +69,10 @@ def run_reconciled_prebuilt_strange_native_v1(
         raise StrangeReconciledNativeRunError("durable Continuity required")
     if not isinstance(pending, PendingStrangeNativeBuildV1):
         raise StrangeReconciledNativeRunError("typed future native candidate required")
-    clock = _verified_seconds(seconds_reader)
+    try:
+        clock = _verified_seconds(seconds_reader)
+    except StrangeRuntimeObservationError as exc:
+        raise StrangeReconciledNativeRunError("trusted seconds reader required") from exc
     epoch = pending.pending_projection.target_epoch
     try:
         journal = StrangeDurableLaunchReconciliationV1(continuity_store)
