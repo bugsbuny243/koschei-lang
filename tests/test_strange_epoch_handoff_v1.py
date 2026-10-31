@@ -142,6 +142,22 @@ class StrangeEpochHandoffV1Tests(unittest.TestCase):
             self.activate(stage)
         self.assertEqual(self.store.read_snapshot().epoch, 4)
 
+    def test_late_retirement_conflict_rolls_back_entire_epoch_transition(self):
+        staged = self.stage()
+        # A pre-existing tombstone causes a constraint error AFTER the
+        # Continuity UPDATE and stage activation UPDATE have been attempted.
+        # SQLite must roll both back atomically.
+        self.store._db.execute(
+            "INSERT INTO strange_handoff_retired_v1 VALUES (?,?,?)",
+            ("tenant-a", 4, "0" * 64),
+        )
+        self.now = 600
+        with self.assertRaises(StrangeEpochHandoffError):
+            self.activate(staged)
+        current = self.store.read_snapshot()
+        self.assertEqual((current.epoch, current.starts_at_seconds), (4, 480))
+        self.assertEqual(self.journal.read(4).state, "STAGED")
+
     def test_expired_new_window_cannot_be_activated(self):
         stage = self.stage()
         self.now = 720
