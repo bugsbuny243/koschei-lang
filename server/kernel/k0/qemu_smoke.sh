@@ -21,13 +21,23 @@ do
     if test -f "$candidate"; then OVMF="$candidate"; break; fi
 done
 if test -z "$OVMF"; then echo "KOSCHEI-K0 FAIL no OVMF firmware" >&2; exit 1; fi
+# OVMF 4M images must be attached as pflash, not -bios (QEMU BIOS ROM
+# has a smaller size limit). Give the guest its own disposable variable store.
+case "$OVMF" in
+  */OVMF_CODE_4M.fd) VARS="/usr/share/OVMF/OVMF_VARS_4M.fd" ;;
+  */OVMF_CODE.fd) VARS="/usr/share/OVMF/OVMF_VARS.fd" ;;
+  *) echo "KOSCHEI-K0 FAIL unsupported OVMF image layout" >&2; exit 1 ;;
+esac
+test -f "$VARS" || { echo "KOSCHEI-K0 FAIL OVMF variable store missing" >&2; exit 1; }
+cp "$VARS" "$OUT/koschei-k0-vars.fd"
 
 # Successful QEMU isa-debug-exit value 0x10 gives process exit status 33.
 # Never count a timeout (124), emulator failure, or a printed string alone as PASS.
 set +e
 timeout 60 qemu-system-x86_64 \
   -machine q35 -m 256 -cpu qemu64 \
-  -bios "$OVMF" \
+  -drive "if=pflash,format=raw,readonly=on,file=$OVMF" \
+  -drive "if=pflash,format=raw,file=$OUT/koschei-k0-vars.fd" \
   -drive "if=none,id=usbdisk,file=$IMAGE,format=raw" \
   -device qemu-xhci \
   -device usb-storage,drive=usbdisk,bootindex=1 \
