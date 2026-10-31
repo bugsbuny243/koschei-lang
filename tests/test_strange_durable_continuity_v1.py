@@ -106,6 +106,29 @@ class StrangeDurableContinuityV1Tests(unittest.TestCase):
                     ), 360,
                 )
 
+    def test_active_window_rejects_caller_substituted_start(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with StrangeDurableContinuityV1(Path(directory)/"s.db", continuity_id="a") as store:
+                store.initialize(epoch=2, starts_at_seconds=240, observed_seconds=241)
+                correct = store.require_active_window(
+                    expected_epoch=2, expected_start_seconds=240, observed_seconds=250,
+                )
+                self.assertEqual(correct.starts_at_seconds, 240)
+                # Merely checking that 250 is in [245,365) would be wrong:
+                # the stored canonical window actually starts at 240.
+                with self.assertRaises(StrangeDurableContinuityError):
+                    store.require_active_window(
+                        expected_epoch=2, expected_start_seconds=245, observed_seconds=250,
+                    )
+                with self.assertRaises(StrangeDurableContinuityError):
+                    store.require_active_window(
+                        expected_epoch=3, expected_start_seconds=240, observed_seconds=250,
+                    )
+                with self.assertRaises(StrangeDurableContinuityError):
+                    store.require_active_window(
+                        expected_epoch=2, expected_start_seconds=240, observed_seconds=360,
+                    )
+
     def test_missing_and_bad_inputs_fail_closed(self):
         with tempfile.TemporaryDirectory() as directory:
             with StrangeDurableContinuityV1(Path(directory)/"s.db", continuity_id="a") as store:
