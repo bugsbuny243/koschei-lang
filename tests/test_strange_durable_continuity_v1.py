@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from koschei.strange_durable_continuity_v1 import (
     StrangeDurableContinuityError,
@@ -51,6 +52,16 @@ class StrangeDurableContinuityV1Tests(unittest.TestCase):
                 self.assertEqual((result.epoch, result.starts_at_seconds), (7, 840))
                 with self.assertRaises(StrangeDurableContinuityError):
                     store.advance(expected_current_epoch=7, next_epoch=6, starts_at_seconds=720, observed_seconds=720)
+
+    def test_writer_returns_its_exact_committed_epoch_without_postcommit_reread(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with StrangeDurableContinuityV1(Path(directory)/"s.db", continuity_id="a") as store:
+                with patch.object(store, "read_snapshot", side_effect=AssertionError("post-commit reread forbidden")):
+                    first = store.initialize(epoch=4, starts_at_seconds=480, observed_seconds=480)
+                    second = store.advance(expected_current_epoch=4, next_epoch=5, starts_at_seconds=600, observed_seconds=600)
+                self.assertEqual(first.epoch, 4)
+                self.assertEqual(second.epoch, 5)
+                self.assertEqual(store.read_snapshot().epoch, 5)
 
     def test_two_connections_cannot_commit_same_expected_epoch(self):
         with tempfile.TemporaryDirectory() as directory:
