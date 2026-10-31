@@ -1,11 +1,14 @@
 """Actual Go prebuild -> staged epoch -> active sealed worker integration tests."""
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 import hashlib
 from pathlib import Path
 import shutil
+import subprocess
 import sys
+import time
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -14,6 +17,12 @@ from koschei.mir import require_mir
 from koschei.modules import check_graph, load_graph
 from koschei.strange_durable_continuity_v1 import StrangeDurableContinuityV1
 from koschei.strange_epoch_handoff_v1 import StrangeEpochHandoffV1
+from koschei.strange_native_admission_v1 import issue_strange_native_attestation_v1
+from koschei.strange_representation_epoch_v1 import project_strange_epoch_go_v1
+from koschei.strange_supervised_native_v1 import (
+    StrangeSupervisedNativeError,
+    run_strange_supervised_native_v1,
+)
 from koschei.strange_pending_native_build_v1 import prebuild_next_strange_native_v1
 from koschei.strange_activated_candidate_launch_v1 import (
     StrangeActivatedCandidateError,
@@ -52,6 +61,23 @@ class StrangeActivatedCandidateV1Tests(unittest.TestCase):
                 go_executable=cls.go,
                 expected_go_sha256=cls.go_pin,
             )
+        # A deliberately sleeping *test fixture* worker for verifying the
+        # old process group's retirement. It is not claimed to be a
+        # canonical MIR-produced executable or source->binary build proof.
+        root = Path(cls.root.name)
+        (root / "sleep.go").write_text(
+            'package main\\nimport "time"\\nfunc main() { time.Sleep(3 * time.Second) }\\n'.replace("\\\\n", "\\n"),
+            encoding="utf-8",
+        )
+        old_exe = root / "sleep-native"
+        built = subprocess.run(
+            [cls.go, "build", "-trimpath", "-buildvcs=false",
+             "-ldflags=-buildid=", "-o", str(old_exe), str(root / "sleep.go")],
+            capture_output=True, text=True, timeout=90, check=False,
+        )
+        if built.returncode:
+            raise AssertionError(built.stderr)
+        cls.sleep_binary = old_exe.read_bytes()
 
     @classmethod
     def tearDownClass(cls):
@@ -127,6 +153,52 @@ class StrangeActivatedCandidateV1Tests(unittest.TestCase):
         self.assertEqual(result.observed_epoch, 5)
         self.assertEqual(result.native_sha256, self.pending.native_sha256)
         self.assertTrue(self.journal.retired(4))
+
+    def test_old_supervised_worker_is_stopped_and_new_prebuilt_worker_runs(self):
+        old_source, old_receipt = project_strange_epoch_go_v1(
+            self.mir,
+            trust_plane_seed=b"S" * 32,
+            continuity=self.store.as_continuity_authority(),
+            expected_epoch=4,
+            starts_at_seconds=480,
+            seconds_reader=lambda: self.now,
+            deployment_id="galaxy-a/native",
+            veyra_digest="a" * 64,
+        )
+        old_proof = issue_strange_native_attestation_v1(
+            receipt=old_receipt, native_binary=self.sleep_binary,
+            deployment_id="galaxy-a/native",
+            veyra_digest="a" * 64,
+            mir_fingerprint=self.mir.fingerprint,
+            continuity=self.store.as_continuity_authority(),
+            expected_epoch=4, starts_at_seconds=480,
+            seconds_reader=lambda: self.now, attestation_key=b"A" * 32,
+        )
+        def run_old_worker():
+            return run_strange_supervised_native_v1(
+                continuity_store=self.store,
+                attestation=old_proof,
+                native_binary=self.sleep_binary,
+                expected_source_sha256=old_receipt.source_sha256,
+                deployment_id="galaxy-a/native",
+                veyra_digest="a" * 64,
+                mir_fingerprint=self.mir.fingerprint,
+                expected_epoch=4, expected_start_seconds=480,
+                seconds_reader=lambda: self.now,
+                attestation_key=b"A" * 32,
+                run_timeout_seconds=5, poll_interval_seconds=0.02,
+            )
+
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            old_future = pool.submit(run_old_worker)
+            time.sleep(0.2)
+            self.activate()
+            with self.assertRaises(StrangeSupervisedNativeError):
+                old_future.result(timeout=5)
+        new_result = self.launch()
+        self.assertEqual(new_result.stdout, b"Koschei\\n1\\n")
+        self.assertEqual(new_result.observed_epoch, 5)
+        self.assertFalse(new_result.authority)
 
     def test_stage_and_candidate_tampering_fail_closed(self):
         self.activate()
