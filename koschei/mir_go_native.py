@@ -85,6 +85,7 @@ from .native_serve_v1 import SERVE_IMPORTS, request_runtime, serve_runtime
 from .mir_variant_runtime_v1 import MirVariantRuntimeError, split_canonical_variant_v1
 from .secure_hash_v1 import NAME as SECURE_HASH_NAME, SHA3_256_MAX_INPUT_BYTES
 from .semantic import INT_MAX, INT_MIN
+from .strange_build_representation_v1 import derive_strange_symbol
 from .type_contracts import declaration_type
 from .type_system import GenericType, NamedType, TypeNode, alternatives, render_type
 from .value_budget_v1 import (
@@ -288,10 +289,16 @@ def inspect_mir_go_support(mir: MirGraph) -> MirGoSupport:
     return MirGoSupport(not reasons, tuple(dict.fromkeys(reasons)))
 
 
-def generate_go_mir_native(mir: MirGraph) -> str:
-    """Project sealed MIR into Go without acquiring semantic authority."""
+def generate_go_mir_native(
+    mir: MirGraph, *, representation_seed: bytes | None = None
+) -> str:
+    """Project sealed MIR into Go; optional Strange names change no semantics.
 
-    reasons, plans = _plan(mir)
+    A seed can only be supplied by a trusted caller; the public CLI deliberately
+    supplies none until a protected Trust Plane builder is integrated.
+    """
+
+    reasons, plans = _plan(mir, representation_seed=representation_seed)
     if reasons:
         raise MirGoUnsupported("; ".join(dict.fromkeys(reasons)))
     symbols = {
@@ -360,7 +367,12 @@ def generate_go_mir_native(mir: MirGraph) -> str:
     if "serve" in domains:
         lines.append(serve_runtime())
     for plan in plans:
-        lines.extend(_emit_function(plan, symbols, process_error=plan.symbol == root_main))
+        lines.extend(
+            _emit_function(
+                plan, symbols, process_error=plan.symbol == root_main,
+                representation_seed=representation_seed,
+            )
+        )
         lines.append("")
     main = next(item for item in mir.root_module.functions if item.name == "main")
     entry_arguments = "_ksSystemCaps{}" if main.parameters else ""
@@ -496,8 +508,15 @@ def emit_go_from_mir(mir: MirGraph) -> str:
 # ---- admission and static resolution ---------------------------------------
 
 
-def _plan(mir: MirGraph) -> tuple[list[str], list[_FunctionPlan]]:
+def _plan(
+    mir: MirGraph, *, representation_seed: bytes | None = None
+) -> tuple[list[str], list[_FunctionPlan]]:
     mir.assert_sealed()
+    # Reject malformed seeds even for a graph without any user functions.
+    if representation_seed is not None:
+        derive_strange_symbol(
+            seed=representation_seed, role="function", identity="preflight"
+        )
     reasons: list[str] = []
     modules = mir.in_dependency_order()
     enums = {
@@ -542,6 +561,15 @@ def _plan(mir: MirGraph) -> tuple[list[str], list[_FunctionPlan]]:
                     symbol=(
                         f"_ks_fn_{module_index}_{function_index}_"
                         f"{_safe_identifier(function.name)}"
+                        if representation_seed is None
+                        else derive_strange_symbol(
+                            seed=representation_seed,
+                            role="function",
+                            identity=(
+                                f"{module.key}\\x00{function.name}\\x00"
+                                f"{module_index}\\x00{function_index}"
+                            ),
+                        )
                     ),
                     refs=refs,
                     mutable=mutable,
@@ -933,11 +961,26 @@ def _variant_type_arguments(instruction: MirVariantConstruct) -> tuple[str, ...]
 
 
 def _emit_function(
-    plan: _FunctionPlan, symbols: dict[tuple[str, str], str], *, process_error: bool = False
+    plan: _FunctionPlan,
+    symbols: dict[tuple[str, str], str],
+    *,
+    process_error: bool = False,
+    representation_seed: bytes | None = None,
 ) -> list[str]:
     function = plan.function
     parameter_symbols = {
-        parameter.name: f"_ks_p_{index}_{_safe_identifier(parameter.name)}"
+        parameter.name: (
+            f"_ks_p_{index}_{_safe_identifier(parameter.name)}"
+            if representation_seed is None
+            else derive_strange_symbol(
+                seed=representation_seed,
+                role="parameter",
+                identity=(
+                    f"{plan.module.key}\\x00{function.name}\\x00"
+                    f"{index}\\x00{parameter.name}"
+                ),
+            )
+        )
         for index, parameter in enumerate(function.parameters)
     }
     # Locals live in two arrays instead of one Go variable per MIR slot: the Go
