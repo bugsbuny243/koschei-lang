@@ -61,6 +61,8 @@ def _fingerprint(value: str, label: str) -> bytes:
         decoded = bytes.fromhex(value)
     except ValueError as exc:
         raise StrangeRepresentationEpochError(f"invalid {label}") from exc
+    if len(decoded) != 32 or value != value.lower():
+        raise StrangeRepresentationEpochError(f"invalid {label}")
     return decoded
 
 
@@ -78,9 +80,9 @@ def require_strange_epoch_window_v1(
     """Require a current Continuity epoch and half-open [start,start+120) window."""
     if not isinstance(continuity, ContinuityEpochAuthorityV1):
         raise StrangeRepresentationEpochError("typed Continuity source required")
-    if not isinstance(expected_epoch, int) or isinstance(expected_epoch, bool) or expected_epoch < 1:
+    if not isinstance(expected_epoch, int) or isinstance(expected_epoch, bool) or not 1 <= expected_epoch < 2**64:
         raise StrangeRepresentationEpochError("invalid expected epoch")
-    if not isinstance(starts_at_seconds, int) or isinstance(starts_at_seconds, bool) or starts_at_seconds < 0:
+    if not isinstance(starts_at_seconds, int) or isinstance(starts_at_seconds, bool) or not 0 <= starts_at_seconds < 2**64 - _WINDOW_SECONDS:
         raise StrangeRepresentationEpochError("invalid window start")
     try:
         active_epoch = continuity.current_epoch()
