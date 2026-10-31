@@ -205,6 +205,20 @@ class StrangeReconciledNativeRunV1Tests(unittest.TestCase):
         self.assertEqual(self.journal.read(epoch=5).state, "CLAIMED")
         self.assertEqual(self.store.read_snapshot().epoch, 5)
 
+    def test_backward_clock_during_report_stays_unresolved(self):
+        self.activate()
+        def rewind_while_running(*args, **kwargs):
+            self.now = 599
+            return self.observed()
+        with patch(
+            "koschei.strange_reconciled_native_run_v1.run_activated_prebuilt_strange_native_v1",
+            side_effect=rewind_while_running,
+        ):
+            with self.assertRaises(StrangeReconciledNativeRunError):
+                run_reconciled_prebuilt_strange_native_v1(self.mir, **self.args)
+        self.assertEqual(self.journal.read(epoch=5).state, "CLAIMED")
+        self.assertEqual(self.store.read_snapshot().epoch, 5)
+
     def test_two_concurrent_launches_reserve_at_most_once(self):
         self.activate()
         def attempt(_):
