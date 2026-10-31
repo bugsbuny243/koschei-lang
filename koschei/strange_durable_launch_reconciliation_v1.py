@@ -164,6 +164,11 @@ class StrangeDurableLaunchReconciliationV1:
                 raise StrangeLaunchReconciliationError(
                     "launch attempt already claimed; manual reconciliation required"
                 ) from exc
+            except (StrangeEpochHandoffError, StrangeDurableContinuityError) as exc:
+                self.store._db.execute("ROLLBACK")
+                raise StrangeLaunchReconciliationError(
+                    "launch attempt rejected by canonical handoff or time"
+                ) from exc
             except Exception:
                 self.store._db.execute("ROLLBACK")
                 raise
@@ -240,6 +245,11 @@ class StrangeDurableLaunchReconciliationV1:
                     (state, now, self.store.continuity_id, epoch),
                 )
                 self.store._db.execute("COMMIT")
+            except (StrangeEpochHandoffError, StrangeDurableContinuityError) as exc:
+                self.store._db.execute("ROLLBACK")
+                raise StrangeLaunchReconciliationError(
+                    "launch result rejected by canonical handoff or time"
+                ) from exc
             except Exception:
                 self.store._db.execute("ROLLBACK")
                 raise
