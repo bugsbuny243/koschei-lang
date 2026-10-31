@@ -66,7 +66,7 @@ class StrangeActivatedCandidateV1Tests(unittest.TestCase):
         # canonical MIR-produced executable or source->binary build proof.
         root = Path(cls.root.name)
         (root / "sleep.go").write_text(
-            'package main\\nimport "time"\\nfunc main() { time.Sleep(3 * time.Second) }\\n'.replace("\\\\n", "\\n"),
+            'package main\nimport "time"\nfunc main() { time.Sleep(3 * time.Second) }\n',
             encoding="utf-8",
         )
         old_exe = root / "sleep-native"
@@ -196,7 +196,7 @@ class StrangeActivatedCandidateV1Tests(unittest.TestCase):
             with self.assertRaises(StrangeSupervisedNativeError):
                 old_future.result(timeout=5)
         new_result = self.launch()
-        self.assertEqual(new_result.stdout, b"Koschei\\n1\\n")
+        self.assertEqual(new_result.stdout, b"Koschei\n1\n")
         self.assertEqual(new_result.observed_epoch, 5)
         self.assertFalse(new_result.authority)
 
