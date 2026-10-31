@@ -203,6 +203,48 @@ class StrangeReconciledNativeLaunchV1Tests(unittest.TestCase):
         self.assertEqual(self.reporting.read(epoch=5).state, "CLAIMED")
         self.assertEqual(self.store.read_snapshot().epoch, 6)
 
+    def test_crashed_claim_blocks_relaunch_after_database_reopen(self):
+        self.activate()
+        with patch(
+            "koschei.strange_reconciled_native_launch_v1.run_activated_prebuilt_strange_native_v1",
+            side_effect=KeyboardInterrupt("interrupted after claim"),
+        ):
+            with self.assertRaises(KeyboardInterrupt):
+                self.run()
+        with StrangeDurableContinuityV1(
+            Path(self.temp.name) / "continuity.sqlite3",
+            continuity_id="tenant-a",
+        ) as second_store:
+            with patch(
+                "koschei.strange_reconciled_native_launch_v1.run_activated_prebuilt_strange_native_v1"
+            ) as runner:
+                with self.assertRaises(StrangeReconciledNativeLaunchError):
+                    self.run(continuity_store=second_store)
+                runner.assert_not_called()
+            self.assertEqual(
+                StrangeDurableLaunchReconciliationV1(second_store).read(epoch=5).state,
+                "CLAIMED",
+            )
+
+    def test_failure_can_be_reported_after_current_window_expires(self):
+        self.activate()
+
+        def expire_and_fail(*args, **kwargs):
+            self.now = 720
+            raise StrangeActivatedCandidateError("epoch closed before exec")
+
+        with patch(
+            "koschei.strange_reconciled_native_launch_v1.run_activated_prebuilt_strange_native_v1",
+            side_effect=expire_and_fail,
+        ):
+            with self.assertRaises(StrangeReconciledNativeLaunchError):
+                self.run()
+        self.assertEqual(
+            self.reporting.read(epoch=5).state,
+            "REPORTED_FAILED",
+        )
+        self.assertEqual(self.store.read_snapshot().epoch, 5)
+
     def test_invalid_pending_candidate_does_not_consume_launch_claim(self):
         self.activate()
         corrupt = replace(self.pending, binary=b"wrong native bytes")
