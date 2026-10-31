@@ -38,6 +38,11 @@ jobs:
       - name: Fail-closed binary and transcript regression tests
         run: |
           python3 -m unittest discover -s server/kernel/k0 -p 'test_*.py' -v
+      - name: Execute native C memory map adversarial tests
+        run: |
+          clang -std=c11 -O2 -Wall -Wextra -Werror \
+            server/kernel/k0/test_memory_map.c -o /tmp/koschei-k0-evidence/memory-map-tests
+          /tmp/koschei-k0-evidence/memory-map-tests
       - name: Boot actual UEFI binary on QEMU OVMF and capture UART proof
         run: |
           bash server/kernel/k0/qemu_smoke.sh /tmp/koschei-k0-evidence
