@@ -23,12 +23,12 @@ GO = shutil.which("go")
 class StrangeBuildRepresentationV1Tests(unittest.TestCase):
     def test_seeded_names_are_go_safe_stable_and_domain_separated(self) -> None:
         seed = b"a" * 32
-        first = derive_strange_symbol(seed=seed, role="function", identity="m\\x00f")
-        self.assertEqual(first, derive_strange_symbol(seed=seed, role="function", identity="m\\x00f"))
+        first = derive_strange_symbol(seed=seed, role="function", identity="m\x00f")
+        self.assertEqual(first, derive_strange_symbol(seed=seed, role="function", identity="m\x00f"))
         self.assertRegex(first, r"^_k_[a-z2-7]{32}$")
-        self.assertNotEqual(first, derive_strange_symbol(seed=b"b" * 32, role="function", identity="m\\x00f"))
-        self.assertNotEqual(first, derive_strange_symbol(seed=seed, role="parameter", identity="m\\x00f"))
-        self.assertNotEqual(first, derive_strange_symbol(seed=seed, role="function", identity="m\\x00g"))
+        self.assertNotEqual(first, derive_strange_symbol(seed=b"b" * 32, role="function", identity="m\x00f"))
+        self.assertNotEqual(first, derive_strange_symbol(seed=seed, role="parameter", identity="m\x00f"))
+        self.assertNotEqual(first, derive_strange_symbol(seed=seed, role="function", identity="m\x00g"))
 
     def test_invalid_seed_role_and_identity_fail_closed(self) -> None:
         for seed in (b"short", b"", "not-bytes"):
@@ -86,7 +86,7 @@ class StrangeBuildRepresentationV1Tests(unittest.TestCase):
                 run = subprocess.run([str(binary)], capture_output=True, check=False)
                 self.assertEqual(run.returncode, 0, run.stderr)
                 outputs.append(run.stdout)
-            self.assertEqual(outputs, [b"Koschei\\n1\\n"] * 3)
+            self.assertEqual(outputs, [b"Koschei\n1\n"] * 3)
 
 
 if __name__ == "__main__":
