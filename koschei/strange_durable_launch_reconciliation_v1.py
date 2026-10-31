@@ -181,6 +181,7 @@ class StrangeDurableLaunchReconciliationV1:
         expected_handoff_mac: str,
         reported_success: bool,
         seconds_reader: Callable[[], int],
+        handoff_key: bytes,
     ) -> StrangeLaunchAttemptV1:
         """Record external runner outcome ONCE; success is not verified proof.
 
@@ -193,7 +194,8 @@ class StrangeDurableLaunchReconciliationV1:
             raise StrangeLaunchReconciliationError("boolean runner report required")
         try:
             _hex_digest(expected_handoff_mac, "handoff MAC")
-        except StrangeDurableContinuityError as exc:
+            key = handoff_key_check(handoff_key)
+        except (StrangeDurableContinuityError, StrangeEpochHandoffError) as exc:
             raise StrangeLaunchReconciliationError("invalid handoff report identity") from exc
         with self.store._lock:
             try:
@@ -206,6 +208,17 @@ class StrangeDurableLaunchReconciliationV1:
                     raise StrangeLaunchReconciliationError(
                         "stale or already reconciled launch report"
                     )
+                stage = self.handoff._read(claim.old_epoch)
+                authenticated = handoff_mac(key, stage)
+                if (
+                    stage.state != "ACTIVATED"
+                    or stage.next_epoch != epoch
+                    or stage.native_sha256 != claim.native_sha256
+                    or not hmac.compare_digest(authenticated, claim.handoff_mac)
+                ):
+                    raise StrangeLaunchReconciliationError(
+                        "runner report is not bound to authenticated stage"
+                    )
                 now = _trusted_seconds(seconds_reader)
                 if now < claim.claimed_seconds:
                     raise StrangeLaunchReconciliationError("launch report clock rolled back")
@@ -215,8 +228,7 @@ class StrangeDurableLaunchReconciliationV1:
                         "FROM strange_continuity_v1 WHERE continuity_id=?",
                         (self.store.continuity_id,),
                     ).fetchone())
-                    stage = self.handoff._read(claim.old_epoch)
-                    if snapshot.epoch != epoch or stage.state != "ACTIVATED":
+                    if snapshot.epoch != epoch:
                         raise StrangeLaunchReconciliationError(
                             "success report arrived after epoch rotation"
                         )
