@@ -162,6 +162,22 @@ class StrangeSupervisedNativeV1Tests(unittest.TestCase):
             with self.assertRaises(StrangeSupervisedNativeError):
                 future.result(timeout=4)
 
+    def test_backward_seconds_during_live_worker_fails_closed(self) -> None:
+        native = self.sleep_binary
+        proof = self.proof(native)
+        readings = {"n": 0}
+
+        def rollback_reader():
+            readings["n"] += 1
+            return 480 if readings["n"] < 14 else 479
+
+        with self.assertRaises(StrangeSupervisedNativeError):
+            self.run_native(
+                binary=native,
+                proof=proof,
+                seconds_reader=rollback_reader,
+            )
+
     def test_local_monotonic_deadline_limits_frozen_clock(self) -> None:
         native = self.sleep_binary
         proof = self.proof(native)
