@@ -9,7 +9,6 @@ The journal stores NO source code, secret seeds, signing keys or Galaxy authorit
 from __future__ import annotations
 
 from dataclasses import dataclass
-import hashlib
 from pathlib import Path
 import sqlite3
 from threading import RLock
