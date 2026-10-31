@@ -93,7 +93,12 @@ def project_next_strange_epoch_go_v1(
         raise StrangePendingRepresentationError("invalid current epoch/window")
     target_epoch = expected_current_epoch + 1
     next_start = expected_current_start_seconds + _WINDOW_SECONDS
-    clock = _verified_seconds(clock)
+    try:
+        clock = _verified_seconds(seconds_reader)
+    except StrangeRuntimeObservationError as exc:
+        raise StrangePendingRepresentationError(
+            "trusted monotonic seconds source required"
+        ) from exc
     try:
         before = continuity_store.require_active_window(
             expected_epoch=expected_current_epoch,
