@@ -8,6 +8,7 @@ on:
   push:
     branches:
       - main
+      - 'staging/k0-*'
     paths:
       - 'server/kernel/k0/**'
       - '.github/workflows/koschei-k0-boot.yml'
