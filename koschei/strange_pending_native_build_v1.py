@@ -16,6 +16,7 @@ from .strange_pending_epoch_projection_v1 import (
     StrangePendingRepresentationError,
     project_next_strange_epoch_go_v1,
 )
+from .strange_runtime_observation_v1 import _verified_seconds, StrangeRuntimeObservationError
 from .strange_verified_native_build_v1 import (
     StrangeVerifiedNativeBuildError,
     _pinned_go,
@@ -75,6 +76,10 @@ def prebuild_next_strange_native_v1(
     ):
         raise StrangePendingNativeBuildError("invalid bounded future build timeout")
     try:
+        clock = _verified_seconds(seconds_reader)
+    except StrangeRuntimeObservationError as exc:
+        raise StrangePendingNativeBuildError("trusted monotonic seconds reader required") from exc
+    try:
         go = _pinned_go(go_executable, expected_go_sha256)
         source, pending = project_next_strange_epoch_go_v1(
             mir,
@@ -82,7 +87,7 @@ def prebuild_next_strange_native_v1(
             trust_plane_seed=trust_plane_seed,
             expected_current_epoch=expected_current_epoch,
             expected_current_start_seconds=expected_current_start_seconds,
-            seconds_reader=seconds_reader,
+            seconds_reader=clock,
             deployment_id=deployment_id,
             veyra_digest=veyra_digest,
         )
@@ -135,7 +140,7 @@ def prebuild_next_strange_native_v1(
         continuity_store.require_active_window(
             expected_epoch=expected_current_epoch,
             expected_start_seconds=expected_current_start_seconds,
-            observed_seconds=seconds_reader(),
+            observed_seconds=clock(),
         )
     except Exception as exc:
         raise StrangePendingNativeBuildError("old Continuity window ended during prebuild") from exc
