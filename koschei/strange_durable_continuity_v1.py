@@ -143,7 +143,12 @@ class StrangeDurableContinuityV1:
             except Exception:
                 self._db.execute("ROLLBACK")
                 raise
-        return self.read_snapshot()
+        return StrangeDurableEpochSnapshotV1(
+            continuity_id=self.continuity_id,
+            epoch=epoch,
+            starts_at_seconds=starts_at_seconds,
+            expires_before_seconds=starts_at_seconds + _WINDOW_SECONDS,
+        )
 
     def advance(
         self,
@@ -191,7 +196,12 @@ class StrangeDurableContinuityV1:
             except Exception:
                 self._db.execute("ROLLBACK")
                 raise
-        return self.read_snapshot()
+        return StrangeDurableEpochSnapshotV1(
+            continuity_id=self.continuity_id,
+            epoch=next_epoch,
+            starts_at_seconds=starts_at_seconds,
+            expires_before_seconds=starts_at_seconds + _WINDOW_SECONDS,
+        )
 
     def as_continuity_authority(self) -> ContinuityEpochAuthorityV1:
         """Bind the existing typed epoch reader; grants NO effect authority."""
