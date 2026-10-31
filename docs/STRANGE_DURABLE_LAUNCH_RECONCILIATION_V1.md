@@ -18,7 +18,9 @@ atomic handoff. Each `(continuity_id, next_epoch)` can be **claimed once**.
   old epoch, proposed native SHA256 and current time while holding the lock.
 - Duplicate or concurrent claims fail even after restart. A crash leaves
   `CLAIMED`, requiring operator investigation instead of automatic retry.
-- `record_result` accepts a **runner-reported** boolean exactly once.
+- `record_result` accepts a **runner-reported** boolean exactly once,
+  but requires the protected handoff key to recompute the staged candidate's
+  MAC; merely reading the exposed MAC from SQLite cannot authenticate a report.
   `REPORTED_OK` requires the same active, unexpired epoch at report time.
   `REPORTED_FAILED` can be recorded after expiry/rotation, so failures
   remain visible to the operator.
