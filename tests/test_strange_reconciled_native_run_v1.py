@@ -141,6 +141,31 @@ class StrangeReconciledNativeV1Tests(unittest.TestCase):
             self.outcome()
         self.assertEqual(self.launch().exit_code, 0)
 
+    def test_storage_claim_error_cannot_spawn_native(self):
+        self.activate()
+        with patch(
+            "koschei.strange_reconciled_native_run_v1.StrangeDurableLaunchReconciliationV1.claim_once",
+            side_effect=OSError("disk unavailable"),
+        ), patch(
+            "koschei.strange_reconciled_native_run_v1.run_activated_prebuilt_strange_native_v1",
+        ) as runner:
+            with self.assertRaisesRegex(StrangeReconciledNativeError, "not confirmed"):
+                self.launch()
+            runner.assert_not_called()
+        with self.assertRaises(StrangeLaunchReconciliationError):
+            self.outcome()
+
+    def test_tampered_pending_bytes_never_consume_launch_claim(self):
+        from dataclasses import replace
+
+        self.activate()
+        altered = replace(self.pending, binary=self.pending.binary + b"tampered")
+        with self.assertRaises(StrangeReconciledNativeError):
+            self.launch(pending=altered)
+        with self.assertRaises(StrangeLaunchReconciliationError):
+            self.outcome()
+        self.assertEqual(self.launch().exit_code, 0)
+
     def test_runner_denial_is_recorded_and_no_auto_retry(self):
         self.activate()
         with patch(
@@ -186,6 +211,23 @@ class StrangeReconciledNativeV1Tests(unittest.TestCase):
         with patch(
             "koschei.strange_reconciled_native_run_v1.run_activated_prebuilt_strange_native_v1",
             side_effect=run_then_expire,
+        ):
+            with self.assertRaisesRegex(StrangeReconciledNativeError, "unresolved"):
+                self.launch()
+        self.assertEqual(self.outcome().state, "CLAIMED")
+
+    def test_storage_report_error_leaves_unresolved_claim(self):
+        self.activate()
+        fake = StrangeSupervisedRunV1(
+            exit_code=0, observed_epoch=5, native_sha256=self.pending.native_sha256,
+            stdout=b"", stderr=b"",
+        )
+        with patch(
+            "koschei.strange_reconciled_native_run_v1.run_activated_prebuilt_strange_native_v1",
+            return_value=fake,
+        ), patch(
+            "koschei.strange_reconciled_native_run_v1.StrangeDurableLaunchReconciliationV1.record_result",
+            side_effect=OSError("disk full"),
         ):
             with self.assertRaisesRegex(StrangeReconciledNativeError, "unresolved"):
                 self.launch()
