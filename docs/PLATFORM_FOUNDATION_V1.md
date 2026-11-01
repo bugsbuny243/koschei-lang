@@ -49,6 +49,20 @@ ai=local-model denied=DENY
 kernel-claimed=true forged=false
 ```
 
+## Read-only network-backed Web3 proof (experimental)
+
+The first real Web3 adapter, `web3_rpc.block_number`, uses
+a narrowed `NetCaps` token to make exactly two JSON-RPC POST requests
+to a single local origin, checking chain ID, JSON-RPC version, response
+request IDs, status, parsed/canonical JSON and a lower-case minimal
+hex quantity. The integration fixture supplies a mocked JSON-RPC peer,
+runs interpreter and Linux native broker implementations, and attempts
+wrong-chain, duplicate-key, extra-field, wrong-ID, bad status, redirect,
+oversize response, noncanonical hex and cross-origin failures. Only
+`eth_chainId` and `eth_blockNumber` are transmitted, and no real
+chain can be queried by this test. It is a **peer observation**, not
+cryptographic chain trust, finality, a wallet or production Web3 Hub.
+
 ## Next implementation gates (not yet accepted)
 
 1. **Web:** grow the existing 14-realm HTTP/persistence reference into an authenticated, bounded route dispatcher with concurrent request, timeout, audit receipt, TLS frontend and rollback tests. Existing native HTTP broker is Linux/amd64 and loopback-only.

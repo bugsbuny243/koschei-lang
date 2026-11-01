@@ -17,6 +17,7 @@ Every module is written in Koschei and compiled with the program that imports it
 | [`strange`](#strange) | 2 | 2 |
 | [`text`](#text) | 13 | 0 |
 | [`wanda`](#wanda) | 5 | 1 |
+| [`web3_rpc`](#web3_rpc) | 1 | 0 |
 | [`xandar`](#xandar) | 4 | 2 |
 
 ## captain_marvel
@@ -565,6 +566,16 @@ fn detects_rollback(current: RealityCommitment, candidate: RealityCommitment) ->
 ```
 
 True when `candidate` would move `current` back to the same or an earlier epoch. Fails closed: a commitment that is not canonical counts as a rollback.
+
+## web3_rpc
+
+Read-only, single-origin EVM JSON-RPC client (experimental). A NetCaps token is passed explicitly; this module cannot widen origins. It sends two fixed POST requests: chain identity then latest block height. JSON is parsed through the shared strict parser and canonical encoder; result envelope, id, jsonrpc and quantity are all checked before return. NO transactions, signatures, user addresses, block-hash/finality proofs.
+
+### `web3_rpc.block_number`
+
+```ks
+fn block_number(net: NetCaps, endpoint: String, chain_id: String) -> String or Error
+```
 
 ## xandar
 

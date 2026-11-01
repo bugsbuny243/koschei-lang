@@ -19,6 +19,17 @@ See `docs/PLATFORM_FOUNDATION_V1.md` for exact non-claims and
 `tests/test_platform_foundation_v1.py` for fail-closed cases and
 interpreter/native byte-for-byte parity.
 
+## Read-only Web3 JSON-RPC (experimental)
+
+The `web3_rpc` Core Library module takes an **explicit** narrowed
+`NetCaps` origin token, makes two fixed HTTP POST requests (`eth_chainId`,
+`eth_blockNumber`), validates exactly the chain/JSON-RPC/id envelope and
+strict canonical returned quantity, and denies malformed/extra/error
+objects. This is demonstrated only against a simulated local origin.
+The module cannot sign or submit transactions, and a reported block
+number is not finality evidence. See
+`examples/web3_readonly_rpc_v1` and `tests/test_platform_web3_rpc_v1.py`.
+
 ## Why
 
 Until now every standard-library operation was a host builtin: each new

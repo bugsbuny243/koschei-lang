@@ -44,6 +44,7 @@ CORE_LIBRARY_MODULES_V1: tuple[str, ...] = (
     "strange",
     "text",
     "wanda",
+    "web3_rpc",
     "xandar",
 )
 
