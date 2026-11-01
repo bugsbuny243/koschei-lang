@@ -108,6 +108,22 @@ __attribute__((noreturn)) static void stop(K_U8 code) {
 
 #ifdef KOSCHEI_QEMU_PF_TEST
 #include "cpu_pf_guest_probe.h"
+
+/* Record actual CPU-supplied CR2/error in the UART receipt, not placeholders. */
+static void k0_cpu_pf_serial_hex(K_U64 value) {
+    const char *digits = "0123456789abcdef";
+    for (int shift = 60; shift >= 0; shift -= 4)
+        serial_char(digits[(value >> (K_U32)shift) & 15ULL]);
+}
+static void k0_cpu_pf_serial_receipt(void) {
+    const char *prefix = "KOSCHEI-KERNEL K0 CPU-PF-TRAP/1 CR2=";
+    const char *separator = " ERROR=";
+    for (; *prefix; ++prefix) serial_char(*prefix);
+    k0_cpu_pf_serial_hex(k0_cpu_probe_cr2);
+    for (; *separator; ++separator) serial_char(*separator);
+    k0_cpu_pf_serial_hex(k0_cpu_probe_error);
+    serial_line("");
+}
 #endif
 
 /*
@@ -208,7 +224,7 @@ EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system) {
         serial_line("KOSCHEI-KERNEL REJECT/1 CPU-PF");
         stop(0x11);
     }
-    serial_line("KOSCHEI-KERNEL K0 CPU-PF-TRAP-OBSERVED");
+    k0_cpu_pf_serial_receipt();
 #endif
     serial_line("KOSCHEI-KERNEL K0 HALT-NO-POLICY");
     stop(0x10);
