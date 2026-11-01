@@ -62,6 +62,11 @@ static K0_VM_WALK_RESULT k0_vm_model_walk(const K0_VM_TABLE_MODEL *tables,
     }
 
     const K_U32 shift[4] = {39U, 30U, 21U, 12U};
+    /* A non-present entry takes precedence over permission restrictions at
+     * higher levels: the CPU reports P=0, even on attempted user access.
+     * Accumulate permissions only for a fully present translation.
+     */
+    int permission_denied = 0;
     for (K_U32 level = 0; level < K0_VM_TABLE_LEVELS; ++level) {
         if (!k0_pool_is_claimed(pool, tables->table_phys[level]))
             return answer;
@@ -83,14 +88,18 @@ static K0_VM_WALK_RESULT k0_vm_model_walk(const K0_VM_TABLE_MODEL *tables,
                     !(entry & K0_VM_NO_EXECUTE))) {
             return answer;
         }
-        /* All proposed levels are supervisor-only. */
+        /* All proposed levels are supervisor-only. Do not return a
+         * protection fault until the last present leaf is reached.
+         */
         if (user || (write && !(entry & K0_VM_WRITE)) ||
-            (execute && (entry & K0_VM_NO_EXECUTE))) {
-            answer.kind = K0_VM_WALK_PAGE_FAULT;
-            answer.predicted_error_code = access_code | K0_VM_PF_PRESENT;
-            return answer;
-        }
+            (execute && (entry & K0_VM_NO_EXECUTE)))
+            permission_denied = 1;
         if (level == K0_VM_TABLE_LEVELS - 1) {
+            if (permission_denied) {
+                answer.kind = K0_VM_WALK_PAGE_FAULT;
+                answer.predicted_error_code = access_code | K0_VM_PF_PRESENT;
+                return answer;
+            }
             answer.kind = K0_VM_WALK_ALLOW;
             answer.resolved_physical =
                 (entry & K0_VM_PHYSICAL_MASK) + (address & (K0_PAGE_SIZE - 1));
