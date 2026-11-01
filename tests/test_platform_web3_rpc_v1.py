@@ -130,6 +130,14 @@ class Web3RpcLiveTests(unittest.TestCase):
                 "127.0.0.1:PORT", f"127.0.0.1:{port}"),
             encoding="utf-8",
         )
+        # Project-local imports resolve from the entrypoint directory.
+        # The temporary, port-injected test workspace must include the
+        # sibling effectful adapter; core_library never supplies it.
+        (Path(self.tmp.name) / "web3_rpc.ks").write_text(
+            (ROOT / "examples/web3_readonly_rpc_v1/web3_rpc.ks").read_text(
+                encoding="utf-8"),
+            encoding="utf-8",
+        )
 
     def tearDown(self) -> None:
         self.server.shutdown()
