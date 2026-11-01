@@ -27,6 +27,16 @@ int main(void) {
     K0_MEMORY_DESCRIPTOR map[1]={{7,0,0x300000ULL,0,32,0}};
     K0_MEMORY_PLAN unused={0};
     assert(k0_memory_validate_plan(map,sizeof(map),sizeof(map[0]),1,&unused));
+    /* Exercise all transitive static helpers under the strict -Werror
+     * host build, without probing unowned physical memory addresses.
+     */
+    K0_EFI_LOADED_IMAGE protocol={0};
+    K0_LOADED_IMAGE_BOUNDS rejected={0};
+    assert(k0_loaded_image_guid.data1 == 0x5b1b31a1U);
+    assert(!k0_loaded_image_bounds(&protocol,0,0,0,1,0,&rejected));
+    assert(!k0_pe_wx_parse(0,0,&layout));
+    assert(!k0_image_wx_activate_tables(0,&image,&layout,codes,2,
+                                         0x450000,0x460000,frames));
     setup();
     assert(k0_image_wx_preflight(&image,&layout,codes,2,0x450000,0x460000,frames));
     assert(!k0_image_wx_preflight(0,&layout,codes,2,0x450000,0x460000,frames));
