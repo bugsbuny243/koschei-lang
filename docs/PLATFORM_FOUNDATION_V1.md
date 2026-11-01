@@ -15,6 +15,20 @@ The main branch already contains a 14-realm production-reference *example* with 
 
 These library modules contain **no `SystemCaps` parameter** and grant no network, disk, environment, serve, process, persist, model-tool or kernel privileges. Any future adapter must separately take a narrowed capability and validate the exact object it accesses. An admission decision is not an identity or cryptographic attestation.
 
+## Tested real HTTP vertical slice
+
+`examples/platform_foundation_v1/loopback_gateway.ks` exercises the
+actual `ServeCaps.accept/reply` runtime. Its only capability is a
+statically narrowed `127.0.0.1:PORT` listener, bounded to 5 connections,
+4096-byte requests, 256-byte responses and a 3-second deadline. The
+first connection is the test readiness probe. Four real HTTP requests
+then exercise two accepted GET routes, an accepted POST route, and a
+method/path denial. Both `ks run` and Linux/amd64 native-Go compilation
+are exercised by `tests/test_platform_foundation_v1.py`, and responses
+must match exactly. This is a LOCAL-only HTTP gateway; no public bind,
+TLS, authentication, concurrent processing, persistent state or Web3/AI
+execution is implied.
+
 ## Run the real interpreter/native slice
 
 ```sh

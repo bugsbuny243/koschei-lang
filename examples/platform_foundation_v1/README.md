@@ -22,5 +22,11 @@ ai=local-model denied=DENY
 kernel-claimed=true forged=false
 ```
 
+An additional `loopback_gateway.ks` example connects `platform_web` to
+the existing bounded HTTP ServeCaps runtime (loopback-only). CI replaces
+its static PORT with a free port and sends four real HTTP requests through
+the interpreter and Linux native build. This is a limited local demo,
+not an authenticated public HTTP service.
+
 Read `docs/PLATFORM_FOUNDATION_V1.md` for exact implementation gates,
 runtime/backend restrictions and what is *not yet supported*.

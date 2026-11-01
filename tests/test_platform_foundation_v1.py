@@ -6,6 +6,11 @@ the compiler-produced native artifact. No runtime effects are granted.
 from __future__ import annotations
 
 import io
+import http.client
+import os
+import socket
+import sys
+import time
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 import shutil
@@ -157,6 +162,88 @@ class PlatformFoundationV1Tests(unittest.TestCase):
             check_graph(graph)
             self.assertFalse(analyze_graph(graph).has_any)
             self.assertEqual(run_source(target), (0, "PLATFORM-FOUNDATION/1 PASS\n", ""))
+
+
+class PlatformGatewayIntegrationTests(unittest.TestCase):
+    """Real loopback TCP admission, not just string-policy unit tests."""
+
+    @staticmethod
+    def _free_port() -> int:
+        with socket.socket() as sock:
+            sock.bind(("127.0.0.1", 0))
+            return sock.getsockname()[1]
+
+    @staticmethod
+    def _request(port: int, method: str, path: str, payload: bytes = b"") -> tuple[int, str]:
+        connection = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+        try:
+            connection.request(method, path, body=payload)
+            answer = connection.getresponse()
+            return answer.status, answer.read().decode("utf-8")
+        finally:
+            connection.close()
+
+    def _exercise(self, native: bool) -> None:
+        port = self._free_port()
+        source = (ROOT / "examples/platform_foundation_v1/loopback_gateway.ks").read_text(
+            encoding="utf-8"
+        ).replace("127.0.0.1:PORT", f"127.0.0.1:{port}")
+        with tempfile.TemporaryDirectory(prefix="ks-platform-serve-") as tmp:
+            path = Path(tmp) / "gateway.ks"
+            path.write_text(source, encoding="utf-8")
+            graph = load_graph(path)
+            check_graph(graph)
+            self.assertTrue(analyze_graph(graph).has_any)  # narrow ServeCaps only
+            command = [sys.executable, "-m", "koschei", "run", str(path)]
+            if native:
+                binary = Path(tmp) / "gateway"
+                output, errors = io.StringIO(), io.StringIO()
+                with redirect_stdout(output), redirect_stderr(errors):
+                    code = ks_main(["build", str(path), "-o", str(binary)])
+                self.assertEqual(code, 0, errors.getvalue())
+                command = [str(binary)]
+            process = subprocess.Popen(
+                command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                env=dict(os.environ, PYTHONPATH=str(ROOT)),
+            )
+            try:
+                deadline = time.monotonic() + 20
+                while time.monotonic() < deadline:
+                    if process.poll() is not None:
+                        self.fail(f"gateway exited before binding: {process.communicate()}")
+                    try:
+                        socket.create_connection(("127.0.0.1", port), timeout=0.2).close()
+                        break
+                    except OSError:
+                        time.sleep(0.05)
+                else:
+                    self.fail("bounded gateway did not bind to loopback")
+                actual = [
+                    self._request(port, "GET", "/health"),
+                    self._request(port, "GET", "/v1/status"),
+                    self._request(port, "POST", "/v1/jobs", b"safe"),
+                    self._request(port, "GET", "/v1/jobs"),
+                ]
+                self.assertEqual(actual, [
+                    (200, "ok"), (200, "ready"), (201, "accepted"), (404, "denied")
+                ])
+                out, err = process.communicate(timeout=30)
+                self.assertEqual(
+                    (process.returncode, out.decode("utf-8"), err.decode("utf-8")),
+                    (0, "web-served=4\n", ""),
+                )
+            finally:
+                if process.poll() is None:
+                    process.kill()
+                    process.communicate(timeout=5)
+
+    def test_interpreted_loopback_http_policy(self) -> None:
+        self._exercise(native=False)
+
+    @unittest.skipUnless(shutil.which("go") is not None and sys.platform.startswith("linux"),
+                         "native ServeCaps requires Linux with Go")
+    def test_native_loopback_http_policy(self) -> None:
+        self._exercise(native=True)
 
 
 if __name__ == "__main__":
