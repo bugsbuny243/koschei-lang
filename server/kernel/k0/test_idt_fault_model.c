@@ -140,7 +140,59 @@ static void test_real_paging_walk_interoperability(void) {
     for (K_U32 i = 0; i < 6; ++i) assert(k0_pool_release(&pool, pages[i]));
 }
 
+static void test_ring0_gdt_and_normalized_exception_context(void) {
+    uint64_t gdt[] = {
+        0, 0x00af9a000000ffffULL, 0x00cf92000000ffffULL
+    };
+    K0_IDT_PF_REPORT pf;
+    K0_IDT_EXCEPTION_SNAPSHOT frame = {
+        .vector = K0_IDT_VECTOR_PF,
+        .error_code = K0_PF_PRESENT | K0_PF_WRITE,
+        .rip = 0xffffffff80001000ULL,
+        .cs = K0_IDT_KERNEL_CS,
+        .rflags = 0x202ULL,
+        .rsp = 0x200000ULL,
+        .cr2 = 0xffffffff80002000ULL
+    };
+    assert(k0_idt_kernel_gdt_pair_valid(gdt, 3));
+    assert(!k0_idt_kernel_gdt_pair_valid(gdt, 2));
+    gdt[1] |= 1ULL << 54;
+    assert(!k0_idt_kernel_gdt_pair_valid(gdt, 3));
+    gdt[1] &= ~(1ULL << 54);
+    gdt[2] |= 1ULL << 45;
+    assert(!k0_idt_kernel_gdt_pair_valid(gdt, 3));
+    gdt[2] &= ~(1ULL << 45);
+    assert(k0_idt_fault_snapshot_valid(&frame, &pf));
+    assert(pf.fault_class == K0_WALK_FAULT_READONLY_WRITE);
+    assert(pf.cr2 == frame.cr2);
+    frame.error_code = K0_PF_RESERVED | K0_PF_PRESENT;
+    assert(!k0_idt_fault_snapshot_valid(&frame, &pf));
+    frame.vector = K0_IDT_VECTOR_DF;
+    frame.error_code = 0;
+    assert(k0_idt_fault_snapshot_valid(&frame, &pf));
+    frame.error_code = 1;
+    assert(!k0_idt_fault_snapshot_valid(&frame, &pf));
+    frame.vector = K0_IDT_VECTOR_GP;
+    frame.error_code = 0xffffULL;
+    assert(k0_idt_fault_snapshot_valid(&frame, &pf));
+    frame.error_code = 0x10000ULL;
+    assert(!k0_idt_fault_snapshot_valid(&frame, &pf));
+    frame.vector = 7;
+    frame.error_code = 0;
+    assert(!k0_idt_fault_snapshot_valid(&frame, &pf));
+    frame.vector = K0_IDT_VECTOR_DF;
+    frame.cs = 0x1b;
+    assert(!k0_idt_fault_snapshot_valid(&frame, &pf));
+    frame.cs = K0_IDT_KERNEL_CS;
+    frame.rsp = 0x200003ULL;
+    assert(!k0_idt_fault_snapshot_valid(&frame, &pf));
+    frame.rsp = 0x200000ULL;
+    frame.rflags = 0;
+    assert(!k0_idt_fault_snapshot_valid(&frame, &pf));
+}
+
 int main(void) {
+    test_ring0_gdt_and_normalized_exception_context();
     test_gates();
     test_faults();
     test_real_paging_walk_interoperability();
