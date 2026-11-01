@@ -11,6 +11,10 @@ typedef struct {
     K_U32 claimed;
     K_U32 active;
     K_U32 initialized;
+    /* Metadata mutation epoch: detects stale single-thread preflight plans.
+     * Overflow fails closed rather than wrapping into an old epoch.
+     */
+    K_U64 epoch;
 } K0_PAGE_POOL;
 
 static int k0_pool_init(K0_PAGE_POOL *pool, const K0_MEMORY_PLAN *plan,
@@ -25,17 +29,21 @@ static int k0_pool_init(K0_PAGE_POOL *pool, const K0_MEMORY_PLAN *plan,
     pool->claimed = 0;
     pool->active = 0;
     pool->initialized = 1;
+    pool->epoch = 1;
     return 1;
 }
 
 static int k0_pool_claim(K0_PAGE_POOL *pool, K_U64 *address) {
-    if (!pool || !pool->initialized || !address || pool->active >= K0_PLAN_PAGES)
+    if (!pool || !pool->initialized || !address ||
+        !pool->epoch || pool->epoch == ~(K_U64)0 ||
+        pool->active >= K0_PLAN_PAGES)
         return 0;
     for (K_U32 i = 0; i < (K_U32)K0_PLAN_PAGES; ++i) {
         K_U32 mask = 1u << i;
         if (!(pool->claimed & mask)) {
             pool->claimed |= mask;
             ++pool->active;
+            ++pool->epoch;
             *address = pool->base + (K_U64)i * K0_PAGE_SIZE;
             return 1;
         }
@@ -52,10 +60,12 @@ static int k0_pool_is_claimed(const K0_PAGE_POOL *pool, K_U64 address) {
 }
 
 static int k0_pool_release(K0_PAGE_POOL *pool, K_U64 address) {
-    if (!k0_pool_is_claimed(pool, address) || !pool->active) return 0;
+    if (!k0_pool_is_claimed(pool, address) || !pool->active ||
+        !pool->epoch || pool->epoch == ~(K_U64)0) return 0;
     K_U32 index = (K_U32)((address - pool->base) / K0_PAGE_SIZE);
     pool->claimed &= ~(1u << index);
     --pool->active;
+    ++pool->epoch;
     return 1;
 }
 #endif

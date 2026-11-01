@@ -49,6 +49,21 @@ jobs:
           clang -std=c11 -O2 -Wall -Wextra -Werror \
             server/kernel/k0/test_page_pool.c -o /tmp/koschei-k0-evidence/page-pool-tests
           /tmp/koschei-k0-evidence/page-pool-tests
+      - name: Execute staging paging-entry contract negative tests (not MMU proof)
+        run: |
+          clang -std=c11 -O2 -Wall -Wextra -Werror \
+            server/kernel/k0/test_paging_contract.c -o /tmp/koschei-k0-evidence/paging-contract-tests
+          /tmp/koschei-k0-evidence/paging-contract-tests
+      - name: Execute four-level paging data-model adversarial tests (not CR3 proof)
+        run: |
+          clang -std=c11 -O2 -Wall -Wextra -Werror \
+            server/kernel/k0/test_paging_model.c -o /tmp/koschei-k0-evidence/paging-model-tests
+          /tmp/koschei-k0-evidence/paging-model-tests
+      - name: Test predicted page-fault and access-denial model (NOT CPU faults)
+        run: |
+          clang -std=c11 -O2 -Wall -Wextra -Werror \
+            server/kernel/k0/test_paging_walk.c -o /tmp/koschei-k0-evidence/paging-walk-tests
+          /tmp/koschei-k0-evidence/paging-walk-tests
       - name: Boot actual UEFI binary on QEMU OVMF and capture UART proof
         run: |
           bash server/kernel/k0/qemu_smoke.sh /tmp/koschei-k0-evidence

@@ -8,6 +8,7 @@
  */
 #include "memory_map.h"
 #include "page_pool.h"
+#include "paging_frame_probe.h"
 typedef unsigned short K_U16;
 typedef void *EFI_HANDLE;
 typedef K_U64 EFI_STATUS;
@@ -193,6 +194,11 @@ EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system) {
         stop(0x11);
     }
     serial_line("KOSCHEI-KERNEL K0 PAGE-POOL-PROBED");
+    if (!k0_guest_roundtrip_table_frames(&k0_pool)) {
+        serial_line("KOSCHEI-KERNEL REJECT/1 PAGE-TABLE-FRAMES");
+        stop(0x11);
+    }
+    serial_line("KOSCHEI-KERNEL K0 PAGE-TABLE-FRAMES-ROUNDTRIP");
     serial_line("KOSCHEI-KERNEL K0 HALT-NO-POLICY");
     stop(0x10);
 }
