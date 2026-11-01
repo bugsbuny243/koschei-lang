@@ -53,6 +53,11 @@ int main(void) {
     assert(k0_pool_claim(&pool,&a) && k0_pool_claim(&pool,&b));
     K_U64 claimed[2]={a,b};
     assert(k0_identity_owner_frames_match(&pool,claimed,2));
+    assert(k0_pool_release(&pool,b));
+    assert(!k0_identity_owner_frames_match(&pool,claimed,2));
+    K_U64 recycled=0;
+    assert(k0_pool_claim(&pool,&recycled) && recycled==b);
+    assert(k0_identity_owner_frames_match(&pool,claimed,2));
 
     setup();
     assert(install());
