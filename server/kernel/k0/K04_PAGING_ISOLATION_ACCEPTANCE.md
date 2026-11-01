@@ -180,6 +180,28 @@ or guard pages. Neither runtime/MMIO/ACPI physical ownership, all possible
 firmware aliases nor real-hardware behavior is proven. This remains an
 emulator experiment and cannot be merged as a production memory manager.
 
+## CPU-active 4KiB stack-page guard experiment (QEMU-only)
+
+The own-CR3 probe now claims two additional PT frames (11 total in
+high-half mapped mode, 7 in other modes) and replaces the observed active
+stack's huge 2MiB identity PDE(s) with true supervisor RW+NX 4KiB leaves
+for its five-page bounded footprint. A single 4KiB page immediately below
+that footprint is nonpresent; unrelated pages inside those same 2MiB
+slots are denied, unless covered by the claimed pool or firmware GDT
+which remain needed for the handler. Strict preflight rejects overlapping
+PE-code windows, preexisting page tables, invalid PT frames, overlapping
+guard and missing ownership slots.
+
+An eighth QEMU-only EFI reads the exact nonpresent stack guard and
+demands actual CPU vector-14 #PF error=0, matching CR2 and active CR3,
+a dedicated UART record and debug-exit 33. The other seven modes rerun.
+
+**Security boundary:** The observed five-page stack range is NOT a
+lifetime-safe stack allocation, guard-page fault recovery, arbitrary
+recursion protection, multicore reservation or production exception
+policy. Firmware, ACPI/MMIO, physical hardware and other unknown
+aliases remain independent acceptance blockers.
+
 ## Next executable acceptance requirements
 1. Capture exact page ownership and reserve the loaded PE image, executing
    stack, firmware runtime ranges, ACPI, MMIO/framebuffer and page-table

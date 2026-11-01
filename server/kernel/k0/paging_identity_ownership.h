@@ -112,6 +112,11 @@ static int k0_identity_owner_plan(const void *map_buffer, K_U64 bytes,
     K_U64 stack_floor =
         stack_page - K0_OWNER_STACK_BACK_PAGES * K0_PAGE_SIZE;
     K_U64 stack_end = stack_page + K0_PAGE_SIZE;
+    /* Preserve the guard's PDE for splitting even when the guard falls
+     * in the preceding 2MiB slot. The guard itself remains nonpresent.
+     */
+    if (stack_floor < 0x100000ULL + K0_PAGE_SIZE) return 0;
+    K_U64 stack_guard = stack_floor - K0_PAGE_SIZE;
     const K_U64 image_end = image_base + image_bytes;
     const K_U64 pool_end = pool_base + pool_bytes;
     if (!k0_owner_disjoint(image_base, image_end, pool_base, pool_end) ||
@@ -147,7 +152,7 @@ static int k0_identity_owner_plan(const void *map_buffer, K_U64 bytes,
         allowed[i] = 0;
     const K_U64 regions[4][2] = {
         {image_base, image_end}, {pool_base, pool_end},
-        {stack_floor, stack_end}, {gdt_base, gdt_base + gdt_bytes}
+        {stack_guard, stack_end}, {gdt_base, gdt_base + gdt_bytes}
     };
     for (K_U32 r = 0; r < 4; ++r) {
         K_U64 first = regions[r][0] / K0_OWNER_PDE_BYTES;

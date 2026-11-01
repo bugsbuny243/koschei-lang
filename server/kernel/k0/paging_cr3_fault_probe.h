@@ -14,17 +14,22 @@
 #include "paging_identity_exec_nx_policy.h"
 #include "paging_active_image_wx.h"
 #include "paging_identity_ownership.h"
+#include "paging_stack_guard_4k.h"
 
 #define K0_CR3_TEST_LIMIT 0x40000000ULL
 #ifdef KOSCHEI_QEMU_MAPPED_TEST
-#define K0_CR3_FRAME_COUNT 9U
+#define K0_CR3_FRAME_COUNT 11U
 #define K0_CR3_IMAGE_PT_START 7U
+#define K0_CR3_STACK_PT_START 9U
 #define K0_CR3_MAPPING_VA 0xffff800000000000ULL
 #else
-#define K0_CR3_FRAME_COUNT 5U
+#define K0_CR3_FRAME_COUNT 7U
 #define K0_CR3_IMAGE_PT_START 3U
+#define K0_CR3_STACK_PT_START 5U
 #endif
-#ifdef KOSCHEI_QEMU_LOW_HOLE_TEST
+#ifdef KOSCHEI_QEMU_STACK_GUARD_TEST
+#define K0_CR3_EXPECTED_ERROR 0ULL /* 4KiB nonpresent stack guard */
+#elif defined(KOSCHEI_QEMU_LOW_HOLE_TEST)
 #define K0_CR3_FAULT_VA K0_OWNER_LOW_HOLE_VA
 #define K0_CR3_EXPECTED_ERROR 0ULL /* nonpresent lower identity PDE */
 #elif defined(KOSCHEI_QEMU_WX_TEST)
@@ -74,6 +79,10 @@ _Static_assert(sizeof(K0_CR3_GDT_REGISTER) == 10, "x86-64 GDTR");
 static K0_CR3_IDT_GATE k0_cr3_idt[16];
 static K0_CR3_IDT_REGISTER k0_cr3_idtr;
 static volatile K_U64 k0_expected_cr3;
+#ifdef KOSCHEI_QEMU_STACK_GUARD_TEST
+static volatile K_U64 k0_cr3_stack_guard_target;
+#define K0_CR3_FAULT_VA k0_cr3_stack_guard_target
+#endif
 #ifdef KOSCHEI_QEMU_WX_TEST
 static volatile K_U64 k0_cr3_code_write_target;
 #define K0_CR3_FAULT_VA k0_cr3_code_write_target
@@ -97,7 +106,9 @@ __attribute__((used,noreturn)) static void k0_cr3_pf_dispatch(
         stop(0x11);
     }
     /* Only reachable through a real CPU vector-14 exception path. */
-#if defined(KOSCHEI_QEMU_LOW_HOLE_TEST)
+#if defined(KOSCHEI_QEMU_STACK_GUARD_TEST)
+    serial_line("KOSCHEI-KERNEL K0 OWN-CR3-STACK-GUARD-DENIED");
+#elif defined(KOSCHEI_QEMU_LOW_HOLE_TEST)
     serial_line("KOSCHEI-KERNEL K0 OWN-CR3-LOW-HOLE-DENIED");
 #elif defined(KOSCHEI_QEMU_WX_TEST)
     serial_line("KOSCHEI-KERNEL K0 OWN-CR3-CODE-WRITE-DENIED");
@@ -276,6 +287,19 @@ __attribute__((noreturn)) static void k0_cr3_qemu_probe(K0_PAGE_POOL *pool) {
         serial_line("KOSCHEI-KERNEL REJECT/1 ACTIVE-IMAGE-WX");
         stop(0x11);
     }
+    K_U64 guard_page = 0;
+    volatile K_U64 *stack_tables[K0_STACK_GUARD_PT_FRAMES] = {
+        (volatile K_U64 *)(unsigned long long)frame[K0_CR3_STACK_PT_START],
+        (volatile K_U64 *)(unsigned long long)frame[K0_CR3_STACK_PT_START+1U]
+    };
+    if (!k0_stack_guard_build(pd, &k0_identity_owner_state,
+            k0_image_bounds.base, k0_image_bounds.size,
+            pool->base, K0_PLAN_PAGES*K0_PAGE_SIZE,
+            current_gdt.base, (K_U64)current_gdt.limit+1ULL,
+            &frame[K0_CR3_STACK_PT_START], stack_tables, &guard_page)) {
+        serial_line("KOSCHEI-KERNEL REJECT/1 STACK-GUARD-4K");
+        stop(0x11);
+    }
     if (pml4[0] != (frame[1] | 3ULL) ||
         pdpt[0] != (frame[2] | 3ULL) ||
         pml4[256] != high_root_expected ||
@@ -301,6 +325,9 @@ __attribute__((noreturn)) static void k0_cr3_qemu_probe(K0_PAGE_POOL *pool) {
     k0_cr3_idtr.limit = (K_U16)(sizeof(k0_cr3_idt) - 1);
     k0_cr3_idtr.base = idt_addr;
     k0_expected_cr3 = frame[0];
+#ifdef KOSCHEI_QEMU_STACK_GUARD_TEST
+    k0_cr3_stack_guard_target = guard_page;
+#endif
 #ifdef KOSCHEI_QEMU_WX_TEST
     k0_cr3_code_write_target = dispatcher;
 #elif defined(KOSCHEI_QEMU_DATA_NX_TEST)
@@ -322,6 +349,7 @@ __attribute__((noreturn)) static void k0_cr3_qemu_probe(K0_PAGE_POOL *pool) {
     }
     serial_line("KOSCHEI-KERNEL K0 ACTIVE-IMAGE-4K-WX");
     serial_line("KOSCHEI-KERNEL K0 IDENTITY-OWNER-APERTURE");
+    serial_line("KOSCHEI-KERNEL K0 ACTIVE-STACK-4K-GUARD");
 #ifdef KOSCHEI_QEMU_MAPPED_TEST
     volatile K_U8 *virtual_page =
         (volatile K_U8 *)(unsigned long long)K0_CR3_MAPPING_VA;
@@ -350,7 +378,10 @@ __attribute__((noreturn)) static void k0_cr3_qemu_probe(K0_PAGE_POOL *pool) {
     serial_line("KOSCHEI-KERNEL K0 OWN-CR3-4K-MAPPED");
 #endif
     /* Only a real #PF handler can produce the final success and exit=33. */
-#if defined(KOSCHEI_QEMU_LOW_HOLE_TEST)
+#if defined(KOSCHEI_QEMU_STACK_GUARD_TEST)
+    const K_U64 guard_read = K0_CR3_FAULT_VA;
+    __asm__ __volatile__("movq (%0), %%rax" : : "r"(guard_read) : "rax", "memory");
+#elif defined(KOSCHEI_QEMU_LOW_HOLE_TEST)
     const K_U64 nonpresent_low = K0_CR3_FAULT_VA;
     __asm__ __volatile__("movq (%0), %%rax" : : "r"(nonpresent_low) : "rax", "memory");
 #elif defined(KOSCHEI_QEMU_WX_TEST)

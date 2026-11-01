@@ -94,6 +94,12 @@ jobs:
             server/kernel/k0/test_identity_ownership.c \
             -o /tmp/koschei-k0-evidence/identity-ownership-tests
           /tmp/koschei-k0-evidence/identity-ownership-tests
+      - name: Verify transactional 4KiB stack guard and PT permissions
+        run: |
+          clang -std=c11 -O2 -Wall -Wextra -Werror \
+            server/kernel/k0/test_stack_guard_4k.c \
+            -o /tmp/koschei-k0-evidence/stack-guard-4k-tests
+          /tmp/koschei-k0-evidence/stack-guard-4k-tests
       - name: Boot actual UEFI binary on QEMU OVMF and capture UART proof
         run: |
           bash server/kernel/k0/qemu_smoke.sh /tmp/koschei-k0-evidence
@@ -115,6 +121,9 @@ jobs:
       - name: Prove real denied access to a non-owned low physical identity hole
         run: |
           bash server/kernel/k0/qemu_smoke.sh /tmp/koschei-k0-evidence low-hole
+      - name: Prove real nonpresent stack 4KiB guard with CPU CR2/error/CR3
+        run: |
+          bash server/kernel/k0/qemu_smoke.sh /tmp/koschei-k0-evidence stack-guard
       - name: Bind evidence to commit and toolchain
         if: always()
         run: |
