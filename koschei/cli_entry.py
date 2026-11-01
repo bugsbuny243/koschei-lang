@@ -40,6 +40,7 @@ from .native_http_transport_v1 import (
     native_http_transport_guard_go_v1,
 )
 from .release_proof_cli import add_release_proof_parser, command_release_proof
+from .uefi_boot_cli import add_uefi_boot_parser, command_uefi_boot
 from .reproducibility_cli import (
     add_build_compare_parser,
     add_build_compare_verify_parser,
@@ -116,6 +117,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_build_compare_parser(subcommands)
     add_build_compare_verify_parser(subcommands)
     add_release_proof_parser(subcommands)
+    add_uefi_boot_parser(subcommands)
 
     check = subcommands.choices["check"]
     check.add_argument(
@@ -495,6 +497,8 @@ def main(argv: list[str] | None = None) -> int:
         return command_build_compare_verify(args)
     if args.command == "release-proof":
         return command_release_proof(args)
+    if args.command == "uefi-boot":
+        return command_uefi_boot(args)
     if args.command == "check" and args.native:
         print(
             "KS4101: Native check requires a trusted in-process host ingress; "
