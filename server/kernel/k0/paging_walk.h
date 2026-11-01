@@ -62,6 +62,10 @@ static K0_VM_WALK_RESULT k0_vm_model_walk(const K0_VM_TABLE_MODEL *tables,
     }
 
     const K_U32 shift[4] = {39U, 30U, 21U, 12U};
+    /* A missing leaf reports P=0 even when a present parent denies
+     * user access. Check all present levels before deciding permissions.
+     */
+    int permission_denied = 0;
     for (K_U32 level = 0; level < K0_VM_TABLE_LEVELS; ++level) {
         if (!k0_pool_is_claimed(pool, tables->table_phys[level]))
             return answer;
@@ -85,12 +89,14 @@ static K0_VM_WALK_RESULT k0_vm_model_walk(const K0_VM_TABLE_MODEL *tables,
         }
         /* All proposed levels are supervisor-only. */
         if (user || (write && !(entry & K0_VM_WRITE)) ||
-            (execute && (entry & K0_VM_NO_EXECUTE))) {
-            answer.kind = K0_VM_WALK_PAGE_FAULT;
-            answer.predicted_error_code = access_code | K0_VM_PF_PRESENT;
-            return answer;
-        }
+            (execute && (entry & K0_VM_NO_EXECUTE)))
+            permission_denied = 1;
         if (level == K0_VM_TABLE_LEVELS - 1) {
+            if (permission_denied) {
+                answer.kind = K0_VM_WALK_PAGE_FAULT;
+                answer.predicted_error_code = access_code | K0_VM_PF_PRESENT;
+                return answer;
+            }
             answer.kind = K0_VM_WALK_ALLOW;
             answer.resolved_physical =
                 (entry & K0_VM_PHYSICAL_MASK) + (address & (K0_PAGE_SIZE - 1));
