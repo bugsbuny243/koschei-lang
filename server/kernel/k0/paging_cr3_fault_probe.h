@@ -2,8 +2,9 @@
 #define KOSCHEI_K0_CR3_FAULT_PROBE_H
 /*
  * EMULATOR TEST BINARY ONLY. This is not secure production page isolation.
- * A temporary 0..1 GiB supervisor identity map has RWX 2 MiB huge pages
- * to retain firmware-loaded code and the existing stack after switching CR3.
+ * A temporary low-1GiB identity map retains broad RW+NX huge pages,
+ * but active PE image windows are split into 4KiB RX/RW+NX leaves.
+ * Other physical ranges and fault vectors remain test-only and unprotected.
  * It leaves the tested high-half address unmapped and uses a dedicated #PF
  * IDT gate. All other IDT vectors are absent; interrupts are masked.
  * Never compile, call, or advertise this as customer production MMU policy.
@@ -12,13 +13,16 @@
 #error "CR3 diagnostic must never be compiled into the release image"
 #endif
 #include "paging_identity_exec_nx_policy.h"
+#include "paging_live_image_4k_wx.h"
 
 #define K0_CR3_TEST_LIMIT 0x40000000ULL
 #ifdef KOSCHEI_QEMU_MAPPED_TEST
-#define K0_CR3_FRAME_COUNT 7U
+#define K0_CR3_FRAME_COUNT 9U
+#define K0_CR3_PE_PT_FIRST 7U
 #define K0_CR3_MAPPING_VA 0xffff800000000000ULL
 #else
-#define K0_CR3_FRAME_COUNT 3U
+#define K0_CR3_FRAME_COUNT 5U
+#define K0_CR3_PE_PT_FIRST 3U
 #endif
 #if defined(KOSCHEI_QEMU_NX_TEST)
 #define K0_CR3_FAULT_VA 0x3fe00000ULL
@@ -100,7 +104,11 @@ __attribute__((noreturn)) static void k0_cr3_qemu_probe(K0_PAGE_POOL *pool) {
     K_U64 serial = (K_U64)(unsigned long long)&serial_line;
     K_U64 exit_code = (K_U64)(unsigned long long)&stop;
     K_U64 idt_addr = (K_U64)(unsigned long long)&k0_cr3_idt[0];
+    K_U64 cr0 = 0;
+    __asm__ __volatile__("movq %%cr0, %0" : "=r"(cr0));
+    /* Supervisor CR0.WP required for actual RX code protection. */
     if (!pool || pool->active || !k0_guest_nx_preflight() ||
+        !(cr0 & (1ULL << 16)) ||
         stack_addr >= K0_CR3_TEST_LIMIT ||
         dispatcher >= K0_CR3_TEST_LIMIT ||
         stub >= K0_CR3_TEST_LIMIT ||
@@ -114,10 +122,7 @@ __attribute__((noreturn)) static void k0_cr3_qemu_probe(K0_PAGE_POOL *pool) {
     /* The dedicated test page is separate from all executable functions.
      * CR0.WP must be enabled for the read-only scenario.
      */
-    K_U64 cr0 = 0;
-    __asm__ __volatile__("movq %%cr0, %0" : "=r"(cr0));
-    if (!(cr0 & (1ULL << 16)) || /* CR0.WP */
-        (stack_addr >> 21) == 511ULL ||
+    if ((stack_addr >> 21) == 511ULL ||
         (dispatcher >> 21) == 511ULL ||
         (stub >> 21) == 511ULL ||
         (serial >> 21) == 511ULL ||
@@ -145,9 +150,9 @@ __attribute__((noreturn)) static void k0_cr3_qemu_probe(K0_PAGE_POOL *pool) {
     }
     pml4[0] = frame[1] | 3ULL;
     pdpt[0] = frame[2] | 3ULL;
-    /* Mark every low identity-mapped huge page NX by default. Only a
-     * bounded set containing actual active test code stays executable.
-     * Those huge pages are STILL RWX: not production W^X isolation.
+    /* Coarse identity executable hints are a preflight input only.
+     * The separate PE 4KiB builder MUST split every executable huge PDE
+     * before these page tables can be installed into CPU CR3.
      */
     const K_U64 code_locations[] = {
         (K_U64)(unsigned long long)&k0_cr3_qemu_probe,
@@ -209,10 +214,34 @@ __attribute__((noreturn)) static void k0_cr3_qemu_probe(K0_PAGE_POOL *pool) {
 #else
     const K_U64 high_root_expected = 0;
 #endif
+    K0_LIVE_WX_RECEIPT image_wx;
+    if (!k0_live_image_4k_build(
+            pd,
+            (volatile K_U64 *)(unsigned long long)frame[K0_CR3_PE_PT_FIRST],
+            (volatile K_U64 *)(unsigned long long)frame[K0_CR3_PE_PT_FIRST + 1U],
+            frame[K0_CR3_PE_PT_FIRST], frame[K0_CR3_PE_PT_FIRST + 1U],
+            k0_image_bounds.base, &k0_loaded_pe_layout, stack_addr,
+            code_locations, sizeof(code_locations) / sizeof(code_locations[0]),
+            &image_wx)) {
+        serial_line("KOSCHEI-KERNEL REJECT/1 LIVE-PE-4K-WX-PREFLIGHT");
+        stop(0x11);
+    }
+    const K_U32 image_first_slot = (K_U32)(k0_image_bounds.base >> 21);
+    const K_U64 expected_pd0 = image_first_slot == 0U
+        ? (frame[K0_CR3_PE_PT_FIRST] | 3ULL)
+        : (0x83ULL | K0_CR3_IDENTITY_NX);
+    if (image_wx.split_count < 1U || image_wx.split_count > 2U ||
+        pd[image_first_slot] != (frame[K0_CR3_PE_PT_FIRST] | 3ULL) ||
+        (image_wx.split_count == 2U &&
+         pd[image_first_slot+1U] !=
+         (frame[K0_CR3_PE_PT_FIRST+1U] | 3ULL))) {
+        serial_line("KOSCHEI-KERNEL REJECT/1 LIVE-PE-4K-WX-READBACK");
+        stop(0x11);
+    }
     if (pml4[0] != (frame[1] | 3ULL) ||
         pdpt[0] != (frame[2] | 3ULL) ||
         pml4[256] != high_root_expected ||
-        (pd[0] & ~K0_CR3_IDENTITY_NX) != 0x83ULL ||
+        pd[0] != expected_pd0 ||
         pd[511] != last_entry) {
         serial_line("KOSCHEI-KERNEL REJECT/1 CR3-MAP");
         stop(0x11);
@@ -247,6 +276,10 @@ __attribute__((noreturn)) static void k0_cr3_qemu_probe(K0_PAGE_POOL *pool) {
         serial_line("KOSCHEI-KERNEL REJECT/1 CR3-NOT-INSTALLED");
         stop(0x11);
     }
+    /* Execution now uses PE code RX PTEs, writable globals RW+NX, with
+     * CR0.WP and EFER.NXE checked; this is still a test-only transition.
+     */
+    serial_line("KOSCHEI-KERNEL K0 OWN-CR3-PE-4K-WX");
 #ifdef KOSCHEI_QEMU_MAPPED_TEST
     volatile K_U8 *virtual_page =
         (volatile K_U8 *)(unsigned long long)K0_CR3_MAPPING_VA;

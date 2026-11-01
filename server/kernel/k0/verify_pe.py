@@ -15,6 +15,7 @@ QEMU_CR3_PF_MARKER = b"KOSCHEI-KERNEL K0 OWN-CR3-PF-DENIED"
 QEMU_CR3_RO_MARKER = b"KOSCHEI-KERNEL K0 OWN-CR3-RO-WRITE-DENIED"
 QEMU_CR3_NX_MARKER = b"KOSCHEI-KERNEL K0 OWN-CR3-NX-EXEC-DENIED"
 QEMU_CR3_MAPPED_MARKER = b"KOSCHEI-KERNEL K0 OWN-CR3-4K-MAPPED"
+QEMU_CR3_PE_WX_MARKER = b"KOSCHEI-KERNEL K0 OWN-CR3-PE-4K-WX"
 
 
 def verify_qemu_only_cr3_probe(
@@ -24,7 +25,8 @@ def verify_qemu_only_cr3_probe(
     """Require proof marker in test image and prohibit it in shipping EFI."""
     if (QEMU_CR3_PF_MARKER in release or QEMU_CR3_RO_MARKER in release or
             QEMU_CR3_NX_MARKER in release or
-            QEMU_CR3_MAPPED_MARKER in release):
+            QEMU_CR3_MAPPED_MARKER in release or
+            QEMU_CR3_PE_WX_MARKER in release):
         raise ValueError("unsafe QEMU-only CR3 page fault probe leaked into release")
     if QEMU_CR3_PF_MARKER not in qemu:
         raise ValueError("QEMU image lacks expected CR3 page fault test marker")

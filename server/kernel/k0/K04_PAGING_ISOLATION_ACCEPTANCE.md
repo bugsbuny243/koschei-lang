@@ -133,6 +133,24 @@ This is a real UEFI/QEMU image-provenance and bounds receipt, NOT a
 reservation of the stack, firmware/runtime/ACPI/MMIO ranges, an active
 4KiB W^X mapping, or guaranteed trust in firmware-reported descriptors.
 
+## QEMU-only own-CR3 PE section 4KiB active permissions
+
+The experimental branch now splits the one or two low 2MiB identity PDEs
+containing the **UEFI LoadedImageProtocol-validated PE image** into claimed
+4KiB PT frames. Executable pages are RX, data/headers RW+NX, read-only data
+RO+NX, and image holes nonpresent. The remaining low 2MiB huge mappings
+are NX; no code window is allowed to remain a writable+executable huge
+PDE. CR0.WP and EFER.NXE are required, and actual CPU execution after CR3
+emits a distinct `OWN-CR3-PE-4K-WX` UART record. The native PT test checks
+cross-huge-page splits, overlapping RWX huge entries, unclaimed/aliased PT
+preflight inputs, no partial table writes, and the RX/RW+NX PTE bit layout.
+
+**Not production security**: Most nonimage low 1GiB memory remains broadly
+mapped RW+NX, there is no complete stack/firmware/ACPI/MMIO reservation,
+only vector #14 has an experimental handler, and there are no user/domain
+address spaces. A separate real-CPU write fault to a PE code page and
+physical-hardware testing are still required.
+
 ## Next executable acceptance requirements
 1. Capture exact page ownership and reserve the loaded PE image, executing
    stack, firmware runtime ranges, ACPI, MMIO/framebuffer and page-table

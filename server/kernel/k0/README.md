@@ -68,6 +68,16 @@ Next: secure kernel/boot/ACPI/MMIO reservations, prove non-identity mapping
 and Koschei-owned page tables, add a controlled page-fault rejection test; K1 owns domain/IPC/handle enforcement using canonical Koschei Library decisions.
 Issue #331 tracks these requirements.
 
+## QEMU-only live PE 4KiB page-table experiment
+
+The CR3 guest now splits loaded PE image regions into 4KiB identity PTEs
+before its CR3 switch: code RX, data and headers RW+NX, read-only PE sections
+RO+NX and unclassified PE holes unmapped. The remaining low 1GiB still has
+broad RW+NX identity access; this test does NOT establish production domain
+isolation, precise firmware reservations or a complete OS.
+The strict UART transcript requires a new post-CR3
+`KOSCHEI-KERNEL K0 OWN-CR3-PE-4K-WX` receipt.
+
 ## QEMU-only CR3 / page-fault experiment
 The CI QEMU gate runs **two independent guest boots**: an unmapped high-half
 page (predicted CPU #PF error 0) and a supervisor write to the last 2 MiB

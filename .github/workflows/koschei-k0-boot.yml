@@ -82,6 +82,12 @@ jobs:
             server/kernel/k0/test_loaded_image_preflight.c \
             -o /tmp/koschei-k0-evidence/loaded-image-bounds-tests
           /tmp/koschei-k0-evidence/loaded-image-bounds-tests
+      - name: Reject unsafe live PE 4KiB identity PT split plans
+        run: |
+          clang -std=c11 -O2 -Wall -Wextra -Werror \
+            server/kernel/k0/test_live_image_4k_wx.c \
+            -o /tmp/koschei-k0-evidence/live-image-4k-wx-tests
+          /tmp/koschei-k0-evidence/live-image-4k-wx-tests
       - name: Boot actual UEFI binary on QEMU OVMF and capture UART proof
         run: |
           bash server/kernel/k0/qemu_smoke.sh /tmp/koschei-k0-evidence
