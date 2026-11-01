@@ -25,6 +25,7 @@
 typedef struct {
     K_U64 stack_floor;
     K_U64 stack_end;
+    K_U64 firmware_gdt_base;
     K_U32 mapped_slots;
     K_U8 allowed[K0_OWNER_SLOTS];
 } K0_IDENTITY_OWNER_PLAN;
@@ -34,18 +35,20 @@ typedef struct {
  * Call only after the independent global overlap-checking map validator.
  */
 static int k0_owner_covered(const K_U8 *map, K_U64 count, K_U64 stride,
-                            K_U64 start, K_U64 end, int stack_region) {
+                            K_U64 start, K_U64 end, K_U32 kind) {
     if (!start || start >= end || end > K0_OWNER_IDENTITY_LIMIT) return 0;
     K_U64 cursor = start;
     for (K_U64 step = 0; step < count && cursor < end; ++step) {
         int found = 0;
         for (K_U64 i = 0; i < count; ++i) {
             K0_MEMORY_DESCRIPTOR d = k0_read_descriptor(map + i * stride);
-            /* EFI LoaderCode=1, LoaderData=2, BootServicesData=4.
-             * BootServicesData is only accepted for the active stack.
+            /* Image: LoaderCode/Data (1,2). Stack: LoaderData/BootData
+             * (2,4). Firmware GDT: typed Loader/Boot/Runtime (1..6).
+             * GDT is a firmware trust dependency, not our owned RAM.
              */
-            if (stack_region ? (d.type != 2U && d.type != 4U)
-                             : (d.type != 1U && d.type != 2U))
+            if (kind == 0U ? (d.type != 1U && d.type != 2U) :
+                kind == 1U ? (d.type != 2U && d.type != 4U) :
+                             (d.type < 1U || d.type > 6U))
                 continue;
             if (!d.number_of_pages ||
                 d.number_of_pages > ~(K_U64)0 / K0_PAGE_SIZE ||
@@ -73,6 +76,7 @@ static int k0_identity_owner_plan(const void *map_buffer, K_U64 bytes,
                                   K_U64 image_base, K_U64 image_bytes,
                                   K_U64 pool_base, K_U64 pool_bytes,
                                   K_U64 stack_address, K_U64 idt_address,
+                                  K_U64 gdt_base, K_U64 gdt_bytes,
                                   const K_U64 *frames, K_U32 frame_count,
                                   K0_IDENTITY_OWNER_PLAN *out) {
     if (!out || !frames || !frame_count || frame_count > K0_PLAN_PAGES ||
@@ -88,6 +92,9 @@ static int k0_identity_owner_plan(const void *map_buffer, K_U64 bytes,
         pool_bytes > K0_OWNER_IDENTITY_LIMIT - pool_base ||
         pool_bytes != K0_PLAN_PAGES * K0_PAGE_SIZE ||
         !stack_address || stack_address >= K0_OWNER_IDENTITY_LIMIT ||
+        !gdt_base || gdt_base >= K0_OWNER_IDENTITY_LIMIT ||
+        !gdt_bytes || gdt_bytes > K0_PAGE_SIZE ||
+        gdt_bytes > K0_OWNER_IDENTITY_LIMIT - gdt_base ||
         !idt_address || idt_address < image_base ||
         idt_address - image_base >= image_bytes)
         return 0;
@@ -113,7 +120,9 @@ static int k0_identity_owner_plan(const void *map_buffer, K_U64 bytes,
     const K_U8 *map = (const K_U8 *)map_buffer;
     const K_U64 count = bytes / stride;
     if (!k0_owner_covered(map, count, stride, image_base, image_end, 0) ||
-        !k0_owner_covered(map, count, stride, stack_floor, stack_end, 1))
+        !k0_owner_covered(map, count, stride, stack_floor, stack_end, 1) ||
+        !k0_owner_covered(map, count, stride,
+                          gdt_base, gdt_base + gdt_bytes, 2))
         return 0;
 
     for (K_U32 i = 0; i < frame_count; ++i) {
@@ -130,15 +139,16 @@ static int k0_identity_owner_plan(const void *map_buffer, K_U64 bytes,
     K0_IDENTITY_OWNER_PLAN next;
     next.stack_floor = stack_floor;
     next.stack_end = stack_end;
+    next.firmware_gdt_base = gdt_base;
     next.mapped_slots = 0;
     volatile K_U8 *allowed = next.allowed;
     for (K_U32 i = 0; i < K0_OWNER_SLOTS; ++i)
         allowed[i] = 0;
-    const K_U64 regions[3][2] = {
+    const K_U64 regions[4][2] = {
         {image_base, image_end}, {pool_base, pool_end},
-        {stack_floor, stack_end}
+        {stack_floor, stack_end}, {gdt_base, gdt_base + gdt_bytes}
     };
-    for (K_U32 r = 0; r < 3; ++r) {
+    for (K_U32 r = 0; r < 4; ++r) {
         K_U64 first = regions[r][0] / K0_OWNER_PDE_BYTES;
         K_U64 last = (regions[r][1] - 1ULL) / K0_OWNER_PDE_BYTES;
         if (last >= 511ULL) return 0; /* retain explicit fault slot 511 */
@@ -149,11 +159,12 @@ static int k0_identity_owner_plan(const void *map_buffer, K_U64 bytes,
             }
         }
     }
-    if (!next.mapped_slots || next.mapped_slots > 6U ||
+    if (!next.mapped_slots || next.mapped_slots > 8U ||
         next.allowed[K0_OWNER_LOW_HOLE_SLOT])
         return 0;
     out->stack_floor = next.stack_floor;
     out->stack_end = next.stack_end;
+    out->firmware_gdt_base = next.firmware_gdt_base;
     out->mapped_slots = next.mapped_slots;
     volatile K_U8 *target = out->allowed;
     for (K_U32 i = 0; i < K0_OWNER_SLOTS; ++i)

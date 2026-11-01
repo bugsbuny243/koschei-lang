@@ -61,6 +61,16 @@ typedef struct __attribute__((packed)) {
 _Static_assert(sizeof(K0_CR3_IDT_GATE) == 16, "x86-64 IDT gate");
 _Static_assert(sizeof(K0_CR3_IDT_REGISTER) == 10, "x86-64 IDTR");
 
+/* The CPU can reload CS from the *firmware GDT* while delivering #PF.
+ * A narrow CR3 must preserve and map the current GDTR region, or the
+ * intended #PF recursively faults and causes a triple fault.
+ */
+typedef struct __attribute__((packed)) {
+    K_U16 limit;
+    K_U64 base;
+} K0_CR3_GDT_REGISTER;
+_Static_assert(sizeof(K0_CR3_GDT_REGISTER) == 10, "x86-64 GDTR");
+
 static K0_CR3_IDT_GATE k0_cr3_idt[16];
 static K0_CR3_IDT_REGISTER k0_cr3_idtr;
 static volatile K_U64 k0_expected_cr3;
@@ -125,6 +135,8 @@ __attribute__((noreturn)) static void k0_cr3_qemu_probe(K0_PAGE_POOL *pool) {
     K_U64 exit_code = (K_U64)(unsigned long long)&stop;
     K_U64 idt_addr = (K_U64)(unsigned long long)&k0_cr3_idt[0];
     K_U64 cr0 = 0;
+    K0_CR3_GDT_REGISTER current_gdt = {0};
+    __asm__ __volatile__("sgdt %0" : "=m"(current_gdt));
     __asm__ __volatile__("movq %%cr0, %0" : "=r"(cr0));
     if (!pool || pool->active || !k0_guest_nx_preflight() ||
         !(cr0 & (1ULL << 16)) || /* CR0.WP required for all modes */
@@ -244,7 +256,9 @@ __attribute__((noreturn)) static void k0_cr3_qemu_probe(K0_PAGE_POOL *pool) {
             k0_snapshot_map_stride, k0_snapshot_map_version,
             k0_image_bounds.base, k0_image_bounds.size,
             pool->base, K0_PLAN_PAGES * K0_PAGE_SIZE,
-            stack_addr, idt_addr, frame, K0_CR3_FRAME_COUNT,
+            stack_addr, idt_addr,
+            current_gdt.base, (K_U64)current_gdt.limit + 1ULL,
+            frame, K0_CR3_FRAME_COUNT,
             &k0_identity_owner_state)) {
         serial_line("KOSCHEI-KERNEL REJECT/1 IDENTITY-OWNERSHIP");
         stop(0x11);
