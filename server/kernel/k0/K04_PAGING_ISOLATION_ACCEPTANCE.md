@@ -64,6 +64,25 @@ releases them. K0.3 uses the mapping left by firmware, NOT a Koschei-owned CR3.
   hardware-platform portability. No production test image contains this
   intentionally permissive transition.
 
+## Promotion gate for the clean experimental branch
+
+The QEMU-only CR3 fault probe has been transferred onto the merged K0.4
+preflight baseline with no duplicated squashed-merge commits. It is still
+**research staging**, not a candidate production kernel:
+
+- Run all four *real* QEMU/OVMF test modes (unmapped, read-only, NX,
+  high-half 4KiB mapping) on the exact staging head and verify strict UART
+  transcripts, debug-exit code 33, and release/test PE separation.
+- Also require successful exact-head canonical full Koschei Lang CI.
+- Do not merge any test-only RWX 0..1GiB identity map or this minimal
+  single-vector fault handler into customer production policy. Promotion
+  requires tight image/stack/data/firmware/ACPI/MMIO frame reservations and
+  active RX/RW+NX separation with robust exception handling.
+- A PASS from the previous experimental branch is historical evidence, not
+  proof of the current clean staging commit; revalidate after every change.
+- Until the above production restrictions are implemented, keep the
+  experimental branch unmerged even when both CIs report SUCCESS.
+
 ## Next executable acceptance requirements
 1. Capture exact page ownership and reserve the loaded PE image, executing
    stack, firmware runtime ranges, ACPI, MMIO/framebuffer and page-table
