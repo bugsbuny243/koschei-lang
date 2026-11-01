@@ -10,6 +10,7 @@ EXPECTED = (
     b"KOSCHEI-KERNEL K0 BOOT-SERVICES-EXITED\r\n",
     b"KOSCHEI-KERNEL K0 PAGE-POOL-PROBED\r\n",
     b"KOSCHEI-KERNEL K0 PAGE-TABLE-FRAMES-ROUNDTRIP\r\n",
+    b"KOSCHEI-KERNEL K0 OWN-CR3-PF-DENIED\r\n",
     b"KOSCHEI-KERNEL K0 HALT-NO-POLICY\r\n",
 )
 
@@ -28,7 +29,7 @@ def verify(serial_path: Path) -> None:
     firmware_prefix = data[:-len(expected)]
     if b"KOSCHEI-KERNEL" in firmware_prefix:
         raise ValueError("unexpected pre-boot Koschei claim in firmware prefix")
-    print("KOSCHEI-K0 SERIAL/1 PASS exact eight Koschei records after firmware preface")
+    print("KOSCHEI-K0 SERIAL/1 PASS exact nine Koschei records after firmware preface")
 
 
 if __name__ == "__main__":

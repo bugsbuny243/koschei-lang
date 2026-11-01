@@ -46,6 +46,24 @@ releases them. K0.3 uses the mapping left by firmware, NOT a Koschei-owned CR3.
   The model checks the snapshot pool mutation epoch, so stale table models
   are rejected even following same-address release/reclaim (ABA).
 
+## Experimental QEMU-only CPU fault probe (not production isolation)
+- `paging_cr3_fault_probe.h` is compiled **exclusively** with
+  `KOSCHEI_QEMU_TEST`. It builds a disposable low-1GiB identity-mapped
+  PML4/PDPT/PD in three conventional physical frames, installs a minimal
+  vector-14 interrupt gate and switches CR3 before deliberately reading a
+  high-half unmapped address. Only a real #PF handler with expected CR2,
+  hardware error code zero and matching CR3 can emit its distinct marker.
+- The identity-mapped lower GiB uses **RWX 2MiB huge pages** to preserve
+  firmware-loaded code and stack. This mapping intentionally violates the
+  final kernel's W^X and least-privilege requirements. It is an emulator-only
+  diagnostic, **never a shipping kernel policy**. Other vectors are absent,
+  interrupts are disabled and no general fault recovery is provided.
+- A successful test validates only test-environment CR3 activation and a
+  single real #PF. It does NOT establish safely reserved protected regions,
+  domain-level memory isolation, complete production page tables or
+  hardware-platform portability. No production test image contains this
+  intentionally permissive transition.
+
 ## Next executable acceptance requirements
 1. Capture exact page ownership and reserve the loaded PE image, executing
    stack, firmware runtime ranges, ACPI, MMIO/framebuffer and page-table

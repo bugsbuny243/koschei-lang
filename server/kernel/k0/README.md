@@ -35,7 +35,7 @@ exit code; that device operation is absent in the release image.
 Acceptance requires:
 1. A valid, import-free EFI PE32+ x86-64 artifact and SHA256 record.
 2. Actual QEMU OVMF cold-boot from EFI/BOOT/BOOTX64.EFI on a FAT USB image.
-3. Exact serial transcript, eight Koschei records after OVMF firmware prefix:
+3. Exact serial transcript, nine Koschei records (QEMU test binary) after OVMF firmware prefix:
    KOSCHEI-KERNEL BOOT/1 X86_64-UEFI
    KOSCHEI-KERNEL K0 SERIAL-OWNED
    KOSCHEI-KERNEL K0 MEMORY-MAP-VALIDATED
@@ -43,6 +43,7 @@ Acceptance requires:
    KOSCHEI-KERNEL K0 BOOT-SERVICES-EXITED
    KOSCHEI-KERNEL K0 PAGE-POOL-PROBED
    KOSCHEI-KERNEL K0 PAGE-TABLE-FRAMES-ROUNDTRIP
+   KOSCHEI-KERNEL K0 OWN-CR3-PF-DENIED
    KOSCHEI-KERNEL K0 HALT-NO-POLICY
 4. QEMU debug-exit code 33; a timeout or fabricated file is not a pass.
 5. CI artifact binds transcript hash, source revision and toolchain versions.
@@ -62,6 +63,20 @@ and cannot yet host customer applications or claim zero attack risk.
 Next: secure kernel/boot/ACPI/MMIO reservations, prove non-identity mapping
 and Koschei-owned page tables, add a controlled page-fault rejection test; K1 owns domain/IPC/handle enforcement using canonical Koschei Library decisions.
 Issue #331 tracks these requirements.
+
+## QEMU-only CR3 / page-fault experiment
+The QEMU test image (NOT the release image) creates its own three physical
+page-table frames and loads CR3. To preserve the UEFI-loaded code and current
+stack under the test, it temporarily maps the entire lower 1 GiB identity
+with writable/executable 2 MiB huge pages. This blanket mapping is
+**insecure and explicitly forbidden in a production Koschei kernel**.
+It installs a minimal, single-vector #PF IDT, masks interrupts, and triggers
+an unmapped high-half read. The handler records CR2, predicted error code
+zero, and the active CR3; a genuine vector-14 path is required to emit the
+UART OWN-CR3-PF-DENIED marker and QEMU exit 33. All other faults/timeout paths
+fail the test. This establishes **only a controlled emulator CR3/#PF probe**,
+NOT constrained kernel/user domains, W^X execution isolation, protection of
+firmware regions, supported hardware boot, or production memory safety.
 
 ## Staging / acceptance gate
 K0.3 has already merged. K0.4 remains staging until an independently owned
