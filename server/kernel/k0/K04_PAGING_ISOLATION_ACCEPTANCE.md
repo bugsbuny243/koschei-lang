@@ -83,6 +83,23 @@ preflight baseline with no duplicated squashed-merge commits. It is still
 - Until the above production restrictions are implemented, keep the
   experimental branch unmerged even when both CIs report SUCCESS.
 
+## Transitional QEMU execute-NX tightening (still not W^X)
+
+The separate staging experiment now defaults all 512 lower-1GiB 2MiB
+identity PDEs to **RW+NX** and leaves executable only up to eight 2MiB
+windows containing the actually executing guest test functions, as checked
+transactionally against code addresses. The last 2MiB fault probe slot is
+never executable. Host negative tests reject out-of-range addresses,
+excessive executable windows, and incomplete configurations before writing
+any entries. All four actual QEMU modes must be rerun after this change.
+
+**Residual critical risk:** Each whitelisted executable 2MiB huge-page
+window remains **RWX**, possibly containing global data or the stack.
+This is a bounded *emulator hardening step*, NOT true kernel W^X and
+not least-privilege CPU address-space isolation. No production merge is
+permitted until 4KiB PE section-aware mappings distinguish code RX from
+data/stack RW+NX, and firmware/runtime/ACPI/MMIO memory is reserved.
+
 ## Next executable acceptance requirements
 1. Capture exact page ownership and reserve the loaded PE image, executing
    stack, firmware runtime ranges, ACPI, MMIO/framebuffer and page-table

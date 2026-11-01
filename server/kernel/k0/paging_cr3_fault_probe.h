@@ -11,6 +11,7 @@
 #ifndef KOSCHEI_QEMU_TEST
 #error "CR3 diagnostic must never be compiled into the release image"
 #endif
+#include "paging_identity_exec_nx_policy.h"
 
 #define K0_CR3_TEST_LIMIT 0x40000000ULL
 #ifdef KOSCHEI_QEMU_MAPPED_TEST
@@ -144,8 +145,23 @@ __attribute__((noreturn)) static void k0_cr3_qemu_probe(K0_PAGE_POOL *pool) {
     }
     pml4[0] = frame[1] | 3ULL;
     pdpt[0] = frame[2] | 3ULL;
-    for (K_U32 i = 0; i < 512; ++i)
-        pd[i] = ((K_U64)i << 21) | 0x83ULL; /* present/write/2MiB */
+    /* Mark every low identity-mapped huge page NX by default. Only a
+     * bounded set containing actual active test code stays executable.
+     * Those huge pages are STILL RWX: not production W^X isolation.
+     */
+    const K_U64 code_locations[] = {
+        (K_U64)(unsigned long long)&k0_cr3_qemu_probe,
+        (K_U64)(unsigned long long)&k0_cr3_pf_dispatch,
+        (K_U64)(unsigned long long)&k0_cr3_pf_stub,
+        (K_U64)(unsigned long long)&serial_line,
+        (K_U64)(unsigned long long)&serial_char,
+        (K_U64)(unsigned long long)&stop
+    };
+    if (!k0_cr3_identity_build(pd, code_locations,
+                               sizeof(code_locations) / sizeof(code_locations[0]))) {
+        serial_line("KOSCHEI-KERNEL REJECT/1 EXEC-NX-PREFLIGHT");
+        stop(0x11);
+    }
 #if defined(KOSCHEI_QEMU_READONLY_TEST) || defined(KOSCHEI_QEMU_NX_TEST)
     /* One dedicated unneeded 2MiB slot becomes protected; all executing
      * code, IDT, stack and table frames must remain outside it.
@@ -160,11 +176,11 @@ __attribute__((noreturn)) static void k0_cr3_qemu_probe(K0_PAGE_POOL *pool) {
     pd[511] = ((K_U64)511 << 21) | 0x83ULL | (1ULL << 63);
     const K_U64 last_entry = ((K_U64)511 << 21) | 0x83ULL | (1ULL << 63);
 #else
-    pd[511] = ((K_U64)511 << 21) | 0x81ULL;
-    const K_U64 last_entry = ((K_U64)511 << 21) | 0x81ULL;
+    pd[511] = ((K_U64)511 << 21) | 0x81ULL | K0_CR3_IDENTITY_NX;
+    const K_U64 last_entry = ((K_U64)511 << 21) | 0x81ULL | K0_CR3_IDENTITY_NX;
 #endif
 #else
-    const K_U64 last_entry = ((K_U64)511 << 21) | 0x83ULL;
+    const K_U64 last_entry = ((K_U64)511 << 21) | 0x83ULL | K0_CR3_IDENTITY_NX;
 #endif
 #ifdef KOSCHEI_QEMU_MAPPED_TEST
     /* A real, present 4 KiB high-half leaf on the new CPU CR3.
@@ -195,7 +211,8 @@ __attribute__((noreturn)) static void k0_cr3_qemu_probe(K0_PAGE_POOL *pool) {
 #endif
     if (pml4[0] != (frame[1] | 3ULL) ||
         pdpt[0] != (frame[2] | 3ULL) ||
-        pml4[256] != high_root_expected || pd[0] != 0x83ULL ||
+        pml4[256] != high_root_expected ||
+        (pd[0] & ~K0_CR3_IDENTITY_NX) != 0x83ULL ||
         pd[511] != last_entry) {
         serial_line("KOSCHEI-KERNEL REJECT/1 CR3-MAP");
         stop(0x11);

@@ -64,6 +64,12 @@ jobs:
           clang -std=c11 -O2 -Wall -Wextra -Werror \
             server/kernel/k0/test_paging_walk.c -o /tmp/koschei-k0-evidence/paging-walk-tests
           /tmp/koschei-k0-evidence/paging-walk-tests
+      - name: Reject overbroad low identity execute windows (test-only model)
+        run: |
+          clang -std=c11 -O2 -Wall -Wextra -Werror \
+            server/kernel/k0/test_identity_exec_nx_policy.c \
+            -o /tmp/koschei-k0-evidence/identity-exec-nx-tests
+          /tmp/koschei-k0-evidence/identity-exec-nx-tests
       - name: Boot actual UEFI binary on QEMU OVMF and capture UART proof
         run: |
           bash server/kernel/k0/qemu_smoke.sh /tmp/koschei-k0-evidence
