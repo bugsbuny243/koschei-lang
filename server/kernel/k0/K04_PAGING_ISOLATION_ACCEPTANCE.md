@@ -148,8 +148,14 @@ preflight inputs, no partial table writes, and the RX/RW+NX PTE bit layout.
 **Not production security**: Most nonimage low 1GiB memory remains broadly
 mapped RW+NX, there is no complete stack/firmware/ACPI/MMIO reservation,
 only vector #14 has an experimental handler, and there are no user/domain
-address spaces. A separate real-CPU write fault to a PE code page and
-physical-hardware testing are still required.
+address spaces. A fifth independent **QEMU-only** EFI image writes to an actual RX
+function page after loading the owned CR3 with CR0.WP enabled; only the
+vector-14 CPU handler verifying CR2, error code 3 and active CR3 may emit
+`OWN-CR3-CODE-WRITE-DENIED`. The marker is disallowed in release images
+and its UART transcript must be exact. This is a narrow hardware permission
+proof in the emulator, **not** a complete physical kernel isolation claim.
+Physical hardware testing and full firmware reservation safety are still
+required.
 
 ## Next executable acceptance requirements
 1. Capture exact page ownership and reserve the loaded PE image, executing

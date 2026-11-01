@@ -86,6 +86,25 @@ class K0ProofFailClosedTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 serial.verify(path, "nx")
 
+    def test_actual_pe_code_write_denial_marker_isolated(self):
+        marker = pe.QEMU_CR3_PF_MARKER
+        tests = (pe.QEMU_CR3_RO_MARKER, pe.QEMU_CR3_NX_MARKER,
+                 pe.QEMU_CR3_MAPPED_MARKER, pe.QEMU_CR3_CODE_WX_MARKER)
+        pe.verify_qemu_only_cr3_probe(b"SAFE_RELEASE", marker, *tests)
+        with self.assertRaises(ValueError):
+            pe.verify_qemu_only_cr3_probe(
+                b"SAFE_RELEASE", marker, *tests[:-1], b"FORGED_TEST_IMAGE")
+        with self.assertRaises(ValueError):
+            pe.verify_qemu_only_cr3_probe(
+                pe.QEMU_CR3_CODE_WX_MARKER, marker, *tests)
+        with TemporaryDirectory() as temp:
+            path = Path(temp) / "uart.log"
+            path.write_bytes(b"".join(serial.EXPECTED_CODEWX))
+            serial.verify(path, "codewx")
+            for mode in ("missing", "ro", "nx", "mapped"):
+                with self.assertRaises(ValueError):
+                    serial.verify(path, mode)
+
     def test_refuse_random_binary_with_no_pe(self):
         with TemporaryDirectory() as temp:
             file = Path(temp) / "invalid.efi"

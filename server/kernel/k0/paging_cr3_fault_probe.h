@@ -24,7 +24,9 @@
 #define K0_CR3_FRAME_COUNT 5U
 #define K0_CR3_PE_PT_FIRST 3U
 #endif
-#if defined(KOSCHEI_QEMU_NX_TEST)
+#if defined(KOSCHEI_QEMU_CODE_WX_TEST)
+#define K0_CR3_EXPECTED_ERROR 3ULL /* supervisor write to image RX code */
+#elif defined(KOSCHEI_QEMU_NX_TEST)
 #define K0_CR3_FAULT_VA 0x3fe00000ULL
 #define K0_CR3_EXPECTED_ERROR 17ULL /* present, instruction fetch denied */
 #elif defined(KOSCHEI_QEMU_READONLY_TEST)
@@ -57,6 +59,9 @@ _Static_assert(sizeof(K0_CR3_IDT_REGISTER) == 10, "x86-64 IDTR");
 static K0_CR3_IDT_GATE k0_cr3_idt[16];
 static K0_CR3_IDT_REGISTER k0_cr3_idtr;
 static volatile K_U64 k0_expected_cr3;
+#ifdef KOSCHEI_QEMU_CODE_WX_TEST
+static volatile K_U64 k0_code_rx_fault_address;
+#endif
 
 /* The CPU pushes the page-fault error code at top of exception stack.
  * Windows x64 ABI requires RCX/RDX arguments and 32 bytes of shadow space.
@@ -66,14 +71,21 @@ __attribute__((used,noreturn)) static void k0_cr3_pf_dispatch(
     K_U64 cr2, K_U64 error_code) {
     K_U64 observed_cr3 = 0;
     __asm__ __volatile__("movq %%cr3, %0" : "=r"(observed_cr3));
-    if (cr2 != K0_CR3_FAULT_VA ||
+#ifdef KOSCHEI_QEMU_CODE_WX_TEST
+    K_U64 expected_cr2 = k0_code_rx_fault_address;
+#else
+    K_U64 expected_cr2 = K0_CR3_FAULT_VA;
+#endif
+    if (cr2 != expected_cr2 ||
         error_code != K0_CR3_EXPECTED_ERROR ||
         observed_cr3 != k0_expected_cr3) {
         serial_line("KOSCHEI-KERNEL REJECT/1 UNEXPECTED-PAGE-FAULT");
         stop(0x11);
     }
     /* Only reachable through a real CPU vector-14 exception path. */
-#if defined(KOSCHEI_QEMU_NX_TEST)
+#if defined(KOSCHEI_QEMU_CODE_WX_TEST)
+    serial_line("KOSCHEI-KERNEL K0 OWN-CR3-CODE-WRITE-DENIED");
+#elif defined(KOSCHEI_QEMU_NX_TEST)
     serial_line("KOSCHEI-KERNEL K0 OWN-CR3-NX-EXEC-DENIED");
 #elif defined(KOSCHEI_QEMU_READONLY_TEST)
     serial_line("KOSCHEI-KERNEL K0 OWN-CR3-RO-WRITE-DENIED");
@@ -263,6 +275,20 @@ __attribute__((noreturn)) static void k0_cr3_qemu_probe(K0_PAGE_POOL *pool) {
     k0_cr3_idtr.limit = (K_U16)(sizeof(k0_cr3_idt) - 1);
     k0_cr3_idtr.base = idt_addr;
     k0_expected_cr3 = frame[0];
+#ifdef KOSCHEI_QEMU_CODE_WX_TEST
+    /* RX witness: actual executable PE section, no alias with a RW huge PDE. */
+    k0_code_rx_fault_address =
+        (K_U64)(unsigned long long)&k0_cr3_pf_stub;
+    if (k0_code_rx_fault_address < k0_image_bounds.base ||
+        k0_code_rx_fault_address >= k0_image_bounds.base +
+                                     k0_image_bounds.size ||
+        k0_loaded_pe_layout.pages[
+            (k0_code_rx_fault_address - k0_image_bounds.base) /
+            K0_PAGE_SIZE] != K0_PE_WX_CODE_RX) {
+        serial_line("KOSCHEI-KERNEL REJECT/1 CODE-RX-FAULT-PREFLIGHT");
+        stop(0x11);
+    }
+#endif
 
     /* QEMU-only: keep firmware-loaded image/stack identity-mapped, then
      * swap to our page tables. This blanket RWX identity map is NOT secure
@@ -308,7 +334,10 @@ __attribute__((noreturn)) static void k0_cr3_qemu_probe(K0_PAGE_POOL *pool) {
     serial_line("KOSCHEI-KERNEL K0 OWN-CR3-4K-MAPPED");
 #endif
     /* Only a real #PF handler can produce the final success and exit=33. */
-#if defined(KOSCHEI_QEMU_NX_TEST)
+#if defined(KOSCHEI_QEMU_CODE_WX_TEST)
+    const K_U64 code_rx = k0_code_rx_fault_address;
+    __asm__ __volatile__("movb $0x5a, (%0)" : : "r"(code_rx) : "memory");
+#elif defined(KOSCHEI_QEMU_NX_TEST)
     const K_U64 no_execute = K0_CR3_FAULT_VA;
     __asm__ __volatile__("callq *%0" : : "r"(no_execute) : "memory");
 #elif defined(KOSCHEI_QEMU_READONLY_TEST)

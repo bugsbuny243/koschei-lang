@@ -100,6 +100,9 @@ jobs:
       - name: Prove real own-CR3 high-half 4K write/read mapping in QEMU (test-only)
         run: |
           bash server/kernel/k0/qemu_smoke.sh /tmp/koschei-k0-evidence mapped
+      - name: Prove CR0.WP denies real CPU write to PE RX code under own CR3
+        run: |
+          bash server/kernel/k0/qemu_smoke.sh /tmp/koschei-k0-evidence codewx
       - name: Bind evidence to commit and toolchain
         if: always()
         run: |
