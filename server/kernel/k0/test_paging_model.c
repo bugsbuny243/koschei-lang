@@ -23,6 +23,7 @@ int main(void) {
     for (K_U32 i = 0; i < 4; ++i) frames[i] = pages[i];
     assert(k0_vm_plan_owned_leaf(&plan, &pool, virt, pages[4], 1, 0));
     assert(k0_vm_plan_owned_leaf(&plan, &pool, virt + K0_PAGE_SIZE, pages[5], 0, 1));
+    assert(plan.pool_epoch == pool.epoch);
 
     K_U64 alias_frames[4] = {pages[0], pages[0], pages[2], pages[3]};
     assert(!k0_vm_tables_build(&invalid_tables, &plan, &pool, alias_frames));
@@ -58,13 +59,19 @@ int main(void) {
     assert(tables.entries[0][0] == 0);
     assert(!k0_vm_tables_build(&tables, &plan, &pool, frames));
 
-    /* A stale model must not be built after losing page ownership. This
-     * does NOT handle the separate generation/ABA reclamation problem.
+    /* Stale ownership must stay rejected even if a page returns to its
+     * previous physical address: metadata epoch prevents ABA at preflight.
      */
+    K_U64 original_epoch = pool.epoch;
     assert(k0_pool_release(&pool, pages[4]));
     assert(!k0_vm_tables_build(&invalid_tables, &plan, &pool, frames));
     K_U64 reclaimed = 0;
     assert(k0_pool_claim(&pool, &reclaimed) && reclaimed == pages[4]);
+    assert(pool.epoch != original_epoch);
+    assert(!k0_vm_tables_build(&invalid_tables, &plan, &pool, frames));
+    assert(!k0_vm_plan_owned_leaf(&plan, &pool,
+                                 virt + 2 * K0_PAGE_SIZE, pages[6], 1, 0));
+    assert(!invalid_tables.initialized);
     for (K_U32 i = 0; i < 7; ++i) assert(k0_pool_release(&pool, pages[i]));
     assert(!pool.active && !pool.claimed);
     puts("KOSCHEI-K0 PAGE-TABLE-MODEL-UNIT/1 PASS (not CR3 or isolation)");

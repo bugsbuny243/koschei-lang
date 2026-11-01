@@ -56,6 +56,7 @@ int main(void) {
     assert(!k0_vm_plan_owned_leaf(&plan, &pool,
                                   virt + 16 * K0_PAGE_SIZE, pages[0], 1, 0));
     assert(plan.count == K0_VM_MAX_LEAVES);
+    assert(plan.pool_epoch == pool.epoch);
     for (unsigned i = 0; i < 16; ++i)
         assert(k0_pool_release(&pool, pages[i]));
     assert(!pool.active && !pool.claimed);

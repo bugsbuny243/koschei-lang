@@ -30,7 +30,8 @@ static K_U32 k0_vm_level_index(K_U64 virtual_page, K_U32 shift) {
 static int k0_vm_tables_build(K0_VM_TABLE_MODEL *out, const K0_VM_PLAN *plan,
                               const K0_PAGE_POOL *pool, const K_U64 frame[4]) {
     if (!out || out->initialized || !plan || !plan->initialized ||
-        !plan->count || plan->count > K0_VM_MAX_LEAVES || !pool || !frame)
+        !plan->count || plan->count > K0_VM_MAX_LEAVES || !pool || !frame ||
+        !pool->epoch || plan->pool_epoch != pool->epoch)
         return 0;
     for (K_U32 i = 0; i < K0_VM_TABLE_LEVELS; ++i) {
         if ((frame[i] & (K0_PAGE_SIZE - 1)) ||

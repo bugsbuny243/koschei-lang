@@ -30,6 +30,8 @@ typedef struct {
     K0_VM_LEAF leaves[K0_VM_MAX_LEAVES];
     K_U32 count;
     K_U32 initialized;
+    /* Snapshotted when first leaf is entered. Reject pool mutations later. */
+    K_U64 pool_epoch;
 } K0_VM_PLAN;
 
 /* NX is meaningful only when both CPU support AND EFER.NXE are established.
@@ -39,6 +41,7 @@ static int k0_vm_plan_init(K0_VM_PLAN *plan, int cpu_has_nx, int efer_nxe_enable
     if (!plan || plan->initialized || !cpu_has_nx || !efer_nxe_enabled)
         return 0;
     plan->count = 0;
+    plan->pool_epoch = 0;
     plan->initialized = 1;
     return 1;
 }
@@ -67,6 +70,8 @@ static int k0_vm_plan_owned_leaf(K0_VM_PLAN *plan, const K0_PAGE_POOL *pool,
         (phys & (K0_PAGE_SIZE - 1)) ||
         (phys & ~K0_VM_PHYSICAL_MASK) ||
         !k0_pool_is_claimed(pool, phys) ||
+        !pool->epoch ||
+        (plan->count && plan->pool_epoch != pool->epoch) ||
         (writable && executable))
         return 0;
     for (K_U32 i = 0; i < plan->count; ++i)
@@ -76,6 +81,7 @@ static int k0_vm_plan_owned_leaf(K0_VM_PLAN *plan, const K0_PAGE_POOL *pool,
     if (writable) leaf |= K0_VM_WRITE;
     if (!executable) leaf |= K0_VM_NO_EXECUTE;
     K0_VM_LEAF entry = {virt, phys, leaf};
+    if (!plan->count) plan->pool_epoch = pool->epoch;
     plan->leaves[plan->count++] = entry;
     return 1;
 }

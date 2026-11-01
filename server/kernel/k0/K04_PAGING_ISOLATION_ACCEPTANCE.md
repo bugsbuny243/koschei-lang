@@ -22,9 +22,12 @@ releases them. K0.3 uses the mapping left by firmware, NOT a Koschei-owned CR3.
   transactional preflight demands four separately claimed page-table frame
   addresses, no aliases with data pages, and claimed leaf ownership. The
   arrays are never written into the claimed physical frames; no CPU sees them.
-- A pool release after planning can invalidate an unbuilt model, but the
-  current ledger has no generation/ABA token. Reclaiming and reusing a
-  previously claimed page must not be treated as safe long-term ownership.
+- A 64-bit nonwrapping pool mutation epoch is snapshotted with the first
+  leaf. Any subsequent claim or release invalidates that staging plan,
+  including release/reclaim to an identical physical address (ABA). Tests
+  assert epoch-overflow failure is closed. This is **single-threaded metadata
+  preflight only**, not a physical pin, a per-page generation capability,
+  atomic concurrency guarantee or safe live page-table reclamation.
 - Nothing here creates live CPU page tables, writes CR3, allocates and pins
   actual physical table contents, installs an IDT or triggers a real page fault.
   A proposed PTE or logical table array is **not** an MMU mapping.
