@@ -37,6 +37,15 @@ class K0ProofFailClosedTests(unittest.TestCase):
                 pe.QEMU_CR3_RO_MARKER, marker, pe.QEMU_CR3_RO_MARKER)
         pe.verify_qemu_only_cr3_probe(
             b"SAFE_RELEASE", marker, pe.QEMU_CR3_RO_MARKER)
+        with self.assertRaises(ValueError):
+            pe.verify_qemu_only_cr3_probe(
+                b"SAFE_RELEASE", marker, pe.QEMU_CR3_RO_MARKER, b"BAD_NX")
+        with self.assertRaises(ValueError):
+            pe.verify_qemu_only_cr3_probe(
+                pe.QEMU_CR3_NX_MARKER, marker, pe.QEMU_CR3_RO_MARKER,
+                pe.QEMU_CR3_NX_MARKER)
+        pe.verify_qemu_only_cr3_probe(
+            b"SAFE_RELEASE", marker, pe.QEMU_CR3_RO_MARKER, pe.QEMU_CR3_NX_MARKER)
 
     def test_strict_readonly_fault_uart_not_confused_with_missing_page(self):
         with TemporaryDirectory() as temp:
@@ -46,6 +55,12 @@ class K0ProofFailClosedTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 serial.verify(file, "missing")
             file.write_bytes(b"".join(serial.EXPECTED))
+            with self.assertRaises(ValueError):
+                serial.verify(file, "ro")
+            file.write_bytes(b"".join(serial.EXPECTED_NX))
+            serial.verify(file, "nx")
+            with self.assertRaises(ValueError):
+                serial.verify(file, "missing")
             with self.assertRaises(ValueError):
                 serial.verify(file, "ro")
 

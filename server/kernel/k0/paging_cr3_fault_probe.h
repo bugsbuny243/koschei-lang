@@ -13,7 +13,10 @@
 #endif
 
 #define K0_CR3_TEST_LIMIT 0x40000000ULL
-#ifdef KOSCHEI_QEMU_READONLY_TEST
+#if defined(KOSCHEI_QEMU_NX_TEST)
+#define K0_CR3_FAULT_VA 0x3fe00000ULL
+#define K0_CR3_EXPECTED_ERROR 17ULL /* present, instruction fetch denied */
+#elif defined(KOSCHEI_QEMU_READONLY_TEST)
 #define K0_CR3_FAULT_VA 0x3fe00000ULL /* last 2MiB huge-page slot */
 #define K0_CR3_EXPECTED_ERROR 3ULL /* present, supervisor write denied */
 #else
@@ -59,7 +62,9 @@ __attribute__((used,noreturn)) static void k0_cr3_pf_dispatch(
         stop(0x11);
     }
     /* Only reachable through a real CPU vector-14 exception path. */
-#ifdef KOSCHEI_QEMU_READONLY_TEST
+#if defined(KOSCHEI_QEMU_NX_TEST)
+    serial_line("KOSCHEI-KERNEL K0 OWN-CR3-NX-EXEC-DENIED");
+#elif defined(KOSCHEI_QEMU_READONLY_TEST)
     serial_line("KOSCHEI-KERNEL K0 OWN-CR3-RO-WRITE-DENIED");
 #else
     serial_line("KOSCHEI-KERNEL K0 OWN-CR3-PF-DENIED");
@@ -98,8 +103,10 @@ __attribute__((noreturn)) static void k0_cr3_qemu_probe(K0_PAGE_POOL *pool) {
         serial_line("KOSCHEI-KERNEL REJECT/1 CR3-PREFLIGHT");
         stop(0x11);
     }
-#ifdef KOSCHEI_QEMU_READONLY_TEST
-    /* Supervisor writes must honor a read-only PDE (CR0.WP == 1). */
+#if defined(KOSCHEI_QEMU_READONLY_TEST) || defined(KOSCHEI_QEMU_NX_TEST)
+    /* The dedicated test page is separate from all executable functions.
+     * CR0.WP must be enabled for the read-only scenario.
+     */
     K_U64 cr0 = 0;
     __asm__ __volatile__("movq %%cr0, %0" : "=r"(cr0));
     if (!(cr0 & (1ULL << 16)) || /* CR0.WP */
@@ -133,8 +140,8 @@ __attribute__((noreturn)) static void k0_cr3_qemu_probe(K0_PAGE_POOL *pool) {
     pdpt[0] = frame[2] | 3ULL;
     for (K_U32 i = 0; i < 512; ++i)
         pd[i] = ((K_U64)i << 21) | 0x83ULL; /* present/write/2MiB */
-#ifdef KOSCHEI_QEMU_READONLY_TEST
-    /* One dedicated unneeded 2MiB slot becomes read-only; all executing
+#if defined(KOSCHEI_QEMU_READONLY_TEST) || defined(KOSCHEI_QEMU_NX_TEST)
+    /* One dedicated unneeded 2MiB slot becomes protected; all executing
      * code, IDT, stack and table frames must remain outside it.
      */
     for (K_U32 i = 0; i < 3; ++i)
@@ -142,8 +149,14 @@ __attribute__((noreturn)) static void k0_cr3_qemu_probe(K0_PAGE_POOL *pool) {
             serial_line("KOSCHEI-KERNEL REJECT/1 CR3-RO-FRAME");
             stop(0x11);
         }
+#if defined(KOSCHEI_QEMU_NX_TEST)
+    /* Present 2MiB page, NX bit must be enforced by EFER.NXE. */
+    pd[511] = ((K_U64)511 << 21) | 0x83ULL | (1ULL << 63);
+    const K_U64 last_entry = ((K_U64)511 << 21) | 0x83ULL | (1ULL << 63);
+#else
     pd[511] = ((K_U64)511 << 21) | 0x81ULL;
     const K_U64 last_entry = ((K_U64)511 << 21) | 0x81ULL;
+#endif
 #else
     const K_U64 last_entry = ((K_U64)511 << 21) | 0x83ULL;
 #endif
@@ -185,7 +198,10 @@ __attribute__((noreturn)) static void k0_cr3_qemu_probe(K0_PAGE_POOL *pool) {
         stop(0x11);
     }
     /* Only the #PF handler can produce the success marker and exit=33. */
-#ifdef KOSCHEI_QEMU_READONLY_TEST
+#if defined(KOSCHEI_QEMU_NX_TEST)
+    const K_U64 no_execute = K0_CR3_FAULT_VA;
+    __asm__ __volatile__("callq *%0" : : "r"(no_execute) : "memory");
+#elif defined(KOSCHEI_QEMU_READONLY_TEST)
     const K_U64 read_only = K0_CR3_FAULT_VA;
     __asm__ __volatile__("movb $0x5a, (%0)" : : "r"(read_only) : "memory");
 #else

@@ -70,6 +70,9 @@ jobs:
       - name: Prove own-CR3 supervisor RO write rejection in real QEMU (test-only)
         run: |
           bash server/kernel/k0/qemu_smoke.sh /tmp/koschei-k0-evidence ro
+      - name: Prove own-CR3 NX execution rejection in real QEMU (test-only)
+        run: |
+          bash server/kernel/k0/qemu_smoke.sh /tmp/koschei-k0-evidence nx
       - name: Bind evidence to commit and toolchain
         if: always()
         run: |

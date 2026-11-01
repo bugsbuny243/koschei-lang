@@ -69,7 +69,9 @@ The CI QEMU gate runs **two independent guest boots**: an unmapped high-half
 page (predicted CPU #PF error 0) and a supervisor write to the last 2 MiB
 read-only huge-page slot (expected CPU #PF error 3 with CR0.WP=1). The
 second slot is otherwise unneeded by the loaded image, current stack, handler,
-UART or allocated page-table frames. Both are test-binary-only diagnostics;
+UART or allocated page-table frames. A third independent QEMU boot marks that
+slot present but NX and attempts execution with EFER.NXE active (expected real
+#PF error 17, CR2 and active CR3 checked). All three are test-only diagnostics;
 the rest of the lower GiB remains deliberately overbroad RWX and production
 isolation remains unproven.
 

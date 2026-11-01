@@ -13,13 +13,16 @@ import sys
 
 QEMU_CR3_PF_MARKER = b"KOSCHEI-KERNEL K0 OWN-CR3-PF-DENIED"
 QEMU_CR3_RO_MARKER = b"KOSCHEI-KERNEL K0 OWN-CR3-RO-WRITE-DENIED"
+QEMU_CR3_NX_MARKER = b"KOSCHEI-KERNEL K0 OWN-CR3-NX-EXEC-DENIED"
 
 
 def verify_qemu_only_cr3_probe(
-    release: bytes, qemu: bytes, qemu_ro: bytes | None = None
+    release: bytes, qemu: bytes, qemu_ro: bytes | None = None,
+    qemu_nx: bytes | None = None
 ) -> None:
     """Require proof marker in test image and prohibit it in shipping EFI."""
-    if QEMU_CR3_PF_MARKER in release or QEMU_CR3_RO_MARKER in release:
+    if (QEMU_CR3_PF_MARKER in release or QEMU_CR3_RO_MARKER in release or
+            QEMU_CR3_NX_MARKER in release):
         raise ValueError("unsafe QEMU-only CR3 page fault probe leaked into release")
     if QEMU_CR3_PF_MARKER not in qemu:
         raise ValueError("QEMU image lacks expected CR3 page fault test marker")
@@ -27,6 +30,10 @@ def verify_qemu_only_cr3_probe(
         raise ValueError("QEMU RO image lacks expected CPU permission-fault marker")
     if qemu_ro is not None and QEMU_CR3_RO_MARKER in qemu:
         raise ValueError("RO-only marker leaked into unmapped-fault image")
+    if qemu_nx is not None and QEMU_CR3_NX_MARKER not in qemu_nx:
+        raise ValueError("QEMU NX image lacks expected execution-fault marker")
+    if qemu_nx is not None and QEMU_CR3_NX_MARKER in qemu:
+        raise ValueError("NX-only marker leaked into unmapped-fault image")
 
 
 def verify_uefi_pe(path: Path) -> str:
@@ -59,12 +66,13 @@ def verify_uefi_pe(path: Path) -> str:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) not in (3, 4):
-        raise SystemExit("usage: python verify_pe.py RELEASE.EFI QEMU.EFI [QEMU-RO.EFI]")
+    if len(sys.argv) not in (3, 4, 5):
+        raise SystemExit("usage: python verify_pe.py RELEASE.EFI QEMU.EFI [QEMU-RO.EFI] [QEMU-NX.EFI]")
     hashes = [verify_uefi_pe(Path(p)) for p in sys.argv[1:]]
     if hashes[0] == hashes[1]:
         raise SystemExit("release and test artifact must differ (QEMU-only port)")
     verify_qemu_only_cr3_probe(
         Path(sys.argv[1]).read_bytes(), Path(sys.argv[2]).read_bytes(),
-        Path(sys.argv[3]).read_bytes() if len(sys.argv) == 4 else None)
+        Path(sys.argv[3]).read_bytes() if len(sys.argv) >= 4 else None,
+        Path(sys.argv[4]).read_bytes() if len(sys.argv) == 5 else None)
     print("KOSCHEI-K0 TEST-IMAGE-ISOLATION/1 PASS CR3 probe absent from release")
