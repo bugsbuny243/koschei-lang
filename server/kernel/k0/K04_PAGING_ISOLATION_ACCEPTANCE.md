@@ -28,9 +28,15 @@ releases them. K0.3 uses the mapping left by firmware, NOT a Koschei-owned CR3.
   assert epoch-overflow failure is closed. This is **single-threaded metadata
   preflight only**, not a physical pin, a per-page generation capability,
   atomic concurrency guarantee or safe live page-table reclamation.
-- Nothing here creates live CPU page tables, writes CR3, allocates and pins
-  actual physical table contents, installs an IDT or triggers a real page fault.
-  A proposed PTE or logical table array is **not** an MMU mapping.
+- The post-firmware `paging_frame_probe.h` now requires actual CPUID NX
+  support and EFER.NXE already enabled, claims four different conventional
+  physical frames plus two data frames, serializes the logical hierarchy to
+  each physical 4 KiB frame through the firmware's current identity mapping,
+  reads back every 64-bit entry, then erases and releases all frames. This is
+  a real QEMU guest *physical table-frame roundtrip*, not just a host model.
+- No new CPU tables are activated by CR3, and these frames are NOT pinned or
+  kept installed after the diagnostic. No IDT/#PF handler exists. Populating
+  table bytes while running on firmware mappings is NOT a live MMU mapping.
 
 - `paging_walk.h` and `test_paging_walk.c` evaluate a model-only,
   four-level access walk, predicting absent-page faults, supervisor denial,
@@ -72,5 +78,7 @@ releases them. K0.3 uses the mapping left by firmware, NOT a Koschei-owned CR3.
 - The current K0.4 staged encoding helper is **not hardware memory isolation**,
   a complete physical memory manager, scheduler, process sandbox, native .ks
   executor, or Khar/Galaxy/Library authorization system.
-- No security guarantee follows from a host-only page entry unit test.
+- The physical frame roundtrip is gated by an actual QEMU UART transcript
+  and test-only debug-exit code, but it does NOT establish isolation.
+- No security guarantee follows from host-only page entry unit tests.
 - Issue #331 remains authoritative for K0 through K4 acceptance.

@@ -35,13 +35,14 @@ exit code; that device operation is absent in the release image.
 Acceptance requires:
 1. A valid, import-free EFI PE32+ x86-64 artifact and SHA256 record.
 2. Actual QEMU OVMF cold-boot from EFI/BOOT/BOOTX64.EFI on a FAT USB image.
-3. Exact serial transcript, seven Koschei records after OVMF firmware prefix:
+3. Exact serial transcript, eight Koschei records after OVMF firmware prefix:
    KOSCHEI-KERNEL BOOT/1 X86_64-UEFI
    KOSCHEI-KERNEL K0 SERIAL-OWNED
    KOSCHEI-KERNEL K0 MEMORY-MAP-VALIDATED
    KOSCHEI-KERNEL K0 FREE-PAGES-PLANNED
    KOSCHEI-KERNEL K0 BOOT-SERVICES-EXITED
    KOSCHEI-KERNEL K0 PAGE-POOL-PROBED
+   KOSCHEI-KERNEL K0 PAGE-TABLE-FRAMES-ROUNDTRIP
    KOSCHEI-KERNEL K0 HALT-NO-POLICY
 4. QEMU debug-exit code 33; a timeout or fabricated file is not a pass.
 5. CI artifact binds transcript hash, source revision and toolchain versions.
@@ -49,8 +50,11 @@ Acceptance requires:
 ## Honest limits
 ExitBootServices handoff is attempted and must succeed in the QEMU boot
 probe. The 16-page ledger is a bounded diagnostic allocator, NOT a general-purpose
-physical memory manager. There are NO Koschei-owned page tables, fault handlers,
-interrupt controller, scheduler, storage, network, domain/process isolation or
+physical memory manager. K0.4 staging also writes and reads back four *inactive*
+physical page-table frames after CPU NX/EFER.NXE checks, then wipes and releases
+them. No own CR3 is installed, so no Koschei-owned **active** page tables or
+hardware memory isolation exists. There are no fault handlers, interrupt
+controller, scheduler, storage, network, domain/process isolation or
 sealed-MIR runner. UEFI firmware remains an external physical trust input.
 The prototype is x86-64/QEMU-focused, not proof of booting physical devices,
 and cannot yet host customer applications or claim zero attack risk.
@@ -60,7 +64,9 @@ and Koschei-owned page tables, add a controlled page-fault rejection test; K1 ow
 Issue #331 tracks these requirements.
 
 ## Staging / acceptance gate
-This branch is NOT a merged or QEMU-CI-verified K0.3 release. The native
-ledger tests can run on a host compiler; the actual two-page probe requires
-GitHub Actions QEMU/OVMF to run on the final exact head. Full canonical Lang CI
-and dedicated QEMU CI must both pass before any follow-on PR merge.
+K0.3 has already merged. K0.4 remains staging until an independently owned
+CR3 transition and real CPU #PF denial are reproduced. The current table-frame
+roundtrip only proves that the guest could write, read and zero physical frames
+under the **firmware-provided mappings**, not that the CPU used them.
+Full canonical Lang CI and dedicated QEMU CI must both pass on the final exact
+head before any follow-on PR merge.
