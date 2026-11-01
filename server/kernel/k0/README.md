@@ -34,10 +34,14 @@ exit code; that device operation is absent in the release image.
 
 Acceptance requires:
 1. A valid, import-free EFI PE32+ x86-64 artifact and SHA256 record.
+   The guest also calls UEFI HandleProtocol before ExitBootServices and
+   validates its actual loaded image address, PE sections and LoaderCode/
+   LoaderData memory-map coverage; this is not an active MMU permission.
 2. Actual QEMU OVMF cold-boot from EFI/BOOT/BOOTX64.EFI on a FAT USB image.
-3. Exact serial transcript, nine Koschei records (QEMU test binary) after OVMF firmware prefix:
+3. Exact serial transcript, ten Koschei records (QEMU test binary) after OVMF firmware prefix:
    KOSCHEI-KERNEL BOOT/1 X86_64-UEFI
    KOSCHEI-KERNEL K0 SERIAL-OWNED
+   KOSCHEI-KERNEL K0 LOADED-IMAGE-VALIDATED
    KOSCHEI-KERNEL K0 MEMORY-MAP-VALIDATED
    KOSCHEI-KERNEL K0 FREE-PAGES-PLANNED
    KOSCHEI-KERNEL K0 BOOT-SERVICES-EXITED

@@ -76,6 +76,12 @@ jobs:
             server/kernel/k0/test_pe_section_wx.c \
             -o /tmp/koschei-k0-evidence/pe-section-wx-tests
           /tmp/koschei-k0-evidence/pe-section-wx-tests
+      - name: Reject invalid firmware LoadedImage bounds and descriptor gaps
+        run: |
+          clang -std=c11 -O2 -Wall -Wextra -Werror \
+            server/kernel/k0/test_loaded_image_preflight.c \
+            -o /tmp/koschei-k0-evidence/loaded-image-bounds-tests
+          /tmp/koschei-k0-evidence/loaded-image-bounds-tests
       - name: Boot actual UEFI binary on QEMU OVMF and capture UART proof
         run: |
           bash server/kernel/k0/qemu_smoke.sh /tmp/koschei-k0-evidence

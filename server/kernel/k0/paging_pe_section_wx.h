@@ -76,8 +76,10 @@ static int k0_pe_wx_parse(const void *mapped, K_U64 mapped_bytes,
     next.section_count = sections;
     next.executable_pages = 0;
     next.writable_pages = 0;
+    /* Keep a volatile explicit zero loop: no libc/memset in EFI guest. */
+    volatile K_U8 *page_bytes = next.pages;
     for (K_U32 i = 0; i < K0_PE_WX_MAX_PAGES; ++i)
-        next.pages[i] = 0; /* freestanding: avoid hidden memset import */
+        page_bytes[i] = 0;
     K_U64 header_pages = (header_size + K0_PAGE_SIZE - 1ULL) / K0_PAGE_SIZE;
     for (K_U64 i = 0; i < header_pages; ++i)
         next.pages[i] = K0_PE_WX_HEADERS_RW_NX;

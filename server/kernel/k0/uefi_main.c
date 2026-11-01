@@ -9,6 +9,7 @@
 #include "memory_map.h"
 #include "page_pool.h"
 #include "paging_frame_probe.h"
+#include "uefi_loaded_image_preflight.h"
 typedef unsigned short K_U16;
 typedef void *EFI_HANDLE;
 typedef K_U64 EFI_STATUS;
@@ -24,6 +25,8 @@ typedef struct {
 typedef EFI_STATUS (__attribute__((ms_abi)) *EFI_GET_MEMORY_MAP)(
     K_U64 *map_size, void *map, K_U64 *map_key,
     K_U64 *descriptor_size, K_U32 *descriptor_version);
+typedef EFI_STATUS (__attribute__((ms_abi)) *EFI_HANDLE_PROTOCOL)(
+    EFI_HANDLE handle, const K0_EFI_GUID *protocol, void **interface);
 typedef EFI_STATUS (__attribute__((ms_abi)) *EFI_EXIT_BOOT_SERVICES)(
     EFI_HANDLE image, K_U64 map_key);
 
@@ -34,7 +37,9 @@ typedef struct {
     void *allocate_pages;
     void *free_pages;
     EFI_GET_MEMORY_MAP get_memory_map;
-    void *unclaimed_boot_services_slots[21];
+    void *unclaimed_before_handle_protocol[11];
+    EFI_HANDLE_PROTOCOL handle_protocol;
+    void *unclaimed_after_handle_protocol[9];
     EFI_EXIT_BOOT_SERVICES exit_boot_services;
 } EFI_BOOT_SERVICES_SLICE;
 
@@ -59,10 +64,14 @@ _Static_assert(__builtin_offsetof(EFI_SYSTEM_TABLE, boot_services) == 96, "UEFI 
 _Static_assert(sizeof(EFI_SYSTEM_TABLE) == 120, "UEFI system table layout");
 _Static_assert(__builtin_offsetof(EFI_BOOT_SERVICES_SLICE, get_memory_map) == 56,
                "UEFI GetMemoryMap ABI offset");
+_Static_assert(__builtin_offsetof(EFI_BOOT_SERVICES_SLICE, handle_protocol) == 152,
+               "UEFI HandleProtocol ABI offset");
 _Static_assert(__builtin_offsetof(EFI_BOOT_SERVICES_SLICE, exit_boot_services) == 232,
                "UEFI ExitBootServices ABI offset");
 static K_U8 k0_map_buffer[K0_MEMORY_MAP_LIMIT] __attribute__((aligned(16)));
 static K0_PAGE_POOL k0_pool;
+static K0_PE_WX_LAYOUT k0_loaded_pe_layout;
+static K0_LOADED_IMAGE_BOUNDS k0_image_bounds;
 
 static inline void port_out(K_U16 port, K_U8 value) {
     __asm__ __volatile__("outb %0, %1" : : "a"(value), "Nd"(port));
@@ -149,12 +158,25 @@ EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system) {
         system->boot_services->hdr.signature != 0x56524553544f4f42ULL ||
         system->boot_services->hdr.header_size < 240 ||
         !system->boot_services->get_memory_map ||
+        !system->boot_services->handle_protocol ||
         !system->boot_services->exit_boot_services) {
         serial_line("KOSCHEI-KERNEL REJECT/1 INVALID-UEFI");
         stop(0x11);
     }
     serial_line("KOSCHEI-KERNEL BOOT/1 X86_64-UEFI");
     serial_line("KOSCHEI-KERNEL K0 SERIAL-OWNED");
+    /* HandleProtocol is a BootService: obtain the image provenance before
+     * ExitBootServices, and never invoke it afterwards.
+     */
+    void *image_interface = 0;
+    EFI_STATUS image_status = system->boot_services->handle_protocol(
+        image, &k0_loaded_image_guid, &image_interface);
+    if (image_status != 0 || !image_interface) {
+        serial_line("KOSCHEI-KERNEL REJECT/1 LOADED-IMAGE-PROTOCOL");
+        stop(0x11);
+    }
+    const K0_EFI_LOADED_IMAGE *loaded =
+        (const K0_EFI_LOADED_IMAGE *)image_interface;
     /*
      * Firmware may change MapKey after GetMemoryMap. On stale-key rejection,
      * acquire a fresh map and retry at most three times. Never report exit
@@ -176,6 +198,17 @@ EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system) {
             serial_line("KOSCHEI-KERNEL REJECT/1 MEMORY-MAP");
             stop(0x11);
         }
+        if (!k0_loaded_image_bounds(loaded, k0_map_buffer, map_size,
+                                    stride, version,
+                                    (K_U64)(unsigned long long)&efi_main,
+                                    &k0_image_bounds) ||
+            !k0_pe_wx_parse(loaded->image_base, loaded->image_size,
+                            &k0_loaded_pe_layout) ||
+            !k0_pe_wx_identity_range(k0_image_bounds.base,
+                                     &k0_loaded_pe_layout)) {
+            serial_line("KOSCHEI-KERNEL REJECT/1 IMAGE-BOUNDS-OR-PE");
+            stop(0x11);
+        }
         result = system->boot_services->exit_boot_services(image, map_key);
         if (result == 0) {
             exited = 1;
@@ -189,6 +222,7 @@ EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system) {
         stop(0x11);
     }
     /* No firmware boot-service calls after this point. */
+    serial_line("KOSCHEI-KERNEL K0 LOADED-IMAGE-VALIDATED");
     serial_line("KOSCHEI-KERNEL K0 MEMORY-MAP-VALIDATED");
     serial_line("KOSCHEI-KERNEL K0 FREE-PAGES-PLANNED");
     serial_line("KOSCHEI-KERNEL K0 BOOT-SERVICES-EXITED");

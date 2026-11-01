@@ -117,6 +117,22 @@ or apply section permissions to a CPU-active CR3. The helper is a metadata
 contract rather than W^X execution evidence. In particular, it does not
 prevent aliases through currently writable executable huge pages.
 
+## Firmware LoadedImageProtocol handoff preflight
+
+Before `ExitBootServices`, the UEFI guest now obtains
+`EFI_LOADED_IMAGE_PROTOCOL` via BootServices `HandleProtocol` at the
+standard ABI offset, checks protocol revision, real image base, image size,
+entry-point containment, and complete coverage by LoaderCode/LoaderData
+descriptors from the latest validated memory map. Each stale MapKey retry
+rechecks coverage; holes, conventional/boot/runtime/MMIO/ACPI pages, overflow
+and addresses outside the QEMU identity aperture fail closed. The guest also
+parses the **actual loaded in-memory PE** and validates its per-page
+read/write/execute metadata before exiting firmware.
+
+This is a real UEFI/QEMU image-provenance and bounds receipt, NOT a
+reservation of the stack, firmware/runtime/ACPI/MMIO ranges, an active
+4KiB W^X mapping, or guaranteed trust in firmware-reported descriptors.
+
 ## Next executable acceptance requirements
 1. Capture exact page ownership and reserve the loaded PE image, executing
    stack, firmware runtime ranges, ACPI, MMIO/framebuffer and page-table
