@@ -13,6 +13,17 @@ static void expect_untouched(void) {
         assert(pdes[i] == 0xbaddcafeULL);
 }
 int main(void) {
+    /* Exercise the same UEFI descriptor validator supplying the page-ledger
+     * plan; the policy itself still does not touch any firmware service.
+     */
+    K0_MEMORY_DESCRIPTOR map[] = {
+        {7, 0, 0x200000ULL, 0, 128, 0},
+        {3, 0, 0x100000ULL, 0, 256, 0}
+    };
+    K0_MEMORY_PLAN memory = {0};
+    assert(k0_memory_validate_plan(map, sizeof(map), sizeof(map[0]), 1,
+                                   &memory));
+    assert(memory.candidate_start == 0x200000ULL);
     const K_U64 code[] = {0x200000ULL, 0x200ffcULL,
                           0x600123ULL, 0x200000ULL};
     mark_sentinel();
