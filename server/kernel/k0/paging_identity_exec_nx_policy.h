@@ -22,7 +22,13 @@ static int k0_cr3_identity_build(volatile K_U64 *out,
                                  K_U32 count) {
     if (!out || !exec_addresses || !count ||
         count > K0_CR3_IDENTITY_EXEC_MAX_HINTS) return 0;
-    K_U8 executable[K0_CR3_IDENTITY_PDE_COUNT] = {0};
+    /* A volatile explicit initialization loop prevents compiler lowering
+     * into an implicit memset import: the UEFI image is freestanding.
+     * The stack array remains local to this one-shot pre-CR3 preflight.
+     */
+    volatile K_U8 executable[K0_CR3_IDENTITY_PDE_COUNT];
+    for (K_U32 i = 0; i < K0_CR3_IDENTITY_PDE_COUNT; ++i)
+        executable[i] = 0;
     K_U32 unique = 0;
     for (K_U32 i = 0; i < count; ++i) {
         if (!exec_addresses[i] ||
