@@ -167,6 +167,7 @@ static void test_ring0_gdt_and_normalized_exception_context(void) {
     assert(pf.cr2 == frame.cr2);
     frame.error_code = K0_PF_RESERVED | K0_PF_PRESENT;
     assert(!k0_idt_fault_snapshot_valid(&frame, &pf));
+    assert(pf.cr2 == 0 && pf.error_code == 0);
     frame.vector = K0_IDT_VECTOR_DF;
     frame.error_code = 0;
     assert(k0_idt_fault_snapshot_valid(&frame, &pf));
