@@ -56,10 +56,12 @@ class RpcHandler(http.server.BaseHTTPRequestHandler):
         if self.path != "/rpc" or self.headers.get("Content-Type") != "application/json":
             status, body = 400, b"not-rpc"
         elif method == "eth_chainId":
-            body = b'{"result":"0x1","jsonrpc":"2.0","id":1}'
+            body = b'{"id":1,"jsonrpc":"2.0","result":"0x1"}'
             case = self.server.case
             if case == "wrong-chain":
-                body = b'{"result":"0x2","jsonrpc":"2.0","id":1}'
+                body = b'{"id":1,"jsonrpc":"2.0","result":"0x2"}'
+            elif case == "chain-noncanonical-order":
+                body = b'{"result":"0x1","jsonrpc":"2.0","id":1}'
             elif case == "chain-id-mismatch":
                 body = b'{"result":"0x1","jsonrpc":"2.0","id":99}'
             elif case == "chain-error":
@@ -73,9 +75,11 @@ class RpcHandler(http.server.BaseHTTPRequestHandler):
             elif case == "chain-redirect":
                 status = 302
         elif method == "eth_blockNumber":
-            body = b' { "result" : "0x2a", "jsonrpc":"2.0", "id": 2 } '
+            body = b'{"id":2,"jsonrpc":"2.0","result":"0x2a"}'
             case = self.server.case
-            if case == "block-id-mismatch":
+            if case == "block-noncanonical-order":
+                body = b'{"result":"0x2a","jsonrpc":"2.0","id":2}'
+            elif case == "block-id-mismatch":
                 body = b'{"result":"0x2a","jsonrpc":"2.0","id":1}'
             elif case == "block-version-mismatch":
                 body = b'{"result":"0x2a","jsonrpc":"1.0","id":2}'
@@ -153,9 +157,11 @@ class Web3RpcLiveTests(unittest.TestCase):
 
     def _assert_cases(self, native: bool) -> None:
         cases = (
-            "success", "wrong-chain", "chain-id-mismatch", "chain-error",
+            "success", "wrong-chain", "chain-noncanonical-order",
+            "chain-id-mismatch", "chain-error",
             "chain-malformed", "chain-duplicate", "chain-not-200",
-            "chain-redirect", "block-id-mismatch", "block-version-mismatch",
+            "chain-redirect", "block-noncanonical-order", "block-id-mismatch",
+            "block-version-mismatch",
             "block-extra", "block-error", "block-noncanonical", "block-upper",
             "block-malformed", "block-duplicate", "block-not-200",
             "block-redirect", "block-oversize",
@@ -196,7 +202,16 @@ class Web3RpcLiveTests(unittest.TestCase):
         )
         graph = load_graph(module_imports)
         check_graph(graph)
-        self.assertFalse(analyze_graph(graph).has_any)
+        # Imported functions expose an explicit NetCaps requirement to
+        # capability analysis, even when main does not invoke them. The
+        # unused import alone must never cause a network request.
+        self.assertTrue(analyze_graph(graph).has_any)
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with redirect_stdout(stdout), redirect_stderr(stderr):
+            code = cli_main(["run", str(module_imports)])
+        self.assertEqual((code, stdout.getvalue(), stderr.getvalue()),
+                         (0, "", ""))
+        self.assertEqual(self.server.requests, [])
 
     def test_interpreter_read_only_rpc_and_adversarial_response_denials(self) -> None:
         self._assert_cases(native=False)
@@ -218,6 +233,11 @@ class Web3RpcLiveTests(unittest.TestCase):
         self.path.write_text(source, encoding="utf-8")
         self.assertEqual(self._run(native=False), (0, "web3-rpc-block=DENY\n", ""))
         self.assertEqual(self.server.requests, [])
+        if NATIVE:
+            self._build_native()
+            self.assertEqual(self._run(native=True),
+                             (0, "web3-rpc-block=DENY\n", ""))
+            self.assertEqual(self.server.requests, [])
 
 
 if __name__ == "__main__":
