@@ -28,8 +28,10 @@ typedef struct {
     K_U8 pages[K0_PE_WX_MAX_PAGES];
 } K0_PE_WX_LAYOUT;
 
-static K_U16 k0_pe_wx_u16(const K_U8 *p) {
-    return (K_U16)((K_U16)p[0] | ((K_U16)p[1] << 8));
+typedef unsigned short K0_PE_U16;
+static K0_PE_U16 k0_pe_wx_u16(const K_U8 *p) {
+    return (K0_PE_U16)((K0_PE_U16)p[0] |
+                        ((K0_PE_U16)p[1] << 8));
 }
 static K_U32 k0_pe_wx_u32(const K_U8 *p) {
     return (K_U32)p[0] | ((K_U32)p[1] << 8) |

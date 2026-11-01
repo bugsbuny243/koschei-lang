@@ -85,9 +85,9 @@ def verify_uefi_pe(path: Path) -> str:
         virtual_size, virtual_address, raw_size = struct.unpack_from("<III", raw, sh + 8)
         flags = struct.unpack_from("<I", raw, sh + 36)[0]
         byte_length = max(virtual_size, raw_size)
-        if not byte_length or virtual_address % 4096 or
+        if (not byte_length or virtual_address % 4096 or
                 virtual_address >= image_size or
-                byte_length > image_size - virtual_address:
+                byte_length > image_size - virtual_address):
             raise ValueError(f"{path}: malformed PE section #{i}")
         readable = bool(flags & 0x40000000)
         is_exec = bool(flags & 0x20000000)
