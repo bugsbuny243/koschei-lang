@@ -28,7 +28,12 @@ int main(void) {
     assert(!k0_vm_plan_owned_leaf(&plan, &pool, virt, pages[0], 1, 1)); /* W+X */
     assert(!k0_vm_plan_owned_leaf(&plan, &pool, virt + 1, pages[0], 1, 0));
     assert(!k0_vm_plan_owned_leaf(&plan, &pool, 0x400000ULL, pages[0], 1, 0));
+    /* A canonical address may still be forbidden by Koschei policy. */
+    assert(!k0_vm_plan_owned_leaf(&plan, &pool, K0_VM_TOP_GUARD_START, pages[0], 1, 0));
     assert(!k0_vm_plan_owned_leaf(&plan, &pool, 0xfffffffffffff000ULL, pages[0], 1, 0));
+    assert(k0_vm_high_canonical_page(K0_VM_TOP_GUARD_START - K0_PAGE_SIZE));
+    assert(!k0_vm_high_canonical_page(K0_VM_TOP_GUARD_START));
+    assert(!k0_vm_high_canonical_page(0x0000800000000000ULL)); /* noncanonical */
     assert(!k0_vm_plan_owned_leaf(&plan, &pool, virt, pages[0] + 1, 1, 0));
     assert(!k0_vm_plan_owned_leaf(&plan, &pool, virt, pages[0] - 4096, 1, 0));
     assert(!k0_vm_plan_owned_leaf(&plan, &pool, virt, pages[0] + 16 * K0_PAGE_SIZE, 1, 0));
