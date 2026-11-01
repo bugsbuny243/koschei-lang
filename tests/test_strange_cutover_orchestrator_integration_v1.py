@@ -78,7 +78,7 @@ class StrangeCutoverOrchestratorIntegrationV1Tests(unittest.TestCase):
                 )
                 observed = activate_and_reconcile_cutover_v1(mir, **params)
                 self.assertEqual(observed.exit_code, 0)
-                self.assertEqual(observed.stdout, b"Koschei\\n1\\n")
+                self.assertEqual(observed.stdout, b"Koschei\n1\n")
                 self.assertFalse(observed.authority)
                 self.assertEqual(observed.native_sha256, staged.pending.native_sha256)
                 self.assertEqual(continuity.read_snapshot().epoch, 5)
