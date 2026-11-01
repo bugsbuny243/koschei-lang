@@ -11,6 +11,11 @@
 #define K0_VM_MAX_LEAVES 16U
 #define K0_VM_PHYSICAL_MASK 0x000ffffffffff000ULL
 #define K0_VM_HIGH_HALF_BASE 0xffff800000000000ULL
+/* Koschei-owned virtual-address policy: reserve the final 64 KiB as a
+ * high-half unmapped guard, even though those pages are x86-64 canonical.
+ * This is a PLANNING rule only; no live guard is installed yet.
+ */
+#define K0_VM_TOP_GUARD_START 0xffffffffffff0000ULL
 #define K0_VM_PRESENT 0x1ULL
 #define K0_VM_WRITE 0x2ULL
 #define K0_VM_NO_EXECUTE (1ULL << 63)
@@ -38,14 +43,15 @@ static int k0_vm_plan_init(K0_VM_PLAN *plan, int cpu_has_nx, int efer_nxe_enable
     return 1;
 }
 
-/* High-half, 48-bit canonical address; null/low mappings intentionally denied.
- * LA57 is NOT supported by the current contract.
+/* High-half, 48-bit canonical address plus Koschei's top 64 KiB guard.
+ * Architectural canonicality alone does not imply permission to map a page.
+ * Null/low mappings intentionally denied; LA57 is not supported.
  */
 static int k0_vm_high_canonical_page(K_U64 virt) {
     return virt >= K0_VM_HIGH_HALF_BASE &&
            (virt >> 48) == 0xffffULL &&
            (virt & (K0_PAGE_SIZE - 1)) == 0 &&
-           virt <= ~(K_U64)0 - (K0_PAGE_SIZE - 1);
+           virt < K0_VM_TOP_GUARD_START;
 }
 
 /* Only claimed pool pages; no duplicate physical or virtual aliases.
