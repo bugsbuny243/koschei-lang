@@ -1,3 +1,4 @@
+// Koschei Core Library: platform_web3
 // Pure, read-only EVM JSON-RPC admission. No signing or RPC transport.
 fn hex_digit(c: Int) -> Bool {
     return (c >= 48 && c <= 57) || (c >= 97 && c <= 102)

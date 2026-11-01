@@ -1,3 +1,4 @@
+// Koschei Core Library: platform_kernel
 // Pure bounded frame ledger preflight. No hardware/CR3/UEFI access.
 fn frame_in_pool(base: Int, pages: Int, frame: Int) -> Bool {
     if base < 1048576 || base >= 1073741824 ||

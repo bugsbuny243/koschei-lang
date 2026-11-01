@@ -1,3 +1,4 @@
+// Koschei Core Library: platform_web
 // Pure, bounded HTTP route admission; importing this grants no ServeCaps.
 fn route_path(path: String) -> Bool {
     let bytes = path.to_bytes()

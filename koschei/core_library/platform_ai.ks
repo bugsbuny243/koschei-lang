@@ -1,7 +1,7 @@
+// Koschei Core Library: platform_ai
 // Pure model-request admission: no model weights, inference, tools or I/O.
 // Output tokens are a declared request budget, NOT tokenizer enforcement.
-fn admit(model: String, allowed_models: List<String>, input_bytes: Int,
-         input_limit: Int, output_token_limit: Int) -> Result<String, Error> {
+fn admit(model: String, allowed_models: List<String>, input_bytes: Int, input_limit: Int, output_token_limit: Int) -> Result<String, Error> {
     if model.length() == 0 || model.length() > 64 ||
        allowed_models.length() == 0 || allowed_models.length() > 64 ||
        !allowed_models.contains(model) {

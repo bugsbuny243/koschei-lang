@@ -9,6 +9,10 @@ Every module is written in Koschei and compiled with the program that imports it
 | [`hela`](#hela) | 4 | 1 |
 | [`list`](#list) | 10 | 0 |
 | [`morag`](#morag) | 2 | 3 |
+| [`platform_ai`](#platform_ai) | 2 | 0 |
+| [`platform_kernel`](#platform_kernel) | 3 | 0 |
+| [`platform_web`](#platform_web) | 3 | 0 |
+| [`platform_web3`](#platform_web3) | 4 | 0 |
 | [`secure`](#secure) | 5 | 0 |
 | [`strange`](#strange) | 2 | 2 |
 | [`text`](#text) | 13 | 0 |
@@ -229,6 +233,102 @@ Builds the verdict of `check`; public only because Koschei v1 has no private fun
 
 ```ks
 fn check(identity: String, today: Int, windows: List<SupportWindow>, backports: List<MaintainerBackport>) -> Result<SupportVerdict, Error>
+```
+
+## platform_ai
+
+Pure model-request admission: no model weights, inference, tools or I/O. Output tokens are a declared request budget, NOT tokenizer enforcement.
+
+### `platform_ai.admit`
+
+```ks
+fn admit(model: String, allowed_models: List<String>, input_bytes: Int, input_limit: Int, output_token_limit: Int) -> Result<String, Error>
+```
+
+Koschei Core Library: platform_ai Pure model-request admission: no model weights, inference, tools or I/O. Output tokens are a declared request budget, NOT tokenizer enforcement.
+
+### `platform_ai.batch_allowed`
+
+```ks
+fn batch_allowed(count: Int, maximum: Int) -> Bool
+```
+
+## platform_kernel
+
+Pure bounded frame ledger preflight. No hardware/CR3/UEFI access.
+
+### `platform_kernel.frame_in_pool`
+
+```ks
+fn frame_in_pool(base: Int, pages: Int, frame: Int) -> Bool
+```
+
+Koschei Core Library: platform_kernel Pure bounded frame ledger preflight. No hardware/CR3/UEFI access.
+
+### `platform_kernel.claimed_frame`
+
+```ks
+fn claimed_frame(base: Int, pages: Int, claimed: List<Int>, frame: Int) -> Bool
+```
+
+### `platform_kernel.disjoint`
+
+```ks
+fn disjoint(first: Int, first_pages: Int, second: Int, second_pages: Int) -> Bool
+```
+
+## platform_web
+
+Pure, bounded HTTP route admission; importing this grants no ServeCaps.
+
+### `platform_web.route_path`
+
+```ks
+fn route_path(path: String) -> Bool
+```
+
+Koschei Core Library: platform_web Pure, bounded HTTP route admission; importing this grants no ServeCaps.
+
+### `platform_web.admit`
+
+```ks
+fn admit(method: String, path: String) -> Result<String, Error>
+```
+
+### `platform_web.body_within_budget`
+
+```ks
+fn body_within_budget(bytes: Int, limit: Int) -> Bool
+```
+
+## platform_web3
+
+Pure, read-only EVM JSON-RPC admission. No signing or RPC transport.
+
+### `platform_web3.hex_digit`
+
+```ks
+fn hex_digit(c: Int) -> Bool
+```
+
+Koschei Core Library: platform_web3 Pure, read-only EVM JSON-RPC admission. No signing or RPC transport.
+
+### `platform_web3.quantity`
+
+```ks
+fn quantity(value: String) -> Bool
+```
+
+### `platform_web3.address`
+
+```ks
+fn address(value: String) -> Bool
+```
+
+### `platform_web3.admit_read`
+
+```ks
+fn admit_read(method: String, chain_id: String, account: String) -> Result<String, Error>
 ```
 
 ## secure
