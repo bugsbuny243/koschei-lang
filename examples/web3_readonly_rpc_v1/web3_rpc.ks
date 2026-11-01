@@ -1,4 +1,4 @@
-// Koschei Core Library: web3_rpc
+// Project-local adapter: web3_rpc (requires explicit NetCaps)
 // Read-only, single-origin EVM JSON-RPC client (experimental).
 // A NetCaps token is passed explicitly; this module cannot widen origins.
 // It sends two fixed POST requests: chain identity then latest block height.

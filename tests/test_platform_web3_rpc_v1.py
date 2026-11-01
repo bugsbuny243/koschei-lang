@@ -200,6 +200,13 @@ class Web3RpcLiveTests(unittest.TestCase):
         module_imports.write_text(
             "import web3_rpc\nfn main() { return }\n", encoding="utf-8"
         )
+        # web3_rpc is deliberately a project-local adapter, never a
+        # first-party Core Library module: the latter must stay pure.
+        (Path(self.tmp.name) / "web3_rpc.ks").write_text(
+            (ROOT / "examples/web3_readonly_rpc_v1/web3_rpc.ks").read_text(
+                encoding="utf-8"),
+            encoding="utf-8",
+        )
         graph = load_graph(module_imports)
         check_graph(graph)
         # Imported functions expose an explicit NetCaps requirement to

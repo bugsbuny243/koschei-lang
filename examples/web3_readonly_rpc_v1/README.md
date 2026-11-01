@@ -1,5 +1,9 @@
 # Read-only Web3 JSON-RPC experiment (Koschei Lang)
 
+The `web3_rpc.ks` file is a **project-local module**, not a registered
+Core Library member. This preserves the Core Library's zero-authority
+import contract.
+
 This executable `.ks` adapter uses exactly one explicit `NetCaps` origin
 and two fixed `application/json` HTTP POST messages: `eth_chainId` and
 `eth_blockNumber`. No user-provided method is interpolated onto the wire.

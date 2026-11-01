@@ -21,12 +21,15 @@ interpreter/native byte-for-byte parity.
 
 ## Read-only Web3 JSON-RPC (experimental)
 
-The `web3_rpc` Core Library module takes an **explicit** narrowed
+The **project-local** `examples/web3_readonly_rpc_v1/web3_rpc.ks` adapter takes an **explicit** narrowed
 `NetCaps` origin token, makes two fixed HTTP POST requests (`eth_chainId`,
 `eth_blockNumber`), validates exactly the chain/JSON-RPC/id envelope and
 strict canonical returned quantity, and denies malformed/extra/error
 objects. This is demonstrated only against a simulated local origin.
-The module cannot sign or submit transactions, and a reported block
+It is intentionally **not** registered as Core Library: importing a
+library with a `NetCaps` parameter would make the capability-free
+library's analyzed authority surface nonempty. The project-boundary
+adapter cannot sign or submit transactions, and a reported block
 number is not finality evidence. See
 `examples/web3_readonly_rpc_v1` and `tests/test_platform_web3_rpc_v1.py`.
 
