@@ -7,6 +7,7 @@
  * captured and authenticated before any future hardware activation.
  */
 #include "page_pool.h"
+#include <stdint.h>
 
 #define K0_CR3_MAX_MAPPINGS 32U
 #define K0_CR3_MAX_RESERVATIONS 16U
@@ -40,8 +41,8 @@ typedef struct {
     K_U64 cr4;
     K_U64 efer;
     K_U64 rflags;
-    K_U16 cs;
-    K_U16 nx_cpuid_supported;
+    uint16_t cs;
+    uint16_t nx_cpuid_supported;
     K_U64 rip;
     K_U64 rsp;
     K_U64 pf_entry;
@@ -113,7 +114,7 @@ static int k0_cr3_mapping_valid(const K0_CR3_PROPOSAL *p,
         for (K_U64 i = 0; i < m->pages; ++i)
             if (!k0_pool_is_claimed(pool, m->pa + i * K0_PAGE_SIZE))
                 return 0;
-        return 1;
+        return m->va == m->pa;
     }
     /* The transition assumption is firmware identity-mapped critical code,
      * stack and descriptors. No implicit VA->PA translation is inferred.
@@ -191,7 +192,8 @@ static int k0_cr3_transition_preflight(const K0_CR3_PROPOSAL *p,
         }
     }
     for (K_U32 i = 0; i < 4; ++i) {
-        if (!k0_pool_is_claimed(pool, p->root_frames[i])) return 0;
+        if (!k0_pool_is_claimed(pool, p->root_frames[i]) ||
+            p->root_frames[i] == x->old_cr3) return 0;
         for (K_U32 j = 0; j < i; ++j)
             if (p->root_frames[i] == p->root_frames[j]) return 0;
         if (!k0_cr3_find(p, p->root_frames[i], K0_CR3_WRITE,
