@@ -106,6 +106,10 @@ __attribute__((noreturn)) static void stop(K_U8 code) {
     for (;;) __asm__ __volatile__("cli; hlt");
 }
 
+#ifdef KOSCHEI_QEMU_PF_TEST
+#include "cpu_pf_guest_probe.h"
+#endif
+
 /*
  * QEMU K0.3 diagnostic only. The firmware-provided current address mapping
  * is used here: this is NOT an own-MMU or address-space isolation proof.
@@ -199,6 +203,13 @@ EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system) {
         stop(0x11);
     }
     serial_line("KOSCHEI-KERNEL K0 PAGE-TABLE-FRAMES-ROUNDTRIP");
+#ifdef KOSCHEI_QEMU_PF_TEST
+    if (!k0_cpu_pf_real_guest_probe()) {
+        serial_line("KOSCHEI-KERNEL REJECT/1 CPU-PF");
+        stop(0x11);
+    }
+    serial_line("KOSCHEI-KERNEL K0 CPU-PF-TRAP-OBSERVED");
+#endif
     serial_line("KOSCHEI-KERNEL K0 HALT-NO-POLICY");
     stop(0x10);
 }
