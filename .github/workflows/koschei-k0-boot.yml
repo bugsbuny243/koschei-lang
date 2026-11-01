@@ -67,6 +67,9 @@ jobs:
       - name: Boot actual UEFI binary on QEMU OVMF and capture UART proof
         run: |
           bash server/kernel/k0/qemu_smoke.sh /tmp/koschei-k0-evidence
+      - name: Prove own-CR3 supervisor RO write rejection in real QEMU (test-only)
+        run: |
+          bash server/kernel/k0/qemu_smoke.sh /tmp/koschei-k0-evidence ro
       - name: Bind evidence to commit and toolchain
         if: always()
         run: |

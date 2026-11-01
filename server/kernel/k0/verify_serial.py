@@ -15,7 +15,13 @@ EXPECTED = (
 )
 
 
-def verify(serial_path: Path) -> None:
+EXPECTED_READONLY = EXPECTED[:-2] + (
+    b"KOSCHEI-KERNEL K0 OWN-CR3-RO-WRITE-DENIED\r\n",
+    EXPECTED[-1],
+)
+
+
+def verify(serial_path: Path, mode: str = "missing") -> None:
     data = serial_path.read_bytes()
     if b"KOSCHEI-KERNEL REJECT/" in data:
         raise ValueError("UEFI signature rejected")
@@ -23,16 +29,19 @@ def verify(serial_path: Path) -> None:
     # the same emulated UART *before* our code starts. Keep these separate
     # from the exact Koschei suffix. No extra Koschei record,
     # duplicate successful boot marker, trailing bytes or oversized preface.
-    expected = b"".join(EXPECTED)
+    if mode not in ("missing", "ro"):
+        raise ValueError("unknown QEMU test mode")
+    expected_lines = EXPECTED_READONLY if mode == "ro" else EXPECTED
+    expected = b"".join(expected_lines)
     if not data.endswith(expected) or len(data) > 8192:
         raise ValueError(f"missing or altered Koschei UART transcript ({data[-512:]!r})")
     firmware_prefix = data[:-len(expected)]
     if b"KOSCHEI-KERNEL" in firmware_prefix:
         raise ValueError("unexpected pre-boot Koschei claim in firmware prefix")
-    print("KOSCHEI-K0 SERIAL/1 PASS exact nine Koschei records after firmware preface")
+    print("KOSCHEI-K0 SERIAL/1 PASS exact nine Koschei records after firmware preface mode={mode}")
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        raise SystemExit("usage: python verify_serial.py SERIAL.LOG")
-    verify(Path(sys.argv[1]))
+    if len(sys.argv) not in (2, 3):
+        raise SystemExit("usage: python verify_serial.py SERIAL.LOG [missing|ro]")
+    verify(Path(sys.argv[1]), sys.argv[2] if len(sys.argv) == 3 else "missing")

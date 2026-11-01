@@ -30,6 +30,24 @@ class K0ProofFailClosedTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             pe.verify_qemu_only_cr3_probe(b"SAFE_RELEASE", b"NO_CR3_MARKER")
         pe.verify_qemu_only_cr3_probe(b"SAFE_RELEASE", marker)
+        with self.assertRaises(ValueError):
+            pe.verify_qemu_only_cr3_probe(b"SAFE_RELEASE", marker, b"MISSING_RO")
+        with self.assertRaises(ValueError):
+            pe.verify_qemu_only_cr3_probe(
+                pe.QEMU_CR3_RO_MARKER, marker, pe.QEMU_CR3_RO_MARKER)
+        pe.verify_qemu_only_cr3_probe(
+            b"SAFE_RELEASE", marker, pe.QEMU_CR3_RO_MARKER)
+
+    def test_strict_readonly_fault_uart_not_confused_with_missing_page(self):
+        with TemporaryDirectory() as temp:
+            file = Path(temp) / "uart.log"
+            file.write_bytes(b"".join(serial.EXPECTED_READONLY))
+            serial.verify(file, "ro")
+            with self.assertRaises(ValueError):
+                serial.verify(file, "missing")
+            file.write_bytes(b"".join(serial.EXPECTED))
+            with self.assertRaises(ValueError):
+                serial.verify(file, "ro")
 
     def test_refuse_random_binary_with_no_pe(self):
         with TemporaryDirectory() as temp:
