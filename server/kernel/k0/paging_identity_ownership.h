@@ -14,6 +14,7 @@
  * revalidates the candidate and exact physical ownership.
  */
 #include "memory_map.h"
+#include "page_pool.h"
 
 #define K0_OWNER_IDENTITY_LIMIT 0x40000000ULL
 #define K0_OWNER_PDE_BYTES 0x200000ULL
@@ -170,5 +171,28 @@ static int k0_identity_owner_plan(const void *map_buffer, K_U64 bytes,
     for (K_U32 i = 0; i < K0_OWNER_SLOTS; ++i)
         target[i] = next.allowed[i];
     return 1;
+}
+
+/* Exact correspondence between all live physical paging frames and the
+ * post-firmware page-ledger bitmask. A simple range test is insufficient:
+ * a page within the pool can be unclaimed, released, or already reused.
+ * This is a single-threaded read-only snapshot, NOT a lifetime pin lock.
+ */
+static int k0_identity_owner_frames_match(const K0_PAGE_POOL *pool,
+                                           const K_U64 *frames,
+                                           K_U32 frame_count) {
+    if (!pool || !pool->initialized || !pool->epoch || !frames ||
+        !frame_count || frame_count > K0_PLAN_PAGES ||
+        pool->active != frame_count) return 0;
+    K_U32 observed = 0;
+    for (K_U32 i = 0; i < frame_count; ++i) {
+        if (!k0_pool_is_claimed(pool, frames[i])) return 0;
+        K_U32 index =
+            (K_U32)((frames[i] - pool->base) / K0_PAGE_SIZE);
+        K_U32 bit = 1U << index;
+        if (observed & bit) return 0;
+        observed |= bit;
+    }
+    return observed == pool->claimed;
 }
 #endif

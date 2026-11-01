@@ -160,7 +160,13 @@ successful-ExitBootServices memory-map snapshot. PE image must be entirely
 LoaderCode/LoaderData and match the earlier LoadedImageProtocol bounds.
 The observed current stack pointer and four pages below it must remain in
 contiguous LoaderData or BootServicesData descriptors. All active paging
-frames must belong to the conventional 16-page ledger and be distinct.
+frames must belong to the conventional 16-page ledger, be distinct, and
+match the exact claimed bitmap and active count (not merely fall in the
+candidate address range). The actual firmware GDT/GDTR physical span is
+also required: the CPU reloads its CS descriptor during a #PF, so failing
+to preserve that typed Loader/Boot/Runtime firmware region can cause a
+recursive page fault and triple fault. GDT memory is an external trust
+root, not a pool allocation.
 Stack, image, and pool must be disjoint. The actual installed identity
 PD clears all lower-1GiB 2MiB slots outside the verified image, bounded
 stack window and physical pool, retaining the separate dedicated #PF

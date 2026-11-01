@@ -250,7 +250,7 @@ __attribute__((noreturn)) static void k0_cr3_qemu_probe(K0_PAGE_POOL *pool) {
      * and claimed post-firmware physical frames. All unrelated low-1GiB
      * identity slots become nonpresent; stack/pool are still coarse 2MiB.
      */
-    if (pool->active != K0_CR3_FRAME_COUNT ||
+    if (!k0_identity_owner_frames_match(pool, frame, K0_CR3_FRAME_COUNT) ||
         !k0_snapshot_map_bytes || !k0_snapshot_map_stride ||
         !k0_identity_owner_plan(k0_map_buffer, k0_snapshot_map_bytes,
             k0_snapshot_map_stride, k0_snapshot_map_version,

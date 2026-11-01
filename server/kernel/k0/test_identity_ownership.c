@@ -59,6 +59,37 @@ int main(void) {
     assert(!plan.allowed[510] && !plan.allowed[511]);
     assert(plan.stack_floor==0x41c000ULL && plan.stack_end==0x421000ULL);
 
+    /* A matching address range is not proof of frame ownership. Require
+     * the exact claimed bits and active count from the post-firmware pool.
+     */
+    K0_MEMORY_PLAN memory = {0};
+    assert(k0_memory_validate_plan(map,sizeof(map),sizeof(map[0]),
+                                   1,&memory));
+    K0_PAGE_POOL pool={0};
+    assert(!k0_pool_init(&pool,&memory,0));
+    assert(k0_pool_init(&pool,&memory,1));
+    assert(!k0_identity_owner_frames_match(&pool,frames,5));
+    for (K_U32 i=0;i<5;++i) {
+        K_U64 claimed=0;
+        assert(k0_pool_claim(&pool,&claimed));
+        assert(claimed==frames[i]);
+    }
+    assert(k0_identity_owner_frames_match(&pool,frames,5));
+    frames[2]=frames[1];
+    assert(!k0_identity_owner_frames_match(&pool,frames,5));
+    frames[2]=0x102000ULL;
+    assert(k0_pool_release(&pool,frames[2]));
+    assert(!k0_identity_owner_frames_match(&pool,frames,5));
+    K_U64 reclaimed=0;
+    assert(k0_pool_claim(&pool,&reclaimed) && reclaimed==frames[2]);
+    assert(k0_identity_owner_frames_match(&pool,frames,5));
+    pool.claimed ^= 1U << 7;
+    assert(!k0_identity_owner_frames_match(&pool,frames,5));
+    pool.claimed ^= 1U << 7;
+    pool.epoch=0;
+    assert(!k0_identity_owner_frames_match(&pool,frames,5));
+    reset();
+
     reset(); reject(0x200001ULL,0x10000ULL,0x100000ULL,0x10000ULL,
                     0x420800ULL,0x205000ULL,5);
     reset(); reject(0x200000ULL,0x10001ULL,0x100000ULL,0x10000ULL,
