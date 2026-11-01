@@ -10,7 +10,9 @@ releases them. K0.3 uses the mapping left by firmware, NOT a Koschei-owned CR3.
 - `paging_contract.h`: bounded in-memory manifest of up to 16 proposed x86-64
   4 KiB leaf entries for **claimed** K0.3 pool pages.
 - Denies unclaimed physical pages, misaligned / non-canonical / low virtual
-  pages, duplicate physical or virtual aliases, exhaustion and W+X.
+  pages, the final 64 KiB of canonical virtual space (reserved top guard),
+  duplicate physical or virtual aliases, exhaustion and W+X. The guard is a
+  proposed layout policy; no live unmapped guard is installed yet.
 - Proposed PTEs are supervisor-only. NX use requires explicit independent
   evidence of CPU NX support and EFER.NXE already being enabled. This staging
   implementation takes these as input, **does not verify or activate them**.
