@@ -64,6 +64,28 @@ class K0ProofFailClosedTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 serial.verify(file, "ro")
 
+    def test_mapped_test_binary_and_transcript_fail_closed(self):
+        marker = pe.QEMU_CR3_PF_MARKER
+        with self.assertRaises(ValueError):
+            pe.verify_qemu_only_cr3_probe(
+                b"SAFE_RELEASE", marker, pe.QEMU_CR3_RO_MARKER,
+                pe.QEMU_CR3_NX_MARKER, b"NOT_THE_MAPPED_PROBE")
+        with self.assertRaises(ValueError):
+            pe.verify_qemu_only_cr3_probe(
+                pe.QEMU_CR3_MAPPED_MARKER, marker, pe.QEMU_CR3_RO_MARKER,
+                pe.QEMU_CR3_NX_MARKER, pe.QEMU_CR3_MAPPED_MARKER)
+        pe.verify_qemu_only_cr3_probe(
+            b"SAFE_RELEASE", marker, pe.QEMU_CR3_RO_MARKER,
+            pe.QEMU_CR3_NX_MARKER, pe.QEMU_CR3_MAPPED_MARKER)
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "serial.log"
+            path.write_bytes(b"".join(serial.EXPECTED_MAPPED))
+            serial.verify(path, "mapped")
+            with self.assertRaises(ValueError):
+                serial.verify(path, "missing")
+            with self.assertRaises(ValueError):
+                serial.verify(path, "nx")
+
     def test_refuse_random_binary_with_no_pe(self):
         with TemporaryDirectory() as temp:
             file = Path(temp) / "invalid.efi"

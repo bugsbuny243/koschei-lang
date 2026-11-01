@@ -73,6 +73,9 @@ jobs:
       - name: Prove own-CR3 NX execution rejection in real QEMU (test-only)
         run: |
           bash server/kernel/k0/qemu_smoke.sh /tmp/koschei-k0-evidence nx
+      - name: Prove real own-CR3 high-half 4K write/read mapping in QEMU (test-only)
+        run: |
+          bash server/kernel/k0/qemu_smoke.sh /tmp/koschei-k0-evidence mapped
       - name: Bind evidence to commit and toolchain
         if: always()
         run: |

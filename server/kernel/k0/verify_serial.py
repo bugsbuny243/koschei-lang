@@ -23,6 +23,9 @@ EXPECTED_NX = EXPECTED[:-2] + (
     b"KOSCHEI-KERNEL K0 OWN-CR3-NX-EXEC-DENIED\r\n",
     EXPECTED[-1],
 )
+EXPECTED_MAPPED = EXPECTED[:-2] + (
+    b"KOSCHEI-KERNEL K0 OWN-CR3-4K-MAPPED\r\n",
+) + EXPECTED[-2:]
 
 
 def verify(serial_path: Path, mode: str = "missing") -> None:
@@ -33,20 +36,21 @@ def verify(serial_path: Path, mode: str = "missing") -> None:
     # the same emulated UART *before* our code starts. Keep these separate
     # from the exact Koschei suffix. No extra Koschei record,
     # duplicate successful boot marker, trailing bytes or oversized preface.
-    if mode not in ("missing", "ro", "nx"):
+    if mode not in ("missing", "ro", "nx", "mapped"):
         raise ValueError("unknown QEMU test mode")
     expected_lines = (EXPECTED_READONLY if mode == "ro" else
-                      EXPECTED_NX if mode == "nx" else EXPECTED)
+                      EXPECTED_NX if mode == "nx" else
+                      EXPECTED_MAPPED if mode == "mapped" else EXPECTED)
     expected = b"".join(expected_lines)
     if not data.endswith(expected) or len(data) > 8192:
         raise ValueError(f"missing or altered Koschei UART transcript ({data[-512:]!r})")
     firmware_prefix = data[:-len(expected)]
     if b"KOSCHEI-KERNEL" in firmware_prefix:
         raise ValueError("unexpected pre-boot Koschei claim in firmware prefix")
-    print(f"KOSCHEI-K0 SERIAL/1 PASS exact nine Koschei records after firmware preface mode={mode}")
+    print(f"KOSCHEI-K0 SERIAL/1 PASS exact {len(expected_lines)} Koschei records after firmware preface mode={mode}")
 
 
 if __name__ == "__main__":
     if len(sys.argv) not in (2, 3):
-        raise SystemExit("usage: python verify_serial.py SERIAL.LOG [missing|ro|nx]")
+        raise SystemExit("usage: python verify_serial.py SERIAL.LOG [missing|ro|nx|mapped]")
     verify(Path(sys.argv[1]), sys.argv[2] if len(sys.argv) == 3 else "missing")

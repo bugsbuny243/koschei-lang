@@ -71,7 +71,10 @@ read-only huge-page slot (expected CPU #PF error 3 with CR0.WP=1). The
 second slot is otherwise unneeded by the loaded image, current stack, handler,
 UART or allocated page-table frames. A third independent QEMU boot marks that
 slot present but NX and attempts execution with EFER.NXE active (expected real
-#PF error 17, CR2 and active CR3 checked). All three are test-only diagnostics;
+#PF error 17, CR2 and active CR3 checked). A fourth independent QEMU boot uses an owned real four-level high-half 4 KiB
+page table: reads/writes via the high virtual address are checked against the
+claimed identity-mapped physical frame, then zeroed, before a genuine
+unmapped-address #PF. All four are test-only diagnostics;
 the rest of the lower GiB remains deliberately overbroad RWX and production
 isolation remains unproven.
 

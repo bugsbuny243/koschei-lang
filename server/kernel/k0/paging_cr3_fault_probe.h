@@ -13,6 +13,12 @@
 #endif
 
 #define K0_CR3_TEST_LIMIT 0x40000000ULL
+#ifdef KOSCHEI_QEMU_MAPPED_TEST
+#define K0_CR3_FRAME_COUNT 7U
+#define K0_CR3_MAPPING_VA 0xffff800000000000ULL
+#else
+#define K0_CR3_FRAME_COUNT 3U
+#endif
 #if defined(KOSCHEI_QEMU_NX_TEST)
 #define K0_CR3_FAULT_VA 0x3fe00000ULL
 #define K0_CR3_EXPECTED_ERROR 17ULL /* present, instruction fetch denied */
@@ -85,7 +91,7 @@ __attribute__((naked)) static void k0_cr3_pf_stub(void) {
 }
 
 __attribute__((noreturn)) static void k0_cr3_qemu_probe(K0_PAGE_POOL *pool) {
-    K_U64 frame[3] = {0};
+    K_U64 frame[K0_CR3_FRAME_COUNT] = {0};
     K_U64 stack_witness = 0;
     K_U64 stack_addr = (K_U64)(unsigned long long)&stack_witness;
     K_U64 dispatcher = (K_U64)(unsigned long long)&k0_cr3_pf_dispatch;
@@ -120,7 +126,7 @@ __attribute__((noreturn)) static void k0_cr3_qemu_probe(K0_PAGE_POOL *pool) {
         stop(0x11);
     }
 #endif
-    for (K_U32 i = 0; i < 3; ++i) {
+    for (K_U32 i = 0; i < K0_CR3_FRAME_COUNT; ++i) {
         if (!k0_pool_claim(pool, &frame[i]) ||
             frame[i] >= K0_CR3_TEST_LIMIT ||
             frame[i] == 0) {
@@ -160,9 +166,36 @@ __attribute__((noreturn)) static void k0_cr3_qemu_probe(K0_PAGE_POOL *pool) {
 #else
     const K_U64 last_entry = ((K_U64)511 << 21) | 0x83ULL;
 #endif
+#ifdef KOSCHEI_QEMU_MAPPED_TEST
+    /* A real, present 4 KiB high-half leaf on the new CPU CR3.
+     * NX, supervisor-only; current low identity still deliberately RWX.
+     */
+    volatile K_U64 *high_pdpt = (volatile K_U64 *)(unsigned long long)frame[3];
+    volatile K_U64 *high_pd = (volatile K_U64 *)(unsigned long long)frame[4];
+    volatile K_U64 *high_pt = (volatile K_U64 *)(unsigned long long)frame[5];
+    for (K_U32 i = 0; i < 512; ++i) {
+        high_pdpt[i] = 0;
+        high_pd[i] = 0;
+        high_pt[i] = 0;
+    }
+    pml4[256] = frame[3] | 3ULL;
+    high_pdpt[0] = frame[4] | 3ULL;
+    high_pd[0] = frame[5] | 3ULL;
+    high_pt[0] = frame[6] | 3ULL | (1ULL << 63);
+    const K_U64 high_root_expected = frame[3] | 3ULL;
+    if (high_pdpt[0] != (frame[4] | 3ULL) ||
+        high_pd[0] != (frame[5] | 3ULL) ||
+        high_pt[0] != (frame[6] | 3ULL | (1ULL << 63)) ||
+        high_pt[1] != 0) {
+        serial_line("KOSCHEI-KERNEL REJECT/1 CR3-4K-PREFLIGHT");
+        stop(0x11);
+    }
+#else
+    const K_U64 high_root_expected = 0;
+#endif
     if (pml4[0] != (frame[1] | 3ULL) ||
         pdpt[0] != (frame[2] | 3ULL) ||
-        pml4[256] != 0 || pd[0] != 0x83ULL ||
+        pml4[256] != high_root_expected || pd[0] != 0x83ULL ||
         pd[511] != last_entry) {
         serial_line("KOSCHEI-KERNEL REJECT/1 CR3-MAP");
         stop(0x11);
@@ -197,7 +230,34 @@ __attribute__((noreturn)) static void k0_cr3_qemu_probe(K0_PAGE_POOL *pool) {
         serial_line("KOSCHEI-KERNEL REJECT/1 CR3-NOT-INSTALLED");
         stop(0x11);
     }
-    /* Only the #PF handler can produce the success marker and exit=33. */
+#ifdef KOSCHEI_QEMU_MAPPED_TEST
+    volatile K_U8 *virtual_page =
+        (volatile K_U8 *)(unsigned long long)K0_CR3_MAPPING_VA;
+    volatile K_U8 *identity_page =
+        (volatile K_U8 *)(unsigned long long)frame[6];
+    virtual_page[0] = 0xa5U;
+    virtual_page[K0_PAGE_SIZE - 1] = 0x5aU;
+    if (identity_page[0] != 0xa5U ||
+        identity_page[K0_PAGE_SIZE - 1] != 0x5aU) {
+        serial_line("KOSCHEI-KERNEL REJECT/1 CR3-4K-ALIAS");
+        stop(0x11);
+    }
+    identity_page[1] = 0x3cU;
+    if (virtual_page[1] != 0x3cU) {
+        serial_line("KOSCHEI-KERNEL REJECT/1 CR3-4K-READBACK");
+        stop(0x11);
+    }
+    virtual_page[0] = 0;
+    virtual_page[1] = 0;
+    virtual_page[K0_PAGE_SIZE - 1] = 0;
+    if (identity_page[0] || identity_page[1] ||
+        identity_page[K0_PAGE_SIZE - 1]) {
+        serial_line("KOSCHEI-KERNEL REJECT/1 CR3-4K-CLEANUP");
+        stop(0x11);
+    }
+    serial_line("KOSCHEI-KERNEL K0 OWN-CR3-4K-MAPPED");
+#endif
+    /* Only a real #PF handler can produce the final success and exit=33. */
 #if defined(KOSCHEI_QEMU_NX_TEST)
     const K_U64 no_execute = K0_CR3_FAULT_VA;
     __asm__ __volatile__("callq *%0" : : "r"(no_execute) : "memory");
