@@ -112,7 +112,17 @@ static int k0_pe_wx_parse(const void *mapped, K_U64 mapped_bytes,
         }
     }
     if (!next.executable_pages || !next.writable_pages) return 0;
-    *out = next;
+    /* Freestanding EFI: avoid compiler-generated memcpy for 512-byte
+     * aggregate assignment. Commit only after all preflight checks pass.
+     */
+    out->image_size = next.image_size;
+    out->page_count = next.page_count;
+    out->section_count = next.section_count;
+    out->executable_pages = next.executable_pages;
+    out->writable_pages = next.writable_pages;
+    volatile K_U8 *output_pages = out->pages;
+    for (K_U32 i = 0; i < K0_PE_WX_MAX_PAGES; ++i)
+        output_pages[i] = next.pages[i];
     return 1;
 }
 

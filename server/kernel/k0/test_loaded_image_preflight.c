@@ -29,6 +29,11 @@ static void reject_untouched(K_U64 entry) {
 }
 int main(void) {
     K0_MEMORY_PLAN physical = {0};
+    /* Direct use of all static PE/GUID helpers in strict -Werror fixture. */
+    K0_PE_WX_LAYOUT unused_pe = {0};
+    assert(k0_loaded_image_guid.data1 == 0x5b1b31a1U);
+    assert(!k0_pe_wx_parse(0, sizeof(map), &unused_pe));
+    assert(!k0_pe_wx_identity_range(0, &unused_pe));
     reset();
     assert(k0_memory_validate_plan(map,sizeof(map),sizeof(map[0]),1,&physical));
     assert(k0_loaded_image_bounds(&image,map,sizeof(map),sizeof(map[0]),
