@@ -202,6 +202,25 @@ recursion protection, multicore reservation or production exception
 policy. Firmware, ACPI/MMIO, physical hardware and other unknown
 aliases remain independent acceptance blockers.
 
+## Exact claimed-only 4KiB conventional pool mappings (QEMU-only)
+
+The own-CR3 QEMU probe additionally claims two pinned PT frames and splits
+the 2MiB conventional-page-pool identity PDE(s). Only the actual
+post-ExitBootServices claimed frame addresses become supervisor RW+NX
+4KiB present leaves; every unclaimed conventional pool page becomes
+nonpresent. Firmware GDT leaves co-located with the pool are RO+NX.
+The builder rejects stale/forged pool bitmasks, reused or unclaimed PT
+frames, collisions with PE image/stack PTs, missing ownership slots,
+physical alias overlap and pools spanning unsupported PDE windows.
+A ninth independent EFI reads a specific unclaimed pool frame under
+real CPU CR3, requiring #PF error=0, matching CR2/CR3, exact UART
+marker and debug-exit 33. Existing eight CPU probes rerun.
+
+**Not production-ready:** firmware-GDT PDEs outside the pool remain
+potentially coarse 2MiB RW+NX; lifetime-safe frame pinning, stack
+reservation, runtime services/ACPI/MMIO and robust interrupt handling
+remain unimplemented. No K0.4 merge is authorized by emulator proof.
+
 ## Next executable acceptance requirements
 1. Capture exact page ownership and reserve the loaded PE image, executing
    stack, firmware runtime ranges, ACPI, MMIO/framebuffer and page-table

@@ -1,12 +1,11 @@
 #ifndef KOSCHEI_K0_CR3_FAULT_PROBE_H
 #define KOSCHEI_K0_CR3_FAULT_PROBE_H
 /*
- * EMULATOR TEST BINARY ONLY. This is not secure production page isolation.
- * A temporary 0..1 GiB supervisor identity map has RWX 2 MiB huge pages
- * to retain firmware-loaded code and the existing stack after switching CR3.
- * It leaves the tested high-half address unmapped and uses a dedicated #PF
- * IDT gate. All other IDT vectors are absent; interrupts are masked.
- * Never compile, call, or advertise this as customer production MMU policy.
+ * QEMU/OVMF own-CR3 experiment ONLY. The loaded PE is section-aware RX/
+ * RW+NX; observed stack uses 4KiB RW+NX leaves and a nonpresent guard;
+ * claimed pool frames use 4KiB RW+NX and unclaimed frames are nonpresent.
+ * Firmware GDT may still require a coarse RW+NX 2MiB identity PDE.
+ * Incomplete IDT, memory ownership and lifecycle: NOT production policy.
  */
 #ifndef KOSCHEI_QEMU_TEST
 #error "CR3 diagnostic must never be compiled into the release image"
@@ -15,19 +14,24 @@
 #include "paging_active_image_wx.h"
 #include "paging_identity_ownership.h"
 #include "paging_stack_guard_4k.h"
+#include "paging_pool_4k.h"
 
 #define K0_CR3_TEST_LIMIT 0x40000000ULL
 #ifdef KOSCHEI_QEMU_MAPPED_TEST
-#define K0_CR3_FRAME_COUNT 11U
+#define K0_CR3_FRAME_COUNT 13U
 #define K0_CR3_IMAGE_PT_START 7U
 #define K0_CR3_STACK_PT_START 9U
+#define K0_CR3_POOL_PT_START 11U
 #define K0_CR3_MAPPING_VA 0xffff800000000000ULL
 #else
-#define K0_CR3_FRAME_COUNT 7U
+#define K0_CR3_FRAME_COUNT 9U
 #define K0_CR3_IMAGE_PT_START 3U
 #define K0_CR3_STACK_PT_START 5U
+#define K0_CR3_POOL_PT_START 7U
 #endif
-#ifdef KOSCHEI_QEMU_STACK_GUARD_TEST
+#ifdef KOSCHEI_QEMU_POOL_HOLE_TEST
+#define K0_CR3_EXPECTED_ERROR 0ULL /* unclaimed 4KiB pool leaf */
+#elif defined(KOSCHEI_QEMU_STACK_GUARD_TEST)
 #define K0_CR3_EXPECTED_ERROR 0ULL /* 4KiB nonpresent stack guard */
 #elif defined(KOSCHEI_QEMU_LOW_HOLE_TEST)
 #define K0_CR3_FAULT_VA K0_OWNER_LOW_HOLE_VA
@@ -79,6 +83,10 @@ _Static_assert(sizeof(K0_CR3_GDT_REGISTER) == 10, "x86-64 GDTR");
 static K0_CR3_IDT_GATE k0_cr3_idt[16];
 static K0_CR3_IDT_REGISTER k0_cr3_idtr;
 static volatile K_U64 k0_expected_cr3;
+#ifdef KOSCHEI_QEMU_POOL_HOLE_TEST
+static volatile K_U64 k0_cr3_unclaimed_pool_target;
+#define K0_CR3_FAULT_VA k0_cr3_unclaimed_pool_target
+#endif
 #ifdef KOSCHEI_QEMU_STACK_GUARD_TEST
 static volatile K_U64 k0_cr3_stack_guard_target;
 #define K0_CR3_FAULT_VA k0_cr3_stack_guard_target
@@ -106,7 +114,9 @@ __attribute__((used,noreturn)) static void k0_cr3_pf_dispatch(
         stop(0x11);
     }
     /* Only reachable through a real CPU vector-14 exception path. */
-#if defined(KOSCHEI_QEMU_STACK_GUARD_TEST)
+#if defined(KOSCHEI_QEMU_POOL_HOLE_TEST)
+    serial_line("KOSCHEI-KERNEL K0 OWN-CR3-UNCLAIMED-POOL-DENIED");
+#elif defined(KOSCHEI_QEMU_STACK_GUARD_TEST)
     serial_line("KOSCHEI-KERNEL K0 OWN-CR3-STACK-GUARD-DENIED");
 #elif defined(KOSCHEI_QEMU_LOW_HOLE_TEST)
     serial_line("KOSCHEI-KERNEL K0 OWN-CR3-LOW-HOLE-DENIED");
@@ -300,6 +310,23 @@ __attribute__((noreturn)) static void k0_cr3_qemu_probe(K0_PAGE_POOL *pool) {
         serial_line("KOSCHEI-KERNEL REJECT/1 STACK-GUARD-4K");
         stop(0x11);
     }
+    /* Only claimed conventional-pool leaves remain supervisor RW+NX.
+     * An unclaimed pool page is nonpresent even inside the pool's 2MiB
+     * identity PDE. Preserve any co-located firmware GDT leaves RO+NX.
+     */
+    K_U64 unclaimed_pool_page=0;
+    volatile K_U64 *pool_tables[K0_POOL_4K_PT_FRAMES] = {
+        (volatile K_U64 *)(unsigned long long)frame[K0_CR3_POOL_PT_START],
+        (volatile K_U64 *)(unsigned long long)frame[K0_CR3_POOL_PT_START+1U]
+    };
+    if (!k0_pool_4k_build(pd, pool, &k0_identity_owner_state,
+            k0_image_bounds.base, k0_image_bounds.size,
+            current_gdt.base, (K_U64)current_gdt.limit+1ULL,
+            frame, K0_CR3_FRAME_COUNT, &frame[K0_CR3_POOL_PT_START],
+            pool_tables, &unclaimed_pool_page)) {
+        serial_line("KOSCHEI-KERNEL REJECT/1 POOL-4K-CLAIMED");
+        stop(0x11);
+    }
     if (pml4[0] != (frame[1] | 3ULL) ||
         pdpt[0] != (frame[2] | 3ULL) ||
         pml4[256] != high_root_expected ||
@@ -325,6 +352,9 @@ __attribute__((noreturn)) static void k0_cr3_qemu_probe(K0_PAGE_POOL *pool) {
     k0_cr3_idtr.limit = (K_U16)(sizeof(k0_cr3_idt) - 1);
     k0_cr3_idtr.base = idt_addr;
     k0_expected_cr3 = frame[0];
+#ifdef KOSCHEI_QEMU_POOL_HOLE_TEST
+    k0_cr3_unclaimed_pool_target = unclaimed_pool_page;
+#endif
 #ifdef KOSCHEI_QEMU_STACK_GUARD_TEST
     k0_cr3_stack_guard_target = guard_page;
 #endif
@@ -350,6 +380,7 @@ __attribute__((noreturn)) static void k0_cr3_qemu_probe(K0_PAGE_POOL *pool) {
     serial_line("KOSCHEI-KERNEL K0 ACTIVE-IMAGE-4K-WX");
     serial_line("KOSCHEI-KERNEL K0 IDENTITY-OWNER-APERTURE");
     serial_line("KOSCHEI-KERNEL K0 ACTIVE-STACK-4K-GUARD");
+    serial_line("KOSCHEI-KERNEL K0 ACTIVE-POOL-4K-CLAIMED");
 #ifdef KOSCHEI_QEMU_MAPPED_TEST
     volatile K_U8 *virtual_page =
         (volatile K_U8 *)(unsigned long long)K0_CR3_MAPPING_VA;
@@ -378,7 +409,10 @@ __attribute__((noreturn)) static void k0_cr3_qemu_probe(K0_PAGE_POOL *pool) {
     serial_line("KOSCHEI-KERNEL K0 OWN-CR3-4K-MAPPED");
 #endif
     /* Only a real #PF handler can produce the final success and exit=33. */
-#if defined(KOSCHEI_QEMU_STACK_GUARD_TEST)
+#if defined(KOSCHEI_QEMU_POOL_HOLE_TEST)
+    const K_U64 unclaimed_read = K0_CR3_FAULT_VA;
+    __asm__ __volatile__("movq (%0), %%rax" : : "r"(unclaimed_read) : "rax", "memory");
+#elif defined(KOSCHEI_QEMU_STACK_GUARD_TEST)
     const K_U64 guard_read = K0_CR3_FAULT_VA;
     __asm__ __volatile__("movq (%0), %%rax" : : "r"(guard_read) : "rax", "memory");
 #elif defined(KOSCHEI_QEMU_LOW_HOLE_TEST)

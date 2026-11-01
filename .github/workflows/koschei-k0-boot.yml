@@ -100,6 +100,12 @@ jobs:
             server/kernel/k0/test_stack_guard_4k.c \
             -o /tmp/koschei-k0-evidence/stack-guard-4k-tests
           /tmp/koschei-k0-evidence/stack-guard-4k-tests
+      - name: Deny unclaimed 4KiB physical pool page leaves (host adversarial)
+        run: |
+          clang -std=c11 -O2 -Wall -Wextra -Werror \
+            server/kernel/k0/test_pool_4k.c \
+            -o /tmp/koschei-k0-evidence/pool-4k-claimed-tests
+          /tmp/koschei-k0-evidence/pool-4k-claimed-tests
       - name: Boot actual UEFI binary on QEMU OVMF and capture UART proof
         run: |
           bash server/kernel/k0/qemu_smoke.sh /tmp/koschei-k0-evidence
@@ -124,6 +130,9 @@ jobs:
       - name: Prove real nonpresent stack 4KiB guard with CPU CR2/error/CR3
         run: |
           bash server/kernel/k0/qemu_smoke.sh /tmp/koschei-k0-evidence stack-guard
+      - name: Prove real CPU denial of unclaimed physical pool page
+        run: |
+          bash server/kernel/k0/qemu_smoke.sh /tmp/koschei-k0-evidence pool-hole
       - name: Bind evidence to commit and toolchain
         if: always()
         run: |

@@ -183,6 +183,35 @@ class K0ProofFailClosedTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 serial.verify(path, "low-hole")
 
+    def test_unclaimed_pool_page_cpu_proof_marker_isolation(self):
+        marker = pe.QEMU_CR3_PF_MARKER
+        with self.assertRaises(ValueError):
+            pe.verify_qemu_only_cr3_probe(
+                pe.QEMU_CR3_POOL_HOLE_MARKER, marker, pe.QEMU_CR3_RO_MARKER,
+                pe.QEMU_CR3_NX_MARKER, pe.QEMU_CR3_MAPPED_MARKER,
+                pe.QEMU_CR3_WX_MARKER, pe.QEMU_CR3_DATA_NX_MARKER,
+                pe.QEMU_CR3_LOW_HOLE_MARKER, pe.QEMU_CR3_STACK_GUARD_MARKER,
+                pe.QEMU_CR3_POOL_HOLE_MARKER)
+        with self.assertRaises(ValueError):
+            pe.verify_qemu_only_cr3_probe(
+                b"SAFE_RELEASE", marker, pe.QEMU_CR3_RO_MARKER,
+                pe.QEMU_CR3_NX_MARKER, pe.QEMU_CR3_MAPPED_MARKER,
+                pe.QEMU_CR3_WX_MARKER, pe.QEMU_CR3_DATA_NX_MARKER,
+                pe.QEMU_CR3_LOW_HOLE_MARKER, pe.QEMU_CR3_STACK_GUARD_MARKER,
+                b"BAD")
+        pe.verify_qemu_only_cr3_probe(
+            b"SAFE_RELEASE", marker, pe.QEMU_CR3_RO_MARKER,
+            pe.QEMU_CR3_NX_MARKER, pe.QEMU_CR3_MAPPED_MARKER,
+            pe.QEMU_CR3_WX_MARKER, pe.QEMU_CR3_DATA_NX_MARKER,
+            pe.QEMU_CR3_LOW_HOLE_MARKER, pe.QEMU_CR3_STACK_GUARD_MARKER,
+            pe.QEMU_CR3_POOL_HOLE_MARKER)
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "serial.log"
+            path.write_bytes(b"".join(serial.EXPECTED_POOL_HOLE))
+            serial.verify(path, "pool-hole")
+            with self.assertRaises(ValueError):
+                serial.verify(path, "stack-guard")
+
     def test_refuse_random_binary_with_no_pe(self):
         with TemporaryDirectory() as temp:
             file = Path(temp) / "invalid.efi"

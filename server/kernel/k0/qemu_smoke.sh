@@ -37,6 +37,10 @@ case "$MODE" in
     BOOT_BINARY="$OUT/BOOTX64-STACK-GUARD.EFI"
     SUFFIX="-stack-guard"
     ;;
+  pool-hole)
+    BOOT_BINARY="$OUT/BOOTX64-POOL-HOLE.EFI"
+    SUFFIX="-pool-hole"
+    ;;
   *)
     echo "KOSCHEI-K0 FAIL unknown QEMU scenario" >&2
     exit 1
