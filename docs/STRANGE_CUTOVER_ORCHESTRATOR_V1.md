@@ -56,3 +56,17 @@ python3 -m unittest discover -s tests -p 'test_*.py'
 The dedicated unit tests mock the compiler and native launcher while using
 real SQLite stage/activation records. Existing Strange integration tests
 exercise the actual Go builder and Linux memfd supervised execution.
+
+## Real native integration evidence
+
+`tests/test_strange_cutover_orchestrator_integration_v1.py` runs on Linux
+with Go available. It compiles the actual future-epoch artifact using the
+SHA-256 pinned local Go binary, stages and activates the SQLite handoff,
+launches through the existing sealed memfd supervised native path, asserts
+`REPORTED_OK` durable once-only reconciliation and rejects second activation.
+This is stronger than a mocked orchestration test, but it is still a local
+Linux prototype, not independent clock, signing-key or OS integrity attestation.
+
+```sh
+python3 -m unittest discover -s tests -p 'test_strange_cutover_orchestrator_integration_v1.py' -v
+```
