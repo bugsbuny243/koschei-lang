@@ -221,6 +221,27 @@ potentially coarse 2MiB RW+NX; lifetime-safe frame pinning, stack
 reservation, runtime services/ACPI/MMIO and robust interrupt handling
 remain unimplemented. No K0.4 merge is authorized by emulator proof.
 
+## Firmware GDTR RO+NX 4KiB identity leaf (QEMU only)
+
+Two additional claimed PT frames are pinned (max 15 active of the
+validated 16-page pool). After PE section RX, stack guard RW+NX, claimed
+pool RW+NX are installed, the test-only builder checks the live SGDT
+physical descriptor range. Previously installed GDT 4KiB leaves must
+already be exact supervisor RO+NX; otherwise ordinary GDT 2MiB huge
+identity windows are replaced by RO+NX 4KiB leaves only for descriptor
+pages, leaving unrelated pages nonpresent. Arbitrary physical PT roots
+and unclaimed frame aliases are refused.
+
+The tenth distinct EFI boot attempts a write to the actual firmware
+GDT under supervisor CR0.WP and requires vector 14, CPU #PF=3, exact
+CR2 and CR3, strict UART and debug-exit=33. The previous nine CPU modes
+rerun under this same active mapping.
+
+**Still unsupported:** Kernel-owned GDT, complete IDT/ISR coverage,
+exception recovery, stack lifetime reservation, firmware runtime and
+ACPI/MMIO physical ownership, SMP/process boundaries and hardware
+evidence. QEMU proof is not sufficient for production or merge.
+
 ## Next executable acceptance requirements
 1. Capture exact page ownership and reserve the loaded PE image, executing
    stack, firmware runtime ranges, ACPI, MMIO/framebuffer and page-table

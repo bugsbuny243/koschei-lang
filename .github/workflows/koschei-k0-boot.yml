@@ -106,6 +106,12 @@ jobs:
             server/kernel/k0/test_pool_4k.c \
             -o /tmp/koschei-k0-evidence/pool-4k-claimed-tests
           /tmp/koschei-k0-evidence/pool-4k-claimed-tests
+      - name: Validate readonly 4KiB GDT ownership and PT construction
+        run: |
+          clang -std=c11 -O2 -Wall -Wextra -Werror \
+            server/kernel/k0/test_gdt_4k.c \
+            -o /tmp/koschei-k0-evidence/gdt-4k-ro-tests
+          /tmp/koschei-k0-evidence/gdt-4k-ro-tests
       - name: Boot actual UEFI binary on QEMU OVMF and capture UART proof
         run: |
           bash server/kernel/k0/qemu_smoke.sh /tmp/koschei-k0-evidence
@@ -133,6 +139,9 @@ jobs:
       - name: Prove real CPU denial of unclaimed physical pool page
         run: |
           bash server/kernel/k0/qemu_smoke.sh /tmp/koschei-k0-evidence pool-hole
+      - name: Prove real supervisor write to firmware GDT denied by CPU CR0.WP
+        run: |
+          bash server/kernel/k0/qemu_smoke.sh /tmp/koschei-k0-evidence gdt-ro
       - name: Bind evidence to commit and toolchain
         if: always()
         run: |

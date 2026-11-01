@@ -41,6 +41,10 @@ case "$MODE" in
     BOOT_BINARY="$OUT/BOOTX64-POOL-HOLE.EFI"
     SUFFIX="-pool-hole"
     ;;
+  gdt-ro)
+    BOOT_BINARY="$OUT/BOOTX64-GDT-RO.EFI"
+    SUFFIX="-gdt-ro"
+    ;;
   *)
     echo "KOSCHEI-K0 FAIL unknown QEMU scenario" >&2
     exit 1

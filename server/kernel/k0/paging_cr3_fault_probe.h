@@ -4,8 +4,9 @@
  * QEMU/OVMF own-CR3 experiment ONLY. The loaded PE is section-aware RX/
  * RW+NX; observed stack uses 4KiB RW+NX leaves and a nonpresent guard;
  * claimed pool frames use 4KiB RW+NX and unclaimed frames are nonpresent.
- * Firmware GDT may still require a coarse RW+NX 2MiB identity PDE.
- * Incomplete IDT, memory ownership and lifecycle: NOT production policy.
+ * Typed firmware GDTR pages also remain RO+NX, with unrelated pages in
+ * newly split GDT slots nonpresent. Still dependent on firmware's GDT,
+ * with incomplete IDT, memory ownership and lifetime pinning: NOT production.
  */
 #ifndef KOSCHEI_QEMU_TEST
 #error "CR3 diagnostic must never be compiled into the release image"
@@ -15,21 +16,26 @@
 #include "paging_identity_ownership.h"
 #include "paging_stack_guard_4k.h"
 #include "paging_pool_4k.h"
+#include "paging_gdt_4k.h"
 
 #define K0_CR3_TEST_LIMIT 0x40000000ULL
 #ifdef KOSCHEI_QEMU_MAPPED_TEST
-#define K0_CR3_FRAME_COUNT 13U
+#define K0_CR3_FRAME_COUNT 15U
 #define K0_CR3_IMAGE_PT_START 7U
 #define K0_CR3_STACK_PT_START 9U
 #define K0_CR3_POOL_PT_START 11U
+#define K0_CR3_GDT_PT_START 13U
 #define K0_CR3_MAPPING_VA 0xffff800000000000ULL
 #else
-#define K0_CR3_FRAME_COUNT 9U
+#define K0_CR3_FRAME_COUNT 11U
 #define K0_CR3_IMAGE_PT_START 3U
 #define K0_CR3_STACK_PT_START 5U
 #define K0_CR3_POOL_PT_START 7U
+#define K0_CR3_GDT_PT_START 9U
 #endif
-#ifdef KOSCHEI_QEMU_POOL_HOLE_TEST
+#ifdef KOSCHEI_QEMU_GDT_RO_TEST
+#define K0_CR3_EXPECTED_ERROR 3ULL /* supervisor write to GDT RO leaf */
+#elif defined(KOSCHEI_QEMU_POOL_HOLE_TEST)
 #define K0_CR3_EXPECTED_ERROR 0ULL /* unclaimed 4KiB pool leaf */
 #elif defined(KOSCHEI_QEMU_STACK_GUARD_TEST)
 #define K0_CR3_EXPECTED_ERROR 0ULL /* 4KiB nonpresent stack guard */
@@ -83,6 +89,10 @@ _Static_assert(sizeof(K0_CR3_GDT_REGISTER) == 10, "x86-64 GDTR");
 static K0_CR3_IDT_GATE k0_cr3_idt[16];
 static K0_CR3_IDT_REGISTER k0_cr3_idtr;
 static volatile K_U64 k0_expected_cr3;
+#ifdef KOSCHEI_QEMU_GDT_RO_TEST
+static volatile K_U64 k0_cr3_gdt_write_target;
+#define K0_CR3_FAULT_VA k0_cr3_gdt_write_target
+#endif
 #ifdef KOSCHEI_QEMU_POOL_HOLE_TEST
 static volatile K_U64 k0_cr3_unclaimed_pool_target;
 #define K0_CR3_FAULT_VA k0_cr3_unclaimed_pool_target
@@ -114,7 +124,9 @@ __attribute__((used,noreturn)) static void k0_cr3_pf_dispatch(
         stop(0x11);
     }
     /* Only reachable through a real CPU vector-14 exception path. */
-#if defined(KOSCHEI_QEMU_POOL_HOLE_TEST)
+#if defined(KOSCHEI_QEMU_GDT_RO_TEST)
+    serial_line("KOSCHEI-KERNEL K0 OWN-CR3-GDT-WRITE-DENIED");
+#elif defined(KOSCHEI_QEMU_POOL_HOLE_TEST)
     serial_line("KOSCHEI-KERNEL K0 OWN-CR3-UNCLAIMED-POOL-DENIED");
 #elif defined(KOSCHEI_QEMU_STACK_GUARD_TEST)
     serial_line("KOSCHEI-KERNEL K0 OWN-CR3-STACK-GUARD-DENIED");
@@ -327,6 +339,22 @@ __attribute__((noreturn)) static void k0_cr3_qemu_probe(K0_PAGE_POOL *pool) {
         serial_line("KOSCHEI-KERNEL REJECT/1 POOL-4K-CLAIMED");
         stop(0x11);
     }
+    /* Preserve *only* typed firmware GDTR descriptor pages as RO+NX.
+     * Existing co-located 4KiB tables must already map those exact pages
+     * RO+NX; otherwise split the remaining 2MiB GDT identity slot(s).
+     */
+    K_U64 gdt_readonly_page=0;
+    volatile K_U64 *gdt_tables[K0_GDT_4K_PT_FRAMES] = {
+        (volatile K_U64 *)(unsigned long long)frame[K0_CR3_GDT_PT_START],
+        (volatile K_U64 *)(unsigned long long)frame[K0_CR3_GDT_PT_START+1U]
+    };
+    if (!k0_gdt_4k_build(pd, pool, &k0_identity_owner_state,
+            current_gdt.base, (K_U64)current_gdt.limit+1ULL,
+            frame, K0_CR3_FRAME_COUNT, &frame[K0_CR3_GDT_PT_START],
+            gdt_tables, &gdt_readonly_page)) {
+        serial_line("KOSCHEI-KERNEL REJECT/1 GDT-4K-RO");
+        stop(0x11);
+    }
     if (pml4[0] != (frame[1] | 3ULL) ||
         pdpt[0] != (frame[2] | 3ULL) ||
         pml4[256] != high_root_expected ||
@@ -352,6 +380,9 @@ __attribute__((noreturn)) static void k0_cr3_qemu_probe(K0_PAGE_POOL *pool) {
     k0_cr3_idtr.limit = (K_U16)(sizeof(k0_cr3_idt) - 1);
     k0_cr3_idtr.base = idt_addr;
     k0_expected_cr3 = frame[0];
+#ifdef KOSCHEI_QEMU_GDT_RO_TEST
+    k0_cr3_gdt_write_target = gdt_readonly_page;
+#endif
 #ifdef KOSCHEI_QEMU_POOL_HOLE_TEST
     k0_cr3_unclaimed_pool_target = unclaimed_pool_page;
 #endif
@@ -381,6 +412,7 @@ __attribute__((noreturn)) static void k0_cr3_qemu_probe(K0_PAGE_POOL *pool) {
     serial_line("KOSCHEI-KERNEL K0 IDENTITY-OWNER-APERTURE");
     serial_line("KOSCHEI-KERNEL K0 ACTIVE-STACK-4K-GUARD");
     serial_line("KOSCHEI-KERNEL K0 ACTIVE-POOL-4K-CLAIMED");
+    serial_line("KOSCHEI-KERNEL K0 ACTIVE-GDT-4K-RO-NX");
 #ifdef KOSCHEI_QEMU_MAPPED_TEST
     volatile K_U8 *virtual_page =
         (volatile K_U8 *)(unsigned long long)K0_CR3_MAPPING_VA;
@@ -409,7 +441,10 @@ __attribute__((noreturn)) static void k0_cr3_qemu_probe(K0_PAGE_POOL *pool) {
     serial_line("KOSCHEI-KERNEL K0 OWN-CR3-4K-MAPPED");
 #endif
     /* Only a real #PF handler can produce the final success and exit=33. */
-#if defined(KOSCHEI_QEMU_POOL_HOLE_TEST)
+#if defined(KOSCHEI_QEMU_GDT_RO_TEST)
+    const K_U64 gdt_write = K0_CR3_FAULT_VA;
+    __asm__ __volatile__("movb $0x5a, (%0)" : : "r"(gdt_write) : "memory");
+#elif defined(KOSCHEI_QEMU_POOL_HOLE_TEST)
     const K_U64 unclaimed_read = K0_CR3_FAULT_VA;
     __asm__ __volatile__("movq (%0), %%rax" : : "r"(unclaimed_read) : "rax", "memory");
 #elif defined(KOSCHEI_QEMU_STACK_GUARD_TEST)
