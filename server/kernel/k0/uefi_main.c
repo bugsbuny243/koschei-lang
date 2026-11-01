@@ -10,6 +10,9 @@
 #include "page_pool.h"
 #include "paging_frame_probe.h"
 #include "uefi_loaded_image_preflight.h"
+#ifdef KOSCHEI_QEMU_TEST
+#include "paging_identity_ownership.h"
+#endif
 typedef unsigned short K_U16;
 typedef void *EFI_HANDLE;
 typedef K_U64 EFI_STATUS;
@@ -72,6 +75,13 @@ static K_U8 k0_map_buffer[K0_MEMORY_MAP_LIMIT] __attribute__((aligned(16)));
 static K0_PAGE_POOL k0_pool;
 static K0_PE_WX_LAYOUT k0_loaded_pe_layout;
 static K0_LOADED_IMAGE_BOUNDS k0_image_bounds;
+#ifdef KOSCHEI_QEMU_TEST
+/* Frozen exactly when ExitBootServices accepts the most recent map key. */
+static K_U64 k0_snapshot_map_bytes;
+static K_U64 k0_snapshot_map_stride;
+static K_U32 k0_snapshot_map_version;
+static K0_IDENTITY_OWNER_PLAN k0_identity_owner_state;
+#endif
 
 static inline void port_out(K_U16 port, K_U8 value) {
     __asm__ __volatile__("outb %0, %1" : : "a"(value), "Nd"(port));
@@ -211,6 +221,11 @@ EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system) {
         }
         result = system->boot_services->exit_boot_services(image, map_key);
         if (result == 0) {
+#ifdef KOSCHEI_QEMU_TEST
+            k0_snapshot_map_bytes = map_size;
+            k0_snapshot_map_stride = stride;
+            k0_snapshot_map_version = version;
+#endif
             exited = 1;
             break;
         }

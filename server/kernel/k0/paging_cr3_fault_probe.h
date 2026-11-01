@@ -13,6 +13,7 @@
 #endif
 #include "paging_identity_exec_nx_policy.h"
 #include "paging_active_image_wx.h"
+#include "paging_identity_ownership.h"
 
 #define K0_CR3_TEST_LIMIT 0x40000000ULL
 #ifdef KOSCHEI_QEMU_MAPPED_TEST
@@ -23,7 +24,10 @@
 #define K0_CR3_FRAME_COUNT 5U
 #define K0_CR3_IMAGE_PT_START 3U
 #endif
-#ifdef KOSCHEI_QEMU_WX_TEST
+#ifdef KOSCHEI_QEMU_LOW_HOLE_TEST
+#define K0_CR3_FAULT_VA K0_OWNER_LOW_HOLE_VA
+#define K0_CR3_EXPECTED_ERROR 0ULL /* nonpresent lower identity PDE */
+#elif defined(KOSCHEI_QEMU_WX_TEST)
 #define K0_CR3_EXPECTED_ERROR 3ULL /* protected RX .text write */
 #elif defined(KOSCHEI_QEMU_DATA_NX_TEST)
 #define K0_CR3_EXPECTED_ERROR 17ULL /* actual PE .bss instruction fetch */
@@ -83,7 +87,9 @@ __attribute__((used,noreturn)) static void k0_cr3_pf_dispatch(
         stop(0x11);
     }
     /* Only reachable through a real CPU vector-14 exception path. */
-#if defined(KOSCHEI_QEMU_WX_TEST)
+#if defined(KOSCHEI_QEMU_LOW_HOLE_TEST)
+    serial_line("KOSCHEI-KERNEL K0 OWN-CR3-LOW-HOLE-DENIED");
+#elif defined(KOSCHEI_QEMU_WX_TEST)
     serial_line("KOSCHEI-KERNEL K0 OWN-CR3-CODE-WRITE-DENIED");
 #elif defined(KOSCHEI_QEMU_DATA_NX_TEST)
     serial_line("KOSCHEI-KERNEL K0 OWN-CR3-IMAGE-DATA-NX-DENIED");
@@ -228,8 +234,26 @@ __attribute__((noreturn)) static void k0_cr3_qemu_probe(K0_PAGE_POOL *pool) {
 #else
     const K_U64 high_root_expected = 0;
 #endif
+    /* Retain only the validated PE image, bounded observed stack footprint,
+     * and claimed post-firmware physical frames. All unrelated low-1GiB
+     * identity slots become nonpresent; stack/pool are still coarse 2MiB.
+     */
+    if (pool->active != K0_CR3_FRAME_COUNT ||
+        !k0_snapshot_map_bytes || !k0_snapshot_map_stride ||
+        !k0_identity_owner_plan(k0_map_buffer, k0_snapshot_map_bytes,
+            k0_snapshot_map_stride, k0_snapshot_map_version,
+            k0_image_bounds.base, k0_image_bounds.size,
+            pool->base, K0_PLAN_PAGES * K0_PAGE_SIZE,
+            stack_addr, idt_addr, frame, K0_CR3_FRAME_COUNT,
+            &k0_identity_owner_state)) {
+        serial_line("KOSCHEI-KERNEL REJECT/1 IDENTITY-OWNERSHIP");
+        stop(0x11);
+    }
+    for (K_U32 slot = 0; slot < 511; ++slot)
+        if (!k0_identity_owner_state.allowed[slot]) pd[slot] = 0;
+
     /* Install pinned physical PTs for actual PE image RX and RW+NX pages.
-     * Other low-1GiB 2MiB leaves remain RW+NX (not owner isolation).
+     * Unowned low identity slots are now nonpresent (not full isolation).
      */
     if (!k0_image_wx_activate_tables(pd, &k0_image_bounds,
             &k0_loaded_pe_layout, code_locations,
@@ -241,7 +265,7 @@ __attribute__((noreturn)) static void k0_cr3_qemu_probe(K0_PAGE_POOL *pool) {
     if (pml4[0] != (frame[1] | 3ULL) ||
         pdpt[0] != (frame[2] | 3ULL) ||
         pml4[256] != high_root_expected ||
-        (pd[0] & ~K0_CR3_IDENTITY_NX) != 0x83ULL ||
+        (!k0_identity_owner_state.allowed[0] && pd[0] != 0) ||
         pd[511] != last_entry) {
         serial_line("KOSCHEI-KERNEL REJECT/1 CR3-MAP");
         stop(0x11);
@@ -283,6 +307,7 @@ __attribute__((noreturn)) static void k0_cr3_qemu_probe(K0_PAGE_POOL *pool) {
         stop(0x11);
     }
     serial_line("KOSCHEI-KERNEL K0 ACTIVE-IMAGE-4K-WX");
+    serial_line("KOSCHEI-KERNEL K0 IDENTITY-OWNER-APERTURE");
 #ifdef KOSCHEI_QEMU_MAPPED_TEST
     volatile K_U8 *virtual_page =
         (volatile K_U8 *)(unsigned long long)K0_CR3_MAPPING_VA;
@@ -311,7 +336,10 @@ __attribute__((noreturn)) static void k0_cr3_qemu_probe(K0_PAGE_POOL *pool) {
     serial_line("KOSCHEI-KERNEL K0 OWN-CR3-4K-MAPPED");
 #endif
     /* Only a real #PF handler can produce the final success and exit=33. */
-#if defined(KOSCHEI_QEMU_WX_TEST)
+#if defined(KOSCHEI_QEMU_LOW_HOLE_TEST)
+    const K_U64 nonpresent_low = K0_CR3_FAULT_VA;
+    __asm__ __volatile__("movq (%0), %%rax" : : "r"(nonpresent_low) : "rax", "memory");
+#elif defined(KOSCHEI_QEMU_WX_TEST)
     const K_U64 rx_code = K0_CR3_FAULT_VA;
     __asm__ __volatile__("movb $0x5a, (%0)" : : "r"(rx_code) : "memory");
 #elif defined(KOSCHEI_QEMU_DATA_NX_TEST)
