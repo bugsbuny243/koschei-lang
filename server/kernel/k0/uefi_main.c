@@ -136,6 +136,10 @@ static int k0_probe_claimed_pages(K0_PAGE_POOL *pool) {
            pool->active == 0;
 }
 
+#ifdef KOSCHEI_QEMU_TEST
+#include "paging_cr3_fault_probe.h"
+#endif
+
 /* x86_64-pc-windows-msvc target supplies required UEFI Microsoft x64 ABI. */
 EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system) {
     (void)image;
@@ -199,6 +203,10 @@ EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system) {
         stop(0x11);
     }
     serial_line("KOSCHEI-KERNEL K0 PAGE-TABLE-FRAMES-ROUNDTRIP");
+#ifdef KOSCHEI_QEMU_TEST
+    k0_cr3_qemu_probe(&k0_pool); /* never returns, only in emulator binary */
+#else
     serial_line("KOSCHEI-KERNEL K0 HALT-NO-POLICY");
     stop(0x10);
+#endif
 }
