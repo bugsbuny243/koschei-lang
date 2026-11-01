@@ -102,6 +102,9 @@ static inline int k0_idt_decode_pf(uint32_t error_code, uint64_t cr2,
     r.instruction = (uint8_t)((error_code & K0_PF_INSTRUCTION) != 0);
     if (r.reserved_bit) r.fault_class = K0_WALK_FAULT_RESERVED_BIT;
     else if (!r.present) r.fault_class = K0_WALK_FAULT_ABSENT;
+    /* The K0 paging model is supervisor-only. A present user fault may be
+     * privilege/SMEP/SMAP related, not a readonly or NX translation fault. */
+    else if (r.user) r.fault_class = K0_WALK_FAULT_INVALID;
     else if (r.write && !r.instruction) r.fault_class = K0_WALK_FAULT_READONLY_WRITE;
     else if (!r.write && r.instruction) r.fault_class = K0_WALK_FAULT_NX_EXEC;
     *out = r;
