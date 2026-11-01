@@ -16,10 +16,18 @@ releases them. K0.3 uses the mapping left by firmware, NOT a Koschei-owned CR3.
 - Proposed PTEs are supervisor-only. NX use requires explicit independent
   evidence of CPU NX support and EFER.NXE already being enabled. This staging
   implementation takes these as input, **does not verify or activate them**.
-- `test_paging_contract.c`: native adversarial checks.
-- Nothing here builds PML4, PDPT, PD or PT structures, writes CR3, allocates
-  pinned page-table frames, installs an IDT or triggers a real page fault.
-  A proposed PTE is **not** a live MMU mapping.
+- `test_paging_contract.c`: native adversarial checks for leaf policy.
+- `paging_model.h` and `test_paging_model.c`: host-tested, bounded
+  **logical** PML4/PDPT/PD/PT arrays for one 2 MiB virtual window. A
+  transactional preflight demands four separately claimed page-table frame
+  addresses, no aliases with data pages, and claimed leaf ownership. The
+  arrays are never written into the claimed physical frames; no CPU sees them.
+- A pool release after planning can invalidate an unbuilt model, but the
+  current ledger has no generation/ABA token. Reclaiming and reusing a
+  previously claimed page must not be treated as safe long-term ownership.
+- Nothing here creates live CPU page tables, writes CR3, allocates and pins
+  actual physical table contents, installs an IDT or triggers a real page fault.
+  A proposed PTE or logical table array is **not** an MMU mapping.
 
 ## Next executable acceptance requirements
 1. Capture exact page ownership and reserve the loaded PE image, executing
