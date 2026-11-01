@@ -8,6 +8,7 @@ on:
   push:
     branches:
       - main
+      - 'staging/k0-*'
     paths:
       - 'server/kernel/k0/**'
       - '.github/workflows/koschei-k0-boot.yml'
@@ -43,6 +44,11 @@ jobs:
           clang -std=c11 -O2 -Wall -Wextra -Werror \
             server/kernel/k0/test_memory_map.c -o /tmp/koschei-k0-evidence/memory-map-tests
           /tmp/koschei-k0-evidence/memory-map-tests
+      - name: Execute bounded page ledger adversarial tests
+        run: |
+          clang -std=c11 -O2 -Wall -Wextra -Werror \
+            server/kernel/k0/test_page_pool.c -o /tmp/koschei-k0-evidence/page-pool-tests
+          /tmp/koschei-k0-evidence/page-pool-tests
       - name: Boot actual UEFI binary on QEMU OVMF and capture UART proof
         run: |
           bash server/kernel/k0/qemu_smoke.sh /tmp/koschei-k0-evidence
