@@ -25,6 +25,8 @@
 #endif
 #ifdef KOSCHEI_QEMU_WX_TEST
 #define K0_CR3_EXPECTED_ERROR 3ULL /* protected RX .text write */
+#elif defined(KOSCHEI_QEMU_DATA_NX_TEST)
+#define K0_CR3_EXPECTED_ERROR 17ULL /* actual PE .bss instruction fetch */
 #elif defined(KOSCHEI_QEMU_NX_TEST)
 #define K0_CR3_FAULT_VA 0x3fe00000ULL
 #define K0_CR3_EXPECTED_ERROR 17ULL /* present, instruction fetch denied */
@@ -61,6 +63,9 @@ static volatile K_U64 k0_expected_cr3;
 #ifdef KOSCHEI_QEMU_WX_TEST
 static volatile K_U64 k0_cr3_code_write_target;
 #define K0_CR3_FAULT_VA k0_cr3_code_write_target
+#elif defined(KOSCHEI_QEMU_DATA_NX_TEST)
+static volatile K_U64 k0_cr3_data_execute_target;
+#define K0_CR3_FAULT_VA k0_cr3_data_execute_target
 #endif
 
 /* The CPU pushes the page-fault error code at top of exception stack.
@@ -80,6 +85,8 @@ __attribute__((used,noreturn)) static void k0_cr3_pf_dispatch(
     /* Only reachable through a real CPU vector-14 exception path. */
 #if defined(KOSCHEI_QEMU_WX_TEST)
     serial_line("KOSCHEI-KERNEL K0 OWN-CR3-CODE-WRITE-DENIED");
+#elif defined(KOSCHEI_QEMU_DATA_NX_TEST)
+    serial_line("KOSCHEI-KERNEL K0 OWN-CR3-IMAGE-DATA-NX-DENIED");
 #elif defined(KOSCHEI_QEMU_NX_TEST)
     serial_line("KOSCHEI-KERNEL K0 OWN-CR3-NX-EXEC-DENIED");
 #elif defined(KOSCHEI_QEMU_READONLY_TEST)
@@ -258,6 +265,9 @@ __attribute__((noreturn)) static void k0_cr3_qemu_probe(K0_PAGE_POOL *pool) {
     k0_expected_cr3 = frame[0];
 #ifdef KOSCHEI_QEMU_WX_TEST
     k0_cr3_code_write_target = dispatcher;
+#elif defined(KOSCHEI_QEMU_DATA_NX_TEST)
+    /* IDT is a live PE .bss object validated RW+NX by image preflight. */
+    k0_cr3_data_execute_target = idt_addr;
 #endif
 
     /* QEMU-only: keep firmware-loaded image/stack identity-mapped, then
@@ -304,6 +314,9 @@ __attribute__((noreturn)) static void k0_cr3_qemu_probe(K0_PAGE_POOL *pool) {
 #if defined(KOSCHEI_QEMU_WX_TEST)
     const K_U64 rx_code = K0_CR3_FAULT_VA;
     __asm__ __volatile__("movb $0x5a, (%0)" : : "r"(rx_code) : "memory");
+#elif defined(KOSCHEI_QEMU_DATA_NX_TEST)
+    const K_U64 nx_data = K0_CR3_FAULT_VA;
+    __asm__ __volatile__("callq *%0" : : "r"(nx_data) : "memory");
 #elif defined(KOSCHEI_QEMU_NX_TEST)
     const K_U64 no_execute = K0_CR3_FAULT_VA;
     __asm__ __volatile__("callq *%0" : : "r"(no_execute) : "memory");
