@@ -6,6 +6,19 @@ This is the everyday layer of the Koschei library. The four library universes
 (Marvel, Matrix, quantum physics, other universes) that build on it are mapped
 in [`KOSCHEI_KUTUPHANE_EVRENLERI_V1.md`](../KOSCHEI_KUTUPHANE_EVRENLERI_V1.md).
 
+## Four new bounded, pure platform boundary modules (v1)
+
+The reviewed registry also includes `platform_web`, `platform_web3`,
+`platform_ai`, and `platform_kernel`. Their methods are implemented
+as ordinary `.ks` source and contain no ambient I/O capability. They
+provide strict HTTP route/method admission, canonical read-only EVM RPC
+input admission, model allowlist and resource budget checks, and bounded
+physical-frame ledger preflight respectively.
+
+See `docs/PLATFORM_FOUNDATION_V1.md` for exact non-claims and
+`tests/test_platform_foundation_v1.py` for fail-closed cases and
+interpreter/native byte-for-byte parity.
+
 ## Why
 
 Until now every standard-library operation was a host builtin: each new

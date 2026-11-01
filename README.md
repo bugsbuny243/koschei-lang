@@ -127,6 +127,18 @@ No disk, network, environment, or process access — pure computation.
 
 The `--deny` gate is designed for CI: a build fails if a dependency update silently adds reach.
 
+## Four-platform library foundation (experimental)
+
+Four pure, independently registered Koschei Core Library modules now
+provide fail-closed boundary checks for **HTTP routes, read-only EVM RPC,
+AI request budgets, and kernel physical-frame ledgers**. They do not grant
+network, serve, disk, inference, signing, or physical-memory authority.
+An executable .ks example and adversarial interpreter/native tests are in
+[examples/platform_foundation_v1](examples/platform_foundation_v1) and
+[the platform foundation acceptance contract](docs/PLATFORM_FOUNDATION_V1.md).
+This is foundational policy code, **not** a production web platform,
+blockchain node, AI runtime, or Koschei-written operating system.
+
 ## Language features
 
 Implemented today: functions with typed parameters, inferred generic functions, generic structs and enums, `let` / `let mut`, structs, `List<T>`, immutable `Map<String, V>` (`get`/`set`/`keys`/`contains`), `for`-in, `if`/`else`/`while` with `Bool`-only conditions, enums with exhaustive `match`, real `Option<T>` / `Result<T, E>`, full expression interpolation (`"{items.length()}"`), a daily standard library (`String` `trim`/`split`/`join`, `List` `sort`/`filter`/`contains`), and a module system where `import risk` binds `risk.ks` next to the importing file — no manifest, no build script, no config.
