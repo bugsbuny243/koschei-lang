@@ -172,6 +172,8 @@ typedef struct {
 static inline int k0_idt_fault_snapshot_valid(
     const K0_IDT_EXCEPTION_SNAPSHOT *frame, K0_IDT_PF_REPORT *pf) {
     K0_IDT_PF_REPORT decoded = {0};
+    /* Never expose a stale prior #PF report on an invalid/other vector. */
+    if (pf) *pf = decoded;
     if (!frame || frame->cs != K0_IDT_KERNEL_CS ||
         !k0_idt_is_canonical48(frame->rip) ||
         !k0_idt_is_canonical48(frame->rsp) ||
