@@ -103,6 +103,9 @@ jobs:
       - name: Prove real 4KiB PE .text write denial under CR0.WP in QEMU (test-only)
         run: |
           bash server/kernel/k0/qemu_smoke.sh /tmp/koschei-k0-evidence wx
+      - name: Prove real 4KiB PE .bss instruction fetch denied in CPU (test-only)
+        run: |
+          bash server/kernel/k0/qemu_smoke.sh /tmp/koschei-k0-evidence data-nx
       - name: Bind evidence to commit and toolchain
         if: always()
         run: |

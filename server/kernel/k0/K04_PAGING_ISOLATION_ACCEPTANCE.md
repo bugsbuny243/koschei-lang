@@ -145,7 +145,9 @@ isolation. All function pointers must be within the verified RX image,
 and active write protection (CR0.WP) and NX (EFER.NXE) are mandatory.
 
 A fifth test-only EFI attempts a write to actual 4KiB RX .text, requiring a
-real CPU vector-14 #PF error=3 and matching CR2/CR3. The existing four
+real CPU vector-14 #PF error=3 and matching CR2/CR3. A sixth QEMU-only EFI
+tries executing actual .bss image data and demands hardware #PF error=17,
+matching CR2/CR3, unique UART marker, and debug-exit 33. The existing four
 QEMU CPU fault/mapped-access test images rerun under these same live 4KiB
 image permissions. A green emulator is still NOT production acceptance:
 firmware runtime, ACPI/MMIO, framebuffer and stack ownership remain not
