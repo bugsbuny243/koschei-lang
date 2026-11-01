@@ -39,10 +39,18 @@ SOURCE="$ROOT/server/kernel/k0/uefi_main.c"
   -c "$SOURCE" -o "$OUT/koschei-k0-qemu-mapped.obj"
 "$LINK" /subsystem:efi_application /entry:efi_main /nodefaultlib \
   /machine:x64 "/out:$OUT/BOOTX64-MAPPED.EFI" "$OUT/koschei-k0-qemu-mapped.obj"
+# A fifth isolated QEMU-only EFI writes to its own actual PE .text
+# under CR0.WP and must receive CPU #PF error=3.
+"$CC" -target x86_64-pc-windows-msvc -ffreestanding -fno-stack-protector \
+  -fno-builtin -mno-red-zone -fshort-wchar -Wall -Wextra -Werror -O2 \
+  -DKOSCHEI_QEMU_TEST=1 -DKOSCHEI_QEMU_WX_TEST=1 \
+  -c "$SOURCE" -o "$OUT/koschei-k0-qemu-wx.obj"
+"$LINK" /subsystem:efi_application /entry:efi_main /nodefaultlib \
+  /machine:x64 "/out:$OUT/BOOTX64-WX.EFI" "$OUT/koschei-k0-qemu-wx.obj"
 sha256sum "$OUT/koschei-k0-release.efi" "$OUT/BOOTX64.EFI" \
   "$OUT/BOOTX64-RO.EFI" "$OUT/BOOTX64-NX.EFI" \
-  "$OUT/BOOTX64-MAPPED.EFI" > "$OUT/SHA256SUMS"
+  "$OUT/BOOTX64-MAPPED.EFI" "$OUT/BOOTX64-WX.EFI" > "$OUT/SHA256SUMS"
 python3 "$ROOT/server/kernel/k0/verify_pe.py" "$OUT/koschei-k0-release.efi" "$OUT/BOOTX64.EFI" \
   "$OUT/BOOTX64-RO.EFI" "$OUT/BOOTX64-NX.EFI" \
-  "$OUT/BOOTX64-MAPPED.EFI"
+  "$OUT/BOOTX64-MAPPED.EFI" "$OUT/BOOTX64-WX.EFI"
 echo "KOSCHEI-K0 BUILD/1 OK"

@@ -82,6 +82,12 @@ jobs:
             server/kernel/k0/test_loaded_image_preflight.c \
             -o /tmp/koschei-k0-evidence/loaded-image-bounds-tests
           /tmp/koschei-k0-evidence/loaded-image-bounds-tests
+      - name: Validate test-only real image W^X activation preflight
+        run: |
+          clang -std=c11 -O2 -Wall -Wextra -Werror \
+            server/kernel/k0/test_active_image_wx.c \
+            -o /tmp/koschei-k0-evidence/active-image-wx-tests
+          /tmp/koschei-k0-evidence/active-image-wx-tests
       - name: Boot actual UEFI binary on QEMU OVMF and capture UART proof
         run: |
           bash server/kernel/k0/qemu_smoke.sh /tmp/koschei-k0-evidence
@@ -94,6 +100,9 @@ jobs:
       - name: Prove real own-CR3 high-half 4K write/read mapping in QEMU (test-only)
         run: |
           bash server/kernel/k0/qemu_smoke.sh /tmp/koschei-k0-evidence mapped
+      - name: Prove real 4KiB PE .text write denial under CR0.WP in QEMU (test-only)
+        run: |
+          bash server/kernel/k0/qemu_smoke.sh /tmp/koschei-k0-evidence wx
       - name: Bind evidence to commit and toolchain
         if: always()
         run: |

@@ -86,6 +86,28 @@ class K0ProofFailClosedTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 serial.verify(path, "nx")
 
+    def test_code_write_denial_binary_isolation_and_uart(self):
+        marker = pe.QEMU_CR3_PF_MARKER
+        with self.assertRaises(ValueError):
+            pe.verify_qemu_only_cr3_probe(
+                pe.QEMU_CR3_WX_MARKER, marker, pe.QEMU_CR3_RO_MARKER,
+                pe.QEMU_CR3_NX_MARKER, pe.QEMU_CR3_MAPPED_MARKER,
+                pe.QEMU_CR3_WX_MARKER)
+        with self.assertRaises(ValueError):
+            pe.verify_qemu_only_cr3_probe(
+                b"SAFE_RELEASE", marker, pe.QEMU_CR3_RO_MARKER,
+                pe.QEMU_CR3_NX_MARKER, pe.QEMU_CR3_MAPPED_MARKER, b"BAD")
+        pe.verify_qemu_only_cr3_probe(
+            b"SAFE_RELEASE", marker, pe.QEMU_CR3_RO_MARKER,
+            pe.QEMU_CR3_NX_MARKER, pe.QEMU_CR3_MAPPED_MARKER,
+            pe.QEMU_CR3_WX_MARKER)
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "uart.log"
+            path.write_bytes(b"".join(serial.EXPECTED_WX))
+            serial.verify(path, "wx")
+            with self.assertRaises(ValueError):
+                serial.verify(path, "ro")
+
     def test_refuse_random_binary_with_no_pe(self):
         with TemporaryDirectory() as temp:
             file = Path(temp) / "invalid.efi"

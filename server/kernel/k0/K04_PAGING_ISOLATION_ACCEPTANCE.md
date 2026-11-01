@@ -133,6 +133,24 @@ This is a real UEFI/QEMU image-provenance and bounds receipt, NOT a
 reservation of the stack, firmware/runtime/ACPI/MMIO ranges, an active
 4KiB W^X mapping, or guaranteed trust in firmware-reported descriptors.
 
+## QEMU-only CPU-active 4KiB image W^X experiment
+
+Two additional claimed physical PT frames remain pinned after construction.
+Every huge 2MiB identity PDE overlapping the real validated loaded PE is
+replaced with a real 4KiB page table before the own-CR3 switch. Executable
+PE .text pages map supervisor RX; writable PE data/headers RW+NX;
+read-only sections RO+NX; PE section gaps nonpresent. All other low-1GiB
+identity pages remain RW+NX and do **not** establish process or domain
+isolation. All function pointers must be within the verified RX image,
+and active write protection (CR0.WP) and NX (EFER.NXE) are mandatory.
+
+A fifth test-only EFI attempts a write to actual 4KiB RX .text, requiring a
+real CPU vector-14 #PF error=3 and matching CR2/CR3. The existing four
+QEMU CPU fault/mapped-access test images rerun under these same live 4KiB
+image permissions. A green emulator is still NOT production acceptance:
+firmware runtime, ACPI/MMIO, framebuffer and stack ownership remain not
+fully reserved, and there is no user-domain isolation or hardware proof.
+
 ## Next executable acceptance requirements
 1. Capture exact page ownership and reserve the loaded PE image, executing
    stack, firmware runtime ranges, ACPI, MMIO/framebuffer and page-table
