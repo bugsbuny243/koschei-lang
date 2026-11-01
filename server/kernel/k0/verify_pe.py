@@ -66,6 +66,45 @@ def verify_uefi_pe(path: Path) -> str:
         raise ValueError(f"{path}: not an EFI x86-64 PE32+ application")
     if imports != (0, 0):
         raise ValueError(f"{path}: external library/runtime imports forbidden")
+    # Source-linked artifact preflight, not a live CR3 permission test.
+    # A loaded PE image's physical pages require a separate runtime mapper.
+    image_size = struct.unpack_from("<I", raw, opt + 56)[0]
+    header_size = struct.unpack_from("<I", raw, opt + 60)[0]
+    section_alignment = struct.unpack_from("<I", raw, opt + 32)[0]
+    table_offset = opt + opt_size
+    if (section_alignment != 4096 or image_size < 4096 or
+            image_size > 2 * 1024 * 1024 or image_size % 4096 != 0 or
+            header_size < table_offset + sections * 40 or
+            header_size > image_size or header_size > len(raw) or
+            table_offset > len(raw) or sections > (len(raw) - table_offset) // 40):
+        raise ValueError(f"{path}: invalid section table or page granularity")
+    occupied = set(range((header_size + 4095) // 4096))
+    executable = writable = 0
+    for i in range(sections):
+        sh = table_offset + i * 40
+        virtual_size, virtual_address, raw_size = struct.unpack_from("<III", raw, sh + 8)
+        flags = struct.unpack_from("<I", raw, sh + 36)[0]
+        byte_length = max(virtual_size, raw_size)
+        if not byte_length or virtual_address % 4096 or
+                virtual_address >= image_size or
+                byte_length > image_size - virtual_address:
+            raise ValueError(f"{path}: malformed PE section #{i}")
+        readable = bool(flags & 0x40000000)
+        is_exec = bool(flags & 0x20000000)
+        is_write = bool(flags & 0x80000000)
+        if not readable or (is_exec and is_write):
+            raise ValueError(f"{path}: unreadable or W+X PE section #{i}")
+        for page in range(virtual_address // 4096,
+                          virtual_address // 4096 + (byte_length + 4095) // 4096):
+            if page in occupied:
+                raise ValueError(f"{path}: overlapping 4KiB section page #{i}")
+            occupied.add(page)
+            executable += is_exec
+            writable += is_write
+    if not executable or not writable:
+        raise ValueError(f"{path}: missing executable/writable section classes")
+    print(f"KOSCHEI-K0 PE-SECTION-WX/1 OK {path.name} "
+          f"RX={executable} RW-NX={writable} (file preflight only)")
     digest = hashlib.sha256(raw).hexdigest()
     print(f"KOSCHEI-K0 PE/1 OK {path.name} sha256={digest}")
     return digest

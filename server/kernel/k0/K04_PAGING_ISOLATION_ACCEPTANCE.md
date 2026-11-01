@@ -100,6 +100,23 @@ not least-privilege CPU address-space isolation. No production merge is
 permitted until 4KiB PE section-aware mappings distinguish code RX from
 data/stack RW+NX, and firmware/runtime/ACPI/MMIO memory is reserved.
 
+## PE32+ 4KiB section W^X metadata preflight (not installed)
+
+The new `paging_pe_section_wx.h` parses a **bounded mapped-image** PE32+
+header and section table, without firmware calls, to prepare 4KiB page
+classes: executable+read-only RX, read-only NX, writable+NX and header NX.
+It rejects malformed PE offsets and section spans, page-level overlap,
+unreadable sections and W+X section permissions, without modifying output
+on failure. The native adversarial fixture suite exercises boundary and
+overlap cases; the existing host PE verifier also fails closed on actual
+linked release and emulator EFI artifacts with unsafe section tables.
+
+**Not installed:** This does not yet fetch LoadedImageProtocol in the guest,
+pin the image and stack, split active 2MiB identity mappings into 4KiB PTs
+or apply section permissions to a CPU-active CR3. The helper is a metadata
+contract rather than W^X execution evidence. In particular, it does not
+prevent aliases through currently writable executable huge pages.
+
 ## Next executable acceptance requirements
 1. Capture exact page ownership and reserve the loaded PE image, executing
    stack, firmware runtime ranges, ACPI, MMIO/framebuffer and page-table

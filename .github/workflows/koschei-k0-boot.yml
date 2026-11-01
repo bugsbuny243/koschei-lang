@@ -70,6 +70,12 @@ jobs:
             server/kernel/k0/test_identity_exec_nx_policy.c \
             -o /tmp/koschei-k0-evidence/identity-exec-nx-tests
           /tmp/koschei-k0-evidence/identity-exec-nx-tests
+      - name: Validate fail-closed PE section W^X preflight (not active MMU)
+        run: |
+          clang -std=c11 -O2 -Wall -Wextra -Werror \
+            server/kernel/k0/test_pe_section_wx.c \
+            -o /tmp/koschei-k0-evidence/pe-section-wx-tests
+          /tmp/koschei-k0-evidence/pe-section-wx-tests
       - name: Boot actual UEFI binary on QEMU OVMF and capture UART proof
         run: |
           bash server/kernel/k0/qemu_smoke.sh /tmp/koschei-k0-evidence
