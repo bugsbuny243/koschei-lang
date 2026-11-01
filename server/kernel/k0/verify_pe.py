@@ -11,6 +11,17 @@ import struct
 import sys
 
 
+QEMU_CR3_PF_MARKER = b"KOSCHEI-KERNEL K0 OWN-CR3-PF-DENIED"
+
+
+def verify_qemu_only_cr3_probe(release: bytes, qemu: bytes) -> None:
+    """Require proof marker in test image and prohibit it in shipping EFI."""
+    if QEMU_CR3_PF_MARKER in release:
+        raise ValueError("unsafe QEMU-only CR3 page fault probe leaked into release")
+    if QEMU_CR3_PF_MARKER not in qemu:
+        raise ValueError("QEMU image lacks expected CR3 page fault test marker")
+
+
 def verify_uefi_pe(path: Path) -> str:
     raw = path.read_bytes()
     if len(raw) < 0x100 or raw[:2] != b"MZ":
@@ -46,3 +57,6 @@ if __name__ == "__main__":
     hashes = [verify_uefi_pe(Path(p)) for p in sys.argv[1:]]
     if hashes[0] == hashes[1]:
         raise SystemExit("release and test artifact must differ (QEMU-only port)")
+    verify_qemu_only_cr3_probe(Path(sys.argv[1]).read_bytes(),
+                              Path(sys.argv[2]).read_bytes())
+    print("KOSCHEI-K0 TEST-IMAGE-ISOLATION/1 PASS CR3 probe absent from release")

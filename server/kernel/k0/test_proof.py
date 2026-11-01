@@ -23,6 +23,14 @@ serial = load("verify_serial.py")
 
 
 class K0ProofFailClosedTests(unittest.TestCase):
+    def test_reject_cr3_probe_marker_in_release(self):
+        marker = pe.QEMU_CR3_PF_MARKER
+        with self.assertRaises(ValueError):
+            pe.verify_qemu_only_cr3_probe(marker, marker)
+        with self.assertRaises(ValueError):
+            pe.verify_qemu_only_cr3_probe(b"SAFE_RELEASE", b"NO_CR3_MARKER")
+        pe.verify_qemu_only_cr3_probe(b"SAFE_RELEASE", marker)
+
     def test_refuse_random_binary_with_no_pe(self):
         with TemporaryDirectory() as temp:
             file = Path(temp) / "invalid.efi"

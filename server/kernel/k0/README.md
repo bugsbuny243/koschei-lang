@@ -65,6 +65,10 @@ and Koschei-owned page tables, add a controlled page-fault rejection test; K1 ow
 Issue #331 tracks these requirements.
 
 ## QEMU-only CR3 / page-fault experiment
+The PE verifier also rejects release images containing the CR3/#PF test marker,
+or QEMU images missing it. This is a binary separation regression, not a
+general proof that arbitrary dangerous instructions are absent.
+
 The QEMU test image (NOT the release image) creates its own three physical
 page-table frames and loads CR3. To preserve the UEFI-loaded code and current
 stack under the test, it temporarily maps the entire lower 1 GiB identity
