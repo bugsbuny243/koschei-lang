@@ -2,8 +2,10 @@
 // Read-only, single-origin EVM JSON-RPC client (experimental).
 // A NetCaps token is passed explicitly; this module cannot widen origins.
 // It sends two fixed POST requests: chain identity then latest block height.
-// JSON is parsed through the shared strict parser and canonical encoder;
-// result envelope, id, jsonrpc and quantity are all checked before return.
+// Strictly canonical JSON byte envelopes are required: noncanonical key
+// order and whitespace are deliberately rejected until the imported-module
+// native JSON codec supports identical validated decoding in both backends.
+// Result envelope, id, jsonrpc and quantity are checked before return.
 // NO transactions, signatures, user addresses, block-hash/finality proofs.
 import platform_web3
 import text
@@ -17,8 +19,7 @@ fn block_number(net: NetCaps, endpoint: String, chain_id: String) -> String or E
     if chain.status() != 200 {
         return Error("web3_rpc: chain HTTP status denied")
     }
-    let chain_value = parse_json(chain.text()) or return Error("web3_rpc: malformed chain JSON")
-    let canonical_chain = encode_json(chain_value) or return Error("web3_rpc: chain JSON cannot be encoded")
+    let canonical_chain = chain.text()
     if canonical_chain != "\{\"id\":1,\"jsonrpc\":\"2.0\",\"result\":\"{chain_id}\"\}" {
         return Error("web3_rpc: mismatching RPC chain identity/envelope")
     }
@@ -27,8 +28,7 @@ fn block_number(net: NetCaps, endpoint: String, chain_id: String) -> String or E
     if block.status() != 200 {
         return Error("web3_rpc: block HTTP status denied")
     }
-    let block_value = parse_json(block.text()) or return Error("web3_rpc: malformed block JSON")
-    let canonical_block = encode_json(block_value) or return Error("web3_rpc: block JSON cannot be encoded")
+    let canonical_block = block.text()
     let after_prefix = text.strip_prefix(canonical_block, "\{\"id\":2,\"jsonrpc\":\"2.0\",\"result\":\"") or return Error("web3_rpc: invalid block envelope/id")
     let result = text.strip_suffix(after_prefix, "\"\}") or return Error("web3_rpc: block response has extra fields")
     if !platform_web3.quantity(result) {
