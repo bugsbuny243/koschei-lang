@@ -48,6 +48,12 @@ int main(void) {
            K0_VM_WALK_PAGE_FAULT, 0, 0); /* absent */
     expect(&tables, &pool, va + 2 * K0_PAGE_SIZE, 1, 0, 0,
            K0_VM_WALK_PAGE_FAULT, 2, 0); /* absent write */
+    expect(&tables, &pool, va + 2 * K0_PAGE_SIZE, 0, 0, 1,
+           K0_VM_WALK_PAGE_FAULT, 4, 0); /* absent USER: P must be 0 */
+    expect(&tables, &pool, va + 2 * K0_PAGE_SIZE, 1, 0, 1,
+           K0_VM_WALK_PAGE_FAULT, 6, 0); /* absent USER+WRITE: P=0 */
+    expect(&tables, &pool, va + 2 * K0_PAGE_SIZE, 0, 1, 1,
+           K0_VM_WALK_PAGE_FAULT, 20, 0); /* absent USER+INSTR: P=0 */
     expect(&tables, &pool, va + 2 * K0_PAGE_SIZE, 0, 1, 0,
            K0_VM_WALK_PAGE_FAULT, 16, 0); /* absent instruction */
     expect(&tables, &pool, K0_VM_TOP_GUARD_START, 0, 0, 0,
