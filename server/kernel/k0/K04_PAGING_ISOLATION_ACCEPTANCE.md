@@ -32,6 +32,14 @@ releases them. K0.3 uses the mapping left by firmware, NOT a Koschei-owned CR3.
   actual physical table contents, installs an IDT or triggers a real page fault.
   A proposed PTE or logical table array is **not** an MMU mapping.
 
+- `paging_walk.h` and `test_paging_walk.c` evaluate a model-only,
+  four-level access walk, predicting absent-page faults, supervisor denial,
+  read-only write rejection and NX instruction rejection. Noncanonical VA
+  predicts `#GP(0)`, **not** `#PF`. Each result is an expected/software
+  decision; there is **no real CPU `CR2` or fault handler receipt**.
+  The model checks the snapshot pool mutation epoch, so stale table models
+  are rejected even following same-address release/reclaim (ABA).
+
 ## Next executable acceptance requirements
 1. Capture exact page ownership and reserve the loaded PE image, executing
    stack, firmware runtime ranges, ACPI, MMIO/framebuffer and page-table

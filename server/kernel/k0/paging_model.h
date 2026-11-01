@@ -18,6 +18,7 @@ typedef struct {
     K_U64 table_phys[K0_VM_TABLE_LEVELS]; /* order: PML4, PDPT, PD, PT */
     K_U64 entries[K0_VM_TABLE_LEVELS][K0_VM_ENTRIES_PER_TABLE];
     K_U32 initialized;
+    K_U64 pool_epoch; /* snapshot used by later model-only access walks */
 } K0_VM_TABLE_MODEL;
 
 static K_U32 k0_vm_level_index(K_U64 virtual_page, K_U32 shift) {
@@ -73,6 +74,7 @@ static int k0_vm_tables_build(K0_VM_TABLE_MODEL *out, const K0_VM_PLAN *plan,
     for (K_U32 i = 0; i < plan->count; ++i)
         out->entries[3][k0_vm_level_index(plan->leaves[i].virtual_page, 12)] =
             plan->leaves[i].leaf_entry;
+    out->pool_epoch = pool->epoch;
     out->initialized = 1;
     return 1;
 }
