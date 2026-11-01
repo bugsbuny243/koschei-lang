@@ -1,5 +1,15 @@
 #include "idt_fault_model.h"
+/* Paging headers contain model-only static helpers unused by this focused
+ * contract test; keep -Werror active for all code defined in this file.
+ */
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-function"
+#endif
 #include "paging_walk.h"
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
