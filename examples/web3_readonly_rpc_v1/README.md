@@ -6,7 +6,7 @@ and two fixed `application/json` HTTP POST messages: `eth_chainId` and
 The first reply must contain the exact expected chain identifier (canonical
 `0x1` in the fixture) and matching JSON-RPC version and ID; the second
 must carry a canonical non-negative `0x` hex block number. Both replies
-must be HTTP 200 with valid bounded JSON and *no extra response fields*.
+must be HTTP 200 with **byte-exact canonical JSON envelopes** (fixed key order and no formatting whitespace), bounded by the native/interpreter network response limit, and *no extra response fields*. Full JSON normalization from imported `.ks` modules is not yet supported equally by the interpreter and native compiler.
 Duplicate keys, mismatched IDs, error envelopes, noncanonical quantities,
 unexpected redirects, unexpected chain IDs, malformed JSON and oversized
 responses are rejected. The existing network broker already enforces the

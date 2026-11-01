@@ -569,7 +569,7 @@ True when `candidate` would move `current` back to the same or an earlier epoch.
 
 ## web3_rpc
 
-Read-only, single-origin EVM JSON-RPC client (experimental). A NetCaps token is passed explicitly; this module cannot widen origins. It sends two fixed POST requests: chain identity then latest block height. JSON is parsed through the shared strict parser and canonical encoder; result envelope, id, jsonrpc and quantity are all checked before return. NO transactions, signatures, user addresses, block-hash/finality proofs.
+Read-only, single-origin EVM JSON-RPC client (experimental). A NetCaps token is passed explicitly; this module cannot widen origins. It sends two fixed POST requests: chain identity then latest block height. Strictly canonical JSON byte envelopes are required: noncanonical key order and whitespace are deliberately rejected until the imported-module native JSON codec supports identical validated decoding in both backends. Result envelope, id, jsonrpc and quantity are checked before return. NO transactions, signatures, user addresses, block-hash/finality proofs.
 
 ### `web3_rpc.block_number`
 

@@ -54,8 +54,10 @@ kernel-claimed=true forged=false
 The first real Web3 adapter, `web3_rpc.block_number`, uses
 a narrowed `NetCaps` token to make exactly two JSON-RPC POST requests
 to a single local origin, checking chain ID, JSON-RPC version, response
-request IDs, status, parsed/canonical JSON and a lower-case minimal
-hex quantity. The integration fixture supplies a mocked JSON-RPC peer,
+request IDs, status, **byte-exact canonical JSON envelopes** and a
+lower-case minimal hex quantity. Other valid JSON whitespace/key orders
+are deliberately refused until the imported-module JSON decoder has
+interpreter/native parity; no partial accept or host-language fallback. The integration fixture supplies a mocked JSON-RPC peer,
 runs interpreter and Linux native broker implementations, and attempts
 wrong-chain, duplicate-key, extra-field, wrong-ID, bad status, redirect,
 oversize response, noncanonical hex and cross-origin failures. Only
