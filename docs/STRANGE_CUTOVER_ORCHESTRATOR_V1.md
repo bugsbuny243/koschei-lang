@@ -49,7 +49,7 @@ trust attestation, process isolation, global leader election or key custody.
 Run:
 
 ```sh
-python3 -m unittest tests.test_strange_cutover_orchestrator_v1 -v
+python3 -m unittest discover -s tests -p 'test_strange_cutover_orchestrator_v1.py' -v
 python3 -m unittest discover -s tests -p 'test_*.py'
 ```
 
