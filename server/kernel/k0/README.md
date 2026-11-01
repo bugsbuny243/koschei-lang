@@ -49,6 +49,27 @@ Acceptance requires:
 4. QEMU debug-exit code 33; a timeout or fabricated file is not a pass.
 5. CI artifact binds transcript hash, source revision and toolchain versions.
 
+## Optional real CPU #PF diagnostic (test binary only)
+
+The separate `BOOTX64-PF.EFI` image installs a temporary #PF IDT under the
+firmware-owned CR3 and records an actual CPU-supplied CR2/error code after
+attempting a deliberately unmapped canonical read. It proves **CPU exception
+entry in QEMU**, not an independent Koschei address space.
+
+To reproduce both independent boots after `build.sh`:
+
+```sh
+bash server/kernel/k0/qemu_smoke.sh /tmp/k0-evidence
+mkdir -p /tmp/k0-evidence/cpu-pf
+KOSCHEI_K0_GUEST_BINARY=/tmp/k0-evidence/BOOTX64-PF.EFI \
+KOSCHEI_K0_SERIAL_VERIFIER="$PWD/server/kernel/k0/verify_cpu_pf_serial.py" \
+  bash server/kernel/k0/qemu_smoke.sh /tmp/k0-evidence/cpu-pf
+```
+
+The second test requires a real QEMU debug-exit code and the exact nine-record
+UART transcript, including the hardware CR2/error code. Failed, absent or
+unhandled faults are rejected; the release image never enables this probe.
+
 ## Honest limits
 ExitBootServices handoff is attempted and must succeed in the QEMU boot
 probe. The 16-page ledger is a bounded diagnostic allocator, NOT a general-purpose
