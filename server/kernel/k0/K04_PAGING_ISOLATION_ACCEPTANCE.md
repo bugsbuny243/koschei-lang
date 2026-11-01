@@ -153,6 +153,27 @@ image permissions. A green emulator is still NOT production acceptance:
 firmware runtime, ACPI/MMIO, framebuffer and stack ownership remain not
 fully reserved, and there is no user-domain isolation or hardware proof.
 
+## Coarse identity aperture with UEFI stack/PE/pool ownership evidence
+
+A QEMU-only fail-closed owner preflight now checks the exact
+successful-ExitBootServices memory-map snapshot. PE image must be entirely
+LoaderCode/LoaderData and match the earlier LoadedImageProtocol bounds.
+The observed current stack pointer and four pages below it must remain in
+contiguous LoaderData or BootServicesData descriptors. All active paging
+frames must belong to the conventional 16-page ledger and be distinct.
+Stack, image, and pool must be disjoint. The actual installed identity
+PD clears all lower-1GiB 2MiB slots outside the verified image, bounded
+stack window and physical pool, retaining the separate dedicated #PF
+RO/NX slot only for emulator tests. A seventh QEMU image accesses a
+non-owned low virtual slot 510, demanding #PF error=0 and exact CR2/CR3.
+
+**Residual gap:** Each retained stack/pool PDE still grants the whole
+2MiB identity physical range RW+NX. The 20KiB observed stack footprint
+is evidence of current reachability, not lifetime-safe stack reservation
+or guard pages. Neither runtime/MMIO/ACPI physical ownership, all possible
+firmware aliases nor real-hardware behavior is proven. This remains an
+emulator experiment and cannot be merged as a production memory manager.
+
 ## Next executable acceptance requirements
 1. Capture exact page ownership and reserve the loaded PE image, executing
    stack, firmware runtime ranges, ACPI, MMIO/framebuffer and page-table

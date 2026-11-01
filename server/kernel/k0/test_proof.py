@@ -131,6 +131,31 @@ class K0ProofFailClosedTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 serial.verify(path, "nx")
 
+    def test_low_identity_hole_gate_and_marker_isolation(self):
+        marker = pe.QEMU_CR3_PF_MARKER
+        with self.assertRaises(ValueError):
+            pe.verify_qemu_only_cr3_probe(
+                pe.QEMU_CR3_LOW_HOLE_MARKER, marker, pe.QEMU_CR3_RO_MARKER,
+                pe.QEMU_CR3_NX_MARKER, pe.QEMU_CR3_MAPPED_MARKER,
+                pe.QEMU_CR3_WX_MARKER, pe.QEMU_CR3_DATA_NX_MARKER,
+                pe.QEMU_CR3_LOW_HOLE_MARKER)
+        with self.assertRaises(ValueError):
+            pe.verify_qemu_only_cr3_probe(
+                b"SAFE_RELEASE", marker, pe.QEMU_CR3_RO_MARKER,
+                pe.QEMU_CR3_NX_MARKER, pe.QEMU_CR3_MAPPED_MARKER,
+                pe.QEMU_CR3_WX_MARKER, pe.QEMU_CR3_DATA_NX_MARKER, b"BAD")
+        pe.verify_qemu_only_cr3_probe(
+            b"SAFE_RELEASE", marker, pe.QEMU_CR3_RO_MARKER,
+            pe.QEMU_CR3_NX_MARKER, pe.QEMU_CR3_MAPPED_MARKER,
+            pe.QEMU_CR3_WX_MARKER, pe.QEMU_CR3_DATA_NX_MARKER,
+            pe.QEMU_CR3_LOW_HOLE_MARKER)
+        with TemporaryDirectory() as temp:
+            path = Path(temp) / "serial.log"
+            path.write_bytes(b"".join(serial.EXPECTED_LOW_HOLE))
+            serial.verify(path, "low-hole")
+            with self.assertRaises(ValueError):
+                serial.verify(path, "missing")
+
     def test_refuse_random_binary_with_no_pe(self):
         with TemporaryDirectory() as temp:
             file = Path(temp) / "invalid.efi"

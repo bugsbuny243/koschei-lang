@@ -29,6 +29,10 @@ case "$MODE" in
     BOOT_BINARY="$OUT/BOOTX64-DATA-NX.EFI"
     SUFFIX="-data-nx"
     ;;
+  low-hole)
+    BOOT_BINARY="$OUT/BOOTX64-LOW-HOLE.EFI"
+    SUFFIX="-low-hole"
+    ;;
   *)
     echo "KOSCHEI-K0 FAIL unknown QEMU scenario" >&2
     exit 1

@@ -88,6 +88,12 @@ jobs:
             server/kernel/k0/test_active_image_wx.c \
             -o /tmp/koschei-k0-evidence/active-image-wx-tests
           /tmp/koschei-k0-evidence/active-image-wx-tests
+      - name: Fail closed on stack/PE/pool ownership and coarse identity holes
+        run: |
+          clang -std=c11 -O2 -Wall -Wextra -Werror \
+            server/kernel/k0/test_identity_ownership.c \
+            -o /tmp/koschei-k0-evidence/identity-ownership-tests
+          /tmp/koschei-k0-evidence/identity-ownership-tests
       - name: Boot actual UEFI binary on QEMU OVMF and capture UART proof
         run: |
           bash server/kernel/k0/qemu_smoke.sh /tmp/koschei-k0-evidence
@@ -106,6 +112,9 @@ jobs:
       - name: Prove real 4KiB PE .bss instruction fetch denied in CPU (test-only)
         run: |
           bash server/kernel/k0/qemu_smoke.sh /tmp/koschei-k0-evidence data-nx
+      - name: Prove real denied access to a non-owned low physical identity hole
+        run: |
+          bash server/kernel/k0/qemu_smoke.sh /tmp/koschei-k0-evidence low-hole
       - name: Bind evidence to commit and toolchain
         if: always()
         run: |
