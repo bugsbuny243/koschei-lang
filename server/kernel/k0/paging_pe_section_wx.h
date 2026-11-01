@@ -45,6 +45,10 @@ static int k0_pe_wx_parse(const void *mapped, K_U64 mapped_bytes,
     const K_U8 *p = (const K_U8 *)mapped;
     if (k0_pe_wx_u16(p) != 0x5a4dU) return 0;
     K_U64 pe = k0_pe_wx_u32(p + 0x3c);
+    /* COFF needs 24 bytes, then optional_size must fit before reading
+     * any optional-header field. Keep these bounds independent of the
+     * untrusted PE offset (no pointer arithmetic until checked).
+     */
     if (pe > mapped_bytes - 24ULL || k0_pe_wx_u32(p + pe) != 0x4550U)
         return 0;
     K_U64 coff = pe + 4ULL;
@@ -53,6 +57,7 @@ static int k0_pe_wx_parse(const void *mapped, K_U64 mapped_bytes,
     K_U64 optional = coff + 20ULL;
     if (k0_pe_wx_u16(p + coff) != 0x8664U ||
         sections == 0 || sections > K0_PE_WX_MAX_SECTIONS ||
+        optional > mapped_bytes ||
         optional_size < 112ULL || optional_size > mapped_bytes - optional)
         return 0;
     if (k0_pe_wx_u16(p + optional) != 0x20bU ||
