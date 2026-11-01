@@ -131,4 +131,61 @@ static inline int k0_idt_pf_matches_predicted_walk(
            checked.instruction == report->instruction &&
            predicted_error_code == report->error_code;
 }
+
+/* Model a ring-0 long-mode GDT pair (index 1 = CS 0x08,
+ * index 2 = data selector 0x10). Descriptors are not loaded into GDTR.
+ */
+static inline int k0_idt_kernel_gdt_pair_valid(
+    const uint64_t *descriptors, size_t count) {
+    uint64_t code, data;
+    const uint64_t present = 1ULL << 47;
+    const uint64_t system = 1ULL << 44;
+    const uint64_t executable = 1ULL << 43;
+    const uint64_t rw = 1ULL << 41;
+    const uint64_t long_mode = 1ULL << 53;
+    const uint64_t db = 1ULL << 54;
+    const uint64_t dpl = 3ULL << 45;
+    if (!descriptors || count < 3 || descriptors[0] != 0) return 0;
+    code = descriptors[1];
+    data = descriptors[2];
+    return (code & (present | system | executable | rw | long_mode))
+               == (present | system | executable | rw | long_mode) &&
+           (code & (dpl | db)) == 0 &&
+           (data & (present | system | rw)) == (present | system | rw) &&
+           (data & (dpl | executable | long_mode)) == 0;
+}
+
+/* Explicit software capture of a post-ISR exception context.
+ * This is not the raw CPU stack layout: IST/CPL changes can push extra
+ * slots and the interrupt stub MUST normalize it before validation.
+ */
+typedef struct {
+    uint8_t vector;
+    uint64_t error_code;
+    uint64_t rip;
+    uint64_t cs;
+    uint64_t rflags;
+    uint64_t rsp;
+    uint64_t cr2;
+} K0_IDT_EXCEPTION_SNAPSHOT;
+
+static inline int k0_idt_fault_snapshot_valid(
+    const K0_IDT_EXCEPTION_SNAPSHOT *frame, K0_IDT_PF_REPORT *pf) {
+    K0_IDT_PF_REPORT decoded = {0};
+    if (!frame || frame->cs != K0_IDT_KERNEL_CS ||
+        !k0_idt_is_canonical48(frame->rip) ||
+        !k0_idt_is_canonical48(frame->rsp) ||
+        frame->rsp == 0 || (frame->rsp & 7ULL) != 0 ||
+        (frame->rflags & 2ULL) == 0) return 0;
+    if (frame->vector == K0_IDT_VECTOR_DF)
+        return frame->error_code == 0;
+    if (frame->vector == K0_IDT_VECTOR_GP)
+        return frame->error_code <= 0xffffULL;
+    if (frame->vector != K0_IDT_VECTOR_PF ||
+        frame->error_code > 0xffffffffULL || !pf) return 0;
+    if (!k0_idt_decode_pf((uint32_t)frame->error_code,
+                          frame->cr2, &decoded)) return 0;
+    *pf = decoded;
+    return 1;
+}
 #endif
