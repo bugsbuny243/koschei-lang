@@ -35,7 +35,7 @@ releases them. K0.3 uses the mapping left by firmware, NOT a Koschei-owned CR3.
   reads back every 64-bit entry, then erases and releases all frames. This is
   a real QEMU guest *physical table-frame roundtrip*, not just a host model.
 - No new CPU tables are activated by CR3, and these frames are NOT pinned or
-  kept installed after the diagnostic. No IDT/#PF handler exists. Populating
+  kept installed after the diagnostic. No production IDT/#PF handler exists. Populating
   table bytes while running on firmware mappings is NOT a live MMU mapping.
 
 - `paging_walk.h` and `test_paging_walk.c` evaluate a model-only,
@@ -65,6 +65,30 @@ releases them. K0.3 uses the mapping left by firmware, NOT a Koschei-owned CR3.
   safety-model correctness: there is still **no installed kernel IDT,
   actual CPU exception entry, live CR2 capture, owned CR3 transition or
   protected address-space isolation**.
+
+## Dedicated real CPU #PF diagnostic, *still under firmware CR3*
+
+- `cpu_pf_guest_probe.h` is included **only** in the third
+  `BOOTX64-PF.EFI` QEMU diagnostic image. Neither the release EFI nor
+  standard eight-record QEMU EFI contains this path.
+- After `ExitBootServices` and the existing physical-table roundtrip,
+  the diagnostic disables maskable interrupts and loads a separate minimal
+  IDT whose #PF vector is a real x86-64 exception entry. It leaves the
+  firmware-installed GDT and CR3 in place.
+- The CPU attempts to read canonical address `0x0000400000000000`.
+  The handler captures **hardware** `CR2`, the CPU-pushed error code,
+  faulting RIP and CS, and returns to a fixed recovery instruction.
+  Only a single exact non-present supervisor read fault (error code 0) with
+  unchanged CR3 can emit the positive UART record.
+- An independent second OVMF boot verifies the exact serialized CR2/error
+  receipt and QEMU debug-exit status 33. An absent fault, wrong error,
+  unexpected exception, fabricated transcript, triple fault or timeout
+  **never counts as success**. The UART and toolchain/artifact digests are
+  preserved in CI evidence.
+- **Security limitation:** this is a real CPU #PF, **not** an owned-CR3
+  transition. The sentinel is assumed unmapped in the supported QEMU/OVMF
+  profile, and the live address space is still firmware-provided. This
+  does not establish memory isolation or safe production exception handling.
 
 ## Next executable acceptance requirements
 1. Capture exact page ownership and reserve the loaded PE image, executing
