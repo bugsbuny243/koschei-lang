@@ -17,6 +17,11 @@ static K0_MEMORY_DESCRIPTOR map[] = {
 };
 
 static void setup(void) {
+    /* Every hostile-case fixture starts from an independent valid owner
+     * snapshot; stale frame mutation must not poison the next case.
+     */
+    frames[0]=0x101000ULL;
+    frames[1]=0x102000ULL;
     K_U64 all_frames[2] = {frames[0],frames[1]};
     assert(k0_identity_owner_plan(map,sizeof(map),sizeof(map[0]),1,
           0x200000ULL,0x10000ULL,0x100000ULL,0x10000ULL,
