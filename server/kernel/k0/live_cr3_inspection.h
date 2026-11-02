@@ -69,8 +69,9 @@ static int k0_cr3_inspect_translation(K_U64 cr3, K_U64 virtual_address,
             /* Large-page 4 KiB address slot 12 is PAT, not address;
              * bits 13..20 (2MiB) or 13..29 (1GiB) are reserved.
              */
-            if (page_shift > 12 && (entry & (mask - 1ULL) &
-                ~((1ULL << 13) - 1ULL))) return 0;
+            if (page_shift > 12 &&
+                (entry & ((1ULL << page_shift) - 1ULL) &
+                 ~((1ULL << 13) - 1ULL))) return 0;
             next.physical_address = (entry & mask) |
                 (virtual_address & ((1ULL << page_shift) - 1ULL));
             next.leaf_page_shift = page_shift;
