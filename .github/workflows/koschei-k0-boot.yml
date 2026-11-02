@@ -74,6 +74,11 @@ jobs:
           clang -std=c11 -O2 -Wall -Wextra -Werror \
             server/kernel/k0/test_live_image_residency.c -o /tmp/koschei-k0-evidence/live-image-residency-tests
           /tmp/koschei-k0-evidence/live-image-residency-tests
+      - name: Validate existing CR3 table-byte walker including 4K 2M 1G leaves (model)
+        run: |
+          clang -std=c11 -O2 -Wall -Wextra -Werror \
+            server/kernel/k0/test_live_cr3_inspection.c -o /tmp/koschei-k0-evidence/cr3-table-byte-walk-tests
+          /tmp/koschei-k0-evidence/cr3-table-byte-walk-tests
       - name: Test predicted page-fault and access-denial model (NOT CPU faults)
         run: |
           clang -std=c11 -O2 -Wall -Wextra -Werror \
