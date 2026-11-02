@@ -67,11 +67,12 @@ KOSCHEI_K0_SERIAL_VERIFIER="$PWD/server/kernel/k0/verify_cpu_pf_serial.py" \
 ```
 
 The second test requires a real QEMU debug-exit code and the exact
-thirteen-record UART transcript. It now contains a firmware
+fourteen-record UART transcript. It now contains a firmware
 `EFI_LOADED_IMAGE_PROTOCOL` image-base/image-size record, captured CPU
 CR0/CR3/CR4/EFER/GDTR/IDTR/RFLAGS/CS/RIP/RSP values, a read-only active firmware CR3 PTE-byte walk receipt for
 CPU-observed RIP/RSP physical addresses, a Koschei-owned **physical**
-table-frame byte readback/scrub receipt (CR3 unchanged), and the hardware
+table-frame byte readback/scrub receipt (CR3 unchanged), a three-PT
+physical table-page sample readback receipt (CR3 unchanged), and the hardware
 CR2/error-code record. The diagnostic checks observed RIP and stack
 residency against the final UEFI memory map. The verifier rejects
 missing, altered or duplicated records. No owned CR3 is activated. Failed, absent or
