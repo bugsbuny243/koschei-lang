@@ -56,7 +56,8 @@ def _semantic_binary(self, expression):
         raise _semantic.SemanticError(
             "KS3804",
             "Decimal P1 doğrudan işleç kullanmaz; exact/fallible sözleşme için "
-            "decimal_add(), decimal_sub() veya decimal_cmp() kullanın.",
+            "decimal_add(), decimal_sub(), decimal_mul(), decimal_div() veya "
+            "decimal_cmp() kullanın.",
             expression.location,
         )
     return _ORIGINAL_SEMANTIC_BINARY(self, expression)
@@ -67,7 +68,7 @@ def _typed_binary(left, operator, right, location):
         raise _semantic.SemanticError(
             "KS3804",
             "Decimal P1 direct operators are disabled; use decimal_add(), "
-            "decimal_sub() or decimal_cmp().",
+            "decimal_sub(), decimal_mul(), decimal_div() or decimal_cmp().",
             location,
         )
     return _ORIGINAL_TYPED_BINARY(left, operator, right, location)

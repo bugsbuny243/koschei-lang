@@ -48,7 +48,11 @@ println(decimal_text(total))
 The Decimal runtime never parses through binary Float. Values carry signed-int64
 atoms plus an explicit scale. Different scales, int64 overflow and lossy input
 fail closed. Direct Decimal operators are intentionally disabled in P1; use the
-fallible `decimal_add`, `decimal_sub` and `decimal_cmp` contracts.
+fallible `decimal_add`, `decimal_sub` and `decimal_cmp` contracts, and
+`decimal_mul(a, b, scale, mode)`, `decimal_div(a, b, scale, mode)` and
+`decimal_rescale(value, scale, mode)`, which name the result scale and a
+rounding mode (`down`, `up`, `floor`, `ceiling`, `half_up`, `half_down`,
+`half_even`) and round exactly once. Division by zero is `KS3807`.
 
 ```bash
 ks check examples/financial_exchange/decimal_v1.ks

@@ -299,6 +299,42 @@ KS3709: JSON nesnesinde "total" anahtarı yok
 {"customer": "Ayşe \"A\"", "lines": 1}
 ```
 
+### Money: Decimal
+
+A `Decimal` is exact: signed 64-bit atoms and a scale of 0–18 digits, never a
+`Float`. `decimal(text, scale)` reads canonical text (`KS3801` for `1e2`,
+`+1`, `01` or more digits than the scale), `decimal_add`, `decimal_sub` and
+`decimal_cmp` need equal scales (`KS3802`), and `decimal_mul`, `decimal_div`
+and `decimal_rescale` name the result scale and one rounding mode — `down`,
+`up`, `floor`, `ceiling`, `half_up`, `half_down` or `half_even` — and round
+once. An overflow is `KS3803` and a zero divisor `KS3807`; `==` and `+` on
+Decimal are refused (`KS3804`). Every operation is an Error value, the same
+under `ks run` and in native binaries.
+
+```ks
+fn main() {
+    let price = decimal("19.99", 2) or return
+    let qty = decimal("3", 0) or return
+    let rate = decimal("0.18", 2) or return
+    let net = decimal_mul(price, qty, 2, "half_even") or return
+    let tax = decimal_mul(net, rate, 2, "half_up") or return
+    let gross = decimal_add(net, tax) or return
+    println("net {net} tax {tax} gross {gross}")
+    let parts = decimal("3", 0) or return
+    println(decimal_div(gross, parts, 2, "half_even"))
+    let zero = decimal("0", 0) or return
+    println(decimal_div(gross, zero, 2, "half_even"))
+    println(decimal_rescale(gross, 0, "floor"))
+}
+```
+
+```output
+net 59.97 tax 10.79 gross 70.76
+23.59
+KS3807: decimal division by zero
+70
+```
+
 ## 7. Modules and the Core Library
 
 `import name` binds a sibling file `name.ks` or a Core Library module. The

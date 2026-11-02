@@ -137,6 +137,33 @@ type _ksData struct {
 var _ksDataMemberHook func(_ksData, string, []any) any
 var _ksDataEqualHook func(any, any) bool
 
+// An exact financial Decimal (financial_decimal.DecimalValue): int64 atoms
+// of 10^-scale. Its operations come from native_decimal_v1.
+type _ksDecimal struct {
+	atoms int64
+	scale int64
+}
+
+// financial_decimal.decimal_text
+func _ksDecimalText(value _ksDecimal) string {
+	digits := strconv.FormatInt(value.atoms, 10)
+	negative := strings.HasPrefix(digits, "-")
+	if negative {
+		digits = digits[1:]
+	}
+	if value.scale > 0 {
+		if needed := int(value.scale) + 1; len(digits) < needed {
+			digits = strings.Repeat("0", needed-len(digits)) + digits
+		}
+		cut := len(digits) - int(value.scale)
+		digits = digits[:cut] + "." + digits[cut:]
+	}
+	if negative && value.atoms != 0 {
+		return "-" + digits
+	}
+	return digits
+}
+
 // The result of NetCaps.get: read through text() and status() only.
 type _ksResponse struct {
 	status int64
@@ -287,6 +314,8 @@ func _ksToString(value any) string {
 		return "HttpRequest(" + item.method + " " + item.path + ")"
 	case _ksData:
 		return "<data>"
+	case _ksDecimal:
+		return _ksDecimalText(item)
 	case _ksClockRoot:
 		return "<ClockRoot>"
 	case _ksClockCaps:
@@ -427,6 +456,10 @@ func _ksEqual(left any, right any) bool {
 	case _ksData:
 		b, ok := right.(_ksData)
 		return ok && _ksDataEqualHook(a.value, b.value)
+	case _ksDecimal:
+		// A frozen dataclass: atoms and scale.
+		b, ok := right.(_ksDecimal)
+		return ok && a == b
 	case _ksHttpRequest:
 		// A frozen dataclass: every field, headers in order.
 		b, ok := right.(_ksHttpRequest)
@@ -1313,6 +1346,8 @@ func _ksTypeName(value any) string {
 		return "HttpRequest"
 	case _ksData:
 		return "Data"
+	case _ksDecimal:
+		return "Decimal"
 	case _ksClockRoot:
 		return "ClockRoot"
 	case _ksClockCaps:
@@ -1535,6 +1570,8 @@ func _ksMatchPattern(value any, expected string, parameters map[string]bool, bin
 		return base == "HttpRequest"
 	case _ksData:
 		return base == "Data"
+	case _ksDecimal:
+		return base == "Decimal"
 	case _ksClockRoot:
 		return base == "ClockRoot"
 	case _ksClockCaps:

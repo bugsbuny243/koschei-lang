@@ -154,7 +154,11 @@ The first exact `Decimal` ABI uses signed-int64 atoms plus an explicit scale fro
 
 P1 invariants include canonical fixed-scale parsing/serialization, checked
 signed-int64 overflow, no implicit rescale, no implicit Float conversion and
-backend parity.
+backend parity. `decimal_mul`, `decimal_div` and `decimal_rescale` name their
+result scale and a rounding mode (`down`, `up`, `floor`, `ceiling`,
+`half_up`, `half_down`, `half_even`) and round once, in integers; a zero
+divisor is `KS3807`. Native binaries carry the same arithmetic (`math/big`
+for products and quotients) and are tested against an exact-rational oracle.
 
 Reference: `examples/financial_exchange/decimal_v1.ks`.
 

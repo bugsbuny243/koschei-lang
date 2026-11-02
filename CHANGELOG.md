@@ -2,6 +2,11 @@
 
 ## Unreleased — Core Library v1
 
+- Multiply, divide and rescale Decimal values: `decimal_mul(a, b, scale, mode)`, `decimal_div(a, b, scale, mode)` and `decimal_rescale(value, scale, mode)` name the result scale and one rounding mode (`down`, `up`, `floor`, `ceiling`, `half_up`, `half_down`, `half_even`) and round once, in integers; an unknown mode is `KS3801`, an overflow `KS3803` and a zero divisor the new `KS3807`. Decimal only added, subtracted and compared before.
+- Compile Decimal programs with `ks build`: binaries give the same bytes as `ks run` for every Decimal builtin. `ks build` refused every Decimal program.
+- Report decimal text with more than 4300 digits as `KS3803` overflow: Python's integer conversion limit answered instead, with a host message.
+- Let a struct field hold a `Decimal`, `Data` or `HttpRequest` in the checked-AST interpreter, which refused the value with "Decimal beklerken Decimal aldı" (`KS3106`).
+
 - Add `ServeCaps.reply_with(status, content_type, headers, body)` and `HttpRequest.cookie(name)` under `ks run` and in native binaries, so a server can set cookies (`Set-Cookie`, several per reply), `Cache-Control` or `Location` and read the cookies a client sends (`docs/SERVE_KNOWHERE_V1.md`). A header is exactly `Name: value` with a token name and a printable ASCII value, so a line break can never smuggle another header; `Content-Type`, `Content-Length`, `Connection` and the hop-by-hop headers stay Koschei's. A refused header gives the client `500` and returns `KS3472`.
 
 - Read JSON: `Data` gets `kind()`, `get(key)`, `at(index)`, `length()`, `keys()`, `text()`, `number()`, `int()`, `bool()` and `is_null()`, and `json_quote(text)` writes a String as a JSON string literal so programs build JSON replies without escaping by hand (`docs/data-language-v1.md`). A read of the wrong kind, a missing key or index, or a number that is not an Int is a `KS3709` Error value. Data used to be parse-and-re-encode only.

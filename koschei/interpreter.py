@@ -2109,7 +2109,9 @@ class Interpreter:
             return True
         if base == "Map" and isinstance(value, dict):
             return True
-        return False
+        # Values that extensions add (Decimal, Data, HttpRequest...) carry
+        # their own type name, as runtime_alignment's matcher reads it.
+        return not arguments and self._runtime_type_name(value) == base
 
     def _runtime_matches_type(
         self,

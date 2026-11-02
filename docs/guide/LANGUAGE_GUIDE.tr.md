@@ -299,6 +299,42 @@ KS3709: JSON nesnesinde "total" anahtarı yok
 {"customer": "Ayşe \"A\"", "lines": 1}
 ```
 
+### Para: Decimal
+
+`Decimal` kesindir: işaretli 64 bit atom ve 0–18 basamaklı scale; asla
+`Float` değildir. `decimal(metin, scale)` kanonik metin okur (`1e2`, `+1`,
+`01` ya da scale'den fazla basamak `KS3801`), `decimal_add`, `decimal_sub` ve
+`decimal_cmp` aynı scale ister (`KS3802`); `decimal_mul`, `decimal_div` ve
+`decimal_rescale` sonuç scale'ini ve bir yuvarlama kipini — `down`, `up`,
+`floor`, `ceiling`, `half_up`, `half_down` ya da `half_even` — açıkça alır ve
+bir kez yuvarlar. Taşma `KS3803`, sıfır bölen `KS3807`'dir; Decimal üzerinde
+`==` ve `+` reddedilir (`KS3804`). Her işlem Error değeri döndürür ve
+`ks run` ile native ikilide aynı sonucu verir.
+
+```ks
+fn main() {
+    let price = decimal("19.99", 2) or return
+    let qty = decimal("3", 0) or return
+    let rate = decimal("0.18", 2) or return
+    let net = decimal_mul(price, qty, 2, "half_even") or return
+    let tax = decimal_mul(net, rate, 2, "half_up") or return
+    let gross = decimal_add(net, tax) or return
+    println("net {net} tax {tax} gross {gross}")
+    let parts = decimal("3", 0) or return
+    println(decimal_div(gross, parts, 2, "half_even"))
+    let zero = decimal("0", 0) or return
+    println(decimal_div(gross, zero, 2, "half_even"))
+    println(decimal_rescale(gross, 0, "floor"))
+}
+```
+
+```output
+net 59.97 tax 10.79 gross 70.76
+23.59
+KS3807: decimal division by zero
+70
+```
+
 ## 7. Modüller ve Core Library
 
 `import ad`, yandaki `ad.ks` dosyasını veya bir Core Library modülünü bağlar.

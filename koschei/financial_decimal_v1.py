@@ -2,7 +2,8 @@
 
 This bridge is intentionally explicit. Decimal construction and arithmetic that
 can fail return Koschei Error values; no operation converts through Float and no
-implicit rescaling or rounding is performed.
+implicit rescaling or rounding is performed: ``decimal_mul``, ``decimal_div``
+and ``decimal_rescale`` name their result scale and rounding mode.
 """
 
 from __future__ import annotations
@@ -20,27 +21,44 @@ from .financial_decimal import (
     add_decimal,
     compare_decimal,
     decimal_text,
+    div_decimal,
+    mul_decimal,
     parse_decimal,
+    rescale_decimal,
     sub_decimal,
 )
 from .type_system import ERROR, INT, STRING, NamedType, union_type
 
 _DECIMAL = NamedType("Decimal")
-_BUILTINS = {
-    "decimal",
-    "decimal_add",
-    "decimal_sub",
-    "decimal_cmp",
-    "decimal_text",
+# name: (argument types, typed argument types, result type, operation)
+SIGNATURES = {
+    "decimal": (("String", "Int"), (STRING, INT), "Decimal or Error", parse_decimal),
+    "decimal_add": (("Decimal", "Decimal"), (_DECIMAL, _DECIMAL), "Decimal or Error", add_decimal),
+    "decimal_sub": (("Decimal", "Decimal"), (_DECIMAL, _DECIMAL), "Decimal or Error", sub_decimal),
+    "decimal_mul": (
+        ("Decimal", "Decimal", "Int", "String"), (_DECIMAL, _DECIMAL, INT, STRING), "Decimal or Error", mul_decimal,
+    ),
+    "decimal_div": (
+        ("Decimal", "Decimal", "Int", "String"), (_DECIMAL, _DECIMAL, INT, STRING), "Decimal or Error", div_decimal,
+    ),
+    "decimal_rescale": (("Decimal", "Int", "String"), (_DECIMAL, INT, STRING), "Decimal or Error", rescale_decimal),
+    "decimal_cmp": (("Decimal", "Decimal"), (_DECIMAL, _DECIMAL), "Int or Error", compare_decimal),
+    "decimal_text": (("Decimal",), (_DECIMAL,), "String", decimal_text),
 }
-_FALLIBLE = {"decimal", "decimal_add", "decimal_sub", "decimal_cmp"}
-_RETURN_NAMES = {
-    "decimal": "Decimal or Error",
-    "decimal_add": "Decimal or Error",
-    "decimal_sub": "Decimal or Error",
-    "decimal_cmp": "Int or Error",
-    "decimal_text": "String",
+_BUILTINS = frozenset(SIGNATURES)
+_FALLIBLE = frozenset(name for name, signature in SIGNATURES.items() if signature[2].endswith("or Error"))
+_RETURN_NAMES = {name: signature[2] for name, signature in SIGNATURES.items()}
+_TYPED_RESULTS = {
+    "Decimal or Error": union_type(_DECIMAL, ERROR),
+    "Int or Error": union_type(INT, ERROR),
+    "String": STRING,
 }
+
+
+def call_decimal(name: str, arguments: list) -> object:
+    """One Decimal builtin: its value, or the Error text as FinancialDecimalError."""
+
+    return SIGNATURES[name][3](*arguments)
 _INSTALLED = False
 _ORIGINAL_SEMANTIC_EXPRESSION = None
 _ORIGINAL_SEMANTIC_FALLIBLE = None
@@ -211,13 +229,7 @@ def _semantic_expression(self, expression):
     ):
         name = expression.callee.name
         types = [self._check_expression(item) for item in expression.arguments]
-        expected = {
-            "decimal": ("String", "Int"),
-            "decimal_add": ("Decimal", "Decimal"),
-            "decimal_sub": ("Decimal", "Decimal"),
-            "decimal_cmp": ("Decimal", "Decimal"),
-            "decimal_text": ("Decimal",),
-        }[name]
+        expected = SIGNATURES[name][0]
         if len(types) != len(expected):
             raise _semantic.SemanticError(
                 "KS1301",
@@ -258,13 +270,7 @@ def _semantic_receiver(self, expression):
 def _typed_call_type(self, name, arguments, location):
     if name not in _BUILTINS:
         return _ORIGINAL_TYPED_CALL_TYPE(self, name, arguments, location)
-    expected = {
-        "decimal": (STRING, INT),
-        "decimal_add": (_DECIMAL, _DECIMAL),
-        "decimal_sub": (_DECIMAL, _DECIMAL),
-        "decimal_cmp": (_DECIMAL, _DECIMAL),
-        "decimal_text": (_DECIMAL,),
-    }[name]
+    expected = SIGNATURES[name][1]
     if len(arguments) != len(expected):
         raise _semantic.SemanticError(
             "KS1301",
@@ -278,11 +284,7 @@ def _typed_call_type(self, name, arguments, location):
             f"'{name}' çağrısının {index}. argümanı",
             location,
         )
-    if name in {"decimal", "decimal_add", "decimal_sub"}:
-        return union_type(_DECIMAL, ERROR)
-    if name == "decimal_cmp":
-        return union_type(INT, ERROR)
-    return STRING
+    return _TYPED_RESULTS[SIGNATURES[name][2]]
 
 
 def _runtime_evaluate(self, expression):
@@ -294,28 +296,11 @@ def _runtime_evaluate(self, expression):
 def _runtime_invoke(self, callee, arguments, expression):
     if callee not in _BUILTINS:
         return _ORIGINAL_RUNTIME_INVOKE(self, callee, arguments, expression)
-    expected = {
-        "decimal": 2,
-        "decimal_add": 2,
-        "decimal_sub": 2,
-        "decimal_cmp": 2,
-        "decimal_text": 1,
-    }[callee]
-    self._require_arity(callee, arguments, expected, expression.location)
+    self._require_arity(callee, arguments, len(SIGNATURES[callee][0]), expression.location)
     try:
-        if callee == "decimal":
-            return parse_decimal(arguments[0], arguments[1])
-        if callee == "decimal_add":
-            return add_decimal(arguments[0], arguments[1])
-        if callee == "decimal_sub":
-            return sub_decimal(arguments[0], arguments[1])
-        if callee == "decimal_cmp":
-            return compare_decimal(arguments[0], arguments[1])
-        if callee == "decimal_text":
-            return decimal_text(arguments[0])
+        return call_decimal(callee, arguments)
     except (FinancialDecimalError, TypeError, ValueError) as error:
         return _runtime.KsError(str(error))
-    raise AssertionError(callee)
 
 
 def _runtime_type_node(value):
@@ -333,7 +318,7 @@ def _runtime_to_string(value):
 def _codegen_call(self, expression, depth):
     if (
         isinstance(expression.callee, Identifier)
-        and expression.callee.name in _BUILTINS
+        and expression.callee.name in _LEGACY_GO_HELPERS
     ):
         name = expression.callee.name
         prelude: list[str] = []
@@ -342,23 +327,19 @@ def _codegen_call(self, expression, depth):
             value, argument_prelude = self._expression(argument, depth)
             prelude.extend(argument_prelude)
             arguments.append(value)
-        expected = {
-            "decimal": 2,
-            "decimal_add": 2,
-            "decimal_sub": 2,
-            "decimal_cmp": 2,
-            "decimal_text": 1,
-        }[name]
-        self._check_arity(name, arguments, expected, expression.location)
-        helper = {
-            "decimal": "ksDecimalParse",
-            "decimal_add": "ksDecimalAdd",
-            "decimal_sub": "ksDecimalSub",
-            "decimal_cmp": "ksDecimalCmp",
-            "decimal_text": "ksDecimalText",
-        }[name]
+        self._check_arity(name, arguments, len(SIGNATURES[name][0]), expression.location)
+        helper = _LEGACY_GO_HELPERS[name]
         return f"{helper}({', '.join(arguments)})", prelude
     return _ORIGINAL_CODEGEN_CALL(self, expression, depth)
+
+
+_LEGACY_GO_HELPERS = {
+    "decimal": "ksDecimalParse",
+    "decimal_add": "ksDecimalAdd",
+    "decimal_sub": "ksDecimalSub",
+    "decimal_cmp": "ksDecimalCmp",
+    "decimal_text": "ksDecimalText",
+}
 
 
 def _install_go_runtime() -> None:
@@ -409,6 +390,11 @@ def install_financial_decimal_v1() -> None:
     _alignment._runtime_type_node = _runtime_type_node
     _ORIGINAL_RUNTIME_TO_STRING = _runtime.ks_to_string
     _runtime.ks_to_string = _runtime_to_string
+
+    # The canonical MIR executor reaches the builtins through the facade.
+    from .runtime_primitive_facade_v1 import RuntimePrimitiveFacadeV1
+
+    RuntimePrimitiveFacadeV1._BUILTIN_CALLS = frozenset(RuntimePrimitiveFacadeV1._BUILTIN_CALLS | _BUILTINS)
 
     _ORIGINAL_CODEGEN_CALL = _codegen.GoCodegen._call
     _codegen.GoCodegen._call = _codegen_call

@@ -16,7 +16,7 @@ def install_financial_decimal_diagnostics() -> None:
         "KS3801": diagnostics.Diagnostic(
             code="KS3801",
             title="Geçersiz Decimal sözleşmesi",
-            summary="Decimal metni, scale veya değer tipi exact finans sözleşmesine uymuyor.",
+            summary="Decimal metni, scale, yuvarlama kipi veya değer tipi exact finans sözleşmesine uymuyor.",
             why=(
                 "Finansal sayıların host Float'a veya örtük dönüşümlere düşmesi farklı "
                 "backend'lerde farklı para sonuçları üretebilir. Decimal girdisi bu yüzden "
@@ -24,7 +24,8 @@ def install_financial_decimal_diagnostics() -> None:
             ),
             fix=(
                 "decimal(\"101.2500\", 4) gibi kanonik String ve 0..18 scale kullanın; "
-                "üs gösterimi, baş/son boşluk, '+' öneki ve gereksiz baştaki sıfırları kaldırın."
+                "üs gösterimi, baş/son boşluk, '+' öneki ve gereksiz baştaki sıfırları kaldırın. "
+                "Yuvarlama kipi down, up, floor, ceiling, half_up, half_down veya half_even olmalıdır."
             ),
             example='let price = decimal("101.2500", 4) or return',
         ),
@@ -37,13 +38,14 @@ def install_financial_decimal_diagnostics() -> None:
                 "Koschei v1 farklı scale değerlerini otomatik olarak eşitlemez."
             ),
             fix=(
-                "Aynı market/asset sözleşmesindeki değerleri aynı scale ile oluşturun. "
-                "Rescale ve rounding ileride ayrı, açık bir finans API'si olarak tanımlanacaktır."
+                "Aynı market/asset sözleşmesindeki değerleri aynı scale ile oluşturun ya da "
+                "birini decimal_rescale(değer, scale, kip) ile açıkça yeniden ölçekleyin."
             ),
             example=(
                 'let left = decimal("1.00", 2) or return\n'
-                'let right = decimal("2.50", 2) or return\n'
-                "let total = decimal_add(left, right) or return"
+                'let right = decimal("2.5", 1) or return\n'
+                'let wide = decimal_rescale(right, 2, "down") or return\n'
+                "let total = decimal_add(left, wide) or return"
             ),
         ),
         "KS3803": diagnostics.Diagnostic(
@@ -69,27 +71,47 @@ def install_financial_decimal_diagnostics() -> None:
                 "normal aritmetik işleci bu fallible sözleşmeyi güvenli biçimde taşıyamaz."
             ),
             fix=(
-                "Toplama için decimal_add(), çıkarma için decimal_sub(), sıralama/eşitlik "
-                "kararı için decimal_cmp() kullanın ve sonucu 'or' ile ele alın."
+                "Toplama için decimal_add(), çıkarma için decimal_sub(), çarpma ve bölme için "
+                "decimal_mul() ve decimal_div(), sıralama/eşitlik kararı için decimal_cmp() "
+                "kullanın ve sonucu 'or' ile ele alın."
             ),
             example=(
                 "let order = decimal_cmp(left, right) or return\n"
                 "if order < 0 { println(\"left daha küçük\") }"
             ),
         ),
+        "KS3807": diagnostics.Diagnostic(
+            code="KS3807",
+            title="Decimal sıfıra bölme",
+            summary="decimal_div() bölen olarak sıfır değerinde bir Decimal aldı.",
+            why=(
+                "Sıfıra bölmenin bir para sonucu yoktur; sonsuz, NaN veya sessiz sıfır "
+                "üretmek yerine işlem bir Error döndürür."
+            ),
+            fix=(
+                "Böleni bölmeden önce decimal_cmp() ile sıfıra karşı denetleyin ya da "
+                "decimal_div() sonucunu 'or' ile ele alın."
+            ),
+            example=(
+                'let share = decimal_div(total, count, 2, "half_even") or {\n'
+                '    println("bölünecek kalem yok")\n'
+                "    return\n"
+                "}"
+            ),
+        ),
     }
     english_fields = {
         "KS3801": (
             "Invalid Decimal contract",
-            "Decimal text, scale, or value type violates the exact-finance contract.",
+            "Decimal text, scale, rounding mode, or value type violates the exact-finance contract.",
             "Financial values must never fall through host Float or implicit conversion semantics.",
-            "Use canonical String input and an explicit scale from 0 through 18.",
+            "Use canonical String input, an explicit scale from 0 through 18 and one of the rounding modes down, up, floor, ceiling, half_up, half_down or half_even.",
         ),
         "KS3802": (
             "Decimal scale mismatch",
             "Two Decimal values have different scales and the operation would require implicit rescaling.",
             "Implicit rescaling can hide rounding and unit errors in financial code.",
-            "Construct values under the same market/asset scale; use an explicit future rescale API when required.",
+            "Construct values under the same market/asset scale, or change one explicitly with decimal_rescale(value, scale, mode).",
         ),
         "KS3803": (
             "Decimal int64 overflow",
@@ -101,7 +123,13 @@ def install_financial_decimal_diagnostics() -> None:
             "Implicit Decimal operator disabled",
             "A direct arithmetic or comparison operator was used on Decimal P1.",
             "Scale mismatch and future rounding decisions are fallible and cannot be hidden inside an infallible operator.",
-            "Use decimal_add(), decimal_sub(), or decimal_cmp() and handle the result with 'or'.",
+            "Use decimal_add(), decimal_sub(), decimal_mul(), decimal_div(), or decimal_cmp() and handle the result with 'or'.",
+        ),
+        "KS3807": (
+            "Decimal division by zero",
+            "decimal_div() received a zero Decimal as its divisor.",
+            "Division by zero has no money result; instead of infinity, NaN or a silent zero the operation returns an Error.",
+            "Check the divisor against zero with decimal_cmp() first, or handle the decimal_div() result with 'or'.",
         ),
     }
 
