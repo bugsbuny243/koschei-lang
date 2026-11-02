@@ -86,7 +86,7 @@ class LiveCpuAndRealPfEvidenceTests(unittest.TestCase):
         for old, new in substitutions:
             with self.subTest(changed=new):
                 self.assertIn(old, valid)
-                self.assert_receipt(valid.replace(old, new), False)
+                self.assert_receipt(valid.replace(old, new, 1), False)
         self.assert_receipt(valid.replace(VALID_WALK_FIXTURE, b""), False)
         self.assert_receipt(VALID_WALK_FIXTURE + valid, False)
 
