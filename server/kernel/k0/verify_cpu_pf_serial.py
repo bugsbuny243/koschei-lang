@@ -30,6 +30,10 @@ VALID_WALK_FIXTURE = (
     b"RIPPA=0000000000400200 RSPPA=0000000000600fef "
     b"CR3=0000000000800000\r\n"
 )
+OWNED_TABLES_RECEIPT = (
+    b"KOSCHEI-KERNEL K0 OWNED-TABLES/1 "
+    b"PHYSICAL-READBACK CR3-UNCHANGED\r\n"
+)
 FIELD_NAMES = (
     b"CR0", b"CR3", b"CR4", b"EFER", b"RFLAGS", b"CS",
     b"GDTR", b"GDTLIMIT", b"IDTR", b"IDTLIMIT", b"RIP", b"RSP",
@@ -105,7 +109,11 @@ def verify(serial_path: Path) -> None:
     if not walk:
         raise ValueError("missing or malformed real CR3 table-byte walk record")
     rippa, rsppa, root = (int(raw, 16) for raw in walk.groups())
-    live = validate_live_register_record(record[walk.end():])
+    owned_tail = record[walk.end():]
+    if not owned_tail.startswith(OWNED_TABLES_RECEIPT):
+        raise ValueError("missing/forged Koschei physical table readback receipt")
+    live = validate_live_register_record(
+        owned_tail[len(OWNED_TABLES_RECEIPT):])
     if (rippa != live["RIP"] or rsppa != live["RSP"] - 1 or
         root != live["CR3"] or
         not (0 < rippa < 256 * 1024 * 1024) or
@@ -116,6 +124,7 @@ def verify(serial_path: Path) -> None:
     if image_base <= live["RSP"] < image_base + image_size:
         raise ValueError("observed stack unexpectedly overlaps loaded image")
     print("KOSCHEI-K0 CR3-WALK/1 PASS active firmware PTE bytes cross-check RIP/RSP")
+    print("KOSCHEI-K0 OWNED-TABLES/1 PASS physical frame bytes verified; CR3 unchanged")
     print("KOSCHEI-K0 IMAGE-LIVE/1 PASS UEFI LoadedImage bounds match CPU RIP")
     print("KOSCHEI-K0 CPU-LIVE/1 PASS real register values validated; "
           "firmware-owned CR3 only")
