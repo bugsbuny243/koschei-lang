@@ -8,6 +8,7 @@ Every module is written in Koschei and compiled with the program that imports it
 | [`captain_marvel`](#captain_marvel) | 3 | 2 |
 | [`hela`](#hela) | 4 | 1 |
 | [`list`](#list) | 10 | 0 |
+| [`matrix_horizon`](#matrix_horizon) | 5 | 1 |
 | [`morag`](#morag) | 2 | 3 |
 | [`secure`](#secure) | 5 | 0 |
 | [`strange`](#strange) | 2 | 2 |
@@ -182,6 +183,65 @@ fn replace_at<T>(items: List<T>, index: Int, item: T) -> Result<List<T>, Error>
 ```
 
 Replaces the item at `index`; requires 0 <= index < length.
+
+## matrix_horizon
+
+Matrix/Hara pure horizon policy, not the durable SQLite event-horizon fence. This module ports the deterministic cross-Matrix transition requirements: unchanged Veyra/Aevra, different Matrix/Hara and exactly the next epoch. A head digest is an integrity checksum, NOT a signature or proof of which Hara is currently authorized. The caller must use the independently authenticated durable Python fence for atomic tombstones and anti-replay. It creates no authority, performs no I/O and never changes durable state.
+
+### struct `MatrixHorizonProposal`
+
+A *proposed* Matrix horizon, not the durable current record. All digest fields use Koschei domain-separated SHA3-256 text digests; the Python reference's SHA-256 byte encoding is deliberately different.
+
+```ks
+veyra_digest: String
+aevra_digest: String
+matrix_digest: String
+hara_digest: String
+epoch: Int
+previous_hara_digest: String
+cause_digest: String
+record_digest: String
+```
+
+### `matrix_horizon.record`
+
+```ks
+fn record(veyra_digest: String, aevra_digest: String, matrix_digest: String, hara_digest: String, epoch: Int, previous_hara_digest: String, cause_digest: String) -> Result<MatrixHorizonProposal, Error>
+```
+
+Public because v1 has no private functions. A record that can be constructed is only a self-consistent *claim*. It cannot admit execution.
+
+### `matrix_horizon.genesis`
+
+```ks
+fn genesis(veyra_digest: String, aevra_digest: String, matrix_digest: String, hara_digest: String, epoch: Int, cause_digest: String) -> Result<MatrixHorizonProposal, Error>
+```
+
+Construct a genesis *proposal*. An external durable fence still has to initialize the current Hara atomically and reject duplicate initialization.
+
+### `matrix_horizon.is_canonical`
+
+```ks
+fn is_canonical(head: MatrixHorizonProposal) -> Bool
+```
+
+Recompute the complete proposal's content digest. Not an issuer signature; a caller can construct a new consistent proposal without authorization.
+
+### `matrix_horizon.propose_transition`
+
+```ks
+fn propose_transition(current: MatrixHorizonProposal, next_veyra_digest: String, next_aevra_digest: String, next_matrix_digest: String, next_hara_digest: String, next_epoch: Int, cause_digest: String) -> Result<MatrixHorizonProposal, Error>
+```
+
+Pure preparation gate reflecting DurableMatrixHorizonFence.advance's identity and next-epoch checks; it does NOT update SQLite, tombstone old Haras, fence stale writers, or prove the supplied head is current. The caller MUST independently authenticate the current durable head.
+
+### `matrix_horizon.matches_snapshot`
+
+```ks
+fn matches_snapshot(head: MatrixHorizonProposal, veyra_digest: String, aevra_digest: String, matrix_digest: String, hara_digest: String, epoch: Int) -> Bool
+```
+
+Compare a proposal with a CALLER-SUPPLIED observation; this is not require_current(), because only the durable fence knows current state.
 
 ## morag
 
