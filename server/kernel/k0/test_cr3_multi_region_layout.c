@@ -15,7 +15,8 @@ static K0_MEMORY_DESCRIPTOR memory[] = {
     {2, 0, 0x710000ULL, 0, 1, 0},     /* LoaderData GDT */
     {5, 0, 0x900000ULL, 0, 2, 1ULL << 63},
     {9, 0, 0x920000ULL, 0, 1, 0},
-    {11, 0, 0xfec00000ULL, 0, 1, 0}
+    {11, 0, 0xfec00000ULL, 0, 1, 0},
+    {1, 0, 0x50000000ULL, 0, 1, 0} /* valid code across a 1GiB boundary */
 };
 #define MAP_BYTES (sizeof(memory))
 #define MAP_STRIDE (sizeof(memory[0]))
@@ -147,6 +148,24 @@ int main(void) {
     REFUSE(altered.mappings[4].pages = 5);
     REFUSE(altered.reservations[2].pa = 0x720000ULL);
     REFUSE(altered.pool_epoch -= 1);
+
+    /* This extra mapping is semantically legitimate (and fully reserved
+     * in the final UEFI map), but requires a SECOND PDPT/PD hierarchy.
+     * This deliberately bounded builder must reject it rather than
+     * silently dropping an executable region from the proposed CR3.
+     */
+    altered = proposal;
+    altered.mappings[5] = (K0_CR3_MAPPING){
+        0x50000000ULL, 0x50000000ULL, 1,
+        K0_CR3_EXEC, K0_CR3_PROV_IMAGE};
+    altered.reservations[4] = (K0_CR3_RESERVATION){
+        0x50000000ULL, 1, K0_CR3_PROV_IMAGE};
+    altered.mapping_count = 6;
+    altered.reservation_count = 5;
+    assert(k0_cr3_uefi_map_provenance_preflight(
+        &altered, &pool, memory, MAP_BYTES, MAP_STRIDE, 1, 1));
+    assert(!attempt(&altered, frames, 6, memory, 1));
+    assert(attempt(&proposal, frames, 6, memory, 1));
 
     /* Firmware type corruption is caught before table construction. */
     K0_MEMORY_DESCRIPTOR corrupted[sizeof(memory)/sizeof(memory[0])];
