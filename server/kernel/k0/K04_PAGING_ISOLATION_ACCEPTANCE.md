@@ -173,6 +173,36 @@ releases them. K0.3 uses the mapping left by firmware, NOT a Koschei-owned CR3.
   installed, no firmware mapping provenance is proven by register reads,
   and no memory isolation guarantee follows.
 
+## UEFI LoadedImage and live RIP/RSP residency gate (QEMU-only)
+
+- The isolated diagnostic EFI obtains the actual
+  `EFI_LOADED_IMAGE_PROTOCOL` through `BootServices.HandleProtocol`
+  **before** `ExitBootServices`, using the image handle passed to
+  `efi_main`. It copies only `ImageBase` and `ImageSize` into
+  local values, never retains a protocol callback after the exit.
+- The final accepted `GetMemoryMap` snapshot is reused after exit.
+  The guest requires its captured instruction pointer to fall within the
+  LoadedImage extent and an allowed non-runtime UEFI code descriptor;
+  its observed stack pointer must fall inside an allowed non-runtime
+  UEFI data/conventional descriptor, outside the claimed page pool.
+  The `efi_main` and guest #PF entry addresses must also lie within
+  the LoadedImage extent.
+- A **new image-boundary UART record** precedes the existing live CPU
+  register and hardware #PF records. The host verifier checks the image
+  range is well formed and agrees with the captured guest RIP. Negative
+  tests reject wrong/zero/overflowing image extents, malformed descriptors,
+  runtime flags, wrong memory types, forged RIP/RSP, truncated or duplicated
+  UART records. Only the dedicated QEMU diagnostic image is affected.
+- The live RIP observation now uses a RIP-relative assembly instruction,
+  rather than treating a C function's symbol address as a CPU instruction
+  pointer sample.
+- **Limit:** UEFI LoadedImage is firmware-supplied and the residency
+  comparison depends on OVMF's current identity-mapping assumption;
+  it does not independently translate CPU virtual addresses into physical
+  pages, validate all PE sections or all firmware memory attributes,
+  prove stack ownership, inspect the active GDT/IDT bytes or load an owned
+  CR3. This is an additional conservative diagnostic, not memory isolation.
+
 ## Next executable acceptance requirements
 1. Capture exact page ownership and reserve the loaded PE image, executing
    stack, firmware runtime ranges, ACPI, MMIO/framebuffer and page-table
