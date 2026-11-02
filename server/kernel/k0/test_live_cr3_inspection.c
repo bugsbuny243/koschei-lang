@@ -35,6 +35,16 @@ static void reject(K_U64 va, K_U64 root) {
     assert(memcmp(&result, &before, sizeof(result)) == 0);
 }
 int main(void) {
+    /* The diagnostic table-frame reader consumes a strictly validated
+     * UEFI map, not arbitrary physical offsets supplied by firmware.
+     */
+    const K0_MEMORY_DESCRIPTOR map[] = {
+        {7, 0, 0x200000ULL, 0, 32, 0}
+    };
+    K0_MEMORY_PLAN validated_map = {0};
+    assert(k0_memory_validate_plan(map, sizeof(map), sizeof(map[0]),
+                                   1, &validated_map));
+    assert(validated_map.candidate_start == 0x200000ULL);
     const K_U64 va = 0x0000000000400123ULL;
     K0_CR3_I_RESULT result = {0};
     setup();
