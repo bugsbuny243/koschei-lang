@@ -269,6 +269,40 @@ releases them. K0.3 uses the mapping left by firmware, NOT a Koschei-owned CR3.
   mappings, verify live table bytes and CPU register state on the same
   ownership epoch, and prove a safe QEMU cutover with real-denial #PF.
 
+## Multi-region 4KiB transition layout (HOST MODEL ONLY)
+
+- `cr3_multi_region_layout.h` accepts only a proposed CR3 manifest
+  that also passes the strict synthetic CPU/physical-ownership preflight
+  **and** the caller-supplied final UEFI map descriptor-provenance check.
+  It requires identity-mapped claimed frames and a frozen pool mutation
+  epoch; the four primary frames match the manifest root identities.
+- The new builder compiles actual PML4/PDPT/PD/PT **data arrays** for
+  multiple distinct 2 MiB virtual windows under a common 1 GiB PDPT
+  entry. It allocates exactly one PT per required window; a one-PT
+  skeleton is rejected when code, stack and pool require three PTs.
+  The supported capacity is at most 16 claimed table frames total
+  (PML4+PDPT+PD plus up to 13 PTs) and 4096 declared 4KiB mappings.
+  Cross-1GiB, cross-PML4, unexpected extra or missing PT frames and
+  unclaimed supplementary table frames fail closed.
+- Code PTEs are supervisor, executable and read-only; stack and
+  table-frame PTEs are supervisor, writable and NX; control descriptor
+  PTEs are supervisor, read-only and NX. The separate read-only
+  PTE-byte decoder checks every declared page in the generated model
+  and requires low/top-guard addresses to be absent.
+- A *second* reconstruction of the manifest is compared against **all
+  512 slots per table**, including entries that should remain absent,
+  so tampering with an unused slot or forging W+X cannot be accepted.
+  Native C11 tests also reject corrupt UEFI descriptors, stale pool
+  epochs, missing/duplicate frames, mismatched leaf permissions and
+  incomplete code/stack/descriptor coverage.
+- **Security limit:** this is a synthetic transition topology with
+  caller-provided CPU state, UEFI descriptors and claimed frame IDs.
+  It does NOT inspect the true loaded PE image sections, pin real
+  physical frames, write the new table bytes to RAM, install an IDT,
+  read hardware translation or write CR3. Single-1GiB scope is a
+  deliberate implementation limit. Additional live ownership and
+  coverage work is mandatory before any real switch.
+
 ## Next executable acceptance requirements
 1. Capture exact page ownership and reserve the loaded PE image, executing
    stack, firmware runtime ranges, ACPI, MMIO/framebuffer and page-table
