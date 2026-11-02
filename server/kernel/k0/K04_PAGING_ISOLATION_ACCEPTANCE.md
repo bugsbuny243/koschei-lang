@@ -203,6 +203,38 @@ releases them. K0.3 uses the mapping left by firmware, NOT a Koschei-owned CR3.
   prove stack ownership, inspect the active GDT/IDT bytes or load an owned
   CR3. This is an additional conservative diagnostic, not memory isolation.
 
+## Read-only walk of actual firmware CR3 page-table bytes (QEMU only)
+
+- `live_cr3_inspection.h` decodes actual x86-64 four-level PML4,
+  PDPT, PD and PT entries. It accounts for 4 KiB, 2 MiB and 1 GiB
+  leaves, accumulates supervisor/write/NX restrictions, rejects
+  missing entries, malformed canonical addresses and reserved bits
+  in large-page entries. Host adversarial C tests prove the
+  **software decoder**; they do not execute CPU translations.
+- Only the isolated `BOOTX64-PF.EFI` diagnostic can apply it to
+  CPU-observed firmware `CR3`. In QEMU's 256 MiB OVMF profile it
+  reads proposed table-frame bytes **only if** each table page is
+  aligned and classified as non-runtime LoaderData,
+  BootServicesData or ConventionalMemory in the final UEFI map.
+  The physical pointer read relies on existing OVMF identity
+  mapping; no CR3 write or page table mutation is performed.
+- The guest inspects current RIP and RSP-1 translations,
+  checks that both remain identity-mapped in the supported
+  diagnostic profile, that they are supervisor mappings and
+  executing code is not NX. Their resolved physical addresses
+  must independently match the appropriate code/data UEFI
+  descriptor classifications. A new UART `CR3-WALK/1` record
+  contains the readback physical RIP/RSP-1 addresses and live
+  root CR3. A separate verifier cross-checks this against the
+  CPU-observed register receipt and the QEMU exit code.
+- **Limits:** a software walk of firmware-provided PTE bytes is
+  *not* independent CPU translation attestation. The table bytes,
+  identity map and UEFI memory descriptors inherit firmware trust;
+  no new Koschei CR3, pinned table hierarchy, isolation boundary
+  or production hardware guarantee is provided. Unexpected
+  table structure or inaccessible table frames fail the QEMU
+  diagnostic, not silently count as success.
+
 ## Next executable acceptance requirements
 1. Capture exact page ownership and reserve the loaded PE image, executing
    stack, firmware runtime ranges, ACPI, MMIO/framebuffer and page-table
