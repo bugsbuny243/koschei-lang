@@ -84,6 +84,12 @@ from .native_broker_v1 import BROKER_IMPORTS, broker_runtime
 from .native_data_v1 import BUILTINS as DATA_BUILTINS, DATA_IMPORTS, data_runtime
 from .native_decimal_v1 import BUILTINS as DECIMAL_BUILTINS, DECIMAL_IMPORTS, decimal_runtime
 from .financial_decimal_v1 import SIGNATURES as DECIMAL_SIGNATURES
+from .native_password_hash_v1 import (
+    ARITY as PASSWORD_HASH_ARITY,
+    BUILTINS as PASSWORD_HASH_BUILTINS,
+    PASSWORD_HASH_IMPORTS,
+    password_hash_runtime,
+)
 from .native_net_v1 import NET_IMPORTS, net_runtime
 from .native_serve_v1 import SERVE_IMPORTS, request_runtime, serve_runtime
 from .mir_variant_runtime_v1 import MirVariantRuntimeError, split_canonical_variant_v1
@@ -112,9 +118,13 @@ _BUILTINS = {
     "sha3_256_bytes": "_ksSha3_256Bytes",
     **DATA_BUILTINS,
     **DECIMAL_BUILTINS,
+    **PASSWORD_HASH_BUILTINS,
 }
 # Every other builtin takes one argument.
-_BUILTIN_ARITY = {name: len(DECIMAL_SIGNATURES[name][0]) for name in DECIMAL_BUILTINS}
+_BUILTIN_ARITY = {
+    **{name: len(DECIMAL_SIGNATURES[name][0]) for name in DECIMAL_BUILTINS},
+    **PASSWORD_HASH_ARITY,
+}
 _STRING_METHODS = frozenset({"length", "contains", "trim", "split", "join", "to_int", "to_bytes"})
 _LIST_METHODS = frozenset({"length", "get", "push", "contains", "take"})
 _BYTES_METHODS = frozenset({"length", "hex", "to_text", "slice", "get"})
@@ -319,6 +329,7 @@ def generate_go_mir_native(mir: MirGraph) -> str:
     uses_bytes_digest = "sha3_256_bytes" in builtins_used
     uses_data = bool(builtins_used & set(DATA_BUILTINS))
     uses_decimal = bool(builtins_used & set(DECIMAL_BUILTINS))
+    uses_password_hash = bool(builtins_used & set(PASSWORD_HASH_BUILTINS))
     uses_digest = SECURE_HASH_NAME in builtins_used or uses_bytes_digest
     domains = _used_domains(plans)
     imports = sorted(
@@ -333,6 +344,7 @@ def generate_go_mir_native(mir: MirGraph) -> str:
             *(SERVE_IMPORTS if "serve" in domains else ()),
             *(DATA_IMPORTS if uses_data else ()),
             *(DECIMAL_IMPORTS if uses_decimal else ()),
+            *(PASSWORD_HASH_IMPORTS if uses_password_hash else ()),
         }
     )
 
@@ -382,6 +394,8 @@ def generate_go_mir_native(mir: MirGraph) -> str:
         lines.append(data_runtime())
     if uses_decimal:
         lines.append(decimal_runtime())
+    if uses_password_hash:
+        lines.append(password_hash_runtime())
     for plan in plans:
         lines.extend(_emit_function(plan, symbols, process_error=plan.symbol == root_main))
         lines.append("")

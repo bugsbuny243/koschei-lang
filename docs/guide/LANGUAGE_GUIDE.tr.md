@@ -335,6 +335,34 @@ KS3807: decimal division by zero
 70
 ```
 
+### İmzalar ve parolalar
+
+`hmac_sha256(anahtar, mesaj)` baytları imzalar, `pbkdf2_sha256(parola, salt,
+tekrar, uzunluk)` parolayı özetler (16 bayttan kısa salt, 100.000'den az
+tekrar ya da 16–64 bayt dışındaki anahtar `KS3490`), `secure_equal(a, b)` iki
+özeti sabit zamanda karşılaştırır — `==` yerine bunu kullanın. İki özet de
+küçük harfli hex'tir ve platformun denetlenmiş kütüphanelerince hesaplanır.
+Bkz. [`../PASSWORD_HASH_V1.md`](../PASSWORD_HASH_V1.md).
+
+```ks
+fn main() {
+    let secret = "webhook-secret".to_bytes()
+    let body = "\{\"paid\": true\}"
+    let tag = hmac_sha256(secret, body.to_bytes())
+    println(secure_equal(tag, hmac_sha256(secret, body.to_bytes())))
+    let salt = "0123456789abcdef".to_bytes()
+    let hash = pbkdf2_sha256("hunter2".to_bytes(), salt, 600000, 32) or return
+    println(hash.length())
+    println(pbkdf2_sha256("hunter2".to_bytes(), "short".to_bytes(), 600000, 32))
+}
+```
+
+```output
+true
+64
+KS3490: pbkdf2_sha256 salt must be 16..1024 bytes
+```
+
 ## 7. Modüller ve Core Library
 
 `import ad`, yandaki `ad.ks` dosyasını veya bir Core Library modülünü bağlar.

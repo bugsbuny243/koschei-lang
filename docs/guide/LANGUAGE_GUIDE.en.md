@@ -335,6 +335,34 @@ KS3807: decimal division by zero
 70
 ```
 
+### Signatures and passwords
+
+`hmac_sha256(key, message)` signs bytes, `pbkdf2_sha256(password, salt,
+iterations, length)` hashes a password (`KS3490` for a salt under 16 bytes,
+fewer than 100,000 iterations or a key outside 16–64 bytes), and
+`secure_equal(a, b)` compares two digests in constant time — use it instead
+of `==`. Both digests are lowercase hex; the platform's audited libraries
+compute them. See [`../PASSWORD_HASH_V1.md`](../PASSWORD_HASH_V1.md).
+
+```ks
+fn main() {
+    let secret = "webhook-secret".to_bytes()
+    let body = "\{\"paid\": true\}"
+    let tag = hmac_sha256(secret, body.to_bytes())
+    println(secure_equal(tag, hmac_sha256(secret, body.to_bytes())))
+    let salt = "0123456789abcdef".to_bytes()
+    let hash = pbkdf2_sha256("hunter2".to_bytes(), salt, 600000, 32) or return
+    println(hash.length())
+    println(pbkdf2_sha256("hunter2".to_bytes(), "short".to_bytes(), 600000, 32))
+}
+```
+
+```output
+true
+64
+KS3490: pbkdf2_sha256 salt must be 16..1024 bytes
+```
+
 ## 7. Modules and the Core Library
 
 `import name` binds a sibling file `name.ks` or a Core Library module. The

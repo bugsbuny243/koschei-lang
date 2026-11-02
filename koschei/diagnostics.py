@@ -599,6 +599,14 @@ CATALOG: dict[str, Diagnostic] = {
         fix="Hatayı 'or' ile varsayılan değere çevirin.",
         example='let name = request.header("X-Name") or "stranger"',
     ),
+    "KS3490": Diagnostic(
+        code="KS3490",
+        title="Zayıf parola özeti parametresi",
+        summary="pbkdf2_sha256() salt, tekrar sayısı, anahtar uzunluğu veya parola sınırının dışında bir değer aldı.",
+        why="Kısa salt, az tekrar veya kısa anahtar saklanan bir parola özetini kazara zayıflatır; Koschei bunu sessizce kabul etmez.",
+        fix="16..1024 baytlık rastgele bir salt (RandomCaps.bytes(16)), 100000..10000000 tekrar (önerilen 600000), 16..64 baytlık anahtar ve en çok 4096 baytlık parola kullanın.",
+        example='let hash = pbkdf2_sha256(password, salt, 600000, 32) or return',
+    ),
     "KS3430": Diagnostic(
         code="KS3430",
         title="Program girdisi metin değil",
@@ -1035,6 +1043,12 @@ ENGLISH_TEXT: dict[str, tuple[str, str, str, str]] = {
         'request.header(name) or request.cookie(name) asked for a header or cookie the request does not carry.',
         'A missing header or cookie is an explicit Error value, not a silent empty text.',
         "Turn the error into a default with 'or'.",
+    ),
+    "KS3490": (
+        "Weak password hash parameter",
+        "pbkdf2_sha256() received a salt, iteration count, key length or password outside its bounds.",
+        "A short salt, few iterations or a short key weaken a stored password hash by accident; Koschei does not accept them silently.",
+        "Use a random salt of 16..1024 bytes (RandomCaps.bytes(16)), 100000..10000000 iterations (600000 recommended), a key of 16..64 bytes and a password of at most 4096 bytes.",
     ),
     "KS3430": (
         "Program input is not text",

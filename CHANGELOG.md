@@ -2,6 +2,8 @@
 
 ## Unreleased — Core Library v1
 
+- Add `hmac_sha256(key, message)`, `pbkdf2_sha256(password, salt, iterations, length)` and the constant-time `secure_equal(a, b)` under `ks run` and in native binaries (`docs/PASSWORD_HASH_V1.md`), so a program can sign cookies, check webhook signatures and store password hashes. Python's `hmac`/`hashlib` and Go's `crypto/hmac`, `crypto/pbkdf2` and `crypto/subtle` compute them; PBKDF2 refuses a salt outside 16..1024 bytes, fewer than 100,000 or more than 10,000,000 iterations, a key outside 16..64 bytes and a password over 4,096 bytes with `KS3490`.
+
 - Multiply, divide and rescale Decimal values: `decimal_mul(a, b, scale, mode)`, `decimal_div(a, b, scale, mode)` and `decimal_rescale(value, scale, mode)` name the result scale and one rounding mode (`down`, `up`, `floor`, `ceiling`, `half_up`, `half_down`, `half_even`) and round once, in integers; an unknown mode is `KS3801`, an overflow `KS3803` and a zero divisor the new `KS3807`. Decimal only added, subtracted and compared before.
 - Compile Decimal programs with `ks build`: binaries give the same bytes as `ks run` for every Decimal builtin. `ks build` refused every Decimal program.
 - Report decimal text with more than 4300 digits as `KS3803` overflow: Python's integer conversion limit answered instead, with a host message.

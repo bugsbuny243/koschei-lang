@@ -35,6 +35,8 @@ fn main() {
 | `==`, `!=`, `<`, … | `Bool` | byte by byte |
 | `bytes_from_hex(text)` | `Bytes or Error` | even length, `0-9a-fA-F` only; `KS3461` otherwise (no spaces) |
 | `sha3_256_bytes(data)` | `String or Error` | kernel digest of the bytes; at most 1 MiB |
+| `hmac_sha256(key, message)` | `String` | lowercase hex HMAC-SHA256; see [`PASSWORD_HASH_V1.md`](PASSWORD_HASH_V1.md) |
+| `pbkdf2_sha256(password, salt, iterations, length)` | `String or Error` | lowercase hex PBKDF2-HMAC-SHA256; bounded parameters (`KS3490`) |
 | `secure.hash_bytes(data)` | `Result<String, Error>` | `"sha3-256:" + hex`; equals `secure.hash(text)` for `text.to_bytes()` |
 
 A value renders as `Bytes(hex)`. Mixing `Bytes` and `String` in `+` or `==`
