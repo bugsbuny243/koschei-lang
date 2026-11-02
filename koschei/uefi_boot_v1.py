@@ -1,30 +1,32 @@
-"""Koschei x86-64 UEFI bare-metal kernel, GDT/IDT, Titan PMM, W^X CR3, PIC/PIT/TSC & Shell v5.
+"""Koschei x86-64 UEFI boot prototype v5: COM1, ExitBootServices, GDT/IDT & Shell.
 
 This module compiles a checked, sealed Koschei MirGraph into a freestanding
-x86-64 UEFI kernel image (``BOOTX64.EFI``, PE32+ machine ``0x8664``, subsystem
+x86-64 UEFI application (``BOOTX64.EFI``, PE32+ machine ``0x8664``, subsystem
 ``10`` = ``IMAGE_SUBSYSTEM_EFI_APPLICATION``) that:
 1. Initializes the hardware 16550 UART controller on ``COM1`` (I/O port ``0x3F8``,
    115200 baud, 8N1, 14-byte FIFO).
 2. Streams the deterministic Koschei MIR boot output to ``COM1`` and mirrors it
    to ``SystemTable->ConOut->OutputString`` while UEFI BootServices are still live.
-3. Acquires the hardware memory map via ``BootServices->GetMemoryMap`` (offset
-   ``0x38``) and executes ``BootServices->ExitBootServices(ImageHandle, MapKey)``
-   (offset ``0xE8``) to terminate UEFI firmware authority.
-4. Installs Koschei's own 64-bit Ring-0 **GDT** (``lgdt``, reloading ``ds/es/ss = 0x10``)
-   and 32-vector **IDT** (``lidt``, binding CPU exceptions ``0..31`` to a fail-closed
-   Morth serial panic trap), and initializes the **Titan Physical Page Frame
-   Allocator** by scanning ``EfiConventionalMemory`` descriptors from the UEFI
-   memory map.
-5. Allocates 4 physical 4 KiB page frames (``0x00100000..0x00103FFF``) from Titan
-   PMM to construct a 4-level x86-64 page table hierarchy (``PML4 -> PDPT -> PD -> PT``)
-   enforcing strict **W^X (Write XOR Execute)** permissions (``.text`` = ``RX``,
-   ``.rdata`` = ``RO+NX``, data/tables = ``RW+NX``) and loads ``CR3`` (``mov cr3, rax``).
-6. Remaps the legacy dual **8259 PIC** controllers (``0x20/0x21``, ``0xA0/0xA1``) to
-   vectors ``0x20..0x2F`` and masks all ambient IRQ lines (``0xFF``), configures the
-   **8254 PIT** timer (``0x43/0x40``) to 1000 Hz (divisor ``1193 = 0x04A9``), and
-   locks the hardware **TSC** (``rdtsc``) monotonic Continuity anchor at ``epoch = 2``.
-7. Operates a post-``ExitBootServices`` interactive serial command shell on ``COM1``
-   (supporting ``STATUS``, ``MEM``, ``MIR``, ``EPOCH``, and ``HALT`` commands).
+3. Reads the memory map via ``BootServices->GetMemoryMap`` (offset ``0x38``) into
+   a 32 KiB buffer and calls ``BootServices->ExitBootServices(ImageHandle, MapKey)``
+   (offset ``0xE8``), retrying both once with a fresh map key. A failure is
+   printed with the firmware status.
+4. Installs its own 64-bit Ring-0 **GDT** (``lgdt``; ``ds/es/fs/gs/ss = 0x10`` and
+   ``cs = 0x08`` through a far return) and 32-vector **IDT** (``lidt``, binding
+   CPU exceptions ``0..31`` to a fail-closed Morth serial trap).
+5. Remaps the legacy dual **8259 PIC** controllers (``0x20/0x21``, ``0xA0/0xA1``) to
+   vectors ``0x20..0x2F`` and masks every IRQ line (``0xFF``), programs the
+   **8254 PIT** (``0x43/0x40``, divisor ``1193``) with interrupts still disabled,
+   and samples the **TSC** (``rdtsc``) at ``epoch = 2``.
+6. Serves an interactive COM1 shell (``STATUS``, ``MEM``, ``MIR``, ``EPOCH``,
+   ``TRAP``, ``HALT``) and never returns to the firmware after ExitBootServices.
+
+Every line it prints after the MIR payload carries the values the code read at
+run time. Paging stays the firmware's identity mapping: there are no Koschei
+page tables, no W^X and no memory isolation. ``experimental_page_tables`` adds
+the unfinished Titan allocator and page-table switch (``mov cr3``), which maps
+only the two link-address image pages and faults on real hardware.
+``tests/test_uefi_boot_qemu_v1.py`` boots the images in QEMU with OVMF.
 """
 
 from __future__ import annotations
@@ -71,8 +73,10 @@ FILE_ALIGNMENT = 0x200
 MAX_SERIAL_BYTES = 65536
 
 GDT_NULL_DESC = 0x0000000000000000
-GDT_KERNEL_CODE64_DESC = 0x00AF9A000000FFFF  # Selector 0x08: 64-bit Ring-0 Code
-GDT_KERNEL_DATA64_DESC = 0x00CF92000000FFFF  # Selector 0x10: 64-bit Ring-0 Data
+# The accessed bit is preset in both descriptors: loading a selector then never
+# makes the CPU write to the descriptor, which lives in the read-only .rdata.
+GDT_KERNEL_CODE64_DESC = 0x00AF9B000000FFFF  # Selector 0x08: 64-bit Ring-0 Code
+GDT_KERNEL_DATA64_DESC = 0x00CF93000000FFFF  # Selector 0x10: 64-bit Ring-0 Data
 GDT_TABLE_BYTES = struct.pack(
     "<QQQ",
     GDT_NULL_DESC,
@@ -85,42 +89,107 @@ PTE_RW = 1 << 1
 PTE_PS = 1 << 7
 PTE_NX = 1 << 63
 
-POST_EBS_BANNER = (
-    b"[KOSCHEI-KERNEL-V2] ExitBootServices=OK memory_map_acquired=true "
-    b"firmware_authority=TOMBSTONED\r\n"
+EFI_INVALID_PARAMETER = 0x8000000000000002
+EFI_BUFFER_TOO_SMALL = 0x8000000000000005
+
+# ``efi_main`` stack frame, as offsets from ``rsp`` after the prologue. The
+# first 0x20 bytes are the shadow space every UEFI call may overwrite, so
+# nothing that must survive a call lives there; after ExitBootServices no call
+# is made and they hold the TSC and experimental allocator values.
+SLOT_TSC_GENESIS = 0x00
+SLOT_PMM_REMAINING = 0x08
+SLOT_TSC_LATEST = 0x10
+SLOT_PMM_FIRST_PAGE = 0x18
+SLOT_CALL_ARG5 = 0x20
+SLOT_MAP_SIZE = 0x28
+SLOT_MAP_KEY = 0x30
+SLOT_DESCRIPTOR_SIZE = 0x38
+SLOT_DESCRIPTOR_VERSION = 0x40
+SLOT_DESCRIPTOR_TABLE = 0x48  # 10-byte GDTR/IDTR scratch, then the epoch
+SLOT_EPOCH = 0x48
+RX_LINE_BUFFER = 0x50  # 64 bytes
+SLOT_STATUS = 0x90
+SLOT_ATTEMPT = 0x98
+SLOT_IMAGE_TEXT = 0xA0
+MEMORY_MAP_BUFFER = 0xB0
+# OVMF's map is a few KiB; 4 KiB, the old size, is too small for it.
+MEMORY_MAP_BUFFER_BYTES = 0x8000
+IDT_TABLE = MEMORY_MAP_BUFFER + MEMORY_MAP_BUFFER_BYTES
+FRAME_BYTES = IDT_TABLE + 32 * 16
+
+# Every line after the MIR payload states what the code did and prints the
+# values it read at run time as 16 hex digits; no line is a canned claim.
+POST_EBS_BANNER = b"[KOSCHEI-KERNEL-V2] ExitBootServices=OK attempt=0x"
+POST_EBS_MAP_FIELD = b" memory_map_bytes=0x"
+POST_EBS_DESCRIPTOR_FIELD = b" descriptor_bytes=0x"
+CRLF = b"\r\n"
+NO_BOOT_SERVICES_BANNER = (
+    b"[KOSCHEI-KERNEL-V2] FAILED: no UEFI BootServices table; "
+    b"ExitBootServices not attempted; returning EFI_INVALID_PARAMETER\r\n"
 )
+MEMORY_MAP_FAILED_BANNER = b"[KOSCHEI-KERNEL-V2] FAILED: GetMemoryMap status=0x"
+MEMORY_MAP_NEEDED_FIELD = b" needed_bytes=0x"
+MEMORY_MAP_FAILED_TAIL = (
+    b"; ExitBootServices not attempted; returning the status to the firmware\r\n"
+)
+EXIT_FAILED_BANNER = b"[KOSCHEI-KERNEL-V2] FAILED after an ExitBootServices attempt: status=0x"
+EXIT_FAILED_ATTEMPT_FIELD = b" attempt=0x"
+EXIT_FAILED_TAIL = b"; boot services may be partly stopped; halting\r\n"
 KERNEL_V3_BANNER = (
-    b"[KOSCHEI-KERNEL-V3] GDT=0x08/0x10 IDT=32_gates "
-    b"TITAN_PMM=online first_page=0x00100000\r\n"
+    b"[KOSCHEI-KERNEL-V3] gdt=loaded cs=0x08 ds=es=fs=gs=ss=0x10 "
+    b"idt=32_gates(0-31 -> fail-closed trap) image_text=0x"
 )
-KERNEL_V4_BANNER = (
-    b"[KOSCHEI-KERNEL-V4] CR3=0x00100000 WX_ENFORCED=true "
-    b"(.text=RX .rdata=RO+NX stack=RW+NX)\r\n"
+KERNEL_V4_BANNER = b"[KOSCHEI-KERNEL-V4] paging=firmware_identity own_page_tables=none\r\n"
+EXPERIMENTAL_PMM_BANNER = (
+    b"[KOSCHEI-KERNEL-V3X] EXPERIMENTAL page tables at first_conventional_page=0x"
+)
+EXPERIMENTAL_PMM_TAIL = (
+    b"; they map only the two link-address image pages, not the running code, "
+    b"stack or IDT\r\n"
+)
+EXPERIMENTAL_CR3_BANNER = (
+    b"[KOSCHEI-KERNEL-V4X] EXPERIMENTAL own CR3 loaded and execution continued\r\n"
 )
 KERNEL_V5_BANNER = (
-    b"[KOSCHEI-KERNEL-V5] PIC_8259=remapped_0x20_0x28_masked "
-    b"PIT_8254=1000Hz TSC_ANCHOR=locked epoch=2\r\n"
+    b"[KOSCHEI-KERNEL-V5] pic_8259=remapped_0x20_0x28_all_masked "
+    b"pit_8254=programmed_divisor_1193 interrupts=disabled tsc=0x"
 )
+KERNEL_V5_TAIL = b" epoch=2\r\n"
 MORTH_TRAP_BANNER = (
     b"[KOSCHEI-MORTH-TRAP] cpu_exception_caught=true halting_fail_closed\r\n"
 )
 UART_RX_PREFIX = b"[KOSCHEI-UART-RX] recv="
 
+SHELL_READY_BANNER = b"[KOSCHEI-SHELL] ready: STATUS, MEM, MIR, EPOCH, TRAP, HALT\r\n"
 SHELL_STATUS_REPLY = (
-    b"[KOSCHEI-SHELL] status=RING0_SOVEREIGN ebs=TOMBSTONED "
-    b"gdt=0x08/0x10 idt=32_gates wx=ACTIVE\r\n"
+    b"[KOSCHEI-SHELL] status=ring0 boot_services=exited gdt=0x08/0x10 "
+    b"idt=32_gates paging=firmware_identity epoch=0x"
 )
-SHELL_MEM_REPLY = (
-    b"[KOSCHEI-SHELL] titan_pmm total_pages=32768 allocated_pages=4 "
-    b"cr3_pml4=0x00100000 free_pages=32764\r\n"
+SHELL_STATUS_EXPERIMENTAL_REPLY = (
+    b"[KOSCHEI-SHELL] status=ring0 boot_services=exited gdt=0x08/0x10 "
+    b"idt=32_gates paging=experimental_own_cr3 epoch=0x"
 )
-SHELL_EPOCH_REPLY = (
-    b"[KOSCHEI-SHELL] vormir_sacrifice=OK old_epoch=2_TOMBSTONED "
-    b"new_epoch=3 tsc_monotonic=VERIFIED\r\n"
-)
+SHELL_MEM_REPLY = b"[KOSCHEI-SHELL] memory_map_bytes=0x"
+SHELL_MEM_DESCRIPTOR_FIELD = b" descriptor_bytes=0x"
+SHELL_MEM_TAIL = b" own_page_tables=none allocator=none\r\n"
+SHELL_EPOCH_REPLY = b"[KOSCHEI-SHELL] epoch=0x"
+SHELL_EPOCH_TSC_FIELD = b" tsc=0x"
 SHELL_HALT_REPLY = (
     b"[KOSCHEI-SHELL] halt_requested=true executing_cli_hlt\r\n"
 )
+# TRAP executes ud2: the CPU raises #UD (vector 6) and delivers it through the
+# Koschei IDT and GDT, so a working fail-closed trap on real hardware proves
+# both tables and the reloaded CS.
+SHELL_TRAP_REPLY = b"[KOSCHEI-SHELL] trap_requested=true executing_ud2\r\n"
+SHELL_UNKNOWN_REPLY = (
+    b"[KOSCHEI-SHELL] unknown command; use STATUS, MEM, MIR, EPOCH, TRAP or HALT\r\n"
+)
+
+
+def hex_field(value: int) -> bytes:
+    """The 16 lowercase hex digits the boot code prints for a 64-bit value."""
+
+    return b"%016x" % (value & 0xFFFFFFFFFFFFFFFF)
 
 
 class UefiBootError(ValueError):
@@ -182,6 +251,15 @@ class UefiEmulationResult:
     tsc_latest: int = 0
     active_epoch: int = 0
     exception_trapped: bool = False
+    code_segment_selector: int = 0
+    exit_boot_services_attempts: int = 0
+    memory_map_bytes: int = 0
+    descriptor_bytes: int = 0
+    image_text_address: int = 0
+    failure_status: int = 0
+    triple_fault: bool = False
+    waiting_for_input: bool = False
+    exit_boot_services_calls: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -195,6 +273,7 @@ class UefiBootArtifactV1:
     halt_mode: str
     exit_boot_services: bool = True
     enable_serial_rx: bool = True
+    experimental_page_tables: bool = False
 
 
 def _align_up(value: int, alignment: int) -> int:
@@ -262,7 +341,7 @@ def evaluate_sealed_mir_serial_output_v1(
         for raw_line in program_output.splitlines():
             lines.append(raw_line)
     if include_banner:
-        lines.append("[KOSCHEI-UEFI-V1] boot sequence complete; status=EFI_SUCCESS")
+        lines.append("[KOSCHEI-UEFI-V1] sealed MIR output complete")
 
     crlf_text = "\r\n".join(lines) + "\r\n"
     serial_bytes = crlf_text.encode("utf-8")
@@ -301,67 +380,103 @@ def _emit_tx_loop(code: bytearray, *, buf_rva: int | None, length: int, text_rva
     code += bytes([0x75, jnz_rel & 0xFF])
 
 
+def _disp32(value: int) -> bytes:
+    return struct.pack("<i", value)
+
+
 def _build_efi_main_machine_code(
     *,
-    serial_rva: int,
-    serial_len: int,
-    utf16_rva: int,
-    ebs_banner_rva: int,
-    ebs_banner_len: int,
-    v3_banner_rva: int,
-    v3_banner_len: int,
-    v4_banner_rva: int,
-    v4_banner_len: int,
-    v5_banner_rva: int,
-    v5_banner_len: int,
-    trap_banner_rva: int,
-    trap_banner_len: int,
+    strings: dict[str, tuple[int, int]],
     gdt_rva: int,
-    rx_prefix_rva: int,
-    rx_prefix_len: int,
-    shell_status_rva: int,
-    shell_status_len: int,
-    shell_mem_rva: int,
-    shell_mem_len: int,
-    shell_mir_rva: int,
-    shell_mir_len: int,
-    shell_epoch_rva: int,
-    shell_epoch_len: int,
-    shell_halt_rva: int,
-    shell_halt_len: int,
     text_rva: int,
     rdata_rva_val: int,
     halt_mode: str,
     exit_boot_services: bool = True,
     enable_serial_rx: bool = True,
+    experimental_page_tables: bool = False,
 ) -> bytes:
     """Assemble deterministic x86-64 machine code for ``efi_main`` (v5).
 
-    Stack frame layout (``sub rsp, 0x1290`` after 5 callee-saved pushes = 16-byte aligned):
-      [rsp + 0x00]:         TSC genesis timestamp (64-bit hardware cycle count)
-      [rsp + 0x08]:         Titan PMM: remaining usable pages
-      [rsp + 0x10]:         Titan PMM: next free physical page address / latest TSC
-      [rsp + 0x18]:         Titan PMM: first allocated kernel physical page
-      [rsp + 0x20]:         5th arg slot (``&DescriptorVersion``) / Titan total pages
-      [rsp + 0x28]:         ``UINTN MemoryMapSize``
-      [rsp + 0x30]:         ``UINTN MapKey``
-      [rsp + 0x38]:         ``UINTN DescriptorSize``
-      [rsp + 0x40]:         ``UINT32 DescriptorVersion``
-      [rsp + 0x48]:         10-byte GDTR/IDTR scratch, then active Continuity Epoch (``2`` -> ``3``)
-      [rsp + 0x50 .. 0x8F]: 64-byte UART RX line buffer
-      [rsp + 0x90 .. 0x108F]: 4096-byte ``EFI_MEMORY_DESCRIPTOR`` buffer
-      [rsp + 0x1090 .. 0x128F]: 512-byte 32-entry x86-64 IDT table
+    ``strings`` maps each ``.rdata`` text to its RVA and length. The stack frame
+    is described by the ``SLOT_*`` constants: ``sub rsp, FRAME_BYTES`` after
+    five callee-saved pushes keeps ``rsp`` 16-byte aligned for UEFI calls.
+
+    With ``exit_boot_services`` the code reads the memory map into a
+    ``MEMORY_MAP_BUFFER_BYTES`` buffer and calls ExitBootServices, retrying
+    both once with a fresh map key as the UEFI specification requires. A
+    failure is printed with the firmware status: before any exit attempt the
+    status is returned to the firmware; after a failed exit attempt the boot
+    services may be partly stopped, so the code halts. After a successful exit
+    it loads its own GDT (reloading CS with a far return) and IDT, programs
+    and masks the PIC and PIT, prints what it read at run time and, with
+    ``enable_serial_rx``, serves the COM1 shell until ``HALT``. It never
+    returns to the firmware after ExitBootServices.
+
+    ``experimental_page_tables`` additionally emits the Titan page allocator
+    and a page-table switch (``mov cr3``). It maps only the two link-address
+    image pages, so on real hardware the next fetch or stack access faults and
+    the fault cannot be delivered; it is kept for experiments only.
     """
 
     if halt_mode not in ("return", "halt"):
         raise ValueError(f"unsupported halt_mode: {halt_mode!r}")
+    if enable_serial_rx and not exit_boot_services:
+        raise ValueError("the COM1 shell runs only after ExitBootServices")
+    if experimental_page_tables and not exit_boot_services:
+        raise ValueError("experimental page tables need ExitBootServices")
 
     code = bytearray()
 
-    # 1. Prologue: push rbx, rsi, rdi, r12, r13
-    # sub rsp, 0x1290 (48 81 EC 90 12 00 00)
+    def tx(name: str) -> None:
+        rva, length = strings[name]
+        _emit_tx_loop(code, buf_rva=rva, length=length, text_rva=text_rva)
+
+    def hex64(slot: int) -> None:
+        # mov r8, [rsp + slot]; then 16 times: rol r8, 4; print the low nibble.
+        code.extend(b"\x4C\x8B\x84\x24" + _disp32(slot))
+        code.extend(b"\xB9\x10\x00\x00\x00")
+        loop_top = len(code)
+        code.extend(b"\x49\xC1\xC0\x04")  # rol r8, 4
+        code.extend(b"\x4C\x89\xC0")  # mov rax, r8
+        code.extend(b"\x24\x0F")  # and al, 0x0F
+        code.extend(b"\x3C\x0A")  # cmp al, 10
+        code.extend(b"\x72\x04")  # jb digit
+        code.extend(b"\x04\x57")  # add al, 'a' - 10
+        code.extend(b"\xEB\x02")  # jmp send
+        code.extend(b"\x04\x30")  # digit: add al, '0'
+        code.extend(b"\x41\x88\xC1")  # send: mov r9b, al
+        poll = len(code)
+        code.extend(b"\x66\xBA\xFD\x03\xEC\xA8" + bytes([COM1_LSR_THRE]))
+        code.extend(bytes([0x74, (poll - (len(code) + 2)) & 0xFF]))
+        code.extend(b"\x44\x88\xC8")  # mov al, r9b
+        code.extend(b"\x66\xBA\xF8\x03\xEE")
+        code.extend(b"\xFF\xC9")
+        code.extend(bytes([0x75, (loop_top - (len(code) + 2)) & 0xFF]))
+
+    def jump32(opcode: bytes) -> int:
+        code.extend(opcode + b"\x00\x00\x00\x00")
+        return len(code) - 4
+
+    def land(field: int, target: int | None = None) -> None:
+        destination = len(code) if target is None else target
+        struct.pack_into("<i", code, field, destination - (field + 4))
+
+    def store_rax(slot: int) -> None:
+        code.extend(b"\x48\x89\x84\x24" + _disp32(slot))
+
+    def store_imm(slot: int, value: int) -> None:
+        code.extend(b"\x48\xC7\x84\x24" + _disp32(slot) + struct.pack("<I", value))
+
+    def halt_forever() -> None:
+        code.extend(b"\xFA\xF4\xEB\xFD")
+
+    def epilogue_return_rax() -> None:
+        code.extend(b"\x48\x81\xC4" + struct.pack("<I", FRAME_BYTES))
+        code.extend(b"\x41\x5D\x41\x5C\x5F\x5E\x5B\xC3")
+
+    # 1. Prologue: push rbx, rsi, rdi, r12, r13; sub rsp, FRAME_BYTES
     code += bytes([0x53, 0x56, 0x57, 0x41, 0x54, 0x41, 0x55])
-    code += bytes([0x48, 0x81, 0xEC, 0x90, 0x12, 0x00, 0x00])
+    code += b"\x48\x81\xEC" + struct.pack("<I", FRAME_BYTES)
     code += bytes([0x49, 0x89, 0xCC, 0x48, 0x89, 0xD3])
 
     # 2. Initialize 16550 UART on COM1 (0x3F8)
@@ -380,7 +495,7 @@ def _build_efi_main_machine_code(
         code += bytes([0xEE])
 
     # 3. Stream deterministic MIR output payload over COM1 (0x3F8)
-    _emit_tx_loop(code, buf_rva=serial_rva, length=serial_len, text_rva=text_rva)
+    tx("payload")
 
     # 4. Mirror output via SystemTable->ConOut->OutputString while BootServices are live
     code += bytes([0x48, 0x85, 0xDB])
@@ -393,7 +508,7 @@ def _build_efi_main_machine_code(
     code += bytes([0x74, 0x00])
 
     lea_rdx_end_rva = text_rva + len(code) + 7
-    disp_utf16 = utf16_rva - lea_rdx_end_rva
+    disp_utf16 = strings["utf16"][0] - lea_rdx_end_rva
     code += bytes([0x48, 0x8D, 0x15]) + struct.pack("<i", disp_utf16)
     code += bytes([0xFF, 0x51, 0x08])
 
@@ -401,82 +516,110 @@ def _build_efi_main_machine_code(
     code[jz_skip_st_pos + 1] = (skip_conout_target - (jz_skip_st_pos + 2)) & 0xFF
     code[jz_skip_conout_pos + 1] = (skip_conout_target - (jz_skip_conout_pos + 2)) & 0xFF
 
-    # 5. Acquire UEFI Memory Map, ExitBootServices, GDT/IDT, Titan PMM, W^X CR3, and PIC/PIT/TSC
-    if exit_boot_services:
-        code += bytes([0x48, 0x85, 0xDB])
-        jz_no_bs_1 = len(code)
-        code += bytes([0x0F, 0x84, 0x00, 0x00, 0x00, 0x00])
+    if not exit_boot_services:
+        # 5'. Boot services stay with the firmware: return or halt as asked.
+        if halt_mode == "halt":
+            halt_forever()
+        else:
+            code += b"\x31\xC0"
+            epilogue_return_rax()
+        return bytes(code)
 
-        code += bytes([0x4C, 0x8B, 0x6B, 0x60])
-        code += bytes([0x4D, 0x85, 0xED])
-        jz_no_bs_2 = len(code)
-        code += bytes([0x0F, 0x84, 0x00, 0x00, 0x00, 0x00])
+    # 5. GetMemoryMap + ExitBootServices, each retried once with a fresh map key.
+    code += bytes([0x48, 0x85, 0xDB])
+    no_boot_services = [jump32(b"\x0F\x84")]
+    code += bytes([0x4C, 0x8B, 0x6B, 0x60])
+    code += bytes([0x4D, 0x85, 0xED])
+    no_boot_services.append(jump32(b"\x0F\x84"))
 
-        code += bytes([0x48, 0xC7, 0x44, 0x24, 0x28, 0x00, 0x10, 0x00, 0x00])
-        code += bytes([0x48, 0x8D, 0x4C, 0x24, 0x28])
-        code += bytes([0x48, 0x8D, 0x94, 0x24, 0x90, 0x00, 0x00, 0x00])
-        code += bytes([0x4C, 0x8D, 0x44, 0x24, 0x30])
-        code += bytes([0x4C, 0x8D, 0x4C, 0x24, 0x38])
-        code += bytes([0x48, 0x8D, 0x44, 0x24, 0x40])
-        code += bytes([0x48, 0x89, 0x44, 0x24, 0x20])
-        code += bytes([0x41, 0xFF, 0x55, 0x38])
+    map_failed_before_exit: list[int] = []
+    failed_after_exit_attempt: list[int] = []
+    exit_succeeded: list[int] = []
+    for attempt in (1, 2):
+        store_imm(SLOT_ATTEMPT, attempt)
+        code += b"\x48\xC7\x44\x24" + bytes([SLOT_MAP_SIZE]) + struct.pack("<I", MEMORY_MAP_BUFFER_BYTES)
+        code += bytes([0x48, 0x8D, 0x4C, 0x24, SLOT_MAP_SIZE])
+        code += b"\x48\x8D\x94\x24" + _disp32(MEMORY_MAP_BUFFER)
+        code += bytes([0x4C, 0x8D, 0x44, 0x24, SLOT_MAP_KEY])
+        code += bytes([0x4C, 0x8D, 0x4C, 0x24, SLOT_DESCRIPTOR_SIZE])
+        code += bytes([0x48, 0x8D, 0x44, 0x24, SLOT_DESCRIPTOR_VERSION])
+        code += bytes([0x48, 0x89, 0x44, 0x24, SLOT_CALL_ARG5])
+        code += bytes([0x41, 0xFF, 0x55, 0x38])  # call [r13 + GetMemoryMap]
         code += bytes([0x48, 0x85, 0xC0])
-        jnz_gmm_fail = len(code)
-        code += bytes([0x0F, 0x85, 0x00, 0x00, 0x00, 0x00])
+        target = map_failed_before_exit if attempt == 1 else failed_after_exit_attempt
+        target.append(jump32(b"\x0F\x85"))
 
         code += bytes([0x4C, 0x89, 0xE1])
-        code += bytes([0x48, 0x8B, 0x54, 0x24, 0x30])
-        code += bytes([0x41, 0xFF, 0x95, 0xE8, 0x00, 0x00, 0x00])
+        code += bytes([0x48, 0x8B, 0x54, 0x24, SLOT_MAP_KEY])
+        code += bytes([0x41, 0xFF, 0x95, 0xE8, 0x00, 0x00, 0x00])  # call [r13 + ExitBootServices]
         code += bytes([0x48, 0x85, 0xC0])
-        jnz_ebs_fail = len(code)
-        code += bytes([0x0F, 0x85, 0x00, 0x00, 0x00, 0x00])
+        if attempt == 1:
+            exit_succeeded.append(jump32(b"\x0F\x84"))
+        else:
+            failed_after_exit_attempt.append(jump32(b"\x0F\x85"))
 
-        _emit_tx_loop(
-            code,
-            buf_rva=ebs_banner_rva,
-            length=ebs_banner_len,
-            text_rva=text_rva,
-        )
+    for field in exit_succeeded:
+        land(field)
 
-        # --- STAGE 3A: Load Koschei 64-bit GDT (lgdt) & reload segment selectors ---
-        code += bytes([0xFA])  # cli
-        code += bytes([0x66, 0xC7, 0x44, 0x24, 0x48, 0x17, 0x00])
-        lea_gdt_end_rva = text_rva + len(code) + 7
-        disp_gdt = gdt_rva - lea_gdt_end_rva
-        code += bytes([0x48, 0x8D, 0x05]) + struct.pack("<i", disp_gdt)
-        code += bytes([0x48, 0x89, 0x44, 0x24, 0x4A])
-        code += bytes([0x0F, 0x01, 0x54, 0x24, 0x48])  # lgdt [rsp + 0x48]
-        code += bytes([0x66, 0xB8, 0x10, 0x00, 0x8E, 0xD8, 0x8E, 0xC0, 0x8E, 0xD0])
+    # The address the firmware actually loaded .text at.
+    lea_end = text_rva + len(code) + 7
+    code += b"\x48\x8D\x05" + _disp32(text_rva - lea_end)
+    store_rax(SLOT_IMAGE_TEXT)
 
-        # --- STAGE 3B: Populate 32-vector 64-bit IDT & execute lidt ---
-        lea_isr_pos = len(code)
-        code += bytes([0x48, 0x8D, 0x05, 0x00, 0x00, 0x00, 0x00])
-        code += bytes([0x48, 0x8D, 0xBC, 0x24, 0x90, 0x10, 0x00, 0x00])
-        code += bytes([0xB9, 0x20, 0x00, 0x00, 0x00])
+    tx("v2")
+    hex64(SLOT_ATTEMPT)
+    tx("v2_map")
+    hex64(SLOT_MAP_SIZE)
+    tx("v2_descriptor")
+    hex64(SLOT_DESCRIPTOR_SIZE)
+    tx("crlf")
 
-        idt_loop_top = len(code)
-        code += bytes([0x66, 0x89, 0x07])
-        code += bytes([0x66, 0xC7, 0x47, 0x02, 0x08, 0x00])
-        code += bytes([0x66, 0xC7, 0x47, 0x04, 0x00, 0x8E])
-        code += bytes([0x48, 0x89, 0xC2, 0x48, 0xC1, 0xEA, 0x10])
-        code += bytes([0x66, 0x89, 0x57, 0x06])
-        code += bytes([0x48, 0xC1, 0xEA, 0x10, 0x89, 0x57, 0x08])
-        code += bytes([0xC7, 0x47, 0x0C, 0x00, 0x00, 0x00, 0x00])
-        code += bytes([0x48, 0x83, 0xC7, 0x10, 0xFF, 0xC9])
-        jnz_idt_rel = idt_loop_top - (len(code) + 2)
-        code += bytes([0x75, jnz_idt_rel & 0xFF])
+    # --- STAGE 3A: Load Koschei 64-bit GDT (lgdt), reload data selectors and CS ---
+    code += bytes([0xFA])  # cli
+    code += bytes([0x66, 0xC7, 0x44, 0x24, SLOT_DESCRIPTOR_TABLE, 0x17, 0x00])
+    lea_gdt_end_rva = text_rva + len(code) + 7
+    code += bytes([0x48, 0x8D, 0x05]) + struct.pack("<i", gdt_rva - lea_gdt_end_rva)
+    code += bytes([0x48, 0x89, 0x44, 0x24, SLOT_DESCRIPTOR_TABLE + 2])
+    code += bytes([0x0F, 0x01, 0x54, 0x24, SLOT_DESCRIPTOR_TABLE])  # lgdt
+    code += bytes([0x66, 0xB8, 0x10, 0x00])  # mov ax, 0x10
+    code += bytes([0x8E, 0xD8, 0x8E, 0xC0, 0x8E, 0xE0, 0x8E, 0xE8, 0x8E, 0xD0])  # ds es fs gs ss
+    # push 0x08; lea rax, [rip + 3]; push rax; retfq  -> CS = 0x08
+    code += bytes([0x6A, 0x08, 0x48, 0x8D, 0x05, 0x03, 0x00, 0x00, 0x00, 0x50, 0x48, 0xCB])
 
-        code += bytes([0x66, 0xC7, 0x44, 0x24, 0x48, 0xFF, 0x01])
-        code += bytes([0x48, 0x8D, 0x84, 0x24, 0x90, 0x10, 0x00, 0x00])
-        code += bytes([0x48, 0x89, 0x44, 0x24, 0x4A])
-        code += bytes([0x0F, 0x01, 0x5C, 0x24, 0x48])  # lidt [rsp + 0x48]
+    # --- STAGE 3B: Populate 32-vector 64-bit IDT & execute lidt ---
+    lea_isr_pos = len(code)
+    code += bytes([0x48, 0x8D, 0x05, 0x00, 0x00, 0x00, 0x00])
+    code += b"\x48\x8D\xBC\x24" + _disp32(IDT_TABLE)
+    code += bytes([0xB9, 0x20, 0x00, 0x00, 0x00])
 
-        # --- STAGE 3C: Initialize Titan Physical Page Frame Allocator ---
-        code += bytes([0x48, 0x8D, 0xB4, 0x24, 0x90, 0x00, 0x00, 0x00])
-        code += bytes([0x4C, 0x8B, 0x44, 0x24, 0x28])
-        code += bytes([0x4C, 0x8B, 0x4C, 0x24, 0x38])
+    idt_loop_top = len(code)
+    code += bytes([0x66, 0x89, 0x07])
+    code += bytes([0x66, 0xC7, 0x47, 0x02, 0x08, 0x00])
+    code += bytes([0x66, 0xC7, 0x47, 0x04, 0x00, 0x8E])
+    code += bytes([0x48, 0x89, 0xC2, 0x48, 0xC1, 0xEA, 0x10])
+    code += bytes([0x66, 0x89, 0x57, 0x06])
+    code += bytes([0x48, 0xC1, 0xEA, 0x10, 0x89, 0x57, 0x08])
+    code += bytes([0xC7, 0x47, 0x0C, 0x00, 0x00, 0x00, 0x00])
+    code += bytes([0x48, 0x83, 0xC7, 0x10, 0xFF, 0xC9])
+    jnz_idt_rel = idt_loop_top - (len(code) + 2)
+    code += bytes([0x75, jnz_idt_rel & 0xFF])
+
+    code += bytes([0x66, 0xC7, 0x44, 0x24, SLOT_DESCRIPTOR_TABLE, 0xFF, 0x01])
+    code += b"\x48\x8D\x84\x24" + _disp32(IDT_TABLE)
+    code += bytes([0x48, 0x89, 0x44, 0x24, SLOT_DESCRIPTOR_TABLE + 2])
+    code += bytes([0x0F, 0x01, 0x5C, 0x24, SLOT_DESCRIPTOR_TABLE])  # lidt
+
+    tx("v3")
+    hex64(SLOT_IMAGE_TEXT)
+    tx("crlf")
+
+    if experimental_page_tables:
+        # --- STAGE 3C (experimental): Titan Physical Page Frame Allocator ---
+        code += b"\x48\x8D\xB4\x24" + _disp32(MEMORY_MAP_BUFFER)
+        code += bytes([0x4C, 0x8B, 0x44, 0x24, SLOT_MAP_SIZE])
+        code += bytes([0x4C, 0x8B, 0x4C, 0x24, SLOT_DESCRIPTOR_SIZE])
         code += bytes([0x31, 0xC0])
-        code += bytes([0x48, 0xC7, 0x44, 0x24, 0x18, 0x00, 0x00, 0x00, 0x00])
+        code += bytes([0x48, 0xC7, 0x44, 0x24, SLOT_PMM_FIRST_PAGE, 0x00, 0x00, 0x00, 0x00])
 
         pmm_loop_top = len(code)
         code += bytes([0x4D, 0x85, 0xC0])
@@ -486,12 +629,12 @@ def _build_efi_main_machine_code(
         jne_pmm_next_pos = len(code)
         code += bytes([0x75, 0x00])
         code += bytes([0x48, 0x03, 0x46, 0x18])
-        code += bytes([0x48, 0x8B, 0x54, 0x24, 0x18, 0x48, 0x85, 0xD2])
+        code += bytes([0x48, 0x8B, 0x54, 0x24, SLOT_PMM_FIRST_PAGE, 0x48, 0x85, 0xD2])
         jnz_already_alloc_pos = len(code)
         code += bytes([0x75, 0x00])
         code += bytes([0x48, 0x8B, 0x56, 0x08])
-        code += bytes([0x48, 0x89, 0x54, 0x24, 0x18])
-        code += bytes([0x48, 0x81, 0xC2, 0x00, 0x40, 0x00, 0x00, 0x48, 0x89, 0x54, 0x24, 0x10])
+        code += bytes([0x48, 0x89, 0x54, 0x24, SLOT_PMM_FIRST_PAGE])
+        code += bytes([0x48, 0x81, 0xC2, 0x00, 0x40, 0x00, 0x00, 0x48, 0x89, 0x54, 0x24, SLOT_TSC_LATEST])
 
         pmm_next_target = len(code)
         code[jne_pmm_next_pos + 1] = (pmm_next_target - (jne_pmm_next_pos + 2)) & 0xFF
@@ -502,18 +645,15 @@ def _build_efi_main_machine_code(
 
         pmm_done_target = len(code)
         code[jz_pmm_done_pos + 1] = (pmm_done_target - (jz_pmm_done_pos + 2)) & 0xFF
-        code += bytes([0x48, 0x89, 0x44, 0x24, 0x20])
-        code += bytes([0x48, 0x83, 0xE8, 0x04, 0x48, 0x89, 0x44, 0x24, 0x08])
+        code += bytes([0x48, 0x89, 0x44, 0x24, SLOT_CALL_ARG5])
+        code += bytes([0x48, 0x83, 0xE8, 0x04, 0x48, 0x89, 0x44, 0x24, SLOT_PMM_REMAINING])
 
-        _emit_tx_loop(
-            code,
-            buf_rva=v3_banner_rva,
-            length=v3_banner_len,
-            text_rva=text_rva,
-        )
+        tx("v3x")
+        hex64(SLOT_PMM_FIRST_PAGE)
+        tx("v3x_tail")
 
-        # --- STAGE 4A: Construct 4-Level x86-64 Page Tables (W^X) & Load CR3 ---
-        code += bytes([0x4C, 0x8B, 0x44, 0x24, 0x18])
+        # --- STAGE 4A (experimental): 4-level page tables & load CR3 ---
+        code += bytes([0x4C, 0x8B, 0x44, 0x24, SLOT_PMM_FIRST_PAGE])
         code += bytes([0x4D, 0x8D, 0x88, 0x00, 0x10, 0x00, 0x00])
         code += bytes([0x49, 0x8D, 0xB8, 0x00, 0x20, 0x00, 0x00])
         code += bytes([0x49, 0x8D, 0xB0, 0x00, 0x30, 0x00, 0x00])
@@ -532,234 +672,177 @@ def _build_efi_main_machine_code(
 
         code += bytes([0x4C, 0x89, 0xC0, 0x0F, 0x22, 0xD8])  # mov cr3, rax
 
-        _emit_tx_loop(
-            code,
-            buf_rva=v4_banner_rva,
-            length=v4_banner_len,
-            text_rva=text_rva,
-        )
+        tx("v4x")
+    else:
+        tx("v4")
 
-        # --- STAGE 5: Remap & Mask 8259 PICs, Init 8254 PIT (1000 Hz), Read TSC Anchor ---
-        pic_pit_io = (
-            (PIC1_CMD, 0x11),   # ICW1 Master
-            (PIC2_CMD, 0x11),   # ICW1 Slave
-            (PIC1_DATA, 0x20),  # ICW2 Master offset = 0x20 (32)
-            (PIC2_DATA, 0x28),  # ICW2 Slave offset  = 0x28 (40)
-            (PIC1_DATA, 0x04),  # ICW3 Master cascade on IRQ2
-            (PIC2_DATA, 0x02),  # ICW3 Slave cascade identity 2
-            (PIC1_DATA, 0x01),  # ICW4 8086 mode
-            (PIC2_DATA, 0x01),  # ICW4 8086 mode
-            (PIC1_DATA, 0xFF),  # Mask all Master IRQs (no ambient hardware IRQ authority)
-            (PIC2_DATA, 0xFF),  # Mask all Slave IRQs
-            (PIT_CMD, 0x36),    # PIT Ch0, lobyte/hibyte, Mode 3 square wave
-            (PIT_CH0_DATA, PIT_1000HZ_DIVISOR & 0xFF),         # 0xA9
-            (PIT_CH0_DATA, (PIT_1000HZ_DIVISOR >> 8) & 0xFF),  # 0x04
-        )
-        for port, val in pic_pit_io:
-            code += bytes([0x66, 0xBA, port & 0xFF, (port >> 8) & 0xFF])
-            code += bytes([0xB0, val & 0xFF])
-            code += bytes([0xEE])
+    # --- STAGE 5: Remap & Mask 8259 PICs, program the 8254 PIT, read the TSC ---
+    pic_pit_io = (
+        (PIC1_CMD, 0x11),   # ICW1 Master
+        (PIC2_CMD, 0x11),   # ICW1 Slave
+        (PIC1_DATA, 0x20),  # ICW2 Master offset = 0x20 (32)
+        (PIC2_DATA, 0x28),  # ICW2 Slave offset  = 0x28 (40)
+        (PIC1_DATA, 0x04),  # ICW3 Master cascade on IRQ2
+        (PIC2_DATA, 0x02),  # ICW3 Slave cascade identity 2
+        (PIC1_DATA, 0x01),  # ICW4 8086 mode
+        (PIC2_DATA, 0x01),  # ICW4 8086 mode
+        (PIC1_DATA, 0xFF),  # Mask all Master IRQs (no ambient hardware IRQ authority)
+        (PIC2_DATA, 0xFF),  # Mask all Slave IRQs
+        (PIT_CMD, 0x36),    # PIT Ch0, lobyte/hibyte, Mode 3 square wave
+        (PIT_CH0_DATA, PIT_1000HZ_DIVISOR & 0xFF),         # 0xA9
+        (PIT_CH0_DATA, (PIT_1000HZ_DIVISOR >> 8) & 0xFF),  # 0x04
+    )
+    for port, val in pic_pit_io:
+        code += bytes([0x66, 0xBA, port & 0xFF, (port >> 8) & 0xFF])
+        code += bytes([0xB0, val & 0xFF])
+        code += bytes([0xEE])
 
-        # rdtsc (0F 31); shl rdx, 32 (48 C1 E2 20); or rax, rdx (48 09 D0)
-        code += bytes([0x0F, 0x31, 0x48, 0xC1, 0xE2, 0x20, 0x48, 0x09, 0xD0])
-        # mov [rsp + 0x00], rax (48 89 04 24) -> tsc_genesis
-        code += bytes([0x48, 0x89, 0x04, 0x24])
-        # mov [rsp + 0x10], rax (48 89 44 24 10) -> tsc_latest = tsc_genesis
-        code += bytes([0x48, 0x89, 0x44, 0x24, 0x10])
-        # mov qword ptr [rsp + 0x48], 2 (48 C7 44 24 48 02 00 00 00) -> active Continuity Epoch = 2
-        code += bytes([0x48, 0xC7, 0x44, 0x24, 0x48, 0x02, 0x00, 0x00, 0x00])
+    # rdtsc; shl rdx, 32; or rax, rdx -> [rsp + TSC genesis] and [rsp + TSC latest]
+    code += bytes([0x0F, 0x31, 0x48, 0xC1, 0xE2, 0x20, 0x48, 0x09, 0xD0])
+    code += bytes([0x48, 0x89, 0x04, 0x24])
+    code += bytes([0x48, 0x89, 0x44, 0x24, SLOT_TSC_LATEST])
+    code += bytes([0x48, 0xC7, 0x44, 0x24, SLOT_EPOCH, 0x02, 0x00, 0x00, 0x00])
 
-        _emit_tx_loop(
-            code,
-            buf_rva=v5_banner_rva,
-            length=v5_banner_len,
-            text_rva=text_rva,
-        )
+    tx("v5")
+    hex64(SLOT_TSC_GENESIS)
+    tx("v5_tail")
 
-        skip_ebs_target = len(code)
-        struct.pack_into("<i", code, jz_no_bs_1 + 2, skip_ebs_target - (jz_no_bs_1 + 6))
-        struct.pack_into("<i", code, jz_no_bs_2 + 2, skip_ebs_target - (jz_no_bs_2 + 6))
-        struct.pack_into("<i", code, jnz_gmm_fail + 2, skip_ebs_target - (jnz_gmm_fail + 6))
-        struct.pack_into("<i", code, jnz_ebs_fail + 2, skip_ebs_target - (jnz_ebs_fail + 6))
-
-    # 6. Bidirectional UART RX & Interactive Kernel Shell on COM1 (0x3F8)
+    # 6. Interactive COM1 shell: block for a line, answer it, repeat until HALT.
     if enable_serial_rx:
-        code += bytes([0x48, 0x8D, 0x7C, 0x24, 0x50])
+        tx("shell_ready")
+        shell_top = len(code)
+        code += bytes([0x48, 0x8D, 0x7C, 0x24, RX_LINE_BUFFER])
         code += bytes([0x31, 0xDB])
 
-        rx_next_byte_top = len(code)
-        code += bytes([0xB9, 0x40, 0x00, 0x00, 0x00])
-
-        rx_poll_loop = len(code)
+        read_byte = len(code)
+        poll = len(code)
         code += bytes([0x66, 0xBA, 0xFD, 0x03, 0xEC, 0xA8, COM1_LSR_DR])
-        jnz_got_byte_pos = len(code)
-        code += bytes([0x75, 0x00])
-        code += bytes([0xFF, 0xC9])
-        jnz_poll_rel = rx_poll_loop - (len(code) + 2)
-        code += bytes([0x75, jnz_poll_rel & 0xFF])
-        jmp_rx_flush_pos = len(code)
-        code += bytes([0xEB, 0x00])
-
-        got_byte_target = len(code)
-        code[jnz_got_byte_pos + 1] = (got_byte_target - (jnz_got_byte_pos + 2)) & 0xFF
-
+        code += bytes([0x74, (poll - (len(code) + 2)) & 0xFF])
         code += bytes([0x66, 0xBA, 0xF8, 0x03, 0xEC])
         code += bytes([0x3C, 0x0D])
-        je_cr_pos = len(code)
-        code += bytes([0x74, 0x00])
+        line_done = [jump32(b"\x0F\x84")]
         code += bytes([0x3C, 0x0A])
-        je_lf_pos = len(code)
-        code += bytes([0x74, 0x00])
-
+        line_done.append(jump32(b"\x0F\x84"))
         code += bytes([0x88, 0x07, 0x48, 0xFF, 0xC7, 0xFF, 0xC3])
         code += bytes([0x83, 0xFB, 0x30])
-        jb_rel = rx_next_byte_top - (len(code) + 2)
-        code += bytes([0x72, jb_rel & 0xFF])
+        code += bytes([0x72, (read_byte - (len(code) + 2)) & 0xFF])
 
-        rx_flush_target = len(code)
-        code[jmp_rx_flush_pos + 1] = (rx_flush_target - (jmp_rx_flush_pos + 2)) & 0xFF
-        code[je_cr_pos + 1] = (rx_flush_target - (je_cr_pos + 2)) & 0xFF
-        code[je_lf_pos + 1] = (rx_flush_target - (je_lf_pos + 2)) & 0xFF
-
+        for field in line_done:
+            land(field)
         code += bytes([0x85, 0xDB])
-        jz_no_rx_pos = len(code)
-        code += bytes([0x0F, 0x84, 0x00, 0x00, 0x00, 0x00])
+        land(jump32(b"\x0F\x84"), shell_top)  # an empty line: read the next one
 
         code += bytes([0xC6, 0x07, 0x0D, 0xC6, 0x47, 0x01, 0x0A])
         code += bytes([0x83, 0xC3, 0x02])
-
-        _emit_tx_loop(
-            code,
-            buf_rva=rx_prefix_rva,
-            length=rx_prefix_len,
-            text_rva=text_rva,
-        )
-        code += bytes([0x48, 0x8D, 0x74, 0x24, 0x50, 0x89, 0xD9])
+        tx("rx_prefix")
+        code += bytes([0x48, 0x8D, 0x74, 0x24, RX_LINE_BUFFER, 0x89, 0xD9])
         _emit_tx_loop(code, buf_rva=None, length=1, text_rva=text_rva)
 
-        # --- Interactive Bare-Metal Serial Command Shell Dispatcher ---
-        code += bytes([0x8B, 0x44, 0x24, 0x50])
+        def command(word: bytes) -> int:
+            code.extend(bytes([0x8B, 0x44, 0x24, RX_LINE_BUFFER]))
+            code.extend(b"\x3D" + word)
+            return jump32(b"\x0F\x85")
 
-        # 1) "STAT" (0x54415453) -> STATUS
-        code += bytes([0x3D, 0x53, 0x54, 0x41, 0x54])
-        jne_not_status_pos = len(code)
-        code += bytes([0x75, 0x00])
-        _emit_tx_loop(
-            code,
-            buf_rva=shell_status_rva,
-            length=shell_status_len,
-            text_rva=text_rva,
-        )
-        not_status_target = len(code)
-        code[jne_not_status_pos + 1] = (not_status_target - (jne_not_status_pos + 2)) & 0xFF
+        def next_line() -> None:
+            land(jump32(b"\xE9"), shell_top)
 
-        # 2) "MEM\r" (0x0D4D454D) -> MEM
-        code += bytes([0x8B, 0x44, 0x24, 0x50])
-        code += bytes([0x3D, 0x4D, 0x45, 0x4D, 0x0D])
-        jne_not_mem_pos = len(code)
-        code += bytes([0x75, 0x00])
-        _emit_tx_loop(
-            code,
-            buf_rva=shell_mem_rva,
-            length=shell_mem_len,
-            text_rva=text_rva,
-        )
-        not_mem_target = len(code)
-        code[jne_not_mem_pos + 1] = (not_mem_target - (jne_not_mem_pos + 2)) & 0xFF
+        not_status = command(b"STAT")
+        tx("shell_status")
+        hex64(SLOT_EPOCH)
+        tx("crlf")
+        next_line()
+        land(not_status)
 
-        # 3) "MIR\r" (0x0D52494D) -> MIR
-        code += bytes([0x8B, 0x44, 0x24, 0x50])
-        code += bytes([0x3D, 0x4D, 0x49, 0x52, 0x0D])
-        jne_not_mir_pos = len(code)
-        code += bytes([0x75, 0x00])
-        _emit_tx_loop(
-            code,
-            buf_rva=shell_mir_rva,
-            length=shell_mir_len,
-            text_rva=text_rva,
-        )
-        not_mir_target = len(code)
-        code[jne_not_mir_pos + 1] = (not_mir_target - (jne_not_mir_pos + 2)) & 0xFF
+        not_mem = command(b"MEM\r")
+        tx("shell_mem")
+        hex64(SLOT_MAP_SIZE)
+        tx("shell_mem_descriptor")
+        hex64(SLOT_DESCRIPTOR_SIZE)
+        tx("shell_mem_tail")
+        next_line()
+        land(not_mem)
 
-        # 4) "EPOC" (0x434F5045) -> EPOCH (Vormir/Hela epoch advance 2 -> 3 with rdtsc check)
-        code += bytes([0x8B, 0x44, 0x24, 0x50])
-        code += bytes([0x3D, 0x45, 0x50, 0x4F, 0x43])
-        jne_not_epoch_pos = len(code)
-        code += bytes([0x75, 0x00])
-        # rdtsc (0F 31); shl rdx, 32 (48 C1 E2 20); or rax, rdx (48 09 D0)
+        not_mir = command(b"MIR\r")
+        tx("shell_mir")
+        next_line()
+        land(not_mir)
+
+        not_epoch = command(b"EPOC")
         code += bytes([0x0F, 0x31, 0x48, 0xC1, 0xE2, 0x20, 0x48, 0x09, 0xD0])
-        # mov [rsp + 0x10], rax (48 89 44 24 10) -> update tsc_latest
-        code += bytes([0x48, 0x89, 0x44, 0x24, 0x10])
-        # inc qword ptr [rsp + 0x48] (48 FF 44 24 48) -> advance active epoch 2 -> 3
-        code += bytes([0x48, 0xFF, 0x44, 0x24, 0x48])
-        _emit_tx_loop(
-            code,
-            buf_rva=shell_epoch_rva,
-            length=shell_epoch_len,
-            text_rva=text_rva,
-        )
-        not_epoch_target = len(code)
-        code[jne_not_epoch_pos + 1] = (not_epoch_target - (jne_not_epoch_pos + 2)) & 0xFF
+        code += bytes([0x48, 0x89, 0x44, 0x24, SLOT_TSC_LATEST])
+        code += bytes([0x48, 0xFF, 0x44, 0x24, SLOT_EPOCH])
+        tx("shell_epoch")
+        hex64(SLOT_EPOCH)
+        tx("shell_epoch_tsc")
+        hex64(SLOT_TSC_LATEST)
+        tx("crlf")
+        next_line()
+        land(not_epoch)
 
-        # 5) "HALT" (0x544C4148) -> HALT
-        code += bytes([0x8B, 0x44, 0x24, 0x50])
-        code += bytes([0x3D, 0x48, 0x41, 0x4C, 0x54])
-        jne_not_halt_pos = len(code)
-        code += bytes([0x75, 0x00])
-        _emit_tx_loop(
-            code,
-            buf_rva=shell_halt_rva,
-            length=shell_halt_len,
-            text_rva=text_rva,
-        )
-        code += bytes([0xFA, 0xF4, 0xEB, 0xFD])
-        not_halt_target = len(code)
-        code[jne_not_halt_pos + 1] = (not_halt_target - (jne_not_halt_pos + 2)) & 0xFF
+        not_trap = command(b"TRAP")
+        tx("shell_trap")
+        code += bytes([0x0F, 0x0B])  # ud2 -> #UD through the Koschei IDT
+        land(not_trap)
 
-        no_rx_target = len(code)
-        struct.pack_into("<i", code, jz_no_rx_pos + 2, no_rx_target - (jz_no_rx_pos + 6))
+        not_halt = command(b"HALT")
+        tx("shell_halt")
+        halt_forever()
+        land(not_halt)
 
-    # 7. Epilogue / Halt
-    if halt_mode == "halt":
-        code += bytes([0xFA, 0xF4, 0xEB, 0xFD])
-    else:
-        code += bytes(
-            [
-                0x31,
-                0xC0,
-                0x48,
-                0x81,
-                0xC4,
-                0x90,
-                0x12,
-                0x00,
-                0x00,
-                0x41,
-                0x5D,
-                0x41,
-                0x5C,
-                0x5F,
-                0x5E,
-                0x5B,
-                0xC3,
-            ]
-        )
+        tx("shell_unknown")
+        next_line()
 
-    # 8. Out-of-line Fail-Closed Morth CPU Exception Handler (.Lmorth_isr_trap)
-    if exit_boot_services:
-        isr_rva = text_rva + len(code)
-        lea_isr_end_rva = text_rva + lea_isr_pos + 7
-        struct.pack_into("<i", code, lea_isr_pos + 3, isr_rva - lea_isr_end_rva)
+    # 7. After ExitBootServices there is no firmware to return to.
+    halt_forever()
 
-        _emit_tx_loop(
-            code,
-            buf_rva=trap_banner_rva,
-            length=trap_banner_len,
-            text_rva=text_rva,
-        )
-        code += bytes([0xFA, 0xF4, 0xEB, 0xFD])
+    # 8. Failure paths.
+    for field in no_boot_services:
+        land(field)
+    code += b"\x48\xB8" + struct.pack("<Q", EFI_INVALID_PARAMETER)
+    store_rax(SLOT_STATUS)
+    tx("no_boot_services")
+    return_with_status = [jump32(b"\xE9")]
+
+    for field in map_failed_before_exit:
+        land(field)
+    store_rax(SLOT_STATUS)
+    tx("map_failed")
+    hex64(SLOT_STATUS)
+    tx("map_needed")
+    hex64(SLOT_MAP_SIZE)
+    tx("map_failed_tail")
+    return_with_status.append(jump32(b"\xE9"))
+
+    for field in failed_after_exit_attempt:
+        land(field)
+    store_rax(SLOT_STATUS)
+    tx("exit_failed")
+    hex64(SLOT_STATUS)
+    tx("exit_failed_attempt")
+    hex64(SLOT_ATTEMPT)
+    tx("exit_failed_tail")
+    halt_forever()
+
+    for field in return_with_status:
+        land(field)
+    code += b"\x48\x8B\x84\x24" + _disp32(SLOT_STATUS)
+    epilogue_return_rax()
+
+    # 9. Out-of-line Fail-Closed Morth CPU Exception Handler (.Lmorth_isr_trap)
+    isr_rva = text_rva + len(code)
+    lea_isr_end_rva = text_rva + lea_isr_pos + 7
+    struct.pack_into("<i", code, lea_isr_pos + 3, isr_rva - lea_isr_end_rva)
+    tx("trap")
+    halt_forever()
 
     return bytes(code)
+
+
+def _byte_lines(data: bytes) -> str:
+    return "\n".join(
+        "    .byte " + ", ".join(f"0x{b:02x}" for b in data[index : index + 16])
+        for index in range(0, len(data), 16)
+    )
 
 
 def emit_uefi_x86_64_gas_v1(
@@ -769,109 +852,83 @@ def emit_uefi_x86_64_gas_v1(
     halt_mode: str = "return",
     exit_boot_services: bool = True,
     enable_serial_rx: bool = True,
+    text_bytes: bytes = b"",
+    rdata_bytes: bytes = b"",
+    experimental_page_tables: bool = False,
 ) -> str:
-    """Emit freestanding GNU/Clang x86-64 assembly (Intel syntax) for ``BOOTX64.EFI`` (v5)."""
+    """A byte-exact GNU/Clang listing of the ``BOOTX64.EFI`` sections (v5).
 
-    escaped_bytes = ", ".join(f"0x{b:02x}" for b in serial_payload)
-    utf16_text = serial_payload.decode("utf-8")
-    utf16_words = [ord(ch) for ch in utf16_text] + [0]
-    escaped_words = ", ".join(f"0x{w:04x}" for w in utf16_words)
-    escaped_ebs = ", ".join(f"0x{b:02x}" for b in POST_EBS_BANNER)
-    escaped_v3 = ", ".join(f"0x{b:02x}" for b in KERNEL_V3_BANNER)
-    escaped_v4 = ", ".join(f"0x{b:02x}" for b in KERNEL_V4_BANNER)
-    escaped_v5 = ", ".join(f"0x{b:02x}" for b in KERNEL_V5_BANNER)
-    escaped_trap = ", ".join(f"0x{b:02x}" for b in MORTH_TRAP_BANNER)
-    escaped_gdt = ", ".join(f"0x{b:02x}" for b in GDT_TABLE_BYTES)
-    escaped_rx = ", ".join(f"0x{b:02x}" for b in UART_RX_PREFIX)
+    The image is built from the machine code that ``_build_efi_main_machine_code``
+    emits, not from assembly source; this listing records exactly those
+    ``.text`` and ``.rdata`` bytes so a reviewer can disassemble them. Its
+    RIP-relative displacements assume the image's own section layout, so it
+    documents the binary and is not meant to be reassembled.
+    """
 
-    if halt_mode == "halt":
-        epilogue = "\n".join(
-            [
-                "    cli",
-                ".Lhalt:",
-                "    hlt",
-                "    jmp .Lhalt",
-            ]
-        )
-    else:
-        epilogue = "\n".join(
-            [
-                "    xor eax, eax",
-                "    add rsp, 0x1290",
-                "    pop r13",
-                "    pop r12",
-                "    pop rdi",
-                "    pop rsi",
-                "    pop rbx",
-                "    ret",
-            ]
-        )
-
-    return f"""# Koschei Bare-Metal x86-64 UEFI Kernel Prototype v5
+    if halt_mode not in ("return", "halt"):
+        raise ValueError(f"unsupported halt_mode: {halt_mode!r}")
+    return f"""# Koschei x86-64 UEFI boot prototype v5: byte-exact section listing
 # Sealed MIR SHA-256: {mir_fingerprint}
-# Target: x86_64-unknown-uefi (COM1 0x3F8 + EBS + GDT/IDT + Titan PMM + W^X CR3 + PIC/PIT/TSC + Shell)
+# serial payload bytes: {len(serial_payload)}
+# exit_boot_services={exit_boot_services} serial_shell={enable_serial_rx} halt_mode={halt_mode} experimental_page_tables={experimental_page_tables}
+# Disassemble with: objdump -D -b binary -m i386:x86-64 -M intel
 .intel_syntax noprefix
-.text
+.section .text
 .globl efi_main
 efi_main:
-    push rbx
-    push rsi
-    push rdi
-    push r12
-    push r13
-    sub rsp, 0x1290
-    mov r12, rcx
-    mov rbx, rdx
-
-    # 1. 16550 UART init on COM1 (0x3F8)
-    # 2. Stream deterministic Koschei output to COM1 & UEFI ConOut
-    # 3. Acquire Memory Map, ExitBootServices, load GDT/IDT, Titan PMM & W^X CR3
-    mov rax, r8
-    mov cr3, rax
-
-    # 4. Remap & Mask 8259 PICs (0x20/0x21, 0xA0/0xA1), Init 8254 PIT (1000Hz), Read TSC
-    rdtsc
-    shl rdx, 32
-    or rax, rdx
-    mov qword ptr [rsp + 0x00], rax
-
-.Ldone:
-{epilogue}
-
-.Lmorth_isr_trap:
-    cli
-    hlt
-    jmp .Lmorth_isr_trap
+{_byte_lines(text_bytes)}
 
 .section .rdata,"dr"
-.balign 16
-.Lserial_payload:
-    .byte {escaped_bytes}
-.balign 16
-.Lconout_utf16:
-    .word {escaped_words}
-.balign 16
-.Lebs_banner:
-    .byte {escaped_ebs}
-.balign 16
-.Lv3_banner:
-    .byte {escaped_v3}
-.balign 16
-.Lv4_banner:
-    .byte {escaped_v4}
-.balign 16
-.Lv5_banner:
-    .byte {escaped_v5}
-.balign 16
-.Ltrap_banner:
-    .byte {escaped_trap}
-.balign 16
-.Lgdt_table:
-    .byte {escaped_gdt}
-.balign 16
-.Lrx_prefix:
-    .byte {escaped_rx}
+{_byte_lines(rdata_bytes)}
 """
+
+
+def _rdata_strings(
+    serial_payload: bytes,
+    conout_utf16le: bytes,
+    mir_fingerprint: str,
+    *,
+    experimental_page_tables: bool,
+) -> dict[str, bytes]:
+    """Every text the boot code prints, in ``.rdata`` order."""
+
+    return {
+        "payload": serial_payload,
+        "utf16": conout_utf16le,
+        "crlf": CRLF,
+        "v2": POST_EBS_BANNER,
+        "v2_map": POST_EBS_MAP_FIELD,
+        "v2_descriptor": POST_EBS_DESCRIPTOR_FIELD,
+        "no_boot_services": NO_BOOT_SERVICES_BANNER,
+        "map_failed": MEMORY_MAP_FAILED_BANNER,
+        "map_needed": MEMORY_MAP_NEEDED_FIELD,
+        "map_failed_tail": MEMORY_MAP_FAILED_TAIL,
+        "exit_failed": EXIT_FAILED_BANNER,
+        "exit_failed_attempt": EXIT_FAILED_ATTEMPT_FIELD,
+        "exit_failed_tail": EXIT_FAILED_TAIL,
+        "v3": KERNEL_V3_BANNER,
+        "v4": KERNEL_V4_BANNER,
+        "v3x": EXPERIMENTAL_PMM_BANNER,
+        "v3x_tail": EXPERIMENTAL_PMM_TAIL,
+        "v4x": EXPERIMENTAL_CR3_BANNER,
+        "v5": KERNEL_V5_BANNER,
+        "v5_tail": KERNEL_V5_TAIL,
+        "trap": MORTH_TRAP_BANNER,
+        "rx_prefix": UART_RX_PREFIX,
+        "shell_ready": SHELL_READY_BANNER,
+        "shell_status": (
+            SHELL_STATUS_EXPERIMENTAL_REPLY if experimental_page_tables else SHELL_STATUS_REPLY
+        ),
+        "shell_mem": SHELL_MEM_REPLY,
+        "shell_mem_descriptor": SHELL_MEM_DESCRIPTOR_FIELD,
+        "shell_mem_tail": SHELL_MEM_TAIL,
+        "shell_mir": f"[KOSCHEI-SHELL] sealed_mir_sha256={mir_fingerprint}\r\n".encode("utf-8"),
+        "shell_epoch": SHELL_EPOCH_REPLY,
+        "shell_epoch_tsc": SHELL_EPOCH_TSC_FIELD,
+        "shell_halt": SHELL_HALT_REPLY,
+        "shell_trap": SHELL_TRAP_REPLY,
+        "shell_unknown": SHELL_UNKNOWN_REPLY,
+    }
 
 
 def build_uefi_pe32plus_v1(
@@ -881,126 +938,69 @@ def build_uefi_pe32plus_v1(
     halt_mode: str = "return",
     exit_boot_services: bool = True,
     enable_serial_rx: bool = True,
+    experimental_page_tables: bool = False,
 ) -> UefiBootArtifactV1:
-    """Compile a sealed Koschei MirGraph directly into a deterministic ``BOOTX64.EFI`` (v5)."""
+    """Compile a sealed Koschei MirGraph directly into a deterministic ``BOOTX64.EFI`` (v5).
 
+    ``halt_mode`` applies only without ``exit_boot_services``: after
+    ExitBootServices the image halts, since no firmware is left to return to.
+    The COM1 shell (``enable_serial_rx``) needs ExitBootServices.
+    """
+
+    if enable_serial_rx and not exit_boot_services:
+        raise UefiBootError("KS4010", "the COM1 shell runs only after ExitBootServices")
+    if experimental_page_tables and not exit_boot_services:
+        raise UefiBootError("KS4010", "experimental page tables need ExitBootServices")
     serial_payload, crlf_text = evaluate_sealed_mir_serial_output_v1(
         mir,
         include_banner=include_banner,
     )
     conout_utf16le = crlf_text.encode("utf-16le") + b"\x00\x00"
-    shell_mir_reply = (
-        f"[KOSCHEI-SHELL] sealed_mir_sha256={mir.fingerprint}\r\n".encode("utf-8")
+    texts = _rdata_strings(
+        serial_payload,
+        conout_utf16le,
+        mir.fingerprint,
+        experimental_page_tables=experimental_page_tables,
     )
 
-    text_rva = 0x1000
-    rdata_rva = 0x2000
-
-    serial_offset = 0
-    utf16_offset = _align_up(serial_offset + len(serial_payload), 16)
-    ebs_offset = _align_up(utf16_offset + len(conout_utf16le), 16)
-    v3_offset = _align_up(ebs_offset + len(POST_EBS_BANNER), 16)
-    v4_offset = _align_up(v3_offset + len(KERNEL_V3_BANNER), 16)
-    v5_offset = _align_up(v4_offset + len(KERNEL_V4_BANNER), 16)
-    trap_offset = _align_up(v5_offset + len(KERNEL_V5_BANNER), 16)
-    gdt_offset = _align_up(trap_offset + len(MORTH_TRAP_BANNER), 16)
-    rx_prefix_offset = _align_up(gdt_offset + len(GDT_TABLE_BYTES), 16)
-    sh_status_offset = _align_up(rx_prefix_offset + len(UART_RX_PREFIX), 16)
-    sh_mem_offset = _align_up(sh_status_offset + len(SHELL_STATUS_REPLY), 16)
-    sh_mir_offset = _align_up(sh_mem_offset + len(SHELL_MEM_REPLY), 16)
-    sh_epoch_offset = _align_up(sh_mir_offset + len(shell_mir_reply), 16)
-    sh_halt_offset = _align_up(sh_epoch_offset + len(SHELL_EPOCH_REPLY), 16)
-
-    rdata_buf = bytearray(sh_halt_offset + len(SHELL_HALT_REPLY))
-    rdata_buf[serial_offset : serial_offset + len(serial_payload)] = serial_payload
-    rdata_buf[utf16_offset : utf16_offset + len(conout_utf16le)] = conout_utf16le
-    rdata_buf[ebs_offset : ebs_offset + len(POST_EBS_BANNER)] = POST_EBS_BANNER
-    rdata_buf[v3_offset : v3_offset + len(KERNEL_V3_BANNER)] = KERNEL_V3_BANNER
-    rdata_buf[v4_offset : v4_offset + len(KERNEL_V4_BANNER)] = KERNEL_V4_BANNER
-    rdata_buf[v5_offset : v5_offset + len(KERNEL_V5_BANNER)] = KERNEL_V5_BANNER
-    rdata_buf[trap_offset : trap_offset + len(MORTH_TRAP_BANNER)] = MORTH_TRAP_BANNER
+    offsets: dict[str, int] = {}
+    cursor = 0
+    for name, value in texts.items():
+        offsets[name] = cursor
+        cursor = _align_up(cursor + len(value), 16)
+    gdt_offset = cursor
+    rdata_buf = bytearray(gdt_offset + len(GDT_TABLE_BYTES))
+    for name, value in texts.items():
+        rdata_buf[offsets[name] : offsets[name] + len(value)] = value
     rdata_buf[gdt_offset : gdt_offset + len(GDT_TABLE_BYTES)] = GDT_TABLE_BYTES
-    rdata_buf[rx_prefix_offset : rx_prefix_offset + len(UART_RX_PREFIX)] = UART_RX_PREFIX
-    rdata_buf[sh_status_offset : sh_status_offset + len(SHELL_STATUS_REPLY)] = SHELL_STATUS_REPLY
-    rdata_buf[sh_mem_offset : sh_mem_offset + len(SHELL_MEM_REPLY)] = SHELL_MEM_REPLY
-    rdata_buf[sh_mir_offset : sh_mir_offset + len(shell_mir_reply)] = shell_mir_reply
-    rdata_buf[sh_epoch_offset : sh_epoch_offset + len(SHELL_EPOCH_REPLY)] = SHELL_EPOCH_REPLY
-    rdata_buf[sh_halt_offset : sh_halt_offset + len(SHELL_HALT_REPLY)] = SHELL_HALT_REPLY
     rdata_raw = bytes(rdata_buf)
 
-    text_raw = _build_efi_main_machine_code(
-        serial_rva=rdata_rva + serial_offset,
-        serial_len=len(serial_payload),
-        utf16_rva=rdata_rva + utf16_offset,
-        ebs_banner_rva=rdata_rva + ebs_offset,
-        ebs_banner_len=len(POST_EBS_BANNER),
-        v3_banner_rva=rdata_rva + v3_offset,
-        v3_banner_len=len(KERNEL_V3_BANNER),
-        v4_banner_rva=rdata_rva + v4_offset,
-        v4_banner_len=len(KERNEL_V4_BANNER),
-        v5_banner_rva=rdata_rva + v5_offset,
-        v5_banner_len=len(KERNEL_V5_BANNER),
-        trap_banner_rva=rdata_rva + trap_offset,
-        trap_banner_len=len(MORTH_TRAP_BANNER),
-        gdt_rva=rdata_rva + gdt_offset,
-        rx_prefix_rva=rdata_rva + rx_prefix_offset,
-        rx_prefix_len=len(UART_RX_PREFIX),
-        shell_status_rva=rdata_rva + sh_status_offset,
-        shell_status_len=len(SHELL_STATUS_REPLY),
-        shell_mem_rva=rdata_rva + sh_mem_offset,
-        shell_mem_len=len(SHELL_MEM_REPLY),
-        shell_mir_rva=rdata_rva + sh_mir_offset,
-        shell_mir_len=len(shell_mir_reply),
-        shell_epoch_rva=rdata_rva + sh_epoch_offset,
-        shell_epoch_len=len(SHELL_EPOCH_REPLY),
-        shell_halt_rva=rdata_rva + sh_halt_offset,
-        shell_halt_len=len(SHELL_HALT_REPLY),
-        text_rva=text_rva,
-        rdata_rva_val=rdata_rva,
-        halt_mode=halt_mode,
-        exit_boot_services=exit_boot_services,
-        enable_serial_rx=enable_serial_rx,
-    )
+    text_rva = 0x1000
 
-    text_file_size = _align_up(len(text_raw), FILE_ALIGNMENT)
-    rdata_file_size = _align_up(len(rdata_raw), FILE_ALIGNMENT)
-
-    text_vsize = _align_up(len(text_raw), SECTION_ALIGNMENT)
-    rdata_rva = text_rva + text_vsize
-    if rdata_rva != 0x2000:
-        text_raw = _build_efi_main_machine_code(
-            serial_rva=rdata_rva + serial_offset,
-            serial_len=len(serial_payload),
-            utf16_rva=rdata_rva + utf16_offset,
-            ebs_banner_rva=rdata_rva + ebs_offset,
-            ebs_banner_len=len(POST_EBS_BANNER),
-            v3_banner_rva=rdata_rva + v3_offset,
-            v3_banner_len=len(KERNEL_V3_BANNER),
-            v4_banner_rva=rdata_rva + v4_offset,
-            v4_banner_len=len(KERNEL_V4_BANNER),
-            v5_banner_rva=rdata_rva + v5_offset,
-            v5_banner_len=len(KERNEL_V5_BANNER),
-            trap_banner_rva=rdata_rva + trap_offset,
-            trap_banner_len=len(MORTH_TRAP_BANNER),
+    def machine_code(rdata_rva: int) -> bytes:
+        return _build_efi_main_machine_code(
+            strings={name: (rdata_rva + offsets[name], len(value)) for name, value in texts.items()},
             gdt_rva=rdata_rva + gdt_offset,
-            rx_prefix_rva=rdata_rva + rx_prefix_offset,
-            rx_prefix_len=len(UART_RX_PREFIX),
-            shell_status_rva=rdata_rva + sh_status_offset,
-            shell_status_len=len(SHELL_STATUS_REPLY),
-            shell_mem_rva=rdata_rva + sh_mem_offset,
-            shell_mem_len=len(SHELL_MEM_REPLY),
-            shell_mir_rva=rdata_rva + sh_mir_offset,
-            shell_mir_len=len(shell_mir_reply),
-            shell_epoch_rva=rdata_rva + sh_epoch_offset,
-            shell_epoch_len=len(SHELL_EPOCH_REPLY),
-            shell_halt_rva=rdata_rva + sh_halt_offset,
-            shell_halt_len=len(SHELL_HALT_REPLY),
             text_rva=text_rva,
             rdata_rva_val=rdata_rva,
             halt_mode=halt_mode,
             exit_boot_services=exit_boot_services,
             enable_serial_rx=enable_serial_rx,
+            experimental_page_tables=experimental_page_tables,
         )
+
+    # Every displacement is a fixed-size rel32, so the code length does not
+    # depend on where .rdata lands; one rebuild settles the layout.
+    text_raw = machine_code(0x2000)
+    rdata_rva = text_rva + _align_up(len(text_raw), SECTION_ALIGNMENT)
+    if rdata_rva != 0x2000:
+        text_raw = machine_code(rdata_rva)
+
+    text_file_size = _align_up(len(text_raw), FILE_ALIGNMENT)
+    rdata_file_size = _align_up(len(rdata_raw), FILE_ALIGNMENT)
+
+    if text_rva + _align_up(len(text_raw), SECTION_ALIGNMENT) != rdata_rva:
+        raise AssertionError("UEFI .text length changed with the .rdata placement")
 
     rdata_vsize = _align_up(len(rdata_raw), SECTION_ALIGNMENT)
     size_of_headers = FILE_ALIGNMENT
@@ -1117,6 +1117,9 @@ def build_uefi_pe32plus_v1(
         halt_mode=halt_mode,
         exit_boot_services=exit_boot_services,
         enable_serial_rx=enable_serial_rx,
+        text_bytes=text_raw,
+        rdata_bytes=rdata_raw,
+        experimental_page_tables=experimental_page_tables,
     )
 
     return UefiBootArtifactV1(
@@ -1129,6 +1132,7 @@ def build_uefi_pe32plus_v1(
         halt_mode=halt_mode,
         exit_boot_services=exit_boot_services,
         enable_serial_rx=enable_serial_rx,
+        experimental_page_tables=experimental_page_tables,
     )
 
 
@@ -1150,15 +1154,19 @@ def build_esp_tree_v1(
 def build_fat16_esp_image_v1(artifact: UefiBootArtifactV1) -> bytes:
     """Create a deterministic, self-contained 4 MiB FAT16 UEFI System Partition disk image."""
 
+    # The FAT type is decided by the cluster count alone (Microsoft FAT spec):
+    # under 4085 clusters a volume is FAT12 whatever its label says. With one
+    # sector per cluster this 4 MiB volume has 8095 clusters, so it is FAT16;
+    # 32 FAT sectors hold their 16-bit entries.
     bytes_per_sector = 512
-    sectors_per_cluster = 4
+    sectors_per_cluster = 1
     cluster_size = bytes_per_sector * sectors_per_cluster
     total_sectors = 8192
     reserved_sectors = 1
     num_fats = 2
     root_dir_entries = 512
     root_dir_sectors = (root_dir_entries * 32) // bytes_per_sector
-    sectors_per_fat = 16
+    sectors_per_fat = 32
 
     image = bytearray(total_sectors * bytes_per_sector)
 
@@ -1187,6 +1195,15 @@ def build_fat16_esp_image_v1(artifact: UefiBootArtifactV1) -> bytes:
 
     efi_bytes = artifact.efi_bytes
     efi_clusters = max(1, _align_up(len(efi_bytes), cluster_size) // cluster_size)
+    data_clusters = (
+        total_sectors - reserved_sectors - num_fats * sectors_per_fat - root_dir_sectors
+    ) // sectors_per_cluster
+    if not 4085 <= data_clusters < 65525:
+        raise AssertionError(f"ESP geometry is not FAT16: {data_clusters} clusters")
+    if (data_clusters + 2) * 2 > sectors_per_fat * bytes_per_sector:
+        raise AssertionError("FAT16 table does not cover every cluster")
+    if 5 + efi_clusters > data_clusters + 2:
+        raise UefiBootError("KS4012", "BOOTX64.EFI does not fit the 4 MiB ESP image")
 
     fat = bytearray(sectors_per_fat * bytes_per_sector)
     struct.pack_into("<HH", fat, 0, 0xFFF8, 0xFFFF)
@@ -1209,6 +1226,9 @@ def build_fat16_esp_image_v1(artifact: UefiBootArtifactV1) -> bytes:
         entry[0:8] = name8
         entry[8:11] = ext3
         entry[11] = attr
+        # A fixed, valid FAT date (1980-01-01) keeps the image deterministic.
+        for date_offset in (16, 18, 24):
+            struct.pack_into("<H", entry, date_offset, (1 << 5) | 1)
         struct.pack_into("<H", entry, 26, cluster)
         struct.pack_into("<I", entry, 28, size)
         return bytes(entry)
@@ -1225,6 +1245,8 @@ def build_fat16_esp_image_v1(artifact: UefiBootArtifactV1) -> bytes:
     image[root_offset + 32 : root_offset + 64] = _dir_entry(
         b"STARTUP ", b"NSH", 0x20, 4, len(startup_bytes)
     )
+    # The volume label the boot sector names, as fsck.fat expects it.
+    image[root_offset + 64 : root_offset + 96] = _dir_entry(b"KOSCHEI_", b"ESP", 0x08, 0, 0)
 
     c2 = _cluster_offset(2)
     image[c2 : c2 + 32] = _dir_entry(b".       ", b"   ", 0x10, 2, 0)
@@ -1247,13 +1269,45 @@ def build_fat16_esp_image_v1(artifact: UefiBootArtifactV1) -> bytes:
     return bytes(image)
 
 
+# OVMF (QEMU q35, 256 MiB) reported a 0x17d0-byte map of 48-byte descriptors.
+OVMF_MEASURED_DESCRIPTOR_COUNT = 0x17D0 // 48
+
+
+def _emulated_memory_map(count: int) -> tuple[UefiMemoryDescriptorV1, ...]:
+    """A firmware-like map of ``count`` descriptors: two conventional regions,
+    the loaded image and boot-services pages."""
+
+    if count < 3:
+        raise ValueError("an emulated memory map needs at least 3 descriptors")
+    descriptors = [
+        UefiMemoryDescriptorV1(7, 0x0000000000001000, 0x0000000000001000, 159, 0x0F),
+        UefiMemoryDescriptorV1(7, 0x0000000000100000, 0x0000000000100000, 32768, 0x0F),
+        UefiMemoryDescriptorV1(1, UEFI_IMAGE_BASE, UEFI_IMAGE_BASE, 16, 0x0F),
+    ]
+    for index in range(count - 3):
+        start = 0x0000000010000000 + index * 0x1000
+        descriptors.append(UefiMemoryDescriptorV1(4, start, start, 1, 0x0F))
+    return tuple(descriptors)
+
+
 def simulate_uefi_x86_64_serial_v1(
     efi_bytes: bytes,
     *,
     rx_input: bytes = b"",
     trigger_exception_vector: int | None = None,
+    memory_descriptor_count: int = OVMF_MEASURED_DESCRIPTOR_COUNT,
+    stale_map_key_once: bool = False,
 ) -> UefiEmulationResult:
-    """Deterministic x86-64 PE32+ emulator for testing ``BOOTX64.EFI`` hardware I/O (v5)."""
+    """Deterministic x86-64 PE32+ emulator for testing ``BOOTX64.EFI`` hardware I/O (v5).
+
+    It models what the real-QEMU runs showed: a memory map of
+    ``memory_descriptor_count`` descriptors (OVMF's measured size by default),
+    optionally a map key that goes stale once, a page-table switch that faults
+    when the new tables leave the running code, the stack or the IDT unmapped,
+    and a COM1 receiver that stays empty once ``rx_input`` is consumed (the run
+    then ends as ``waiting_for_input``). Returning to the firmware after
+    ExitBootServices is a contract violation.
+    """
 
     if len(efi_bytes) < 0x200 or efi_bytes[0:2] != b"MZ":
         raise UefiBootError("KS4013", "invalid MZ header in EFI image")
@@ -1397,39 +1451,61 @@ def simulate_uefi_x86_64_serial_v1(
     active_epoch = 0
     frame_rsp = 0
 
-    descriptors: tuple[UefiMemoryDescriptorV1, ...] = (
-        UefiMemoryDescriptorV1(
-            memory_type=7,
-            physical_start=0x0000000000100000,
-            virtual_start=0x0000000000100000,
-            number_of_pages=32768,
-            attribute=0x0F,
-        ),
-        UefiMemoryDescriptorV1(
-            memory_type=1,
-            physical_start=UEFI_IMAGE_BASE,
-            virtual_start=UEFI_IMAGE_BASE,
-            number_of_pages=16,
-            attribute=0x0F,
-        ),
-    )
+    descriptors = _emulated_memory_map(memory_descriptor_count)
+    map_key_stale_pending = stale_map_key_once
+
+    code_segment_selector = 0
+    exit_attempts = 0
+    exit_calls = 0
+    memory_map_bytes = 0
+    descriptor_bytes = 0
+    image_text_address = 0
+    failure_status = 0
+    triple_fault = False
+    waiting_for_input = False
+    idle_lsr_reads = 0
 
     steps = 0
 
     def _snapshot_frame_state() -> None:
         nonlocal titan_remaining_pages, titan_allocated_page_phys, titan_total_usable_pages
         nonlocal tsc_genesis, tsc_latest, active_epoch
+        nonlocal exit_attempts, memory_map_bytes, descriptor_bytes, image_text_address, failure_status
         if frame_rsp:
-            tsc_genesis = read_u64(frame_rsp + 0x00)
-            titan_remaining_pages = read_u64(frame_rsp + 0x08)
-            tsc_latest = read_u64(frame_rsp + 0x10)
-            titan_allocated_page_phys = read_u64(frame_rsp + 0x18)
-            titan_total_usable_pages = read_u64(frame_rsp + 0x20)
-            active_epoch = read_u64(frame_rsp + 0x48)
+            tsc_genesis = read_u64(frame_rsp + SLOT_TSC_GENESIS)
+            titan_remaining_pages = read_u64(frame_rsp + SLOT_PMM_REMAINING)
+            tsc_latest = read_u64(frame_rsp + SLOT_TSC_LATEST)
+            titan_allocated_page_phys = read_u64(frame_rsp + SLOT_PMM_FIRST_PAGE)
+            titan_total_usable_pages = read_u64(frame_rsp + SLOT_CALL_ARG5)
+            active_epoch = read_u64(frame_rsp + SLOT_EPOCH)
+            exit_attempts = read_u64(frame_rsp + SLOT_ATTEMPT)
+            memory_map_bytes = read_u64(frame_rsp + SLOT_MAP_SIZE)
+            descriptor_bytes = read_u64(frame_rsp + SLOT_DESCRIPTOR_SIZE)
+            image_text_address = read_u64(frame_rsp + SLOT_IMAGE_TEXT)
+            failure_status = read_u64(frame_rsp + SLOT_STATUS)
 
-    while rip != return_sentinel_rip and steps < 500_000:
+    def _translate(cr3: int, vaddr: int) -> int | None:
+        """The 4-level walk the CPU does; ``None`` when a level is not present."""
+
+        entry = cr3
+        for shift in (39, 30, 21, 12):
+            table = entry & 0x000FFFFFFFFFF000
+            entry = read_u64(table + ((vaddr >> shift) & 0x1FF) * 8)
+            if not entry & PTE_PRESENT:
+                return None
+            if shift in (30, 21) and entry & PTE_PS:
+                return entry
+        return entry
+
+    while rip != return_sentinel_rip and steps < 2_000_000:
         steps += 1
         tsc_counter += 64
+        if idle_lsr_reads > 4096:
+            # The receiver stayed empty: the shell waits for a line forever.
+            _snapshot_frame_state()
+            waiting_for_input = True
+            regs["rax"] = 0
+            break
         if rip == conout_output_string_magic_rip:
             if boot_services_tombstoned:
                 raise UefiBootError(
@@ -1493,8 +1569,14 @@ def simulate_uefi_x86_64_serial_v1(
                     "KS4014",
                     "violation: duplicate BootServices->ExitBootServices call",
                 )
-            if regs["rcx"] != image_handle_val or regs["rdx"] != expected_map_key:
-                regs["rax"] = 0x8000000000000002
+            exit_calls += 1
+            if map_key_stale_pending and regs["rdx"] == expected_map_key:
+                # The firmware changed the map between GetMemoryMap and the exit.
+                map_key_stale_pending = False
+                expected_map_key += 1
+                regs["rax"] = EFI_INVALID_PARAMETER
+            elif regs["rcx"] != image_handle_val or regs["rdx"] != expected_map_key:
+                regs["rax"] = EFI_INVALID_PARAMETER
             else:
                 exit_boot_services_called = True
                 boot_services_tombstoned = True
@@ -1529,6 +1611,14 @@ def simulate_uefi_x86_64_serial_v1(
             elif b1 == 0x85:
                 rel32 = read_s32(rip + 2)
                 rip = (rip + 6 + rel32) if (not zf) else (rip + 6)
+            elif b1 == 0x0B:  # ud2 -> #UD (vector 6) through the loaded IDT
+                if not idt_loaded or idt_gate_count <= 6:
+                    triple_fault = True
+                    _snapshot_frame_state()
+                    break
+                exception_trapped = True
+                gate_addr = idt_base + 6 * 16
+                rip = read_u16(gate_addr) | (read_u16(gate_addr + 6) << 16) | (read_u32(gate_addr + 8) << 32)
             elif b1 == 0x31:  # rdtsc
                 regs["rax"] = tsc_counter & 0xFFFFFFFF
                 regs["rdx"] = (tsc_counter >> 32) & 0xFFFFFFFF
@@ -1557,6 +1647,15 @@ def simulate_uefi_x86_64_serial_v1(
                 rip += 5
             elif b1 == 0x22 and read_u8(rip + 2) == 0xD8:
                 cr3_pml4_phys = regs["rax"]
+                # The CPU now translates through these tables. If they leave the
+                # next instruction, the stack or the IDT unmapped, the next fetch
+                # or stack access faults and the fault cannot be delivered.
+                for needed in (rip + 3, regs["rsp"], idt_base or regs["rsp"]):
+                    if _translate(cr3_pml4_phys, needed) is None:
+                        triple_fault = True
+                if triple_fault:
+                    _snapshot_frame_state()
+                    break
                 pml4e0 = read_u64(cr3_pml4_phys + 0)
                 pdpt_phys = pml4e0 & 0x000FFFFFFFFFF000
                 pdpte5 = read_u64(pdpt_phys + 0x28)
@@ -1575,7 +1674,7 @@ def simulate_uefi_x86_64_serial_v1(
                     and not bool(rdata_pte_flags & PTE_RW)
                     and bool(rdata_pte_flags & PTE_NX)
                 )
-                wx_enforced = text_is_rx and rdata_is_ro_nx
+                wx_enforced = text_is_rx and rdata_is_ro_nx and not triple_fault
                 rip += 3
             else:
                 raise UefiBootError("KS4013", f"unhandled 0x0F instruction 0F {b1:02x}")
@@ -1591,6 +1690,9 @@ def simulate_uefi_x86_64_serial_v1(
                 regs[reg_name] = read_u64(regs["rsp"])
                 regs["rsp"] += 8
                 rip += 2
+            elif b1 == 0x88 and read_u8(rip + 2) == 0xC1:  # mov r9b, al
+                regs["r9"] = (regs["r9"] & ~0xFF) | (regs["rax"] & 0xFF)
+                rip += 3
             elif b1 == 0xFF and read_u8(rip + 2) == 0x55:
                 disp8 = read_u8(rip + 3)
                 target = read_u64(regs["r13"] + disp8)
@@ -1611,6 +1713,11 @@ def simulate_uefi_x86_64_serial_v1(
             if b1 == 0x89 and b2 == 0xCC:
                 regs["r12"] = regs["rcx"]
                 rip += 3
+            elif b1 == 0xC1 and b2 == 0xC0:  # rol r8, imm8
+                count = read_u8(rip + 3) & 63
+                value = regs["r8"] & 0xFFFFFFFFFFFFFFFF
+                regs["r8"] = ((value << count) | (value >> (64 - count))) & 0xFFFFFFFFFFFFFFFF
+                rip += 4
             elif b1 == 0x8D and b2 == 0xB8:
                 disp32 = read_s32(rip + 3)
                 regs["rdi"] = (regs["r8"] + disp32) & 0xFFFFFFFFFFFFFFFF
@@ -1639,6 +1746,9 @@ def simulate_uefi_x86_64_serial_v1(
                 disp8 = read_u8(rip + 4)
                 regs["r8"] = read_u64(regs["rsp"] + disp8)
                 rip += 5
+            elif b1 == 0x8B and b2 == 0x84 and read_u8(rip + 3) == 0x24:
+                regs["r8"] = read_u64(regs["rsp"] + read_s32(rip + 4))
+                rip += 8
             elif b1 == 0x8B and b2 == 0x4C and read_u8(rip + 3) == 0x24:
                 disp8 = read_u8(rip + 4)
                 regs["r9"] = read_u64(regs["rsp"] + disp8)
@@ -1812,6 +1922,19 @@ def simulate_uefi_x86_64_serial_v1(
                 imm32 = read_u32(rip + 5)
                 write_u64(regs["rsp"] + disp8, imm32)
                 rip += 9
+            elif b1 == 0xC7 and b2 == 0x84 and read_u8(rip + 3) == 0x24:
+                write_u64(regs["rsp"] + read_s32(rip + 4), read_u32(rip + 8))
+                rip += 12
+            elif b1 == 0x89 and b2 == 0x84 and read_u8(rip + 3) == 0x24:
+                write_u64(regs["rsp"] + read_s32(rip + 4), regs["rax"])
+                rip += 8
+            elif b1 == 0x8B and b2 == 0x84 and read_u8(rip + 3) == 0x24:
+                regs["rax"] = read_u64(regs["rsp"] + read_s32(rip + 4))
+                rip += 8
+            elif b1 == 0xCB:  # retfq: pop rip, then cs
+                rip = read_u64(regs["rsp"])
+                code_segment_selector = read_u64(regs["rsp"] + 8) & 0xFFFF
+                regs["rsp"] += 16
             elif b1 == 0x89 and b2 == 0x44 and read_u8(rip + 3) == 0x24:
                 disp8 = read_u8(rip + 4)
                 write_u64(regs["rsp"] + disp8, regs["rax"])
@@ -1896,7 +2019,7 @@ def simulate_uefi_x86_64_serial_v1(
                 raise UefiBootError("KS4013", f"unhandled 0x66 instruction 66 {b1:02x}")
         elif b0 == 0x8E:
             b1 = read_u8(rip + 1)
-            if b1 in (0xD8, 0xC0, 0xD0):
+            if b1 in (0xD8, 0xC0, 0xD0, 0xE0, 0xE8):
                 data_segment_selector = regs["rax"] & 0xFFFF
                 rip += 2
             else:
@@ -1948,10 +2071,37 @@ def simulate_uefi_x86_64_serial_v1(
             imm8 = read_u8(rip + 1)
             regs["rax"] = (regs["rax"] & ~0xFF) | imm8
             rip += 2
+        elif b0 == 0x24:  # and al, imm8
+            al_val = (regs["rax"] & 0xFF) & read_u8(rip + 1)
+            regs["rax"] = (regs["rax"] & ~0xFF) | al_val
+            zf = al_val == 0
+            cf = False
+            rip += 2
+        elif b0 == 0x04:  # add al, imm8
+            total = (regs["rax"] & 0xFF) + read_u8(rip + 1)
+            regs["rax"] = (regs["rax"] & ~0xFF) | (total & 0xFF)
+            zf = (total & 0xFF) == 0
+            cf = total > 0xFF
+            rip += 2
+        elif b0 == 0x44 and read_u8(rip + 1) == 0x88 and read_u8(rip + 2) == 0xC8:  # mov al, r9b
+            regs["rax"] = (regs["rax"] & ~0xFF) | (regs["r9"] & 0xFF)
+            rip += 3
+        elif b0 == 0x6A:  # push imm8 (sign-extended)
+            imm8 = read_u8(rip + 1)
+            regs["rsp"] -= 8
+            write_u64(regs["rsp"], imm8 - 0x100 if imm8 & 0x80 else imm8)
+            rip += 2
+        elif b0 == 0x50:  # push rax
+            regs["rsp"] -= 8
+            write_u64(regs["rsp"], regs["rax"])
+            rip += 1
+        elif b0 == 0xE9:  # jmp rel32
+            rip = rip + 5 + read_s32(rip + 1)
         elif b0 == 0xB9:
             regs["rcx"] = read_u32(rip + 1)
             rip += 5
         elif b0 == 0xEE:
+            idle_lsr_reads = 0
             port = regs["rdx"] & 0xFFFF
             val = regs["rax"] & 0xFF
             if port in (PIC1_CMD, PIC1_DATA, PIC2_CMD, PIC2_DATA, PIT_CMD, PIT_CH0_DATA):
@@ -1967,8 +2117,11 @@ def simulate_uefi_x86_64_serial_v1(
                 lsr = 0x60
                 if rx_queue:
                     lsr |= COM1_LSR_DR
+                else:
+                    idle_lsr_reads += 1
                 regs["rax"] = (regs["rax"] & ~0xFF) | lsr
             elif port == COM1_RBR:
+                idle_lsr_reads = 0
                 b_in = rx_queue.pop(0) if rx_queue else 0
                 rx_consumed.append(b_in)
                 regs["rax"] = (regs["rax"] & ~0xFF) | b_in
@@ -2053,7 +2206,7 @@ def simulate_uefi_x86_64_serial_v1(
             trigger_exception_vector is not None
             and idt_loaded
             and not exception_injected
-            and KERNEL_V5_BANNER in bytes(serial_out)
+            and KERNEL_V5_TAIL in bytes(serial_out)
         ):
             if not (0 <= trigger_exception_vector < idt_gate_count):
                 raise UefiBootError("KS4013", f"invalid exception vector {trigger_exception_vector}")
@@ -2064,6 +2217,20 @@ def simulate_uefi_x86_64_serial_v1(
             off_mid = read_u16(gate_addr + 6)
             off_high = read_u32(gate_addr + 8)
             rip = off_low | (off_mid << 16) | (off_high << 32)
+
+    if exit_calls != exit_attempts and boot_services_tombstoned:
+        raise UefiBootError(
+            "KS4013",
+            f"ExitBootServices was called {exit_calls} times but the image reports attempt {exit_attempts}",
+        )
+    if rip == return_sentinel_rip and boot_services_tombstoned:
+        raise UefiBootError(
+            "KS4014",
+            "violation: efi_main returned to the firmware after ExitBootServices",
+        )
+    if not waiting_for_input and not triple_fault and rip != return_sentinel_rip and steps >= 2_000_000:
+        raise UefiBootError("KS4013", "emulation step budget exhausted")
+    _snapshot_frame_state()
 
     expected_pic_pit = (
         UartPortWrite(PIC1_CMD, 0x11),
@@ -2122,4 +2289,82 @@ def simulate_uefi_x86_64_serial_v1(
         tsc_latest=tsc_latest,
         active_epoch=active_epoch,
         exception_trapped=exception_trapped,
+        code_segment_selector=code_segment_selector,
+        exit_boot_services_attempts=exit_attempts,
+        memory_map_bytes=memory_map_bytes,
+        descriptor_bytes=descriptor_bytes,
+        image_text_address=image_text_address,
+        failure_status=failure_status,
+        triple_fault=triple_fault,
+        waiting_for_input=waiting_for_input,
+        exit_boot_services_calls=exit_calls,
     )
+
+
+def expected_serial_v1(
+    artifact: UefiBootArtifactV1,
+    emulation: UefiEmulationResult,
+    *,
+    command: str = "",
+) -> bytes:
+    """The exact COM1 bytes the image must print, given the values its run read.
+
+    The hex fields come from the run (the firmware's map size, the load
+    address, the TSC), so this checks that the code prints what it observed
+    and nothing it did not. ``command`` is one shell line sent after the
+    ready banner.
+    """
+
+    out = bytearray(artifact.serial_payload)
+    if not artifact.exit_boot_services:
+        return bytes(out)
+    if emulation.failure_status:
+        if emulation.exit_boot_services_calls:
+            out += EXIT_FAILED_BANNER + hex_field(emulation.failure_status)
+            out += EXIT_FAILED_ATTEMPT_FIELD + hex_field(emulation.exit_boot_services_attempts)
+            out += EXIT_FAILED_TAIL
+        elif emulation.exit_boot_services_attempts:
+            out += MEMORY_MAP_FAILED_BANNER + hex_field(emulation.failure_status)
+            out += MEMORY_MAP_NEEDED_FIELD + hex_field(emulation.memory_map_bytes)
+            out += MEMORY_MAP_FAILED_TAIL
+        else:
+            out += NO_BOOT_SERVICES_BANNER
+        return bytes(out)
+    out += POST_EBS_BANNER + hex_field(emulation.exit_boot_services_attempts)
+    out += POST_EBS_MAP_FIELD + hex_field(emulation.memory_map_bytes)
+    out += POST_EBS_DESCRIPTOR_FIELD + hex_field(emulation.descriptor_bytes) + CRLF
+    out += KERNEL_V3_BANNER + hex_field(emulation.image_text_address) + CRLF
+    if artifact.experimental_page_tables:
+        out += EXPERIMENTAL_PMM_BANNER + hex_field(emulation.titan_allocated_page_phys)
+        out += EXPERIMENTAL_PMM_TAIL
+        if emulation.triple_fault:
+            return bytes(out)
+        out += EXPERIMENTAL_CR3_BANNER
+    else:
+        out += KERNEL_V4_BANNER
+    out += KERNEL_V5_BANNER + hex_field(emulation.tsc_genesis) + KERNEL_V5_TAIL
+    if not artifact.enable_serial_rx:
+        return bytes(out)
+    out += SHELL_READY_BANNER
+    line = command.encode("utf-8")[:48]
+    if not line:
+        return bytes(out)
+    out += UART_RX_PREFIX + line + CRLF
+    word = (line + b"\r")[:4]
+    if word == b"STAT":
+        status = SHELL_STATUS_EXPERIMENTAL_REPLY if artifact.experimental_page_tables else SHELL_STATUS_REPLY
+        out += status + hex_field(2) + CRLF
+    elif word == b"MEM\r":
+        out += SHELL_MEM_REPLY + hex_field(emulation.memory_map_bytes)
+        out += SHELL_MEM_DESCRIPTOR_FIELD + hex_field(emulation.descriptor_bytes) + SHELL_MEM_TAIL
+    elif word == b"MIR\r":
+        out += f"[KOSCHEI-SHELL] sealed_mir_sha256={artifact.mir_fingerprint}\r\n".encode("utf-8")
+    elif word == b"EPOC":
+        out += SHELL_EPOCH_REPLY + hex_field(3) + SHELL_EPOCH_TSC_FIELD + hex_field(emulation.tsc_latest) + CRLF
+    elif word == b"TRAP":
+        out += SHELL_TRAP_REPLY + MORTH_TRAP_BANNER
+    elif word == b"HALT":
+        out += SHELL_HALT_REPLY
+    else:
+        out += SHELL_UNKNOWN_REPLY
+    return bytes(out)

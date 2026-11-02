@@ -1,0 +1,57 @@
+name: Koschei UEFI Prototype Real QEMU Boot
+
+# Boots the ESP image `ks uefi-boot` builds in real QEMU with OVMF firmware and
+# drives its COM1 shell (tests/test_uefi_boot_qemu_v1.py). The emulator tests
+# run in the main suite; this workflow is where the image meets a firmware.
+on:
+  pull_request:
+    paths:
+      - 'koschei/uefi_boot_v1.py'
+      - 'koschei/uefi_boot_cli.py'
+      - 'examples/uefi_boot/**'
+      - 'tests/test_uefi_boot_v1.py'
+      - 'tests/test_uefi_boot_qemu_v1.py'
+      - 'tools/run_qemu_uefi_v1.sh'
+      - '.github/workflows/koschei-uefi-prototype-qemu.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'koschei/uefi_boot_v1.py'
+      - 'koschei/uefi_boot_cli.py'
+      - 'examples/uefi_boot/**'
+      - 'tests/test_uefi_boot_v1.py'
+      - 'tests/test_uefi_boot_qemu_v1.py'
+      - 'tools/run_qemu_uefi_v1.sh'
+      - '.github/workflows/koschei-uefi-prototype-qemu.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: koschei-uefi-prototype-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  qemu-uefi-prototype:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install emulator and inspection tools (not guest dependencies)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y qemu-system-x86 ovmf dosfstools binutils
+      - name: Install Koschei
+        run: python -m pip install -e . pytest
+      - name: Emulator tests and real QEMU/OVMF boot tests
+        env:
+          # Fail instead of skipping if QEMU or OVMF went missing.
+          KOSCHEI_REQUIRE_QEMU: "1"
+        run: python -m pytest -v tests/test_uefi_boot_v1.py tests/test_uefi_boot_qemu_v1.py

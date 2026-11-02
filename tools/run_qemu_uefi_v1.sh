@@ -48,9 +48,20 @@ find_ovmf() {
 if command -v qemu-system-x86_64 >/dev/null 2>&1; then
     if OVMF_PATH="$(find_ovmf)"; then
         echo "[2/3] QEMU + OVMF bulundu (${OVMF_PATH}). Donanim seri portu (COM1 -> stdio) ile baslatiliyor..."
+        echo "      COM1 kabugu etkilesimlidir: STATUS, MEM, MIR, EPOCH, TRAP, HALT yazin; cikis icin Ctrl-A X."
         if [[ "${OVMF_PATH}" == *"edk2-x86_64-code.fd"* || "${OVMF_PATH}" == *"OVMF_CODE"* ]]; then
+            # Split OVMF firmware boots only with its variable store as a second pflash drive.
+            VARS_SOURCE="${OVMF_PATH/CODE/VARS}"
+            VARS_SOURCE="${VARS_SOURCE/edk2-x86_64-code.fd/edk2-i386-vars.fd}"
+            if [[ ! -f "${VARS_SOURCE}" ]]; then
+                echo "[HATA] ${OVMF_PATH} icin degisken deposu (${VARS_SOURCE}) bulunamadi." >&2
+                exit 1
+            fi
+            cp "${VARS_SOURCE}" "${OUT_DIR}/OVMF_VARS.fd"
             qemu-system-x86_64 \
+                -machine q35 \
                 -drive if=pflash,format=raw,readonly=on,file="${OVMF_PATH}" \
+                -drive if=pflash,format=raw,file="${OUT_DIR}/OVMF_VARS.fd" \
                 -drive format=raw,file="${ESP_IMG}" \
                 -net none \
                 -serial stdio \
@@ -65,14 +76,14 @@ if command -v qemu-system-x86_64 >/dev/null 2>&1; then
                 -display none \
                 -no-reboot
         fi
-        echo "[3/3] QEMU x86-64 UEFI v2 testi basariyla tamamlandi."
+        echo "[3/3] QEMU kapandi. Gercek acilisin otomatik kaniti: python -m pytest tests/test_uefi_boot_qemu_v1.py"
     else
         echo "[BILGI] qemu-system-x86_64 kurulu ancak OVMF.fd bulunamadi."
         echo "        Ubuntu/Debian: sudo apt install ovmf"
         echo "        macOS (Brew):  brew install qemu"
     fi
 else
-    echo "[BILGI] Bu ortamda qemu-system-x86_64 kurulu degil; yerlesik x86-64 GetMemoryMap + ExitBootServices + COM1 RX/TX emulasyonu basariyla dogrulandi."
+    echo "[BILGI] Bu ortamda qemu-system-x86_64 kurulu degil; yalnizca yerlesik x86-64 emulatoru calisti (gercek donanim kaniti degildir)."
     echo "        Kendi makinenizde calistirmak icin:"
     echo "        qemu-system-x86_64 -bios /usr/share/ovmf/OVMF.fd -drive format=raw,file=${ESP_IMG} -net none -serial stdio -display none -no-reboot"
 fi

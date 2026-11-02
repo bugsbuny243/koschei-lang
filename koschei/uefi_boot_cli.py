@@ -10,19 +10,11 @@ from . import cli as _cli
 from .mir import require_mir
 from .modules import check_graph
 from .uefi_boot_v1 import (
-    KERNEL_V3_BANNER,
-    KERNEL_V4_BANNER,
-    KERNEL_V5_BANNER,
-    POST_EBS_BANNER,
-    SHELL_EPOCH_REPLY,
-    SHELL_HALT_REPLY,
-    SHELL_MEM_REPLY,
-    SHELL_STATUS_REPLY,
-    UART_RX_PREFIX,
     UefiBootError,
     build_esp_tree_v1,
     build_fat16_esp_image_v1,
     build_uefi_pe32plus_v1,
+    expected_serial_v1,
     simulate_uefi_x86_64_serial_v1,
 )
 
@@ -30,14 +22,16 @@ from .uefi_boot_v1 import (
 def add_uefi_boot_parser(subcommands: argparse._SubParsersAction) -> None:
     parser = subcommands.add_parser(
         "uefi-boot",
-        help="Build a bare-metal x86-64 UEFI (BOOTX64.EFI) kernel with GDT/IDT, Titan PMM, W^X CR3, PIC/PIT/TSC & Shell",
+        help="Build a bare-metal x86-64 UEFI image (BOOTX64.EFI): COM1 output, ExitBootServices, own GDT/IDT and a COM1 shell",
         description=(
             "Compile a checked, sealed Koschei program into a freestanding x86-64 "
-            "UEFI kernel (BOOTX64.EFI) with 16550 UART COM1 (0x3F8) TX/RX, "
-            "BootServices->GetMemoryMap, BootServices->ExitBootServices, "
-            "64-bit GDT (lgdt), 32-gate IDT (lidt), Titan Page Frame Allocator, "
-            "4-level W^X Page Tables (mov cr3, rax), 8259 PIC remap/mask, "
-            "8254 PIT 1000Hz timer, TSC monotonic clock, and interactive COM1 shell."
+            "UEFI application (BOOTX64.EFI). It prints the program's output on the "
+            "16550 UART COM1 (0x3F8) and UEFI ConOut, reads the memory map and "
+            "exits the boot services (retrying once with a fresh map key), loads "
+            "its own GDT (reloading CS) and 32-gate IDT, masks the 8259 PICs, "
+            "programs the 8254 PIT and serves an interactive COM1 shell. Paging "
+            "stays the firmware's identity mapping; --experimental-page-tables "
+            "adds an unfinished page-table switch that faults on real hardware."
         ),
     )
     parser.add_argument("source", help="Koschei source file or project directory")
@@ -53,11 +47,11 @@ def add_uefi_boot_parser(subcommands: argparse._SubParsersAction) -> None:
     )
     parser.add_argument(
         "--esp-image",
-        help="Optional output path for a bootable 4 MiB FAT16 ESP disk image (.img)",
+        help="Optional output path for a bootable 4 MiB FAT16 ESP disk image (.img), boots under OVMF",
     )
     parser.add_argument(
         "--emit-asm",
-        help="Optional output path for the freestanding x86-64 Intel-syntax assembly (.s)",
+        help="Optional output path for a byte-exact listing of the image's .text and .rdata (.s)",
     )
     parser.add_argument(
         "--no-banner",
@@ -67,28 +61,36 @@ def add_uefi_boot_parser(subcommands: argparse._SubParsersAction) -> None:
     parser.add_argument(
         "--no-exit-boot-services",
         action="store_true",
-        help="Skip GetMemoryMap, ExitBootServices, GDT/IDT, Titan PMM, W^X CR3, and PIC/PIT/TSC",
+        help="Leave the boot services to the firmware: skip GetMemoryMap, ExitBootServices, GDT/IDT, PIC/PIT and the shell",
     )
     parser.add_argument(
         "--no-serial-rx",
         action="store_true",
-        help="Disable post-ExitBootServices COM1 (0x3F8) RX line polling and shell",
+        help="Halt after the boot report instead of serving the COM1 (0x3F8) shell",
     )
     parser.add_argument(
         "--rx-input",
         default="",
-        help="Optional ASCII command (STATUS, MEM, MIR, EPOCH, HALT) to inject into COM1 RX during --verify-emulate",
+        help="Optional shell line (STATUS, MEM, MIR, EPOCH, TRAP, HALT) to inject into COM1 RX during --verify-emulate",
     )
     parser.add_argument(
         "--halt-mode",
         choices=("return", "halt"),
         default="return",
-        help="Termination mode after serial flush: 'return' EFI_SUCCESS or 'halt' (cli; hlt)",
+        help="With --no-exit-boot-services only: 'return' EFI_SUCCESS or 'halt' (cli; hlt); after ExitBootServices the image always halts",
+    )
+    parser.add_argument(
+        "--experimental-page-tables",
+        action="store_true",
+        help=(
+            "EXPERIMENTAL, faults on real hardware: add the Titan page allocator and a "
+            "page-table switch (mov cr3) that maps only the two link-address image pages"
+        ),
     )
     parser.add_argument(
         "--verify-emulate",
         action="store_true",
-        help="Run the built-in x86-64 PE32+ hardware-port, GDT/IDT, Titan PMM, W^X CR3 & PIC/PIT/TSC emulator",
+        help="Run the built-in x86-64 emulator and require the exact COM1 bytes the image must print",
     )
     parser.add_argument(
         "--json",
@@ -103,7 +105,8 @@ def command_uefi_boot(args: argparse.Namespace) -> int:
         check_graph(graph)
         mir = require_mir(graph)
         exit_bs = not args.no_exit_boot_services
-        enable_rx = not args.no_serial_rx
+        # The shell needs ExitBootServices; without it there is none to disable.
+        enable_rx = exit_bs and not args.no_serial_rx
 
         artifact = build_uefi_pe32plus_v1(
             mir,
@@ -111,6 +114,7 @@ def command_uefi_boot(args: argparse.Namespace) -> int:
             halt_mode=args.halt_mode,
             exit_boot_services=exit_bs,
             enable_serial_rx=enable_rx,
+            experimental_page_tables=args.experimental_page_tables,
         )
         out_path = Path(args.output)
         out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -144,31 +148,11 @@ def command_uefi_boot(args: argparse.Namespace) -> int:
                 artifact.efi_bytes,
                 rx_input=rx_bytes,
             )
-            expected_serial = artifact.serial_payload
-            if exit_bs:
-                expected_serial += (
-                    POST_EBS_BANNER
-                    + KERNEL_V3_BANNER
-                    + KERNEL_V4_BANNER
-                    + KERNEL_V5_BANNER
-                )
-            if enable_rx and args.rx_input:
-                cmd_raw = args.rx_input.encode("utf-8")[:48]
-                expected_serial += UART_RX_PREFIX + cmd_raw + b"\r\n"
-                if cmd_raw.startswith(b"STAT"):
-                    expected_serial += SHELL_STATUS_REPLY
-                elif cmd_raw == b"MEM":
-                    expected_serial += SHELL_MEM_REPLY
-                elif cmd_raw == b"MIR":
-                    expected_serial += (
-                        f"[KOSCHEI-SHELL] sealed_mir_sha256={artifact.mir_fingerprint}\r\n".encode(
-                            "utf-8"
-                        )
-                    )
-                elif cmd_raw.startswith(b"EPOC"):
-                    expected_serial += SHELL_EPOCH_REPLY
-                elif cmd_raw.startswith(b"HALT"):
-                    expected_serial += SHELL_HALT_REPLY
+            expected_serial = expected_serial_v1(
+                artifact,
+                emulation,
+                command=args.rx_input if enable_rx else "",
+            )
             if emulation.serial_bytes != expected_serial:
                 raise UefiBootError(
                     "KS4013",
@@ -204,6 +188,27 @@ def command_uefi_boot(args: argparse.Namespace) -> int:
                 "gdt_loaded": emulation.gdt_loaded if emulation else None,
                 "idt_loaded": emulation.idt_loaded if emulation else None,
                 "idt_gate_count": emulation.idt_gate_count if emulation else None,
+                "code_segment_selector": (
+                    emulation.code_segment_selector if emulation else None
+                ),
+                "exit_boot_services_attempts": (
+                    emulation.exit_boot_services_attempts if emulation else None
+                ),
+                "memory_map_bytes": emulation.memory_map_bytes if emulation else None,
+                "experimental_page_tables": artifact.experimental_page_tables,
+                "own_page_tables_active": (
+                    bool(emulation.cr3_pml4_phys) and not emulation.triple_fault
+                    if emulation
+                    else None
+                ),
+                "triple_fault": emulation.triple_fault if emulation else None,
+                # "ok" means the image printed exactly what it must; this says
+                # whether the emulated boot also got through.
+                "boot_completed": (
+                    not emulation.triple_fault and not emulation.failure_status
+                    if emulation
+                    else None
+                ),
                 "titan_total_usable_pages": (
                     emulation.titan_total_usable_pages if emulation else None
                 ),
@@ -227,9 +232,11 @@ def command_uefi_boot(args: argparse.Namespace) -> int:
             print(json.dumps(payload, ensure_ascii=False, indent=2))
         else:
             print(
-                f"KOSCHEI UEFI BOOT V5: PASS (target=x86_64-uefi, "
+                f"KOSCHEI UEFI BOOT V5: BUILT (target=x86_64-uefi, "
                 f"efi={out_path}, sha256={artifact.efi_sha256[:16]}..., "
-                f"gdt_idt={exit_bs}, wx_cr3={exit_bs}, pic_pit_tsc={exit_bs}, shell={enable_rx})"
+                f"exit_boot_services={exit_bs}, gdt_idt={exit_bs}, shell={enable_rx}, "
+                f"experimental_page_tables={args.experimental_page_tables}, "
+                f"emulated={emulation is not None})"
             )
             if emulation is not None:
                 print("--- EMULATED COM1 (0x3F8) SERIAL OUTPUT ---")
