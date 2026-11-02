@@ -124,6 +124,32 @@ fn main() {
 }
 ```
 
+### Matrix universe: `matrix_horizon` (pure transition proposal only)
+
+The first Matrix library module is written in Koschei, imported with
+`import matrix_horizon`. It mirrors the deterministic **preparation rules**
+from `DurableMatrixHorizonFence.advance`: the Veyra and Aevra must remain
+unchanged, the Matrix and Hara must change, and the epoch must advance by
+exactly one. Its `MatrixHorizonProposal` includes a SHA3-256 domain-separated
+digest; `is_canonical` rechecks it, and `matches_snapshot` checks a supplied
+observation. A proposed transition may not immediately recycle its predecessor.
+
+Functions: `record`, `genesis`, `is_canonical`,
+`propose_transition`, `matches_snapshot`. The `record` helper is
+public because Koschei v1 has no private functions. All records are
+**self-consistent claims, not signatures, grants, or authentication**.
+
+**Not ported:** SQLite-backed atomic current-head updates, persistent
+tombstones, cross-process replay fencing, MatrixAdmission seal validation,
+durable state recovery and the Galaxy execution admission gate. These remain
+the responsibility of the Python host guardian. In particular, a caller can
+present an old but internally canonical proposal; only the durable fence
+can know whether that Hara is currently authorized.
+
+The host `matrix_horizon_fence_v1.py` also rejects a tombstoned
+**successor** Hara inside the same SQLite transaction, preventing an
+old Hara's resurrection after a later Matrix transition.
+
 ### Marvel universe: `captain_marvel`, `hela`, `strange`, `wanda`, `xandar`, `morag`
 
 The first library universe modules written in Koschei. The first four port a
@@ -181,7 +207,8 @@ fn main() {
 ## Resolution and security rules
 
 - Only the names registered in `CORE_LIBRARY_MODULES_V1` (`captain_marvel`,
-  `hela`, `list`, `morag`, `secure`, `strange`, `text`, `wanda`, `xandar`) are
+  `hela`, `list`, `matrix_horizon`, `morag`, `secure`, `strange`, `text`,
+  `wanda`, `xandar`) are
   library modules. A stray `.ks` file placed in the library directory is never
   importable by user code.
 - A project file with the same name as a library module (for example a
