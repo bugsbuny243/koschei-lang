@@ -1,0 +1,519 @@
+"""Unified Koschei command entrypoint.
+
+The compiler CLI historically lived in :mod:`koschei.cli`, while the language
+server was installed only as the separate ``ks-lsp`` executable. This adapter
+keeps the existing CLI implementation stable, exposes ``ks lsp``, attaches V5
+interpreter runtime budgets to the public ``ks run`` path, enforces optional
+locked native builds and manifests, and hosts the sealed foreign-contract,
+maturity, differential-fuzzing, foundation-export, module-lock, native-build
+verification, reproducibility, release proof, and maturity-attestation commands.
+"""
+
+from __future__ import annotations
+
+import argparse
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+from . import cli as _cli
+from .build_manifest import (
+    BuildManifestError,
+    build_native_manifest,
+    write_native_manifest,
+)
+from .build_manifest_cli import add_build_verify_parser, command_build_verify
+from .differential_fuzz_cli import add_differential_fuzz_parser, command_differential_fuzz
+from .foreign_cli import add_foreign_parser, command_foreign
+from .foundation_export_cli import add_foundation_export_parser, command_foundation_export
+from .lock_cli import add_lock_parser, command_lock
+from .maturity_attestation_cli import add_maturity_attest_parser, command_maturity_attest
+from .maturity_cli import add_maturity_parser, command_maturity
+from .mir import require_mir
+from .mir_go_native import generate_go_mir_native, inspect_mir_go_support
+from .module_lock import load_module_lock, verify_module_lock
+from .modules import check_graph
+from .native_http_transport_v1 import (
+    native_http_transport_guard_fragment_go_v1,
+    native_http_transport_guard_go_v1,
+)
+from .release_proof_cli import add_release_proof_parser, command_release_proof
+from .uefi_boot_cli import add_uefi_boot_parser, command_uefi_boot
+from .reproducibility_cli import (
+    add_build_compare_parser,
+    add_build_compare_verify_parser,
+    command_build_compare,
+    command_build_compare_verify,
+)
+from .runtime_budget import (
+    DEFAULT_MAX_STEPS,
+    HARD_MAX_CALL_DEPTH,
+    bounded_call_depth,
+    positive_step_budget,
+    run_mir_with_budget,
+)
+
+
+def _configure_utf8_stdio() -> None:
+    """Keep public CLI diagnostics usable when the inherited locale is ASCII.
+
+    Koschei emits Unicode diagnostics and capability descriptions. Some
+    deployment shells still expose strict ASCII stdout/stderr streams; allowing
+    those streams to raise ``UnicodeEncodeError`` turns a successful compiler
+    decision into a packaging/runtime crash. Reconfigure only streams that
+    support Python's text-stream API and leave redirected/custom streams alone.
+    """
+
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if not callable(reconfigure):
+            continue
+        try:
+            reconfigure(encoding="utf-8", errors="backslashreplace")
+        except (AttributeError, ValueError):
+            continue
+
+
+def _budget_argument(parser, value: str) -> int:
+    try:
+        return parser(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(str(error)) from error
+
+
+def build_parser() -> argparse.ArgumentParser:
+    """Return the public CLI parser including LSP and runtime policy options."""
+
+    parser = _cli.build_parser()
+    subcommands = next(
+        action
+        for action in parser._actions
+        if isinstance(action, argparse._SubParsersAction)
+    )
+    lsp = subcommands.add_parser(
+        "lsp",
+        help="Start the Koschei Language Server over stdio",
+        description=(
+            "Start the zero-dependency Koschei Language Server Protocol process "
+            "over standard input/output. Editors normally launch this command."
+        ),
+    )
+    lsp.add_argument(
+        "--lang",
+        choices=("en", "tr"),
+        default=argparse.SUPPRESS,
+        help="Diagnostic language: en or tr",
+    )
+
+    add_foreign_parser(subcommands)
+    add_maturity_parser(subcommands)
+    add_maturity_attest_parser(subcommands)
+    add_differential_fuzz_parser(subcommands)
+    add_foundation_export_parser(subcommands)
+    add_lock_parser(subcommands)
+    add_build_verify_parser(subcommands)
+    add_build_compare_parser(subcommands)
+    add_build_compare_verify_parser(subcommands)
+    add_release_proof_parser(subcommands)
+    add_uefi_boot_parser(subcommands)
+
+    check = subcommands.choices["check"]
+    check.add_argument(
+        "--native",
+        action="store_true",
+        help="Require trusted host Native IR authority; never fall back to compatibility",
+    )
+
+    run = subcommands.choices["run"]
+    run.add_argument(
+        "--max-steps",
+        type=lambda value: _budget_argument(positive_step_budget, value),
+        default=DEFAULT_MAX_STEPS,
+        help=f"Interpreter step budget (default: {DEFAULT_MAX_STEPS})",
+    )
+    run.add_argument(
+        "--max-call-depth",
+        type=lambda value: _budget_argument(bounded_call_depth, value),
+        default=HARD_MAX_CALL_DEPTH,
+        help=f"Koschei call-frame budget (1..{HARD_MAX_CALL_DEPTH})",
+    )
+    run.add_argument(
+        "program_args",
+        nargs="*",
+        metavar="ARG",
+        help=(
+            "Arguments handed to the program (InputCaps.args()); put them after "
+            "'--' when one starts with '-'"
+        ),
+    )
+
+    build = subcommands.choices["build"]
+    build.add_argument(
+        "--locked",
+        action="store_true",
+        help="Verify the complete module graph against a lockfile before compiling",
+    )
+    build.add_argument(
+        "--lockfile",
+        help="Lockfile path; defaults to koschei.lock.json beside the entry source",
+    )
+    build.add_argument(
+        "--build-manifest",
+        help=(
+            "Write a SHA-256 build manifest binding the lock, MIR, toolchain, "
+            "and native artifact; requires --locked"
+        ),
+    )
+    return parser
+
+
+def command_lsp() -> int:
+    """Start the V5 typed-analysis LSP lazily so ordinary CLI startup stays small."""
+
+    from .lsp_v5 import main as lsp_main
+
+    return lsp_main()
+
+
+def _run_with_public_budget(args: argparse.Namespace) -> int:
+    """Reuse the compiler CLI's diagnostics while replacing only run execution."""
+
+    original = _cli.command_run
+
+    def command(path: str) -> int:
+        graph = _cli.open_graph(path)
+        check_graph(graph)
+        return run_mir_with_budget(
+            require_mir(graph),
+            list(args.program_args),
+            max_steps=args.max_steps,
+            max_call_depth=args.max_call_depth,
+        )
+
+    _cli.command_run = command
+    try:
+        return _cli.main(["--lang", args.lang, "run", args.source])
+    finally:
+        _cli.command_run = original
+
+
+def _go_source_uses_http_runtime(go_source: str) -> bool:
+    """Return whether a generated package contains the compat HTTP runtime."""
+
+    return '"net/http"' in go_source or "ksNetGet(" in go_source
+
+
+def _render_emitted_go_with_transport_v1(go_source: str) -> str:
+    """Keep single-file `emit-go` output under the same HTTP transport policy."""
+
+    if not _go_source_uses_http_runtime(go_source):
+        return go_source
+    separator = "" if go_source.endswith("\n") else "\n"
+    return go_source + separator + native_http_transport_guard_fragment_go_v1()
+
+
+def _emit_go_with_transport(args: argparse.Namespace) -> int:
+    """Reuse CLI diagnostics while sealing HTTP transport into emitted Go text."""
+
+    original = _cli.command_emit_go
+
+    def command(path: str) -> int:
+        graph = _cli.open_graph(path)
+        check_graph(graph)
+        go_source = _cli.generate_go_mir(require_mir(graph))
+        print(_render_emitted_go_with_transport_v1(go_source), end="")
+        return 0
+
+    _cli.command_emit_go = command
+    try:
+        return _cli.main(["--lang", args.lang, "emit-go", args.source])
+    finally:
+        _cli.command_emit_go = original
+
+
+def _compile_mir_go(go_source: str, target: Path, locale: str) -> int:
+    go_binary = shutil.which("go")
+    if go_binary is None:
+        message = (
+            "KOSCHEI ERROR: 'go' was not found. Install Go for native builds "
+            "or use 'ks run'."
+            if locale == "en"
+            else "KOSCHEI ERROR: 'go' bulunamadı. Native derleme için Go kurun "
+            "veya 'ks run' kullanın."
+        )
+        print(message, file=sys.stderr)
+        return 1
+
+    with tempfile.TemporaryDirectory(prefix="koschei-mir-build-") as workspace:
+        directory = Path(workspace)
+        (directory / "main.go").write_text(go_source, encoding="utf-8")
+        if _go_source_uses_http_runtime(go_source):
+            (directory / "http_transport_v1.go").write_text(
+                native_http_transport_guard_go_v1(), encoding="utf-8"
+            )
+        (directory / "go.mod").write_text(
+            "module koscheiprogram\n\ngo 1.21\n", encoding="utf-8"
+        )
+        # The workspace is a fresh temporary directory: without -trimpath and an
+        # empty build id its path ends up in the binary and no two builds of the
+        # same source are byte-identical.
+        completed = subprocess.run(
+            [
+                go_binary, "build", "-trimpath", "-buildvcs=false",
+                "-ldflags=-buildid=", "-o", str(target), ".",
+            ],
+            cwd=directory,
+            capture_output=True,
+            text=True,
+        )
+    if completed.returncode != 0:
+        message = (
+            "KOSCHEI ERROR: MIR-Go compilation failed. This is a compiler bug; "
+            "report it with the source file.\n"
+            if locale == "en"
+            else "KOSCHEI ERROR: MIR-Go derlemesi başarısız oldu. Bu bir derleyici "
+            "hatasıdır; kaynak dosyayla birlikte bildirin.\n"
+        )
+        print(message + completed.stderr.strip(), file=sys.stderr)
+        return 1
+    print(f"KOSCHEI BUILD: {target}")
+    return 0
+
+
+def native_build_mode(mir) -> str:
+    """Select only native backends that do not embed ambient host effect APIs.
+
+    ``ast_go_compat_v1`` currently embeds filesystem, environment and network
+    effect implementations in the generated process. Capability checking still
+    constrains language-level access, but this is not physical runtime custody.
+    Until those effects cross a separately confined broker boundary, the public
+    CLI must fail closed instead of silently falling back to that backend.
+    """
+
+    return (
+        "mir_go_v1"
+        if inspect_mir_go_support(mir).supported
+        else "blocked_ambient_ast_go_v1"
+    )
+
+
+def _native_custody_message(locale: str, reasons: tuple[str, ...] = ()) -> str:
+    detail = "; ".join(reasons[:3])
+    if locale == "tr":
+        message = (
+            "KS4004: Native derleme fail-closed durduruldu: gerekli eski AST-Go "
+            "backend'i dosya/ağ/ortam host API'lerini aynı execution process içine "
+            "gömüyor. Ayrı capability broker + OS confinement tamamlanana kadar "
+            "bu yol production native çıktı üretemez. 'ks run' kullanın."
+        )
+    else:
+        message = (
+            "KS4004: Native build failed closed: the required legacy AST-Go backend "
+            "embeds filesystem/network/environment host APIs in the execution "
+            "process. It cannot produce production native output until a separate "
+            "capability broker plus OS confinement exists. Use 'ks run'."
+        )
+    return f"{message} Backend reason: {detail}" if detail else message
+
+
+def _emit_go_from_sealed_mir(args: argparse.Namespace) -> int:
+    """Expose only the custody-safe strict MIR-Go source through public ``ks``."""
+
+    graph = _cli.open_graph(args.source)
+    check_graph(graph)
+    mir = require_mir(graph)
+    support = inspect_mir_go_support(mir)
+    if not support.supported:
+        print(_native_custody_message(args.lang, support.reasons), file=sys.stderr)
+        return 1
+    print(generate_go_mir_native(mir), end="")
+    return 0
+
+
+def _build_with_public_lock(args: argparse.Namespace) -> int:
+    """Verify the lock and permit only the custody-safe strict MIR-Go backend."""
+
+    original = _cli.command_build
+
+    def command(path: str, output: str | None, locale: str) -> int:
+        if args.lockfile and not args.locked:
+            raise ValueError("--lockfile requires --locked")
+        if args.build_manifest and not args.locked:
+            raise ValueError("--build-manifest requires --locked")
+
+        source = _cli.require_ks_extension(path)
+        verified_lock = None
+        if args.locked:
+            lock_path = args.lockfile or str(source.parent / "koschei.lock.json")
+            verified_lock = verify_module_lock(source, load_module_lock(lock_path))
+
+        manifest_path = Path(args.build_manifest) if args.build_manifest else None
+        if manifest_path is not None and manifest_path.exists():
+            raise BuildManifestError(
+                "KS1911",
+                f"build manifest already exists: {manifest_path}",
+            )
+
+        graph = _cli.open_graph(path)
+        check_graph(graph)
+        mir = require_mir(graph)
+        support = inspect_mir_go_support(mir)
+        if not support.supported:
+            print(_native_custody_message(locale, support.reasons), file=sys.stderr)
+            return 1
+
+        target = (Path(output) if output else source.with_suffix("")).resolve()
+        if native_build_mode(mir) == "mir_go_v1":
+            result = _compile_mir_go(generate_go_mir_native(mir), target, locale)
+        else:
+            result = _compile_mir_go(_cli.generate_go_mir(mir), target, locale)
+        if result != 0 or manifest_path is None:
+            return result
+        if verified_lock is None:
+            raise BuildManifestError("KS1910", "verified module lock is missing")
+
+        go_binary = shutil.which("go")
+        if go_binary is None:
+            raise BuildManifestError("KS1910", "Go toolchain identity is unavailable")
+        toolchain = subprocess.run(
+            [go_binary, "version"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if toolchain.returncode != 0 or not toolchain.stdout.strip():
+            raise BuildManifestError("KS1910", "could not read Go toolchain identity")
+
+        manifest = build_native_manifest(
+            target,
+            module_lock_digest=verified_lock.lock_digest,
+            mir_version=str(mir.version),
+            mir_fingerprint=mir.fingerprint,
+            backend_toolchain=toolchain.stdout,
+        )
+        write_native_manifest(manifest, manifest_path)
+        print(f"KOSCHEI BUILD MANIFEST: {manifest_path}")
+        print(f"ARTIFACT SHA256: {manifest.artifact_sha256}")
+        return 0
+
+    forwarded = ["--lang", args.lang, "build", args.source]
+    if args.output:
+        forwarded.extend(["--output", args.output])
+
+    _cli.command_build = command
+    try:
+        return _cli.main(forwarded)
+    finally:
+        _cli.command_build = original
+
+
+
+def check_with_host_ingress_v1(
+    ingress: "CanonicalHostIngressV1",
+    path: str | Path,
+    *,
+    now: float | int | None = None,
+) -> "CanonicalCommandResultV1":
+    """Host-injected canonical check; never consults legacy CLI dispatch.
+
+    The trusted host must construct and retain the ingress capability. No
+    provider, target or secret is selected from argv, env or source contents.
+    """
+    from .canonical_host_ingress_v1 import CanonicalHostIngressV1
+
+    if not isinstance(ingress, CanonicalHostIngressV1):
+        raise TypeError("trusted canonical host ingress capability is required")
+    return ingress.execute("check", path, now=now)
+
+
+
+def main_with_host_ingress_v1(
+    argv: list[str],
+    *,
+    ingress: "CanonicalHostIngressV1",
+    now: float | int | None = None,
+) -> int:
+    """Explicit host-bound native check command; never falls back to compat CLI.
+
+    This entrypoint is called by a trusted embedding host, not by the ordinary
+    shell entrypoint. The host supplies the sealed capability in process memory.
+    """
+    from .canonical_host_ingress_v1 import CanonicalHostIngressV1
+
+    if not isinstance(ingress, CanonicalHostIngressV1):
+        raise TypeError("trusted canonical host ingress capability is required")
+    parser = argparse.ArgumentParser(prog="ks-native-host")
+    subcommands = parser.add_subparsers(dest="command", required=True)
+    check = subcommands.add_parser("check")
+    check.add_argument("source")
+    args = parser.parse_args(argv)
+    check_with_host_ingress_v1(ingress, args.source, now=now)
+    return 0
+
+
+def _parse_arguments(arguments: list[str]) -> argparse.Namespace:
+    """Parse the CLI; for ``run`` everything after the first ``--`` is the program's.
+
+    Splitting before argparse keeps that rule identical on every supported
+    Python: argparse versions disagree about a second ``--``.
+    """
+
+    parser = build_parser()
+    if "--" not in arguments:
+        return parser.parse_args(arguments)
+    separator = arguments.index("--")
+    args = parser.parse_args(arguments[:separator])
+    if args.command != "run":
+        return parser.parse_args(arguments)
+    args.program_args = [*args.program_args, *arguments[separator + 1 :]]
+    return args
+
+
+def main(argv: list[str] | None = None) -> int:
+    _configure_utf8_stdio()
+    arguments = sys.argv[1:] if argv is None else argv
+    args = _parse_arguments(list(arguments))
+    if args.command == "lsp":
+        return command_lsp()
+    if args.command == "foreign":
+        return command_foreign(args)
+    if args.command == "maturity":
+        return command_maturity(args)
+    if args.command == "maturity-attest":
+        return command_maturity_attest(args)
+    if args.command == "differential-fuzz":
+        return command_differential_fuzz(args)
+    if args.command == "foundation-export":
+        return command_foundation_export(args)
+    if args.command == "lock":
+        return command_lock(args)
+    if args.command == "build-verify":
+        return command_build_verify(args)
+    if args.command == "build-compare":
+        return command_build_compare(args)
+    if args.command == "build-compare-verify":
+        return command_build_compare_verify(args)
+    if args.command == "release-proof":
+        return command_release_proof(args)
+    if args.command == "uefi-boot":
+        return command_uefi_boot(args)
+    if args.command == "check" and args.native:
+        print(
+            "KS4101: Native check requires a trusted in-process host ingress; "
+            "the standalone CLI cannot obtain authority from argv or environment.",
+            file=sys.stderr,
+        )
+        return 1
+    if args.command == "run":
+        return _run_with_public_budget(args)
+    if args.command == "emit-go":
+        return _emit_go_with_transport(args)
+    if args.command == "build":
+        return _build_with_public_lock(args)
+    return _cli.main(arguments)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

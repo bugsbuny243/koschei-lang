@@ -94,6 +94,20 @@ Sınır: bu, tersine mühendisliği pahalılaştırır ve "bir analiz her
 dağıtıma uyar" durumunu bitirir. Programın davranışını ve kendi bastığı
 metinleri gizlemez.
 
+### Strange derlemesi — ilk uygulanmış dilim (2026-10-31)
+
+`koschei/strange_build_representation_v1.py` ve MIR-Go üreticisinin dahili
+`representation_seed` yolu, güvenilir derleme sırasında farklı tohumlarla
+fonksiyon/parametre sembollerinin değişmesini sağlayan **opt-in prototiptir**.
+Aynı mühürlü MIR ve aynı tohum aynı Go çıktısını verir; başka tohum farklı
+sembol temsili verir. Public `ks build` henüz bu yolu kullanmaz.
+
+**Açık kalanlar:** Go diagnostic metinleri ve diğer stringler hâlâ anlam
+sızdırabilir; gerçek Trust Plane anahtar emaneti, iki dakikalık epoch yenileme,
+çalışan süreçlerin güvenli değiştirilmesi, dağıtım-başına izolasyon kanıtı ve
+native/harici bağımsız denetim henüz uygulanmadı. Bkz.
+`docs/STRANGE_BUILD_REPRESENTATION_V1.md`.
+
 ## Ele geçirilen yapı diğerine ulaşamaz
 
 | Parça | Ne sağlar | Durum |

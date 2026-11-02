@@ -1,0 +1,83 @@
+name: Koschei K0 Standalone UEFI Boot
+
+on:
+  pull_request:
+    paths:
+      - 'server/kernel/k0/**'
+      - '.github/workflows/koschei-k0-boot.yml'
+  push:
+    branches:
+      - main
+      - 'staging/k0-*'
+    paths:
+      - 'server/kernel/k0/**'
+      - '.github/workflows/koschei-k0-boot.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: koschei-k0-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  qemu-k0-boot:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@v4
+      - name: Install temporary build and emulator tools (not guest dependencies)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y clang lld qemu-system-x86 ovmf dosfstools mtools
+      - name: Build genuine freestanding EFI release and test binaries
+        run: |
+          bash server/kernel/k0/build.sh /tmp/koschei-k0-evidence
+          file /tmp/koschei-k0-evidence/*.efi /tmp/koschei-k0-evidence/BOOTX64.EFI
+      - name: Fail-closed binary and transcript regression tests
+        run: |
+          python3 -m unittest discover -s server/kernel/k0 -p 'test_*.py' -v
+      - name: Execute native C memory map adversarial tests
+        run: |
+          clang -std=c11 -O2 -Wall -Wextra -Werror \
+            server/kernel/k0/test_memory_map.c -o /tmp/koschei-k0-evidence/memory-map-tests
+          /tmp/koschei-k0-evidence/memory-map-tests
+      - name: Execute bounded page ledger adversarial tests
+        run: |
+          clang -std=c11 -O2 -Wall -Wextra -Werror \
+            server/kernel/k0/test_page_pool.c -o /tmp/koschei-k0-evidence/page-pool-tests
+          /tmp/koschei-k0-evidence/page-pool-tests
+      - name: Execute staging paging-entry contract negative tests (not MMU proof)
+        run: |
+          clang -std=c11 -O2 -Wall -Wextra -Werror \
+            server/kernel/k0/test_paging_contract.c -o /tmp/koschei-k0-evidence/paging-contract-tests
+          /tmp/koschei-k0-evidence/paging-contract-tests
+      - name: Execute four-level paging data-model adversarial tests (not CR3 proof)
+        run: |
+          clang -std=c11 -O2 -Wall -Wextra -Werror \
+            server/kernel/k0/test_paging_model.c -o /tmp/koschei-k0-evidence/paging-model-tests
+          /tmp/koschei-k0-evidence/paging-model-tests
+      - name: Test predicted page-fault and access-denial model (NOT CPU faults)
+        run: |
+          clang -std=c11 -O2 -Wall -Wextra -Werror \
+            server/kernel/k0/test_paging_walk.c -o /tmp/koschei-k0-evidence/paging-walk-tests
+          /tmp/koschei-k0-evidence/paging-walk-tests
+      - name: Boot actual UEFI binary on QEMU OVMF and capture UART proof
+        run: |
+          bash server/kernel/k0/qemu_smoke.sh /tmp/koschei-k0-evidence
+      - name: Bind evidence to commit and toolchain
+        if: always()
+        run: |
+          mkdir -p /tmp/koschei-k0-evidence
+          git rev-parse HEAD > /tmp/koschei-k0-evidence/commit.txt
+          clang --version > /tmp/koschei-k0-evidence/clang-version.txt
+          qemu-system-x86_64 --version > /tmp/koschei-k0-evidence/qemu-version.txt
+      - name: Upload standalone boot evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: koschei-k0-uefi-${{ github.sha }}
+          path: /tmp/koschei-k0-evidence/
+          if-no-files-found: warn
