@@ -69,6 +69,11 @@ jobs:
           clang -std=c11 -O2 -Wall -Wextra -Werror \
             server/kernel/k0/test_cr3_firmware_map_provenance.c -o /tmp/koschei-k0-evidence/cr3-uefi-map-tests
           /tmp/koschei-k0-evidence/cr3-uefi-map-tests
+      - name: Validate UEFI LoadedImage code and stack residency (no CR3 write)
+        run: |
+          clang -std=c11 -O2 -Wall -Wextra -Werror \
+            server/kernel/k0/test_live_image_residency.c -o /tmp/koschei-k0-evidence/live-image-residency-tests
+          /tmp/koschei-k0-evidence/live-image-residency-tests
       - name: Test predicted page-fault and access-denial model (NOT CPU faults)
         run: |
           clang -std=c11 -O2 -Wall -Wextra -Werror \
