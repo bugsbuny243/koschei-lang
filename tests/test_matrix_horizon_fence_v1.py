@@ -148,6 +148,37 @@ def test_same_matrix_is_not_a_cross_matrix_transition():
                 fence.advance(old, successor, cause_digest=d("move"))
 
 
+
+def test_tombstoned_hara_can_never_be_successor_even_after_valid_advance():
+    old, new = world()
+    # The candidate's Hara is previously retired. The persistent horizon
+    # must not allow a different Matrix or later epoch to revive it.
+    recycled = type(new)(
+        old.matrix_digest,
+        old.hara_digest,
+        old.aevra_digest,
+        old.veyra_digest,
+        old.native_mir_fingerprint,
+        new.epoch + 1,
+        d("recycled-evidence"),
+        d("recycled-admission"),
+        old.version,
+    )
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / "matrix.sqlite3"
+        with DurableMatrixHorizonFence(path) as fence:
+            fence.initialize(old)
+            fence.advance(old, new, cause_digest=d("move"))
+            with pytest.raises(MatrixHorizonFenceError, match="successor Hara is already Morth"):
+                fence.advance(new, recycled, cause_digest=d("recycle"))
+            fence.require_current(new)
+            assert fence.is_tombstoned(old.hara_digest)
+            assert not fence.is_tombstoned(new.hara_digest)
+        with DurableMatrixHorizonFence(path) as reopened:
+            reopened.require_current(new)
+            assert reopened.is_tombstoned(old.hara_digest)
+
+
 def test_same_transition_cannot_be_replayed():
     old, new = world()
     with tempfile.TemporaryDirectory() as directory:
