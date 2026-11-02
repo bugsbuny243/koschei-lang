@@ -20,6 +20,16 @@ VALID_IMAGE_FIXTURE = (
     b"KOSCHEI-KERNEL K0 IMAGE-LIVE/1 "
     b"BASE=0000000000400000 SIZE=0000000000010000\r\n"
 )
+WALK_PATTERN = re.compile(
+    b"KOSCHEI-KERNEL K0 CR3-WALK/1 "
+    b"RIPPA=([0-9a-f]{16}) RSPPA=([0-9a-f]{16}) "
+    b"CR3=([0-9a-f]{16})\r\n"
+)
+VALID_WALK_FIXTURE = (
+    b"KOSCHEI-KERNEL K0 CR3-WALK/1 "
+    b"RIPPA=0000000000400200 RSPPA=0000000000600fef "
+    b"CR3=0000000000800000\r\n"
+)
 FIELD_NAMES = (
     b"CR0", b"CR3", b"CR4", b"EFER", b"RFLAGS", b"CS",
     b"GDTR", b"GDTLIMIT", b"IDTR", b"IDTLIMIT", b"RIP", b"RSP",
@@ -91,11 +101,21 @@ def verify(serial_path: Path) -> None:
         not 0 < image_size <= 32 * 1024 * 1024 or
         image_base + image_size > 2**64):
         raise ValueError("invalid LoadedImage bounds")
-    live = validate_live_register_record(record[image.end():])
+    walk = WALK_PATTERN.match(record, image.end())
+    if not walk:
+        raise ValueError("missing or malformed real CR3 table-byte walk record")
+    rippa, rsppa, root = (int(raw, 16) for raw in walk.groups())
+    live = validate_live_register_record(record[walk.end():])
+    if (rippa != live["RIP"] or rsppa != live["RSP"] - 1 or
+        root != live["CR3"] or
+        not (0 < rippa < 256 * 1024 * 1024) or
+        not (0 < rsppa < 256 * 1024 * 1024)):
+        raise ValueError("active CR3 readback disagrees with live CPU registers")
     if not image_base <= live["RIP"] < image_base + image_size:
         raise ValueError("observed RIP is outside the UEFI loaded image")
     if image_base <= live["RSP"] < image_base + image_size:
         raise ValueError("observed stack unexpectedly overlaps loaded image")
+    print("KOSCHEI-K0 CR3-WALK/1 PASS active firmware PTE bytes cross-check RIP/RSP")
     print("KOSCHEI-K0 IMAGE-LIVE/1 PASS UEFI LoadedImage bounds match CPU RIP")
     print("KOSCHEI-K0 CPU-LIVE/1 PASS real register values validated; "
           "firmware-owned CR3 only")
