@@ -136,7 +136,7 @@ fn check(chain: List<Grant>, right: String, epoch: Int, revoked: List<String>) -
                 if grant.depth != 0 || grant.parent != secure.zero_digest() {
                     return denied("chain does not start at a root", index)
                 }
-            }
+            },
             Some(parent) => {
                 if grant.parent != parent.grant_digest || grant.depth != parent.depth + 1 {
                     return denied("broken chain", index)
@@ -149,7 +149,7 @@ fn check(chain: List<Grant>, right: String, epoch: Int, revoked: List<String>) -
                 if grant.not_after > parent.not_after {
                     return denied("outlives its parent", index)
                 }
-            }
+            },
         }
         if revoked.contains(grant.grant_digest) {
             return denied("revoked", index)
