@@ -9,6 +9,7 @@ from verify_cpu_pf_serial import (
     EXPECTED_TAIL,
     VALID_LIVE_FIXTURE,
     VALID_IMAGE_FIXTURE,
+    VALID_WALK_FIXTURE,
     validate_live_register_record,
     verify,
 )
@@ -27,7 +28,8 @@ class LiveCpuAndRealPfEvidenceTests(unittest.TestCase):
 
     def valid(self) -> bytes:
         return (b"OVMF UART prefix\r\n" + EXPECTED_PREFIX +
-                VALID_IMAGE_FIXTURE + VALID_LIVE_FIXTURE + EXPECTED_TAIL)
+                VALID_IMAGE_FIXTURE + VALID_WALK_FIXTURE +
+                VALID_LIVE_FIXTURE + EXPECTED_TAIL)
 
     def test_valid_synthetic_fixture_only_for_verifier(self):
         self.assert_receipt(self.valid(), True)
@@ -69,6 +71,24 @@ class LiveCpuAndRealPfEvidenceTests(unittest.TestCase):
             with self.subTest(after=after):
                 self.assertIn(prior, original)
                 self.assert_receipt(original.replace(prior, after), False)
+
+    def test_real_cr3_table_bytes_must_match_cpu_observation(self):
+        valid = self.valid()
+        substitutions = (
+            (b"RIPPA=0000000000400200", b"RIPPA=0000000000401200"),
+            (b"RSPPA=0000000000600fef", b"RSPPA=0000000000600ff0"),
+            (b"CR3=0000000000800000", b"CR3=0000000000810000"),
+            (b"RIPPA=0000000000400200", b"RIPPA=0000000000000000"),
+            (b"RSPPA=0000000000600fef", b"RSPPA=0000000010600fef"),
+            (b"KOSCHEI-KERNEL K0 CR3-WALK/1",
+             b"KOSCHEI-KERNEL K0 CR3-WALK/2"),
+        )
+        for old, new in substitutions:
+            with self.subTest(changed=new):
+                self.assertIn(old, valid)
+                self.assert_receipt(valid.replace(old, new), False)
+        self.assert_receipt(valid.replace(VALID_WALK_FIXTURE, b""), False)
+        self.assert_receipt(VALID_WALK_FIXTURE + valid, False)
 
     def test_uefi_loaded_image_bounds_are_exact_and_bind_real_rip(self):
         valid = self.valid()
