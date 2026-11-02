@@ -151,6 +151,28 @@ releases them. K0.3 uses the mapping left by firmware, NOT a Koschei-owned CR3.
   protocol provenance, buffer integrity and ownership pinning are still
   required. This stage neither writes CR3 nor exercises new mappings.
 
+## Actual guest CPU register snapshot (isolated QEMU image only)
+
+- Before the real #PF diagnostic installs its temporary IDT, the guest
+  disables maskable interrupts and **reads** CR0, CR3, CR4, IA32_EFER,
+  RFLAGS, CS, GDTR, IDTR, RIP and RSP, and verifies CPUID NX support.
+  This is implemented in \`live_cpu_observation.h\`, included **only**
+  in \`BOOTX64-PF.EFI\`, never the release or ordinary QEMU binary.
+- A fail-closed predicate checks CR0.PE/PG/WP, CR4.PAE, no LA57/PCIDE,
+  EFER.LME/LMA/NXE, ring 0, IF clear, aligned existing CR3, canonical
+  captured addresses and descriptor-table presence.
+- The guest emits the **observed 64-bit values** as one UART record before
+  its hardware CR2/#PF record. The serial verifier parses each exact-width
+  field and rechecks register invariants; adversarial fixtures reject
+  missing/duplicate records, tampered bits, malformed values and mismatch.
+  A real OVMF exit code 33 and both UART receipts are required.
+- **Limits:** these are QEMU CPU observations, not cryptographic
+  attestations or independently trusted inputs. A valid register mode
+  cannot prove that live RIP/RSP/GDTR/IDTR virtual addresses map to the
+  physical pages proposed by the new-CR3 manifest. No owned CR3 is
+  installed, no firmware mapping provenance is proven by register reads,
+  and no memory isolation guarantee follows.
+
 ## Next executable acceptance requirements
 1. Capture exact page ownership and reserve the loaded PE image, executing
    stack, firmware runtime ranges, ACPI, MMIO/framebuffer and page-table
