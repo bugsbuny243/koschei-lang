@@ -49,11 +49,13 @@ static int k0_owned_tables_dryrun_verify(
                 return 0;
     }
 
-    /* Reconstruct the full expected page-table data separately so mutating
-     * both the proposed model and the real frame cannot forge acceptance.
-     * Local 16 KiB reference is host/QEMU diagnostic only, not production ISR.
+    /* Reconstruct all 2048 entries separately so forging both the proposed
+     * model and physical frames does not pass. Statically allocated scratch
+     * avoids __chkstk/memset in the freestanding Windows-x64 EFI image.
+     * Diagnostic only, single-threaded and non-reentrant by design.
      */
-    K0_VM_TABLE_MODEL expected = {0};
+    static K0_VM_TABLE_MODEL expected;
+    expected.initialized = 0;
     if (!k0_vm_tables_build(&expected, plan, pool,
                              candidate->table_phys))
         return 0;
