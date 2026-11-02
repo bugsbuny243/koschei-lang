@@ -26,9 +26,9 @@ def h(tag: str) -> str:
 
 def record_digest(parts: list[str]) -> str:
     context = "koschei.matrix.horizon.proposal/v1"
-    text = f"koschei.secure.digest/v1\\n{len(context)}:{context}"
+    text = f"koschei.secure.digest/v1\n{len(context)}:{context}"
     for part in parts:
-        text += f"\\n{len(part)}:{part}"
+        text += f"\n{len(part)}:{part}"
     return h(text)
 
 
@@ -71,7 +71,7 @@ def decision_source(v: str, a: str, matrix: str, hara: str,
             f'{epoch}, "{h("move")}"))}}")'
         )
     lines += ["}", ""]
-    return "\\n".join(lines)
+    return "\n".join(lines)
 
 
 class MatrixHorizonLibraryTests(unittest.TestCase):
