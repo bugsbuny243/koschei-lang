@@ -235,6 +235,40 @@ releases them. K0.3 uses the mapping left by firmware, NOT a Koschei-owned CR3.
   table structure or inaccessible table frames fail the QEMU
   diagnostic, not silently count as success.
 
+## Koschei-owned physical paging-table byte preflight (NOT a CR3 write)
+
+- In the isolated QEMU diagnostic only, six separately claimed conventional
+  pages are reserved in the existing 16-page pool: PML4/PDPT/PD/PT and
+  two distinct data frames. The code constructs a deliberately narrow
+  four-level high-half plan: writable+NX data and read-only executable
+  code, both supervisor-only, with adjacent and top-guard leaves absent.
+- Actual physical frame bytes are materialized under the **existing
+  firmware identity mapping**. `owned_tables_dryrun.h` independently
+  rebuilds the expected hierarchy and compares **every one of 2048**
+  physical PTE slots and the proposed model, then reuses the read-only
+  walker on those bytes. It verifies both leaf translations, hierarchical
+  W^X/NX/supervisor restrictions, and denies low/guard/adjacent pages.
+- The QEMU probe also fills and reads the two claimed physical data pages,
+  scrubs every byte of all six pages and checks zero readback before
+  releasing the ledger claims. It compares CR3 before and after the
+  physical readback. A unique `OWNED-TABLES/1` UART record is required
+  alongside CPU, firmware CR3 walk, image, and real CPU #PF receipts.
+- Negative native C and UART fixtures reject forged PTEs, physical
+  corruption even outside referenced entries, W+X, unexpected aliases,
+  mismatched permissions, missing claims and allocator epoch ABA,
+  reader denials, absent/altered/duplicated UART records. Dedicated
+  QEMU CI must run both the host tests and real OVMF diagnostic.
+- **Limits:** this constructed hierarchy is **not a runnable kernel
+  address space**: it does not map the executing UEFI PE image,
+  live stack, installed IDT/GDT, trampolines or runtime/MMIO needs.
+  Physical frames are erased and released, not pinned for future use;
+  the firmware still owns CR3. Reading PTE bytes as data does not
+  establish hardware isolation. No Koschei-owned CR3 is loaded here.
+- Before any real CR3 switch, a distinct acceptance gate must capture
+  and reserve all required physical regions, build complete transition
+  mappings, verify live table bytes and CPU register state on the same
+  ownership epoch, and prove a safe QEMU cutover with real-denial #PF.
+
 ## Next executable acceptance requirements
 1. Capture exact page ownership and reserve the loaded PE image, executing
    stack, firmware runtime ranges, ACPI, MMIO/framebuffer and page-table
