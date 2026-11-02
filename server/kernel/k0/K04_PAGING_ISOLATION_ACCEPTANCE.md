@@ -303,6 +303,38 @@ releases them. K0.3 uses the mapping left by firmware, NOT a Koschei-owned CR3.
   deliberate implementation limit. Additional live ownership and
   coverage work is mandatory before any real switch.
 
+## Three independent 2MiB windows: real physical 3-PT dryrun (diagnostic only)
+
+- `multi_pt_physical.h` creates exactly 6 claimed PML4/PDPT/PD/PT
+  physical-page references and 3 distinct claimed data frames in the
+  same 16-page conventional pool. One PML4/PDPT/PD links **three separate
+  PTs** spaced at virtual 2MiB-window offsets 0, 4MiB and 8MiB,
+  all under a single 1GiB PDPT slot.
+- Its three leaf pages are supervisor-only: RW+NX sample data,
+  RO+executable **sample bytes (never executed)**, and RO+NX
+  sample control data. The low address, top guard, intervening
+  windows and adjacent pages remain absent.
+- The dedicated OVMF diagnostic image checks the final UEFI map and
+  claimed pool provenance, fills all three physical sample pages, writes
+  **3,072 PTEs** into the six claimed physical table pages through the
+  **existing firmware identity mapping**, and verifies every physical
+  entry against separately regenerated expected data. The independent
+  four-level page walker validates all three virtual→physical samples,
+  effective W^X/NX/supervisor access, and absent guard pages.
+- All nine pages are zeroed and checked before the pool ledger releases
+  ownership. A before/after **read-only** CR3 comparison must match.
+  A new UART `MULTI-PT/1 PHYSICAL-READBACK CR3-UNCHANGED` receipt is
+  required alongside the existing CPU, image and #PF evidence.
+- Strict native C11 tests reject mutated unused PTEs, wrong NX/W
+  bits even when forged in both the proposed model and physical data,
+  duplicate/unclaimed table frames, mismatched existing CR3, stale pool
+  epoch and failing physical reads.
+- **Boundary:** this is a separate three-window *sample data-only*
+  witness. It does NOT materialize the proposed live PE+stack+GDT/IDT
+  transition manifest, does not map its running EFI instructions, does
+  not pin frames for a later switch and does NOT execute `mov %cr3`.
+  A real Koschei-owned CR3 transition and isolation proof remain open.
+
 ## Next executable acceptance requirements
 1. Capture exact page ownership and reserve the loaded PE image, executing
    stack, firmware runtime ranges, ACPI, MMIO/framebuffer and page-table
