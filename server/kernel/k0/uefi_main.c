@@ -166,12 +166,56 @@ __attribute__((noreturn)) static void stop(K_U8 code) {
 #include "cpu_pf_guest_probe.h"
 #include "live_cpu_observation.h"
 #include "live_image_residency.h"
+#include "live_cr3_inspection.h"
 
 /* Record actual CPU-supplied CR2/error in the UART receipt, not placeholders. */
 static void k0_cpu_pf_serial_hex(K_U64 value) {
     const char *digits = "0123456789abcdef";
     for (int shift = 60; shift >= 0; shift -= 4)
         serial_char(digits[(value >> (K_U32)shift) & 15ULL]);
+}
+/* QEMU profile has 256 MiB RAM and OVMF identity mappings; never use
+ * these pointer casts on a production EFI image or external hardware.
+ * Do not dereference MMIO/runtime or unknown physical frame provenance.
+ */
+typedef struct {
+    const void *map;
+    K_U64 map_size, stride;
+} K0_QEMU_TABLE_READER;
+
+static int k0_qemu_read_active_pte(void *opaque, K_U64 table,
+                                   K_U32 slot, K_U64 *value) {
+    const K0_QEMU_TABLE_READER *reader =
+        (const K0_QEMU_TABLE_READER *)opaque;
+    if (!reader || !reader->map || !value || slot >= 512U ||
+        !table || (table & (K0_PAGE_SIZE - 1)) ||
+        table > (256ULL * 1024ULL * 1024ULL - K0_PAGE_SIZE) ||
+        !k0_live_img_in_descriptor(reader->map, reader->map_size,
+            reader->stride, table, K0_EFI_LOADER_DATA_TYPE,
+            K0_EFI_BOOT_DATA_TYPE, K0_CONVENTIONAL_MEMORY) ||
+        !k0_live_img_in_descriptor(reader->map, reader->map_size,
+            reader->stride, table + K0_PAGE_SIZE - 1,
+            K0_EFI_LOADER_DATA_TYPE, K0_EFI_BOOT_DATA_TYPE,
+            K0_CONVENTIONAL_MEMORY))
+        return 0;
+    const volatile K_U64 *entries =
+        (const volatile K_U64 *)(unsigned long long)table;
+    *value = entries[slot]; /* current firmware identity mapping */
+    return 1;
+}
+
+static void k0_live_cr3_serial_receipt(const K0_CR3_I_RESULT *rip,
+                                       const K0_CR3_I_RESULT *rsp) {
+    const char *prefix = "KOSCHEI-KERNEL K0 CR3-WALK/1 RIPPA=";
+    const char *separator = " RSPPA=";
+    const char *root = " CR3=";
+    while (*prefix) serial_char(*prefix++);
+    k0_cpu_pf_serial_hex(rip->physical_address);
+    while (*separator) serial_char(*separator++);
+    k0_cpu_pf_serial_hex(rsp->physical_address);
+    while (*root) serial_char(*root++);
+    k0_cpu_pf_serial_hex(rip->root_cr3);
+    serial_line("");
 }
 static void k0_live_image_serial_receipt(K_U64 base, K_U64 size) {
     const char *prefix = "KOSCHEI-KERNEL K0 IMAGE-LIVE/1 BASE=";
@@ -348,11 +392,42 @@ EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system) {
         serial_line("KOSCHEI-KERNEL REJECT/1 IMAGE-RESIDENCY");
         stop(0x11);
     }
+    /* Inspect existing CR3 table bytes, NEVER write CR3.
+     * QEMU-only physical-table reads use the existing OVMF identity map.
+     * Fail closed if frames are outside known 256MiB RAM / final UEFI
+     * non-runtime data types. No CPU-translation attestation is claimed.
+     */
+    K0_QEMU_TABLE_READER reader = {
+        k0_map_buffer, final_map_size, final_map_stride
+    };
+    K0_CR3_I_RESULT rip_walk = {0}, rsp_walk = {0};
+    if (!k0_cr3_inspect_translation(cpu_live.cr3, cpu_live.rip,
+                                    k0_qemu_read_active_pte,
+                                    &reader, &rip_walk) ||
+        !k0_cr3_inspect_translation(cpu_live.cr3, cpu_live.rsp - 1,
+                                    k0_qemu_read_active_pte,
+                                    &reader, &rsp_walk) ||
+        rip_walk.physical_address != cpu_live.rip ||
+        rsp_walk.physical_address != cpu_live.rsp - 1 ||
+        rip_walk.effective_user || rsp_walk.effective_user ||
+        rip_walk.effective_nx ||
+        !k0_live_img_in_descriptor(k0_map_buffer, final_map_size,
+            final_map_stride, rip_walk.physical_address,
+            K0_EFI_LOADER_CODE_TYPE, K0_EFI_BOOT_CODE_TYPE,
+            K0_EFI_LOADER_CODE_TYPE) ||
+        !k0_live_img_in_descriptor(k0_map_buffer, final_map_size,
+            final_map_stride, rsp_walk.physical_address,
+            K0_EFI_LOADER_DATA_TYPE, K0_EFI_BOOT_DATA_TYPE,
+            K0_CONVENTIONAL_MEMORY)) {
+        serial_line("KOSCHEI-KERNEL REJECT/1 CR3-WALK");
+        stop(0x11);
+    }
     if (!k0_cpu_pf_real_guest_probe()) {
         serial_line("KOSCHEI-KERNEL REJECT/1 CPU-PF");
         stop(0x11);
     }
     k0_live_image_serial_receipt(loaded_image_base, loaded_image_size);
+    k0_live_cr3_serial_receipt(&rip_walk, &rsp_walk);
     k0_cpu_live_serial_receipt(&cpu_live);
     k0_cpu_pf_serial_receipt();
 #endif
