@@ -124,6 +124,33 @@ releases them. K0.3 uses the mapping left by firmware, NOT a Koschei-owned CR3.
   checked QEMU transition and denied-access receipt. No change to
   `uefi_main.c` or its boot-path CR3 instruction is made by this stage.
 
+## Final UEFI descriptor provenance correlation (model-only)
+
+- `cr3_firmware_map_provenance.h` validates a *caller-supplied* final
+  `GetMemoryMap` snapshot with the existing strict memory-map validator
+  and an explicit `ExitBootServices` success argument. The candidate
+  allocator's entire 16-page range must match the planner's **same**
+  conventional-memory descriptor selection.
+- The 4 claimed CR3 structure frames must each fall within conventional
+  memory. Critical IMAGE reservations must lie wholly inside a single
+  `EfiLoaderCode` or `EfiBootServicesCode` descriptor; STACK, IDT and
+  GDT reservations must lie inside `EfiLoaderData` or
+  `EfiBootServicesData` descriptors. Runtime-marked descriptors, ACPI,
+  MMIO, missing pages, split reservations, overlaps and unknown types
+  fail closed. This is additionally conditioned on the existing synthetic
+  CR3 manifest preflight.
+- `test_cr3_firmware_map_provenance.c` exercises legal descriptor
+  types and hostile type substitutions, relocation, truncation, runtime
+  flags, spoofed code addresses, stale allocator epochs and overlapping
+  global maps; the dedicated K0 CI compiles and executes the test under
+  C11 strict warnings.
+- **Limit:** a matching descriptor type does *not* attest that a
+  caller-declared physical address actually contains the loaded PE image,
+  current stack or active IDT/GDT. The `exit_boot_services_succeeded`
+  flag and snapshot are inputs; independent live CPU reads, loaded-image
+  protocol provenance, buffer integrity and ownership pinning are still
+  required. This stage neither writes CR3 nor exercises new mappings.
+
 ## Next executable acceptance requirements
 1. Capture exact page ownership and reserve the loaded PE image, executing
    stack, firmware runtime ranges, ACPI, MMIO/framebuffer and page-table
