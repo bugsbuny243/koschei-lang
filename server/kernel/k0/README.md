@@ -66,10 +66,13 @@ KOSCHEI_K0_SERIAL_VERIFIER="$PWD/server/kernel/k0/verify_cpu_pf_serial.py" \
   bash server/kernel/k0/qemu_smoke.sh /tmp/k0-evidence/cpu-pf
 ```
 
-The second test requires a real QEMU debug-exit code and the exact ten-record
-UART transcript: live CPU CR0/CR3/CR4/EFER/GDTR/IDTR/RFLAGS/CS/RIP/RSP
-values followed by the hardware CR2/error code. The verifier checks both
-records and rejects forged or incomplete register prerequisites. Failed, absent or
+The second test requires a real QEMU debug-exit code and the exact
+eleven-record UART transcript. It now contains a firmware
+`EFI_LOADED_IMAGE_PROTOCOL` image-base/image-size record, captured CPU
+CR0/CR3/CR4/EFER/GDTR/IDTR/RFLAGS/CS/RIP/RSP values, and the hardware
+CR2/error-code record. The diagnostic checks observed RIP and stack
+residency against the final UEFI memory map. The verifier rejects
+missing, altered or duplicated records. No owned CR3 is activated. Failed, absent or
 unhandled faults are rejected; the release image never enables this probe.
 
 ## Honest limits
