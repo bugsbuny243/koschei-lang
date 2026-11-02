@@ -156,8 +156,8 @@ releases them. K0.3 uses the mapping left by firmware, NOT a Koschei-owned CR3.
 - Before the real #PF diagnostic installs its temporary IDT, the guest
   disables maskable interrupts and **reads** CR0, CR3, CR4, IA32_EFER,
   RFLAGS, CS, GDTR, IDTR, RIP and RSP, and verifies CPUID NX support.
-  This is implemented in \`live_cpu_observation.h\`, included **only**
-  in \`BOOTX64-PF.EFI\`, never the release or ordinary QEMU binary.
+  This is implemented in `live_cpu_observation.h`, included **only**
+  in `BOOTX64-PF.EFI`, never the release or ordinary QEMU binary.
 - A fail-closed predicate checks CR0.PE/PG/WP, CR4.PAE, no LA57/PCIDE,
   EFER.LME/LMA/NXE, ring 0, IF clear, aligned existing CR3, canonical
   captured addresses and descriptor-table presence.
