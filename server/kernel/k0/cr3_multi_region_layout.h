@@ -169,4 +169,35 @@ static int k0_mr_build(const K0_CR3_PROPOSAL *p, const K0_PAGE_POOL *pool,
     }
     return 1;
 }
+
+/* Host-only exact-byte integrity check. A separate model is independently
+ * regenerated from the manifest/UEFI map/epoch and compared to all 512 slots
+ * in every table. Not a reader of real CPU-visible physical frames.
+ * Single-threaded static scratch avoids allocating a large stack object.
+ */
+static int k0_mr_verify(const K0_MR_LAYOUT *observed,
+                         const K0_CR3_PROPOSAL *p, const K0_PAGE_POOL *pool,
+                         const void *map, K_U64 bytes, K_U64 stride,
+                         K_U32 version, int exited, const K_U64 *frames,
+                         K_U32 frame_count) {
+    static K0_MR_LAYOUT expected;
+    if (!observed || !observed->ready ||
+        !k0_mr_build(p, pool, map, bytes, stride, version, exited,
+                     frames, frame_count, &expected) ||
+        observed->root != expected.root ||
+        observed->frame_count != expected.frame_count ||
+        observed->pt_count != expected.pt_count ||
+        observed->mapped_pages != expected.mapped_pages ||
+        observed->pool_epoch != expected.pool_epoch)
+        return 0;
+    for (K_U32 i = 0; i < frame_count; ++i) {
+        if (observed->tables[i].physical_frame !=
+            expected.tables[i].physical_frame) return 0;
+        for (K_U32 j = 0; j < 512; ++j) {
+            if (observed->tables[i].entries[j] !=
+                expected.tables[i].entries[j]) return 0;
+        }
+    }
+    return 1;
+}
 #endif
