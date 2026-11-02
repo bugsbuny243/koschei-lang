@@ -79,6 +79,11 @@ jobs:
           clang -std=c11 -O2 -Wall -Wextra -Werror \
             server/kernel/k0/test_live_cr3_inspection.c -o /tmp/koschei-k0-evidence/cr3-table-byte-walk-tests
           /tmp/koschei-k0-evidence/cr3-table-byte-walk-tests
+      - name: Verify Koschei-owned physical paging-frame bytes (NO CR3 WRITE)
+        run: |
+          clang -std=c11 -O2 -Wall -Wextra -Werror \
+            server/kernel/k0/test_owned_tables_dryrun.c -o /tmp/koschei-k0-evidence/owned-physical-table-tests
+          /tmp/koschei-k0-evidence/owned-physical-table-tests
       - name: Test predicted page-fault and access-denial model (NOT CPU faults)
         run: |
           clang -std=c11 -O2 -Wall -Wextra -Werror \
