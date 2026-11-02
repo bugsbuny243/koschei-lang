@@ -90,6 +90,8 @@ int main(void) {
     assert(layout.ready && layout.frame_count == 6 &&
            layout.pt_count == 3 && layout.mapped_pages == 12 &&
            layout.root == frames[0] && layout.pool_epoch == pool.epoch);
+    assert(k0_mr_verify(&layout, &proposal, &pool, memory,
+                         MAP_BYTES, MAP_STRIDE, 1, 1, frames, 6));
     check(0x400000ULL, 0x400000ULL, 0, 0);
     check(0x401fffULL, 0x401fffULL, 0, 0);
     check(0x600000ULL, 0x600000ULL, 1, 1);
@@ -126,6 +128,14 @@ int main(void) {
     K_U64 original = layout.tables[3].entries[0];
     layout.tables[3].entries[0] = (original | K0_MR_RW) | K0_MR_NX;
     check(0x400000ULL, 0x400000ULL, 1, 1);
+    assert(!k0_mr_verify(&layout, &proposal, &pool, memory,
+                          MAP_BYTES, MAP_STRIDE, 1, 1, frames, 6));
+    layout.tables[3].entries[0] = original;
+    assert(k0_mr_verify(&layout, &proposal, &pool, memory,
+                         MAP_BYTES, MAP_STRIDE, 1, 1, frames, 6));
+    layout.tables[0].entries[400] |= 1ULL;
+    assert(!k0_mr_verify(&layout, &proposal, &pool, memory,
+                          MAP_BYTES, MAP_STRIDE, 1, 1, frames, 6));
     assert(attempt(&proposal, frames, 6, memory, 1));
     check(0x400000ULL, 0x400000ULL, 0, 0);
 
