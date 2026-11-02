@@ -47,7 +47,14 @@ static int k0_live_snapshot_guest(K0_LIVE_CPU_STATE *out) {
     __asm__ __volatile__("sgdt %0" : "=m"(out->gdtr));
     __asm__ __volatile__("sidt %0" : "=m"(out->idtr));
     __asm__ __volatile__("movq %%rsp, %0" : "=r"(out->rsp));
-    out->rip = (uint64_t)(uintptr_t)&k0_live_snapshot_guest;
+    /* A RIP-relative LEA observes this actual instruction site. Merely
+     * storing &k0_live_snapshot_guest would be a static symbol address,
+     * not a captured instruction pointer.
+     */
+    __asm__ __volatile__(
+        "leaq 1f(%%rip), %0\n"
+        "1:\n"
+        : "=r"(out->rip));
     return 1;
 }
 
