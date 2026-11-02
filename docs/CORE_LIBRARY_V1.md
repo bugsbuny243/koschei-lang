@@ -178,10 +178,51 @@ fn main() {
 - Re-deriving digests costs `ks run` steps (see `--max-steps`); native
   binaries are not metered.
 
+### Security principles: `odin`, `sokovia`, `quicksilver`
+
+Three modules that write well-known security principles down as decisions.
+None has a Python guardian; an independent Python model checks each over every
+case of a small domain, and the tests assert the security invariant on the
+Koschei answers. The design notes, and what these modules do not prove, are in
+[`GUARDIAN_PRINCIPLES_V1.md`](GUARDIAN_PRINCIPLES_V1.md).
+
+| Module | Records | Functions |
+|---|---|---|
+| `odin` | `Grant`, `GrantVerdict` | `root`, `derive`, `check`, `seal`, `check_sealed`, `is_canonical`, `issue`, `max_depth` |
+| `sokovia` | `Approval`, `QuorumVerdict` | `action`, `decide` |
+| `quicksilver` | `Spend`, `VelocityVerdict` | `check` |
+
+- **`odin`** is the seL4 capability derivation tree: a grant is derived only
+  narrower (a subset of rights, a lifetime that ends no later, at most
+  `max_depth()` levels), `check` walks the whole chain from the root and
+  re-checks every link, so revoking a grant revokes its subtree and a
+  hand-built widening link is refused. `seal` binds a grant to a key with
+  `hmac_sha256`.
+- **`sokovia`** is separation of privilege: an action digest needs
+  `threshold` distinct eligible approvers other than the requester, and an
+  approval counts only for the exact digest it names.
+- **`quicksilver`** is a velocity limit: at most `limit` units in any
+  `window` epochs, computed without overflow. With `amount` 1 it is a
+  supervisor's restart intensity.
+
+```ks
+import odin
+
+fn main() {
+    let api = odin.root("exchange", ["read", "trade", "withdraw"], 100) or return
+    let bot = odin.derive(api, "bot", ["read", "trade"], 50) or return
+    let viewer = odin.derive(bot, "viewer", ["read"], 40) or return
+    let ok = odin.check([api, bot, viewer], "read", 10, [])
+    let revoked = odin.check([api, bot, viewer], "read", 10, [bot.grant_digest])
+    println("{ok.allowed} {revoked.allowed} {revoked.reason}")
+}
+```
+
 ## Resolution and security rules
 
 - Only the names registered in `CORE_LIBRARY_MODULES_V1` (`captain_marvel`,
-  `hela`, `list`, `morag`, `secure`, `strange`, `text`, `wanda`, `xandar`) are
+  `hela`, `list`, `morag`, `odin`, `quicksilver`, `secure`, `sokovia`,
+  `strange`, `text`, `wanda`, `xandar`) are
   library modules. A stray `.ks` file placed in the library directory is never
   importable by user code.
 - A project file with the same name as a library module (for example a

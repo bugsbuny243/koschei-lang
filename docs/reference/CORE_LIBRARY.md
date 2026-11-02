@@ -9,7 +9,10 @@ Every module is written in Koschei and compiled with the program that imports it
 | [`hela`](#hela) | 4 | 1 |
 | [`list`](#list) | 10 | 0 |
 | [`morag`](#morag) | 2 | 3 |
+| [`odin`](#odin) | 9 | 2 |
+| [`quicksilver`](#quicksilver) | 1 | 2 |
 | [`secure`](#secure) | 5 | 0 |
+| [`sokovia`](#sokovia) | 2 | 2 |
 | [`strange`](#strange) | 2 | 2 |
 | [`text`](#text) | 13 | 0 |
 | [`wanda`](#wanda) | 5 | 1 |
@@ -231,6 +234,129 @@ Builds the verdict of `check`; public only because Koschei v1 has no private fun
 fn check(identity: String, today: Int, windows: List<SupportWindow>, backports: List<MaintainerBackport>) -> Result<SupportVerdict, Error>
 ```
 
+## odin
+
+Capability derivation, after the seL4 capability derivation tree. A root grant names a holder, a set of rights and the last epoch it is good for. Every other grant is derived from one: never wider (a subset of the parent's rights), never longer-lived (it ends no later than the parent) and one level deeper, at most `max_depth()` levels. `check` honours a grant only through its whole chain back to the root and re-checks each link, so a hand-built chain that widens is refused (complete mediation), and revoking one grant revokes every grant derived from it.
+
+Grants are decision values over application data (API keys, delegated roles); they confer no Koschei runtime authority, which only travels as capability tokens. A digest is not a signature: anyone can build a canonical grant. `seal` binds a grant to a secret key with HMAC-SHA256 and `check_sealed` refuses a chain with a link the key did not seal.
+
+### struct `Grant`
+
+```ks
+parent: String
+holder: String
+rights: List<String>
+not_after: Int
+depth: Int
+grant_digest: String
+```
+
+### struct `GrantVerdict`
+
+```ks
+allowed: Bool
+reason: String
+failed_link: Option<Int>
+```
+
+### `odin.max_depth`
+
+```ks
+fn max_depth() -> Int
+```
+
+The deepest derivation `derive` accepts; a root has depth 0.
+
+### `odin.issue`
+
+```ks
+fn issue(parent: String, holder: String, rights: List<String>, not_after: Int, depth: Int) -> Result<Grant, Error>
+```
+
+Builds the canonical grant for these fields; `root` and `derive` call it. Public only because Koschei v1 has no private functions; it checks the field shapes, not the derivation rules.
+
+### `odin.root`
+
+```ks
+fn root(holder: String, rights: List<String>, not_after: Int) -> Result<Grant, Error>
+```
+
+### `odin.derive`
+
+```ks
+fn derive(parent: Grant, holder: String, rights: List<String>, not_after: Int) -> Result<Grant, Error>
+```
+
+A grant for `holder` derived from `parent`: only rights the parent holds, a lifetime that ends no later and one level deeper.
+
+### `odin.is_canonical`
+
+```ks
+fn is_canonical(grant: Grant) -> Bool
+```
+
+True when `grant` is exactly what `issue` returns for its fields. A digest is not a signature; this detects edited or hand-built grants, not who issued them.
+
+### `odin.denied`
+
+```ks
+fn denied(reason: String, link: Int) -> GrantVerdict
+```
+
+### `odin.check`
+
+```ks
+fn check(chain: List<Grant>, right: String, epoch: Int, revoked: List<String>) -> GrantVerdict
+```
+
+Whether the last grant of `chain` (root first) allows `right` at `epoch`. Every link must be canonical, name its predecessor, be one level deeper, hold no right its predecessor lacks, end no later, be absent from `revoked` (grant digests) and not have expired; the last link must hold `right`. Links are checked from the root, so a revoked ancestor denies its whole subtree.
+
+### `odin.seal`
+
+```ks
+fn seal(grant: Grant, key: Bytes) -> String
+```
+
+The lowercase hex HMAC-SHA256 of the grant digest under `key`.
+
+### `odin.check_sealed`
+
+```ks
+fn check_sealed(chain: List<Grant>, seals: List<String>, key: Bytes, right: String, epoch: Int, revoked: List<String>) -> GrantVerdict
+```
+
+`check`, after requiring that `key` sealed every link: `seals[i]` belongs to `chain[i]` and is compared in constant time.
+
+## quicksilver
+
+Velocity limits: at most `limit` units in any `window` epochs. A budget that counts only the size of each action still lets an attacker drain everything in many small, fast steps; a velocity limit bounds how much can leave per unit of time, so the damage done before anyone reacts is bounded too. The same rule with `amount` 1 is a supervisor's restart intensity (Erlang/OTP: at most N restarts in T, then stop and escalate).
+
+History is data: this module decides over it and confers no authority. No arithmetic here can overflow: epochs are non-negative, so `now - epoch` stays in range, and once the window holds more than `limit` the check stops adding.
+
+### struct `Spend`
+
+```ks
+epoch: Int
+amount: Int
+```
+
+### struct `VelocityVerdict`
+
+```ks
+allowed: Bool
+reason: String
+spent_in_window: Int
+remaining: Int
+```
+
+### `quicksilver.check`
+
+```ks
+fn check(history: List<Spend>, now: Int, window: Int, limit: Int, amount: Int) -> Result<VelocityVerdict, Error>
+```
+
+Whether `amount` more units at epoch `now` keep the spends in the window `(now - window, now]` within `limit`. A spend before epoch 0 or after `now`, or a negative amount, is an Error: the history is not trustworthy.
+
 ## secure
 
 Written in Koschei over the kernel `sha3_256` digest, which delegates to an audited host implementation: Koschei implements no cryptographic primitive. Digests are self-describing ("sha3-256:" + 64 lowercase hex characters), so a later algorithm can live beside this one without ambiguity.
@@ -272,6 +398,44 @@ fn is_digest(value: String) -> Bool
 ```
 
 True when `value` has the shape this module produces.
+
+## sokovia
+
+Separation of privilege: an action runs only after `threshold` distinct approvers agreed to it (Saltzer and Schroeder; the two-person rule). An approval names the exact action digest, so an approval of one action never counts for another, however similar it looks ("what you approve is what runs"). The requester cannot approve their own action, an approver counts once however often they approve, and only the eligible approvers count.
+
+Approvals are data: this module decides over them and confers no authority. It cannot tell who wrote an approval; the application must authenticate each one (for example with `hmac_sha256` under a key only its approver's session holds) before passing it in.
+
+### struct `Approval`
+
+```ks
+action: String
+approver: String
+```
+
+### struct `QuorumVerdict`
+
+```ks
+approved: Bool
+reason: String
+counted: List<String>
+needed: Int
+```
+
+### `sokovia.action`
+
+```ks
+fn action(kind: String, fields: List<String>) -> Result<String, Error>
+```
+
+The digest that names one action: its kind and every field that changes what it does (amount, destination, account...). Approvals refer to it.
+
+### `sokovia.decide`
+
+```ks
+fn decide(action: String, requester: String, eligible: List<String>, threshold: Int, approvals: List<Approval>) -> Result<QuorumVerdict, Error>
+```
+
+Whether `approvals` reach `threshold` distinct eligible approvers, other than `requester`, for exactly `action`. A threshold the eligible approvers other than the requester could never reach is an Error, not a denial.
 
 ## strange
 
