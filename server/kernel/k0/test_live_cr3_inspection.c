@@ -67,7 +67,7 @@ int main(void) {
     setup(); frames[3][0] = 0; reject(va, 0x1000);
     setup(); frames[0][0] |= C_PS; reject(va, 0x1000);
     setup(); frames[2][2] = 0xdead000 | C_PRESENT; reject(va, 0x1000);
-    setup(); frames[1][0] = 0x3001; reject(va, 0x1000); /* non-present */
+    setup(); frames[1][0] = 0x3000; reject(va, 0x1000); /* non-present */
     setup(); frames[2][2] = 0x0 | C_PRESENT | C_RW;
     reject(va, 0x1000);
 
