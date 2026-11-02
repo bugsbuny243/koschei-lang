@@ -65,7 +65,13 @@ static int k0_live_image_residency_preflight(
     const K_U64 pool_end = claimed_pool_base + K0_PLAN_PAGES * K0_PAGE_SIZE;
     if ((captured_rsp - 1 >= claimed_pool_base &&
          captured_rsp - 1 < pool_end) ||
-        (image_base < pool_end && claimed_pool_base < image_base + image_size))
+        (image_base < pool_end && claimed_pool_base < image_base + image_size) ||
+        !k0_live_img_in_descriptor(map, map_size, stride,
+                                  claimed_pool_base, K0_CONVENTIONAL_MEMORY,
+                                  K0_CONVENTIONAL_MEMORY, K0_CONVENTIONAL_MEMORY) ||
+        !k0_live_img_in_descriptor(map, map_size, stride,
+                                  pool_end - 1, K0_CONVENTIONAL_MEMORY,
+                                  K0_CONVENTIONAL_MEMORY, K0_CONVENTIONAL_MEMORY))
         return 0;
 
     /* Only verify observed code/stack locations, NOT every loaded-image
