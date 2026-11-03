@@ -150,6 +150,33 @@ The host `matrix_horizon_fence_v1.py` also rejects a tombstoned
 **successor** Hara inside the same SQLite transaction, preventing an
 old Hara's resurrection after a later Matrix transition.
 
+### Matrix universe: `matrix_portal` (pure proof proposal, NOT authority)
+
+`import matrix_portal` binds a source and destination `RealityCommitment`
+from `wanda` with the payload's content digest, the requested `effect`,
+the exact target digest and a proposed epoch. Both Wanda records must be
+canonical before `matrix_portal.propose` returns
+`PortalTransitProposal`; source and destination Realities must differ,
+and every effect and digest must be explicit.
+
+`matrix_portal.matches` independently **recreates the entire proposal**
+from caller-supplied Wanda commitments and values; altered commitments,
+payload, effect, target, epoch or manually edited proposal fields are
+rejected. Both functions are pure, need no capabilities and perform no
+network access, transfer, execution or authorization.
+
+The Python guardian `matrix_portal_transit_v1.py` and Koschei module
+agree on cross-Reality eligibility conditions, but their digest **byte
+encodings differ deliberately**: the Koschei version uses the domain
+separated `secure.digest` text contract. They are not interchangeable
+wire proofs.
+
+**Remaining external boundaries:** authenticating the authoritative
+source/destination state, validating any granted effect, preventing
+historical replay, verifying a destination's right to accept a message
+and durably recording transit. Neither a self-consistent digest nor
+`matches` proves these properties.
+
 ### Marvel universe: `captain_marvel`, `hela`, `strange`, `wanda`, `xandar`, `morag`
 
 The first library universe modules written in Koschei. The first four port a
@@ -207,7 +234,7 @@ fn main() {
 ## Resolution and security rules
 
 - Only the names registered in `CORE_LIBRARY_MODULES_V1` (`captain_marvel`,
-  `hela`, `list`, `matrix_horizon`, `morag`, `secure`, `strange`, `text`,
+  `hela`, `list`, `matrix_horizon`, `matrix_portal`, `morag`, `secure`, `strange`, `text`,
   `wanda`, `xandar`) are
   library modules. A stray `.ks` file placed in the library directory is never
   importable by user code.
