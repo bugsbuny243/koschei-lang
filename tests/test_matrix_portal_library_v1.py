@@ -114,7 +114,8 @@ fn main() {
     let da = secure.hash("destination-authority") or return
     let source = wanda.commit("AEGIS", 4, ss, sa, secure.zero_digest()) or return
     let destination = wanda.commit("FORGE", 9, ds, da, secure.zero_digest()) or return
-    let changed = wanda.commit("AEGIS", 4, secure.hash("changed-source") or return, sa, secure.zero_digest()) or return
+    let changed_state = secure.hash("changed-source") or return
+    let changed = wanda.commit("AEGIS", 4, changed_state, sa, secure.zero_digest()) or return
     let payload = secure.hash("payload") or return
     let target = secure.hash("target") or return
     let other_payload = secure.hash("other-payload") or return
@@ -167,7 +168,8 @@ fn main() {
     println(accepted(matrix_portal.propose(forged_source, destination, payload, "compile", target, 11)))
     println(matrix_portal.matches(proof, forged_source, destination, payload, "compile", target, 11))
     let mut forged_dest = destination
-    forged_dest.state_digest = secure.hash("other-state") or return
+    let other_state = secure.hash("other-state") or return
+    forged_dest.state_digest = other_state
     println(accepted(matrix_portal.propose(source, forged_dest, payload, "compile", target, 11)))
     println(matrix_portal.matches(proof, source, forged_dest, payload, "compile", target, 11))
     println(accepted(matrix_portal.propose(source, destination, payload, "compile", target, 11)))
