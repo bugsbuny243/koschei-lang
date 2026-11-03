@@ -36,6 +36,7 @@ CORE_LIBRARY_MODULES_V1: tuple[str, ...] = (
     "hela",
     "list",
     "matrix_horizon",
+    "matrix_portal",
     "morag",
     "secure",
     "strange",
