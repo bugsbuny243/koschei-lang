@@ -1,3 +1,4 @@
+from dataclasses import replace
 import pytest
 
 from koschei.matrix_portal_transit_v1 import (
@@ -68,3 +69,53 @@ def test_portal_is_not_execution_or_authority():
     assert not hasattr(proof, "execute")
     assert not hasattr(proof, "grant")
     assert not hasattr(proof, "send")
+
+
+def test_forged_portal_digest_and_copied_record_fields_are_rejected():
+    src = reality("AEGIS", 4, b"s", b"a")
+    dst = reality("FORGE", 9, b"d", b"b")
+    proof = create_portal_transit_proof_v1(
+        source=src, destination=dst, payload_digest=b"p" * 32,
+        effect="compile", target_digest=b"t" * 32, epoch=11,
+    )
+    common = dict(source=src, destination=dst, payload_digest=b"p" * 32,
+                  effect="compile", target_digest=b"t" * 32, epoch=11)
+    assert portal_matches_reality_v1(proof, **common)
+    assert not portal_matches_reality_v1(
+        replace(proof, transit_digest=b"x" * 32), **common)
+    assert not portal_matches_reality_v1(
+        replace(proof, effect="execute"), **common)
+    assert not portal_matches_reality_v1(
+        replace(proof, epoch=12), **common)
+    assert not portal_matches_reality_v1(
+        replace(proof, payload_digest=b"x" * 32), **common)
+
+    # The Reality record is an ordinary dataclass: a copied old checksum
+    # after editing a field must not pass as a new canonical commitment.
+    forged_source = replace(src, state_digest=b"z" * 32)
+    with pytest.raises(MatrixPortalTransitError, match="canonical"):
+        create_portal_transit_proof_v1(
+            source=forged_source, destination=dst,
+            payload_digest=b"p" * 32, effect="compile",
+            target_digest=b"t" * 32, epoch=11)
+    assert not portal_matches_reality_v1(
+        proof, **{**common, "source": forged_source})
+    forged_destination = replace(dst, epoch=10)
+    assert not portal_matches_reality_v1(
+        proof, **{**common, "destination": forged_destination})
+
+
+def test_portal_proof_is_integrity_not_authority_or_issuer_signature():
+    src = reality("AEGIS", 4, b"s", b"a")
+    dst = reality("FORGE", 9, b"d", b"b")
+    proof = create_portal_transit_proof_v1(
+        source=src, destination=dst, payload_digest=b"p" * 32,
+        effect="compile", target_digest=b"t" * 32, epoch=11)
+    # Anyone who has the inputs can re-derive this checksum. Approval,
+    # provenance and durable replay fencing must be enforced elsewhere.
+    repeated = create_portal_transit_proof_v1(
+        source=src, destination=dst, payload_digest=b"p" * 32,
+        effect="compile", target_digest=b"t" * 32, epoch=11)
+    assert repeated == proof
+    assert not hasattr(proof, "signature")
+    assert not hasattr(proof, "authorization")
