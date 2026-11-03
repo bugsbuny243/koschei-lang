@@ -10,9 +10,11 @@ on:
       - main
       - production/runtime-variant-parity-v1
       - 'staging/k0-*'
+      - 'staging/library-*'
   pull_request:
     branches:
       - main
+      - 'staging/library-*'
   workflow_dispatch:
 
 concurrency:
