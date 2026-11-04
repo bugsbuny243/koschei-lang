@@ -46,6 +46,26 @@ releases them. K0.3 uses the mapping left by firmware, NOT a Koschei-owned CR3.
   The model checks the snapshot pool mutation epoch, so stale table models
   are rejected even following same-address release/reclaim (ABA).
 
+## K0.4 interrupt preflight added (model only)
+
+- `idt_fault_model.h` and `test_idt_fault_model.c` validate canonical,
+  16-byte-aligned kernel ISR addresses, supervisor-only present 64-bit IDT
+  interrupt gates and the required #DF (8), #GP (13), and #PF (14) slots.
+- The **modeled** ring-0 GDT pair requires a 64-bit code descriptor and
+  separate kernel data descriptor with ring-0 privilege. An explicit
+  normalized software exception snapshot checks code selector, canonical
+  RIP/RSP, 8-byte stack alignment, RFLAGS invariant and vector-specific
+  #DF/#GP/#PF error-code contracts.
+- The #PF decoder records the **supplied/synthetic** CR2 and P/W/U/RSVD/I
+  bits. Reserved-bit violations, unsupported error encodings, unknown
+  privilege faults and noncanonical addresses are rejected. Tests compare
+  known #PF causes with **actual** `paging_walk.h` model outputs.
+- The native test is compiled with C11 `-Wall -Wextra -Werror` and is
+  included in `build.sh` and dedicated CI. Passing it proves only host
+  safety-model correctness: there is still **no installed kernel IDT,
+  actual CPU exception entry, live CR2 capture, owned CR3 transition or
+  protected address-space isolation**.
+
 ## Next executable acceptance requirements
 1. Capture exact page ownership and reserve the loaded PE image, executing
    stack, firmware runtime ranges, ACPI, MMIO/framebuffer and page-table

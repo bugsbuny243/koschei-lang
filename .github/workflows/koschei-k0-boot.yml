@@ -64,6 +64,11 @@ jobs:
           clang -std=c11 -O2 -Wall -Wextra -Werror \
             server/kernel/k0/test_paging_walk.c -o /tmp/koschei-k0-evidence/paging-walk-tests
           /tmp/koschei-k0-evidence/paging-walk-tests
+      - name: Validate K0.4 synthetic IDT and PF error-code model (NOT a CPU fault proof)
+        run: |
+          clang -std=c11 -O2 -Wall -Wextra -Werror \
+            server/kernel/k0/test_idt_fault_model.c -o /tmp/koschei-k0-evidence/idt-fault-model-tests
+          /tmp/koschei-k0-evidence/idt-fault-model-tests
       - name: Boot actual UEFI binary on QEMU OVMF and capture UART proof
         run: |
           bash server/kernel/k0/qemu_smoke.sh /tmp/koschei-k0-evidence

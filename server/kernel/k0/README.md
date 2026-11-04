@@ -23,6 +23,8 @@ writes directly to COM1 UART hardware ports without libc or host syscalls.
 - Negative Python evidence tests: python3 -m unittest discover -s server/kernel/k0 -p 'test_*.py' -v
 - Native memory-map tests: clang -std=c11 -O2 -Wall -Wextra -Werror server/kernel/k0/test_memory_map.c -o /tmp/k0-memory-test && /tmp/k0-memory-test
 - Native ledger tests: clang -std=c11 -O2 -Wall -Wextra -Werror server/kernel/k0/test_page_pool.c -o /tmp/k0-pool-test && /tmp/k0-pool-test
+- Native K0.4 GDT/IDT and exception-context preflight (synthetic only):
+  clang -std=c11 -O2 -Wall -Wextra -Werror server/kernel/k0/test_idt_fault_model.c -o /tmp/k0-idt-test && /tmp/k0-idt-test
 - Real UEFI boot: bash server/kernel/k0/qemu_smoke.sh OUTPUT_DIRECTORY
 - GitHub workflow: .github/workflows/koschei-k0-boot.yml
 

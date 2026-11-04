@@ -8,3 +8,6 @@ __pycache__/
 build/
 *.egg-info/
 dist/
+
+# Generated UEFI boot artifacts must stay outside repository root
+/BOOTX64.EFI
