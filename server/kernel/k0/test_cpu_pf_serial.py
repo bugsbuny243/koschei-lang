@@ -8,6 +8,7 @@ from verify_cpu_pf_serial import (
     EXPECTED_PREFIX,
     EXPECTED_TAIL,
     VALID_LIVE_FIXTURE,
+    VALID_IMAGE_FIXTURE,
     validate_live_register_record,
     verify,
 )
@@ -25,7 +26,8 @@ class LiveCpuAndRealPfEvidenceTests(unittest.TestCase):
                     verify(path)
 
     def valid(self) -> bytes:
-        return b"OVMF UART prefix\r\n" + EXPECTED_PREFIX + VALID_LIVE_FIXTURE + EXPECTED_TAIL
+        return (b"OVMF UART prefix\r\n" + EXPECTED_PREFIX +
+                VALID_IMAGE_FIXTURE + VALID_LIVE_FIXTURE + EXPECTED_TAIL)
 
     def test_valid_synthetic_fixture_only_for_verifier(self):
         self.assert_receipt(self.valid(), True)
@@ -35,7 +37,8 @@ class LiveCpuAndRealPfEvidenceTests(unittest.TestCase):
 
     def test_missing_live_or_fault(self):
         self.assert_receipt(EXPECTED_PREFIX + EXPECTED_TAIL, False)
-        self.assert_receipt(EXPECTED_PREFIX + VALID_LIVE_FIXTURE, False)
+        self.assert_receipt(EXPECTED_PREFIX + VALID_LIVE_FIXTURE + EXPECTED_TAIL, False)
+        self.assert_receipt(EXPECTED_PREFIX + VALID_IMAGE_FIXTURE + EXPECTED_TAIL, False)
         self.assert_receipt(self.valid().replace(EXPECTED_PF, b""), False)
 
     def test_fault_error_and_cr2_mismatch(self):
@@ -66,6 +69,26 @@ class LiveCpuAndRealPfEvidenceTests(unittest.TestCase):
             with self.subTest(after=after):
                 self.assertIn(prior, original)
                 self.assert_receipt(original.replace(prior, after), False)
+
+    def test_uefi_loaded_image_bounds_are_exact_and_bind_real_rip(self):
+        valid = self.valid()
+        pairs = (
+            (b"BASE=0000000000400000", b"BASE=0000000000600000"),
+            (b"BASE=0000000000400000", b"BASE=0000000000400001"),
+            (b"BASE=0000000000400000", b"BASE=0000000000000000"),
+            (b"SIZE=0000000000010000", b"SIZE=0000000000000000"),
+            (b"SIZE=0000000000010000", b"SIZE=0000000000000100"),
+            (b"SIZE=0000000000010000", b"SIZE=0000000002010000"),
+            (b"RSP=0000000000600ff0", b"RSP=0000000000400ff0"),
+            (b"KOSCHEI-KERNEL K0 IMAGE-LIVE/1",
+             b"KOSCHEI-KERNEL K0 IMAGE-LIVE/2"),
+        )
+        for old, new in pairs:
+            with self.subTest(changed=new):
+                self.assertIn(old, valid)
+                self.assert_receipt(valid.replace(old, new), False)
+        self.assert_receipt(valid.replace(VALID_IMAGE_FIXTURE, b""), False)
+        self.assert_receipt(VALID_IMAGE_FIXTURE + valid, False)
 
     def test_duplicate_noncanonical_or_truncated_receipt(self):
         valid = self.valid()

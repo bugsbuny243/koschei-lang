@@ -12,6 +12,14 @@ EXPECTED_PF = (
     b"KOSCHEI-KERNEL K0 CPU-PF-TRAP/1 "
     b"CR2=0000400000000000 ERROR=0000000000000000\r\n"
 )
+IMAGE_PATTERN = re.compile(
+    b"KOSCHEI-KERNEL K0 IMAGE-LIVE/1 "
+    b"BASE=([0-9a-f]{16}) SIZE=([0-9a-f]{16})\r\n"
+)
+VALID_IMAGE_FIXTURE = (
+    b"KOSCHEI-KERNEL K0 IMAGE-LIVE/1 "
+    b"BASE=0000000000400000 SIZE=0000000000010000\r\n"
+)
 FIELD_NAMES = (
     b"CR0", b"CR3", b"CR4", b"EFER", b"RFLAGS", b"CS",
     b"GDTR", b"GDTLIMIT", b"IDTR", b"IDTLIMIT", b"RIP", b"RSP",
@@ -74,7 +82,21 @@ def verify(serial_path: Path) -> None:
     index = head.rfind(EXPECTED_PREFIX)
     if index < 0 or b"KOSCHEI-KERNEL" in head[:index]:
         raise ValueError("unexpected, duplicate or missing K0 boot records")
-    validate_live_register_record(head[index + len(EXPECTED_PREFIX):])
+    record = head[index + len(EXPECTED_PREFIX):]
+    image = IMAGE_PATTERN.match(record)
+    if not image:
+        raise ValueError("missing or malformed UEFI LoadedImage boundary receipt")
+    image_base, image_size = (int(v, 16) for v in image.groups())
+    if (not image_base or image_base & 4095 or
+        not 0 < image_size <= 32 * 1024 * 1024 or
+        image_base + image_size > 2**64):
+        raise ValueError("invalid LoadedImage bounds")
+    live = validate_live_register_record(record[image.end():])
+    if not image_base <= live["RIP"] < image_base + image_size:
+        raise ValueError("observed RIP is outside the UEFI loaded image")
+    if image_base <= live["RSP"] < image_base + image_size:
+        raise ValueError("observed stack unexpectedly overlaps loaded image")
+    print("KOSCHEI-K0 IMAGE-LIVE/1 PASS UEFI LoadedImage bounds match CPU RIP")
     print("KOSCHEI-K0 CPU-LIVE/1 PASS real register values validated; "
           "firmware-owned CR3 only")
     print("KOSCHEI-K0 CPU-PF/1 PASS exact real-trap CR2/error receipt; "
