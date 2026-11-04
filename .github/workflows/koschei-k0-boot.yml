@@ -59,6 +59,11 @@ jobs:
           clang -std=c11 -O2 -Wall -Wextra -Werror \
             server/kernel/k0/test_paging_model.c -o /tmp/koschei-k0-evidence/paging-model-tests
           /tmp/koschei-k0-evidence/paging-model-tests
+      - name: Validate owned-CR3 switch manifest prerequisites (NO CR3 WRITE)
+        run: |
+          clang -std=c11 -O2 -Wall -Wextra -Werror \
+            server/kernel/k0/test_cr3_transition_preflight.c -o /tmp/koschei-k0-evidence/cr3-transition-preflight
+          /tmp/koschei-k0-evidence/cr3-transition-preflight
       - name: Test predicted page-fault and access-denial model (NOT CPU faults)
         run: |
           clang -std=c11 -O2 -Wall -Wextra -Werror \

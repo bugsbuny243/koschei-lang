@@ -90,6 +90,40 @@ releases them. K0.3 uses the mapping left by firmware, NOT a Koschei-owned CR3.
   profile, and the live address space is still firmware-provided. This
   does not establish memory isolation or safe production exception handling.
 
+## Proposed owned-CR3 transition manifest preflight (software-only)
+
+- `cr3_transition_preflight.h` and `test_cr3_transition_preflight.c`
+  introduce a **read-only, freestanding C11** model of the prerequisites
+  for writing a new CR3. The validator never executes `mov %cr3` and
+  does not construct, pin or install actual paging structures.
+- The candidate includes four distinct, claimed and identity-reachable
+  table frames; a frozen allocator mutation epoch; and a bounded mapping
+  manifest with supervisor-only permissions, W^X, no physical/virtual
+  aliases and per-page physical provenance checks.
+- The manifest must cover the **whole declared live code region** (RIP,
+  transition trampoline, #PF/#GP/#DF entries), the **whole stack**, IDT
+  and GDT ranges. All critical firmware regions must have identity
+  translations and explicit non-pool reservation declarations.
+- A software CPU-state snapshot requires ring-0 CS, CR0.PE/PG/WP,
+  CR4.PAE without LA57/PCIDE, EFER.LME/LMA/NXE, CPUID NX support and
+  interrupts disabled. Missing pages, forged reservations, W+X,
+  user mappings, CR3 aliasing, stale pool claims and overflow fail closed.
+- A successful synthetic test proves **only logical consistency of
+  caller-supplied inputs**. Reservation declarations are not verified
+  against the final UEFI memory map. No physical pin, CPU-state
+  attestation or on-chip mapping safety proof is implied. The current
+  sparse high-half `paging_model.h` tables still cannot serve as a live
+  replacement CR3 because they do not map the executing EFI code,
+  stack, IDT/GDT or trampoline.
+- **Remaining before any CR3 write:** bind exact loaded-image/stack/GDT/
+  IDT/trampoline ranges to a fresh validated firmware map, reserve
+  runtime/ACPI/MMIO ranges and the identity-to-high-half transition,
+  materialize the complete four-level hierarchy in pinned frames,
+  compare live register readings and loaded table bytes against the
+  manifest, prove no W^X or unexpected aliases, then run an independently
+  checked QEMU transition and denied-access receipt. No change to
+  `uefi_main.c` or its boot-path CR3 instruction is made by this stage.
+
 ## Next executable acceptance requirements
 1. Capture exact page ownership and reserve the loaded PE image, executing
    stack, firmware runtime ranges, ACPI, MMIO/framebuffer and page-table
