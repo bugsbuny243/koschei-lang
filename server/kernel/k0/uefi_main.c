@@ -108,12 +108,34 @@ __attribute__((noreturn)) static void stop(K_U8 code) {
 
 #ifdef KOSCHEI_QEMU_PF_TEST
 #include "cpu_pf_guest_probe.h"
+#include "live_cpu_observation.h"
 
 /* Record actual CPU-supplied CR2/error in the UART receipt, not placeholders. */
 static void k0_cpu_pf_serial_hex(K_U64 value) {
     const char *digits = "0123456789abcdef";
     for (int shift = 60; shift >= 0; shift -= 4)
         serial_char(digits[(value >> (K_U32)shift) & 15ULL]);
+}
+static void k0_cpu_live_field(const char *key, K_U64 value) {
+    while (*key) serial_char(*key++);
+    k0_cpu_pf_serial_hex(value);
+}
+static void k0_cpu_live_serial_receipt(const K0_LIVE_CPU_STATE *state) {
+    const char *prefix = "KOSCHEI-KERNEL K0 CPU-LIVE/1";
+    while (*prefix) serial_char(*prefix++);
+    k0_cpu_live_field(" CR0=", state->cr0);
+    k0_cpu_live_field(" CR3=", state->cr3);
+    k0_cpu_live_field(" CR4=", state->cr4);
+    k0_cpu_live_field(" EFER=", state->efer);
+    k0_cpu_live_field(" RFLAGS=", state->rflags);
+    k0_cpu_live_field(" CS=", state->cs);
+    k0_cpu_live_field(" GDTR=", state->gdtr.base);
+    k0_cpu_live_field(" GDTLIMIT=", state->gdtr.limit);
+    k0_cpu_live_field(" IDTR=", state->idtr.base);
+    k0_cpu_live_field(" IDTLIMIT=", state->idtr.limit);
+    k0_cpu_live_field(" RIP=", state->rip);
+    k0_cpu_live_field(" RSP=", state->rsp);
+    serial_line("");
 }
 static void k0_cpu_pf_serial_receipt(void) {
     const char *prefix = "KOSCHEI-KERNEL K0 CPU-PF-TRAP/1 CR2=";
@@ -220,10 +242,21 @@ EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system) {
     }
     serial_line("KOSCHEI-KERNEL K0 PAGE-TABLE-FRAMES-ROUNDTRIP");
 #ifdef KOSCHEI_QEMU_PF_TEST
+    K0_LIVE_CPU_STATE cpu_live = {0};
+    /* Diagnostic image only. Observe real CPU state before installing the
+     * replacement #PF test IDT; never switch or rewrite CR3.
+     */
+    __asm__ __volatile__("cli" : : : "memory");
+    if (!k0_live_snapshot_guest(&cpu_live) ||
+        !k0_live_state_admissible(&cpu_live)) {
+        serial_line("KOSCHEI-KERNEL REJECT/1 CPU-LIVE");
+        stop(0x11);
+    }
     if (!k0_cpu_pf_real_guest_probe()) {
         serial_line("KOSCHEI-KERNEL REJECT/1 CPU-PF");
         stop(0x11);
     }
+    k0_cpu_live_serial_receipt(&cpu_live);
     k0_cpu_pf_serial_receipt();
 #endif
     serial_line("KOSCHEI-KERNEL K0 HALT-NO-POLICY");

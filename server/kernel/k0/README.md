@@ -66,8 +66,10 @@ KOSCHEI_K0_SERIAL_VERIFIER="$PWD/server/kernel/k0/verify_cpu_pf_serial.py" \
   bash server/kernel/k0/qemu_smoke.sh /tmp/k0-evidence/cpu-pf
 ```
 
-The second test requires a real QEMU debug-exit code and the exact nine-record
-UART transcript, including the hardware CR2/error code. Failed, absent or
+The second test requires a real QEMU debug-exit code and the exact ten-record
+UART transcript: live CPU CR0/CR3/CR4/EFER/GDTR/IDTR/RFLAGS/CS/RIP/RSP
+values followed by the hardware CR2/error code. The verifier checks both
+records and rejects forged or incomplete register prerequisites. Failed, absent or
 unhandled faults are rejected; the release image never enables this probe.
 
 ## Honest limits
