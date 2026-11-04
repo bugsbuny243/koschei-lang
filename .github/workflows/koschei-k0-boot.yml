@@ -72,6 +72,14 @@ jobs:
       - name: Boot actual UEFI binary on QEMU OVMF and capture UART proof
         run: |
           bash server/kernel/k0/qemu_smoke.sh /tmp/koschei-k0-evidence
+      - name: Real hardware CPU page-fault on firmware CR3 (not owned-CR3 isolation)
+        run: |
+          mkdir -p /tmp/koschei-k0-evidence/cpu-pf
+          KOSCHEI_K0_GUEST_BINARY=/tmp/koschei-k0-evidence/BOOTX64-PF.EFI \
+          KOSCHEI_K0_SERIAL_VERIFIER="$PWD/server/kernel/k0/verify_cpu_pf_serial.py" \
+            bash server/kernel/k0/qemu_smoke.sh /tmp/koschei-k0-evidence/cpu-pf
+          cp /tmp/koschei-k0-evidence/cpu-pf/SERIAL-SHA256 \
+             /tmp/koschei-k0-evidence/cpu-pf-serial-sha256.txt
       - name: Bind evidence to commit and toolchain
         if: always()
         run: |

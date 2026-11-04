@@ -41,8 +41,8 @@ def verify_uefi_pe(path: Path) -> str:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 3:
-        raise SystemExit("usage: python verify_pe.py RELEASE.EFI QEMU.EFI")
+    if len(sys.argv) not in (3, 4):
+        raise SystemExit("usage: python verify_pe.py RELEASE.EFI QEMU.EFI [CPU_PF_TEST.EFI]")
     hashes = [verify_uefi_pe(Path(p)) for p in sys.argv[1:]]
-    if hashes[0] == hashes[1]:
-        raise SystemExit("release and test artifact must differ (QEMU-only port)")
+    if len(hashes) != len(set(hashes)):
+        raise SystemExit("release, QEMU and CPU-PF diagnostic binaries must be distinct")
