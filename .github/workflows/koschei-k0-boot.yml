@@ -64,6 +64,11 @@ jobs:
           clang -std=c11 -O2 -Wall -Wextra -Werror \
             server/kernel/k0/test_cr3_transition_preflight.c -o /tmp/koschei-k0-evidence/cr3-transition-preflight
           /tmp/koschei-k0-evidence/cr3-transition-preflight
+      - name: Correlate proposed CR3 mappings with final UEFI descriptor types (MODEL ONLY)
+        run: |
+          clang -std=c11 -O2 -Wall -Wextra -Werror \
+            server/kernel/k0/test_cr3_firmware_map_provenance.c -o /tmp/koschei-k0-evidence/cr3-uefi-map-tests
+          /tmp/koschei-k0-evidence/cr3-uefi-map-tests
       - name: Test predicted page-fault and access-denial model (NOT CPU faults)
         run: |
           clang -std=c11 -O2 -Wall -Wextra -Werror \
