@@ -112,7 +112,30 @@ int main(void) {
 
     /* Capacity, duplicate/foreign frames and wrong primary frame order. */
     assert(!attempt(&proposal, frames, 5, memory, 1));
-    assert(!attempt(&proposal, frames, 7, memory, 1));
+    {
+        /* A genuine seventh table frame: claimed from the pool, inside
+         * the writable pool mapping and distinct from every primary
+         * frame. It passes every per-frame check, so the refusal comes
+         * from the three-PT topology itself (6 frames required), not
+         * from reading past the end of a six-element array.
+         */
+        K_U64 extra[7];
+        memcpy(extra, frames, sizeof(frames));
+        assert(k0_pool_claim(&pool, &extra[6]));
+        assert(extra[6] == frames[5] + K0_PAGE_SIZE);
+        altered = proposal;
+        altered.pool_epoch = pool.epoch;
+        altered.mappings[4].pages = 7;
+        assert(k0_pool_is_claimed(&pool, extra[6]));
+        assert(k0_cr3_find(&altered, extra[6], K0_CR3_WRITE,
+                           K0_CR3_PROV_POOL));
+        assert(attempt(&altered, extra, 6, memory, 1));
+        assert(layout.pt_count == 3 && layout.frame_count == 6);
+        assert(!attempt(&altered, extra, 7, memory, 1));
+        assert(k0_pool_release(&pool, extra[6]));
+        proposal.pool_epoch = pool.epoch;
+        assert(attempt(&proposal, frames, 6, memory, 1));
+    }
     K_U64 saved = frames[5];
     frames[5] = frames[3];
     assert(!attempt(&proposal, frames, 6, memory, 1));
