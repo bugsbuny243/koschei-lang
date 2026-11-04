@@ -18,6 +18,18 @@ SOURCE="$ROOT/server/kernel/k0/uefi_main.c"
   -DKOSCHEI_QEMU_TEST=1 -c "$SOURCE" -o "$OUT/koschei-k0-qemu.obj"
 "$LINK" /subsystem:efi_application /entry:efi_main /nodefaultlib \
   /machine:x64 "/out:$OUT/BOOTX64.EFI" "$OUT/koschei-k0-qemu.obj"
-sha256sum "$OUT/koschei-k0-release.efi" "$OUT/BOOTX64.EFI" > "$OUT/SHA256SUMS"
-python3 "$ROOT/server/kernel/k0/verify_pe.py" "$OUT/koschei-k0-release.efi" "$OUT/BOOTX64.EFI"
+# Native host-only safety preflight; never linked into a release EFI image.
+"$CC" -std=c11 -O2 -Wall -Wextra -Werror \
+  "$ROOT/server/kernel/k0/test_idt_fault_model.c" -o "$OUT/idt-fault-model-tests"
+"$OUT/idt-fault-model-tests"
+# Third, deliberately distinct diagnostic image. The production EFI and
+# normal eight-record QEMU image never install an IDT or trigger CPU faults.
+"$CC" -target x86_64-pc-windows-msvc -ffreestanding -fno-stack-protector \
+  -fno-builtin -mno-red-zone -fshort-wchar -Wall -Wextra -Werror -O2 \
+  -DKOSCHEI_QEMU_TEST=1 -DKOSCHEI_QEMU_PF_TEST=1 \
+  -c "$SOURCE" -o "$OUT/koschei-k0-cpu-pf.obj"
+"$LINK" /subsystem:efi_application /entry:efi_main /nodefaultlib \
+  /machine:x64 "/out:$OUT/BOOTX64-PF.EFI" "$OUT/koschei-k0-cpu-pf.obj"
+sha256sum "$OUT/koschei-k0-release.efi" "$OUT/BOOTX64.EFI" "$OUT/BOOTX64-PF.EFI" > "$OUT/SHA256SUMS"
+python3 "$ROOT/server/kernel/k0/verify_pe.py" "$OUT/koschei-k0-release.efi" "$OUT/BOOTX64.EFI" "$OUT/BOOTX64-PF.EFI"
 echo "KOSCHEI-K0 BUILD/1 OK"

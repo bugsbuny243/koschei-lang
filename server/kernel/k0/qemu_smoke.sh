@@ -10,7 +10,12 @@ truncate -s 64M "$IMAGE"
 mkfs.vfat -F 32 -n KOSCHEIK0 "$IMAGE" >/dev/null
 mmd -i "$IMAGE" ::/EFI
 mmd -i "$IMAGE" ::/EFI/BOOT
-mcopy -i "$IMAGE" "$OUT/BOOTX64.EFI" ::/EFI/BOOT/BOOTX64.EFI
+# The CPU #PF diagnostic uses a separate file and verifier. The normal
+# eight-record boot remains the default and is always run independently.
+GUEST_BINARY="${KOSCHEI_K0_GUEST_BINARY:-$OUT/BOOTX64.EFI}"
+SERIAL_VERIFIER="${KOSCHEI_K0_SERIAL_VERIFIER:-$ROOT/server/kernel/k0/verify_serial.py}"
+test -f "$GUEST_BINARY" || { echo "KOSCHEI-K0 FAIL guest binary missing" >&2; exit 1; }
+mcopy -i "$IMAGE" "$GUEST_BINARY" ::/EFI/BOOT/BOOTX64.EFI
 
 OVMF=""
 for candidate in \
@@ -53,6 +58,6 @@ if test "$STATUS" -ne 33; then
   if test -f "$SERIAL"; then tail -60 "$SERIAL" >&2; fi
   exit 1
 fi
-python3 "$ROOT/server/kernel/k0/verify_serial.py" "$SERIAL"
+python3 "$SERIAL_VERIFIER" "$SERIAL"
 sha256sum "$SERIAL" > "$OUT/SERIAL-SHA256"
 echo "KOSCHEI-K0 QEMU/1 PASS"

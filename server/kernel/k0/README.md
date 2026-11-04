@@ -23,6 +23,8 @@ writes directly to COM1 UART hardware ports without libc or host syscalls.
 - Negative Python evidence tests: python3 -m unittest discover -s server/kernel/k0 -p 'test_*.py' -v
 - Native memory-map tests: clang -std=c11 -O2 -Wall -Wextra -Werror server/kernel/k0/test_memory_map.c -o /tmp/k0-memory-test && /tmp/k0-memory-test
 - Native ledger tests: clang -std=c11 -O2 -Wall -Wextra -Werror server/kernel/k0/test_page_pool.c -o /tmp/k0-pool-test && /tmp/k0-pool-test
+- Native K0.4 GDT/IDT and exception-context preflight (synthetic only):
+  clang -std=c11 -O2 -Wall -Wextra -Werror server/kernel/k0/test_idt_fault_model.c -o /tmp/k0-idt-test && /tmp/k0-idt-test
 - Real UEFI boot: bash server/kernel/k0/qemu_smoke.sh OUTPUT_DIRECTORY
 - GitHub workflow: .github/workflows/koschei-k0-boot.yml
 
@@ -46,6 +48,34 @@ Acceptance requires:
    KOSCHEI-KERNEL K0 HALT-NO-POLICY
 4. QEMU debug-exit code 33; a timeout or fabricated file is not a pass.
 5. CI artifact binds transcript hash, source revision and toolchain versions.
+
+## Optional real CPU #PF diagnostic (test binary only)
+
+The separate `BOOTX64-PF.EFI` image installs a temporary #PF IDT under the
+firmware-owned CR3 and records an actual CPU-supplied CR2/error code after
+attempting a deliberately unmapped canonical read. It proves **CPU exception
+entry in QEMU**, not an independent Koschei address space.
+
+To reproduce both independent boots after `build.sh`:
+
+```sh
+bash server/kernel/k0/qemu_smoke.sh /tmp/k0-evidence
+mkdir -p /tmp/k0-evidence/cpu-pf
+KOSCHEI_K0_GUEST_BINARY=/tmp/k0-evidence/BOOTX64-PF.EFI \
+KOSCHEI_K0_SERIAL_VERIFIER="$PWD/server/kernel/k0/verify_cpu_pf_serial.py" \
+  bash server/kernel/k0/qemu_smoke.sh /tmp/k0-evidence/cpu-pf
+```
+
+The second test requires a real QEMU debug-exit code and the exact
+thirteen-record UART transcript. It now contains a firmware
+`EFI_LOADED_IMAGE_PROTOCOL` image-base/image-size record, captured CPU
+CR0/CR3/CR4/EFER/GDTR/IDTR/RFLAGS/CS/RIP/RSP values, a read-only active firmware CR3 PTE-byte walk receipt for
+CPU-observed RIP/RSP physical addresses, a Koschei-owned **physical**
+table-frame byte readback/scrub receipt (CR3 unchanged), and the hardware
+CR2/error-code record. The diagnostic checks observed RIP and stack
+residency against the final UEFI memory map. The verifier rejects
+missing, altered or duplicated records. No owned CR3 is activated. Failed, absent or
+unhandled faults are rejected; the release image never enables this probe.
 
 ## Honest limits
 ExitBootServices handoff is attempted and must succeed in the QEMU boot
