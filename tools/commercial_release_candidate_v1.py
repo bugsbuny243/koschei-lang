@@ -17,6 +17,10 @@ import subprocess
 import sys
 import tempfile
 
+# Support direct invocation: python tools/commercial_release_candidate_v1.py
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from koschei.local_validation_v1 import (
     LocalValidationError,
     LocalValidationReceiptV1,
@@ -74,7 +78,7 @@ def build_candidate(
     output_dir: Path,
     validation_receipt: Path,
     expected_version: str,
- ) -> dict:
+) -> dict:
     source_sha = _source_commit()
     if not HEX40.fullmatch(source_sha):
         raise CommercialCandidateError("invalid expected source SHA")
