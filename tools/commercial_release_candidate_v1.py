@@ -74,10 +74,8 @@ def build_candidate(
     output_dir: Path,
     validation_receipt: Path,
     expected_version: str,
-    *,
-    source_commit: str | None = None,
-) -> dict:
-    source_sha = _source_commit() if source_commit is None else source_commit
+ ) -> dict:
+    source_sha = _source_commit()
     if not HEX40.fullmatch(source_sha):
         raise CommercialCandidateError("invalid expected source SHA")
     if version() != expected_version:
