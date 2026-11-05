@@ -64,7 +64,7 @@ def verify_archive(archive_path: Path, expected_sha256: str) -> tuple[str, str]:
                     or "\\" in name or ".." in parts or "." in parts
                     or member.is_dir() or len(parts) < 2
                     or member.file_size > MAX_MEMBER_BYTES
-                    or (member.external_attr >> 16) & stat.S_IFMT == stat.S_IFLNK
+                    or stat.S_ISLNK(member.external_attr >> 16)
                 ):
                     raise PilotGateError("invalid or unsafe ZIP member")
                 names.add(name)
