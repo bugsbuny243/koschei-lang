@@ -20,6 +20,8 @@ TOP_LEVEL = {
     "LICENSING.tr.md",
     "README.md",
     "README.tr.md",
+    "RELEASE_NOTES.md",
+    "RELEASE_NOTES.tr.md",
     "docs",
     "examples",
     "install.sh",
