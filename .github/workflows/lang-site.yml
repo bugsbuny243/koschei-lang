@@ -1,0 +1,33 @@
+name: Koschei Lang Product Site Checks
+
+on:
+  push:
+    branches:
+      - 'staging/lang-public-*'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'commercial/lang-site/**'
+      - 'tests/test_lang_public_site_v1.py'
+      - '.github/workflows/lang-site.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  static-site:
+    name: Validate bilingual product website
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test dependency
+        run: python -m pip install pytest
+      - name: Verify checkout, language content and honest demo
+        run: python -m pytest -q tests/test_lang_public_site_v1.py
