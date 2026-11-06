@@ -32,3 +32,9 @@ There is no anonymous source-code checkout or public GitHub repo access. This re
 The public SEO pages are `/` and `/security-guide.html`. The static Docker image explicitly copies and serves those files plus `/robots.txt` and `/sitemap.xml`; Nginx otherwise returns 404 rather than exposing repository code. The page has a canonical URL on the verified Railway domain, and marketing copy is in `commercial/launch/KOSCHEI_LANG_010_GLOBAL_LAUNCH_KIT.md`.
 
 Changes made on this branch do not change the live website until the Railway service is redeployed from the matching exact commit. Product Hunt or developer-community posts must be submitted by an authorized account owner, and no purchases are made by this site.
+
+## Search and localization (November 2026)
+
+There are now 3 indexable site URLs: `/`, `/security-guide.html` (English), and `/security-guide.tr.html` (Turkish). The homepage language toggle points to the matching guide. Guides include reciprocal hreflang and independent canonical tags. `sitemap.xml` and `robots.txt` are shipped in the container. `index.html` has factual `SoftwareApplication` JSON-LD for Koschei Lang 0.10.0 and the existing USD 49 Individual checkout; do not invent reviews, ratings, customers or endorsements. These files do not establish or guarantee search indexing, and Google Search Console ownership has not been verified.
+
+Product Hunt submission requires an account-owned launch, accurate media and actual authentic screenshots; text drafts are in the separately retained global launch kit. The shipped static tutorial remains **not** a browser-based compiler.
