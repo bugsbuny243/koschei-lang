@@ -1,5 +1,6 @@
 """Static Koschei Lang website truth, navigation and pricing checks."""
 from html.parser import HTMLParser
+import json
 from pathlib import Path
 import re
 
@@ -43,7 +44,7 @@ def parsed():
 
 def test_static_responsive_no_tracking_or_fake_live_compiler():
     source, p = parsed()
-    assert p.lang == "en" and p.styles == 1 and p.scripts == 1
+    assert p.lang == "en" and p.styles == 1 and p.scripts == 2  # one site script and one JSON-LD script
     assert 'name="viewport"' in source
     assert "@media(max-width:640px)" in source
     assert not re.search(r"<(?:img|iframe|embed|object)\b", source, re.I)
@@ -112,3 +113,37 @@ def test_public_technical_guide_and_search_discovery():
         assert f'location = /{path}' in nginx
         assert path in docker
     assert 'add_header Cache-Control' not in nginx, "would override server-level security headers"
+
+
+def test_localized_technical_article_and_structured_product_metadata():
+    root = SITE.parent
+    index, parser = parsed()
+    en = (root / "security-guide.html").read_text(encoding="utf-8")
+    tr = (root / "security-guide.tr.html").read_text(encoding="utf-8")
+    sitemap = (root / "sitemap.xml").read_text(encoding="utf-8")
+    nginx = (root / "nginx.conf").read_text(encoding="utf-8")
+    docker = (root / "Dockerfile").read_text(encoding="utf-8")
+    assert '<html lang="tr">' in tr
+    assert 'hreflang="en"' in tr and 'hreflang="tr"' in tr
+    assert 'hreflang="en"' in en and 'hreflang="tr"' in en
+    assert 'KS2401' in tr and '49 USD' in tr
+    assert 'canlı bir tarayıcı derleyicisi değil' in tr
+    assert 'Go tabanlı bir adaptör' in tr
+    assert 'https://buy.polar.sh/' in tr
+    assert '/security-guide.tr.html' in sitemap
+    assert '/security-guide.tr.html' in nginx
+    assert 'security-guide.tr.html' in docker
+    assert 'id="security-guide-link"' in index
+    assert 'locale==="tr"?"/security-guide.tr.html":"/security-guide.html"' in index
+    assert index.count('type="application/ld+json"') == 1
+    match = re.search(r'<script type="application/ld\+json">\s*(\{.*?\})\s*</script>', index, re.S)
+    assert match is not None
+    schema = json.loads(match.group(1))
+    assert schema["@type"] == "SoftwareApplication"
+    assert schema["name"] == "Koschei Lang"
+    assert schema["softwareVersion"] == "0.10.0"
+    assert schema["applicationCategory"] == "DeveloperApplication"
+    assert schema["offers"]["price"] == "49.00"
+    assert schema["offers"]["priceCurrency"] == "USD"
+    assert schema["offers"]["url"] == POLAR
+    assert schema.get("aggregateRating") is None
