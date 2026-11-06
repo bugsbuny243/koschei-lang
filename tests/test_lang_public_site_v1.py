@@ -71,7 +71,7 @@ def test_bilingual_switch_and_all_site_anchors():
 def test_current_checkout_and_pricing_only():
     source, p = parsed()
     assert sum(x.get("href") == POLAR for x in p.links) >= 2
-    assert all(a.get("href") == POLAR or a.get("href", "").startswith("#") for a in p.links)
+    assert all(a.get("href") in (POLAR, "/security-guide.html") or a.get("href", "").startswith("#") for a in p.links)
     for expected in ("$49", "49 USD", "One-time purchase", "12 months", "Perpetual", "Python 3.12+", "Go 1.24+"):
         assert expected in source
     for false_claim in ("49 EUR", "49€", "EVM-compatible", "hack-proof", "100x safer", "bank certified"):
@@ -87,3 +87,28 @@ def test_bundled_real_security_demo_and_examples():
         "Go-based adapter", "pre-1.0",
     ):
         assert expected in source
+
+
+def test_public_technical_guide_and_search_discovery():
+    root = SITE.parent
+    index, parser = parsed()
+    guide = (root / "security-guide.html").read_text(encoding="utf-8")
+    robots = (root / "robots.txt").read_text(encoding="utf-8")
+    sitemap = (root / "sitemap.xml").read_text(encoding="utf-8")
+    nginx = (root / "nginx.conf").read_text(encoding="utf-8")
+    docker = (root / "Dockerfile").read_text(encoding="utf-8")
+    hostname = "https://koschei-lang-web-production.up.railway.app"
+    assert f'<link rel="canonical" href="{hostname}/">' in index
+    assert any(x.get("href") == "/security-guide.html" for x in parser.links)
+    assert f'{hostname}/security-guide.html' in guide
+    assert 'KS2401' in guide and 'pre-1.0' in guide
+    assert 'not a browser-based live compiler' in guide
+    assert 'Go-based adapter' in guide
+    assert 'https://buy.polar.sh/' in guide
+    assert 'EVM-compatible' not in guide and 'hack-proof' not in guide
+    assert f'{hostname}/sitemap.xml' in robots
+    assert f'{hostname}/security-guide.html' in sitemap
+    for path in ("security-guide.html", "robots.txt", "sitemap.xml"):
+        assert f'location = /{path}' in nginx
+        assert path in docker
+    assert 'add_header Cache-Control' not in nginx, "would override server-level security headers"
