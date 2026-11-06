@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="description" content="Koschei Lang 0.10.0: açık yetkilerle programlama, KS2401 derleme hatası, ks caps ile yetki analizi ve 49 USD Individual lisansı için Türkçe teknik kılavuz.">
+  <meta name="robots" content="index,follow">
+  <link rel="canonical" href="https://koschei-lang-web-production.up.railway.app/security-guide.tr.html">
+  <link rel="alternate" hreflang="tr" href="https://koschei-lang-web-production.up.railway.app/security-guide.tr.html">
+  <link rel="alternate" hreflang="en" href="https://koschei-lang-web-production.up.railway.app/security-guide.html">
+  <meta property="og:type" content="article">
+  <meta property="og:locale" content="tr_TR">
+  <meta property="og:title" content="Koschei Lang: modüller neden bütün yetkilerinizi devralmamalı?">
+  <meta property="og:description" content="Yetkisiz disk erişimi, KS2401, ks caps ve CI yetki denetimini gerçek Koschei komutlarıyla açıklayan Türkçe kılavuz.">
+  <meta property="og:url" content="https://koschei-lang-web-production.up.railway.app/security-guide.tr.html">
+  <title>Koschei Lang 0.10.0 — Açık yetki güvenliği ve KS2401 rehberi</title>
+  <style>
+    *{box-sizing:border-box}
+    :root{--bg:#080f16;--panel:#101f2a;--border:#284653;--ink:#e9faf7;--muted:#b6cdd0;--green:#64f4bf;--blue:#75c9ff}
+    body{margin:0;background:radial-gradient(ellipse at 70% 10%,#123741,transparent 55%),var(--bg);color:var(--ink);font:16px/1.75 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    .wrap{width:min(100% - 38px,890px);margin:0 auto}
+    a{color:var(--green);text-underline-offset:3px}
+    a:focus-visible{outline:3px solid var(--blue);outline-offset:4px}
+    header{border-bottom:1px solid var(--border);background:#09151ded}
+    header .wrap{display:flex;justify-content:space-between;align-items:center;gap:18px;padding:17px 0}
+    .brand{color:var(--ink);text-decoration:none;font-weight:850;letter-spacing:.045em}
+    .brand b{color:var(--green)}
+    .toplink{font-size:14px}
+    main{padding:67px 0 84px}
+    .tag{color:var(--green);font-size:12px;text-transform:uppercase;letter-spacing:.18em;font-weight:800}
+    h1{font-size:clamp(33px,5.2vw,53px);line-height:1.12;letter-spacing:-.045em;margin:18px 0 23px}
+    h2{font-size:clamp(24px,3vw,30px);line-height:1.23;letter-spacing:-.025em;margin:43px 0 12px}
+    p,li{color:var(--muted)}
+    .lead{font-size:19px;line-height:1.6}
+    strong{color:#f5fffd}
+    .notice{border:1px solid #466d63;border-radius:13px;background:#123329;padding:18px 22px;margin:27px 0}
+    .notice p{margin:0}
+    pre{background:#09151d;border:1px solid #365462;border-radius:13px;padding:18px;white-space:pre-wrap;overflow-wrap:anywhere;color:#d2f5e8;font:14px/1.8 ui-monospace,SFMono-Regular,Consolas,monospace}
+    code{color:#9ff3c9}
+    .demo{display:grid;gap:14px;grid-template-columns:1fr 1fr;margin:28px 0}
+    .card{padding:19px;border:1px solid var(--border);border-radius:13px;background:var(--panel)}
+    .card strong{display:block;margin-bottom:7px}
+    .card p{font-size:14px;margin:0}
+    .buy{display:inline-block;background:var(--green);color:#06221b;text-decoration:none;padding:14px 22px;border-radius:10px;font-weight:800;margin-top:12px}
+    footer{border-top:1px solid var(--border);padding:24px 0 35px;color:var(--muted);font-size:13px}
+    @media(max-width:640px){main{padding:44px 0 58px}.demo{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <header><div class="wrap"><a class="brand" href="/">KOSCHEI <b>LANG</b></a><a class="toplink" href="/security-guide.html" lang="en">English →</a></div></header>
+  <main class="wrap">
+    <span class="tag">Teknik rehber · Koschei Lang 0.10.0 · 1.0 öncesi</span>
+    <h1>İçe aktarılan modüller neden bütün yetkilerinizi devralsın?</h1>
+    <p class="lead">Koschei Lang, <strong>açıkça verilen yetki değerleri</strong> üzerine kurulu bağımsız bir programlama dilidir. Koschei kodunda disk erişimi, ağ bağlantısı, ortam değişkenlerini okuma veya işlem başlatma gibi etkiler için uygun yetkinin fonksiyona verilmesi gerekir.</p>
+    <p>Birçok yazılımda bağımlılıklar, ana sürecin geniş işletim sistemi izinlerinden dolaylı olarak yararlanabilir. Koschei, kendi derleyicisinin desteklediği kod için daha açık bir sınır tanımlar: Bir işlem için gereken yetki, kodun erişebildiği kapsamda bulunmalı; bulunmuyorsa derleme sırasında hata verilebilir.</p>
+    <div class="notice"><p><strong>Bu sayfa canlı bir tarayıcı derleyicisi değil, statik teknik açıklamadır.</strong> Aşağıdaki komutlar lisanslı ZIP dosyasındaki örneklerden alınmıştır. Beklenen sonuçlar depodaki test örnekleriyle desteklenir.</p></div>
+
+    <h2>1. Yetkisiz içe aktarma örneğini reddedin</h2>
+    <p>Paketteki <code>examples/supply_chain/analytics.ks</code> modülü, disk yetkisi almadan dosya okumaya çalışacak şekilde tasarlanmıştır. Yerel terminalde:</p>
+    <pre>$ ks check examples/supply_chain/main.ks
+
+KOSCHEI ERROR: KS2401
+Required capability is unavailable in this scope.
+# Beklenen çıkış kodu: 1</pre>
+    <p><strong>KS2401</strong> burada çalışma sırasındaki bir güvenlik duvarı değildir. Derleyici, yetkisiz disk işlemini yürütmeden önce reddeder. Bu örneğin kontrolü gizli dosyayı okumaz.</p>
+
+    <h2>2. Programın erişebileceği yetkileri görün</h2>
+    <p><code>ks caps</code>, içe aktarılan Koschei modülleri dahil bir programın erişebildiği yetki alanlarını gösterir. CI için ağ yetkisini reddetme örneği:</p>
+    <pre>$ ks caps examples/apps/secretscan/main.ks
+
+$ ks caps --deny net examples/apps/secretscan/main.ks
+# Beklenen: yasak ağ erişimi yok, çıkış kodu 0</pre>
+    <p><code>--deny</code> seçeneği, gelecekteki bir değişiklik yasak yetki alanını eklerse CI kontrolünü başarısız yapabilir. Bu yalnızca Koschei programının yetki modeline ilişkin denetlenebilir bir özelliktir; bütün işletim sistemi programları için güvenlik garantisi değildir.</p>
+
+    <h2>3. Daraltılmış yetkiyle kod yazın</h2>
+    <p>Aşağıdaki fonksiyon, kendisine verilen daraltılmış ağ yetkisiyle belirlenen kaynağa erişebilir. Disk veya diğer ağ kaynaklarına otomatik yetki kazanmaz:</p>
+    <pre>fn fetch_data(net: NetCaps, url: String) -&gt; String or Error {
+    let response = net.get(url) or return Error("request failed")
+    return response.text()
+}
+
+fn main(caps: SystemCaps) {
+    let api_net = caps.net.allow("https://api.example.com")
+    let response = fetch_data(api_net, "https://api.example.com/v1")
+    println(response)
+}</pre>
+    <p>Buradaki alan adı örnek amaçlıdır; canlı hizmet vaadi değildir. Dil, tipli değerler, <code>Option&lt;T&gt;</code>, <code>Result&lt;T,E&gt;</code> ve Koschei kaynak koduyla geliştirilmiş Core Library modülleri içerir.</p>
+
+    <div class="demo">
+      <div class="card"><strong>Geliştirici komutları</strong><p><code>ks check</code> · <code>ks caps</code> · <code>ks run</code> · <code>ks build</code> · <code>ks fmt</code> · <code>ks explain</code></p></div>
+      <div class="card"><strong>Gereksinimler</strong><p>Kurulum için Python 3.12+ ve Unix benzeri kabuk; mevcut native derleme yolu için Go 1.24+.</p></div>
+    </div>
+
+    <h2>4. Güvenlik kapsamının sınırları</h2>
+    <p>Koschei Lang 0.10.0 <strong>1.0 öncesi</strong> bir üründür. Yetki denetimleri, Koschei dilinin ve araç zincirinin desteklediği kapsama uygulanır. Rastgele üçüncü taraf yürütülebilir dosyaları güvenli hâle getirdiği, ele geçirilmiş cihazları veya çalınan kimlik bilgilerini koruduğu, cüzdan imzalama kötüye kullanımını önlediği ya da banka sistemleri için bağımsız sertifikalı olduğu iddia edilmez. Mevcut native derleme yolu Go tabanlı bir adaptör kullanır.</p>
+
+    <h2>5. Ürünü deneyin</h2>
+    <p>Individual ticari lisans, araç zinciri ZIP'i, Core Library, güvenlik örnekleri, Türkçe/İngilizce belgeler ve sonraki 12 ayın sürümlerini kapsar. Adına lisanslanan bir geliştirici, satın aldığı sürümleri ticari projelerde süresiz kullanabilir.</p>
+    <pre>$ ./install.sh
+$ ks version
+$ ks run examples/hello.ks
+$ ks check examples/supply_chain/main.ks</pre>
+    <p><strong>Fiyat:</strong> 49 USD, tek seferlik. Ödeme ve ZIP teslimi Polar üzerinden yapılır. Ticari olmayan kişisel kullanım lisans koşullarına göre ücretsizdir; kuruluşlar için 30 günlük değerlendirme hakkı tanımlıdır.</p>
+    <a class="buy" href="https://buy.polar.sh/polar_cl_H3mMbTpBdziezC3ooJARCQIMHqzVHEeM15E1v0C7XlR" target="_blank" rel="noopener noreferrer">Koschei Lang Individual · 49 USD ↗</a>
+  </main>
+  <footer><div class="wrap">© 2026 Koschei Lang. Koschei Web3 Hub ve Koschei Sentinel'den ayrı programlama dili ve araç zinciri. <a href="/">Ürün sitesine dön</a></div></footer>
+</body>
+</html>
