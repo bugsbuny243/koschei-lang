@@ -13,6 +13,25 @@
   <meta property="og:description" content="Build programs with explicit permissions. Inspect, constrain and compile .ks code. Individual commercial license: $49 USD.">
   <meta property="og:locale" content="en_US">
   <meta name="color-scheme" content="dark">
+  <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Koschei Lang",
+  "softwareVersion": "0.10.0",
+  "url": "https://koschei-lang-web-production.up.railway.app/",
+  "applicationCategory": "DeveloperApplication",
+  "applicationSubCategory": "Programming language",
+  "operatingSystem": "Unix-like systems",
+  "description": "A pre-1.0 capability-secure programming language with explicit disk, network, environment and process authority, security diagnostics, and a native build path.",
+  "offers": {
+    "@type": "Offer",
+    "price": "49.00",
+    "priceCurrency": "USD",
+    "url": "https://buy.polar.sh/polar_cl_H3mMbTpBdziezC3ooJARCQIMHqzVHEeM15E1v0C7XlR"
+  }
+}
+  </script>
   <title>Koschei Lang 0.10.0 — Capability-secure programming language</title>
   <style>
     :root{--bg:#070d13;--surface:#101b24;--edge:#27404b;--text:#ecf9f6;--muted:#abc1c7;--accent:#52f5bb;--accent2:#59bff8;--warning:#e5c98e;--max:1140px}
@@ -150,7 +169,7 @@ without being given a disk capability.</span>
         <div class="codebox"><header><span data-en="No unapproved network reach" data-tr="İzinsiz ağ yetkisi yok">No unapproved network reach</span><button type="button" class="copy" data-copy="ks caps --deny net examples/apps/secretscan/main.ks" data-en="Copy" data-tr="Kopyala">Copy</button></header><pre>ks caps --deny net examples/apps/secretscan/main.ks
 <span class="ok"># Expected: exit 0</span></pre></div>
       </div>
-      <p style="margin:25px 0 0"><a class="btn secondary" href="/security-guide.html" data-en="Read the full capability-security walkthrough ↗" data-tr="Ayrıntılı yetki güvenliği rehberini oku ↗">Read the full capability-security walkthrough ↗</a></p>
+      <p style="margin:25px 0 0"><a id="security-guide-link" class="btn secondary" href="/security-guide.html" data-en="Read the full capability-security walkthrough ↗" data-tr="Ayrıntılı yetki güvenliği rehberini oku ↗">Read the full capability-security walkthrough ↗</a></p>
     </div></section>
     <section id="start" class="section"><div class="wrap">
       <div class="section-head"><div class="eyebrow" data-en="START IN MINUTES" data-tr="DAKİKALAR İÇİNDE BAŞLAYIN">START IN MINUTES</div><h2 data-en="From ZIP to first program." data-tr="ZIP dosyasından ilk programa.">From ZIP to first program.</h2><p data-en="Extract the purchased ZIP and open a terminal inside its koschei-lang-0.10.0 directory. On Unix-like systems, use Python 3.12+; native builds also require Go 1.24+." data-tr="Satın aldığınız ZIP'i açıp koschei-lang-0.10.0 klasöründe terminal başlatın. Unix benzeri sistemlerde Python 3.12+; native derleme için ayrıca Go 1.24+ gerekir.">Extract the purchased ZIP and open a terminal inside its koschei-lang-0.10.0 directory. On Unix-like systems, use Python 3.12+; native builds also require Go 1.24+.</p></div>
@@ -193,6 +212,8 @@ ks version</pre><p data-en="Install the language into your own user environment.
     let locale=/^tr(?:-|$)/i.test(navigator.language||"")?"tr":"en";
     function render(){
       document.documentElement.lang=locale;
+      const guideLink=document.getElementById("security-guide-link");
+      if(guideLink)guideLink.setAttribute("href",locale==="tr"?"/security-guide.tr.html":"/security-guide.html");
       for(const el of translatable)el.textContent=el.getAttribute("data-"+locale);
       button.textContent=locale==="en"?"TR":"EN";
       button.setAttribute("aria-label",locale==="en"?"Switch site language to Turkish":"Site dilini İngilizce yap");
