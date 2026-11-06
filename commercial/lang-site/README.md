@@ -26,3 +26,9 @@ Open http://127.0.0.1:8080 locally. EN/TR language switch, navigation and copy-t
 The pricing is Individual 49 USD one time, one named commercial developer. The license is perpetual for acquired versions, with 12 months of released updates. `ks run` is an interpreter; `ks build` presently uses the Go native adapter. The shipped supply-chain fixture rejects unauthorized Disk capability with KS2401 **before execution**. The site is static and does not claim to protect arbitrary OS programs or prevent Binance-style intrusions.
 
 There is no anonymous source-code checkout or public GitHub repo access. This repo is private, and the only external site link is the verified Polar checkout URL.
+
+## Technical article and discovery
+
+The public SEO pages are `/` and `/security-guide.html`. The static Docker image explicitly copies and serves those files plus `/robots.txt` and `/sitemap.xml`; Nginx otherwise returns 404 rather than exposing repository code. The page has a canonical URL on the verified Railway domain, and marketing copy is in `commercial/launch/KOSCHEI_LANG_010_GLOBAL_LAUNCH_KIT.md`.
+
+Changes made on this branch do not change the live website until the Railway service is redeployed from the matching exact commit. Product Hunt or developer-community posts must be submitted by an authorized account owner, and no purchases are made by this site.
