@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="description" content="A technical walkthrough of Koschei Lang 0.10.0 capability security: compile-time rejection with KS2401, permission manifests and CI gates.">
+  <meta name="robots" content="index,follow">
+  <link rel="canonical" href="https://koschei-lang-web-production.up.railway.app/security-guide.html">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Koschei Lang: why imported code should not inherit your permissions">
+  <meta property="og:description" content="Trace an unauthorized dependency, inspect a capability manifest, and learn where the security boundary ends.">
+  <meta property="og:url" content="https://koschei-lang-web-production.up.railway.app/security-guide.html">
+  <title>How Koschei Lang checks capabilities before execution · Technical guide</title>
+  <style>
+    *{box-sizing:border-box}
+    :root{--bg:#080f16;--panel:#101f2a;--border:#284653;--ink:#e9faf7;--muted:#b6cdd0;--green:#64f4bf;--blue:#75c9ff}
+    body{margin:0;background:radial-gradient(ellipse at 70% 10%,#123741,transparent 55%),var(--bg);color:var(--ink);font:16px/1.75 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    .wrap{width:min(100% - 38px,890px);margin:0 auto}
+    a{color:var(--green);text-underline-offset:3px}
+    a:focus-visible{outline:3px solid var(--blue);outline-offset:4px}
+    header{border-bottom:1px solid var(--border);background:#09151ded}
+    header .wrap{display:flex;justify-content:space-between;align-items:center;gap:18px;padding:17px 0}
+    .brand{color:var(--ink);text-decoration:none;font-weight:850;letter-spacing:.045em}
+    .brand b{color:var(--green)}
+    .toplink{font-size:14px}
+    main{padding:67px 0 84px}
+    .tag{color:var(--green);font-size:12px;text-transform:uppercase;letter-spacing:.18em;font-weight:800}
+    h1{font-size:clamp(33px,5.2vw,53px);line-height:1.12;letter-spacing:-.045em;margin:18px 0 23px}
+    h2{font-size:clamp(24px,3vw,30px);line-height:1.23;letter-spacing:-.025em;margin:43px 0 12px}
+    h3{font-size:18px;margin:25px 0 9px}
+    p,li{color:var(--muted)}
+    .lead{font-size:19px;line-height:1.6}
+    strong{color:#f5fffd}
+    .notice{border:1px solid #466d63;border-radius:13px;background:#123329;padding:18px 22px;margin:27px 0}
+    .notice p{margin:0}
+    pre{background:#09151d;border:1px solid #365462;border-radius:13px;padding:18px;white-space:pre-wrap;overflow-wrap:anywhere;color:#d2f5e8;font:14px/1.8 ui-monospace,SFMono-Regular,Consolas,monospace}
+    code{color:#9ff3c9}
+    .demo{display:grid;gap:14px;grid-template-columns:1fr 1fr;margin:28px 0}
+    .card{padding:19px;border:1px solid var(--border);border-radius:13px;background:var(--panel)}
+    .card strong{display:block;margin-bottom:7px}
+    .card p{font-size:14px;margin:0}
+    .buy{display:inline-block;background:var(--green);color:#06221b;text-decoration:none;padding:14px 22px;border-radius:10px;font-weight:800;margin-top:12px}
+    footer{border-top:1px solid var(--border);padding:24px 0 35px;color:var(--muted);font-size:13px}
+    @media(max-width:640px){main{padding:44px 0 58px}.demo{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <header><div class="wrap"><a class="brand" href="/">KOSCHEI <b>LANG</b></a><a class="toplink" href="/">← Product website / Ürün sitesi</a></div></header>
+  <main class="wrap">
+    <span class="tag">Technical guide · Koschei Lang 0.10.0 · pre-1.0</span>
+    <h1>Why should imported code inherit <em>all</em> your permissions?</h1>
+    <p class="lead">Koschei Lang is an independent programming language centered on <strong>explicit capability values</strong>. In Koschei source, a function must be given authority before it can read the disk, access the network, inspect the environment or launch a process.</p>
+    <p>Many development workflows make it easy for a dependency to perform operations with the ambient permissions of its host process. Koschei takes a more explicit approach for code compiled by its own toolchain: access must appear in the program's authority flow, and unauthorized operations can be rejected before execution.</p>
+    <div class="notice"><p><strong>This is a static technical walkthrough, not a browser-based live compiler.</strong> The commands below use fixtures included in the licensed ZIP. The expected diagnostic is grounded in the repository's tested example.</p></div>
+
+    <h2>1. See an unauthorized import fail</h2>
+    <p>The packaged example <code>examples/supply_chain/analytics.ks</code> deliberately attempts to access disk content without a disk capability in scope. Run the checker locally:</p>
+    <pre>$ ks check examples/supply_chain/main.ks
+
+KOSCHEI ERROR: KS2401
+Required capability is unavailable in this scope.
+# Expected exit status: 1</pre>
+    <p>This is a <strong>compile-time authority check</strong>, not a runtime sandbox that waits for a forbidden call. The example should not be executed, and the referenced secret file is not read by this check.</p>
+
+    <h2>2. Inspect reach across your module graph</h2>
+    <p>Use <code>ks caps</code> to inspect which capabilities the imported Koschei code can reach. A policy gate can reject a build that gains unapproved network authority:</p>
+    <pre>$ ks caps examples/apps/secretscan/main.ks
+
+$ ks caps --deny net examples/apps/secretscan/main.ks
+# Expected: no forbidden network reach, exit 0</pre>
+    <p>The <code>--deny</code> option is useful in CI: if a future change requests a forbidden capability, the policy gate can fail the build. This is an explicit, checkable property of the Koschei program, not a promise that all software in its host operating system is safe.</p>
+
+    <h2>3. Write code with narrow authority</h2>
+    <p>A function that receives only a narrowed network capability cannot automatically access the disk or another network origin:</p>
+    <pre>fn fetch_data(net: NetCaps, url: String) -&gt; String or Error {
+    let response = net.get(url) or return Error("request failed")
+    return response.text()
+}
+
+fn main(caps: SystemCaps) {
+    let api_net = caps.net.allow("https://api.example.com")
+    let response = fetch_data(api_net, "https://api.example.com/v1")
+    println(response)
+}</pre>
+    <p>The snippet illustrates the capability model; the URL is an example endpoint, not an offered public API. The language also supports typed values, <code>Option&lt;T&gt;</code>, <code>Result&lt;T,E&gt;</code>, and a Core Library authored in Koschei source.</p>
+
+    <div class="demo">
+      <div class="card"><strong>Developer tools</strong><p><code>ks check</code> · <code>ks caps</code> · <code>ks run</code> · <code>ks build</code> · <code>ks fmt</code> · <code>ks explain</code></p></div>
+      <div class="card"><strong>Build prerequisites</strong><p>Python 3.12+ and a Unix-like shell for the included installer; Go 1.24+ for the current native build path.</p></div>
+    </div>
+
+    <h2>4. Know what this does <em>not</em> claim</h2>
+    <p>Koschei Lang 0.10.0 is <strong>pre-1.0</strong>. Its capability rules apply to the supported Koschei language/toolchain boundary. They do not make arbitrary third-party executables safe, secure a compromised endpoint, prevent stolen credentials or unauthorized wallet signing, or provide independent banking-system certification. Native builds currently use a Go-based adapter rather than a self-hosted compiler.</p>
+
+    <h2>5. Try the included examples</h2>
+    <p>The Individual commercial license includes the toolchain ZIP, Core Library, security examples, English/Turkish guides and a 12-month window of subsequent releases. One named developer can use acquired releases perpetually for commercial development, under the included license.</p>
+    <pre>$ ./install.sh
+$ ks version
+$ ks run examples/hello.ks
+$ ks check examples/supply_chain/main.ks</pre>
+    <p><strong>Price:</strong> $49 USD, one-time. Checkout and ZIP fulfillment are provided through Polar. Personal non-commercial use is free under the license, and businesses have a 30-day evaluation allowance.</p>
+    <a class="buy" href="https://buy.polar.sh/polar_cl_H3mMbTpBdziezC3ooJARCQIMHqzVHEeM15E1v0C7XlR" target="_blank" rel="noopener noreferrer">Get Koschei Lang · $49 USD ↗</a>
+  </main>
+  <footer><div class="wrap">© 2026 Koschei Lang. Independent language/toolchain; separate from Koschei Web3 Hub and Koschei Sentinel. <a href="/">Back to product website</a></div></footer>
+</body>
+</html>
