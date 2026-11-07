@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#071018">
+  <meta name="description" content="Koschei Lang 0.10.0: a capability-secure programming language. Inspect authority, check code and build native programs. Individual commercial license: $49 USD, one-time.">
+  <meta name="robots" content="index,follow">
+  <link rel="canonical" href="https://koschei-lang-web-production.up.railway.app/">
+  <meta property="og:url" content="https://koschei-lang-web-production.up.railway.app/">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Koschei Lang — Security begins with explicit authority">
+  <meta property="og:description" content="Build programs with explicit permissions. Inspect, constrain and compile .ks code. Individual commercial license: $49 USD.">
+  <meta property="og:locale" content="en_US">
+  <meta name="color-scheme" content="dark">
+  <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Koschei Lang",
+  "softwareVersion": "0.10.0",
+  "url": "https://koschei-lang-web-production.up.railway.app/",
+  "applicationCategory": "DeveloperApplication",
+  "applicationSubCategory": "Programming language",
+  "operatingSystem": "Unix-like systems",
+  "description": "A pre-1.0 capability-secure programming language with explicit disk, network, environment and process authority, security diagnostics, and a native build path.",
+  "offers": {
+    "@type": "Offer",
+    "price": "49.00",
+    "priceCurrency": "USD",
+    "url": "https://buy.polar.sh/polar_cl_H3mMbTpBdziezC3ooJARCQIMHqzVHEeM15E1v0C7XlR"
+  }
+}
+  </script>
+  <title>Koschei Lang 0.10.0 — Capability-secure programming language</title>
+  <style>
+    :root{--bg:#070d13;--surface:#101b24;--edge:#27404b;--text:#ecf9f6;--muted:#abc1c7;--accent:#52f5bb;--accent2:#59bff8;--warning:#e5c98e;--max:1140px}
+    *{box-sizing:border-box}
+    html{scroll-behavior:smooth;scroll-padding-top:92px}
+    body{margin:0;background:radial-gradient(ellipse 60% 650px at 70% 7%,#123d4b85,transparent),radial-gradient(ellipse 42% 440px at 0% 32%,#14332a77,transparent),var(--bg);color:var(--text);font:16px/1.65 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    a{color:inherit;text-decoration:none}
+    button{font:inherit;cursor:pointer}
+    a:focus-visible,button:focus-visible{outline:3px solid var(--accent2);outline-offset:4px}
+    .wrap{width:min(calc(100% - 40px),var(--max));margin-inline:auto}
+    .top{position:sticky;top:0;z-index:10;background:#071018e8;backdrop-filter:blur(18px);border-bottom:1px solid #29414d}
+    .nav{min-height:73px;display:flex;align-items:center;justify-content:space-between;gap:24px}
+    .brand{display:flex;gap:12px;align-items:center;font-weight:850;letter-spacing:.065em}
+    .brand-mark{display:grid;place-items:center;width:42px;height:42px;border:1px solid var(--accent);border-radius:12px;background:#10392d;color:var(--accent);font-size:23px;font-weight:900}
+    .navlinks{display:flex;gap:24px;align-items:center;color:#c6d8dc;font-size:14px;font-weight:650}
+    .navlinks a:hover{color:var(--accent)}
+    .lang{padding:8px 12px;border:1px solid var(--edge);border-radius:10px;color:var(--text);background:#10222d;font-weight:750;white-space:nowrap}
+    .hero{display:grid;grid-template-columns:1.05fr .95fr;gap:52px;align-items:center;padding-block:99px 82px}
+    .eyebrow{color:var(--accent);font-size:12px;text-transform:uppercase;letter-spacing:.19em;font-weight:800}
+    h1{font-size:clamp(42px,5.7vw,76px);line-height:1.075;letter-spacing:-.065em;margin:20px 0 25px;font-weight:870}
+    .gradient{background:linear-gradient(92deg,#5ef5b3 10%,#8eeaf2 90%);background-clip:text;-webkit-background-clip:text;color:transparent}
+    .lead{font-size:19px;line-height:1.67;color:var(--muted);max-width:590px}
+    .buttons{display:flex;flex-wrap:wrap;gap:12px;margin-top:32px}
+    .btn{display:inline-flex;justify-content:center;align-items:center;gap:9px;padding:14px 20px;border:1px solid var(--edge);border-radius:12px;font-weight:800;min-height:51px}
+    .btn.primary{background:var(--accent);border-color:var(--accent);color:#051611}
+    .btn.primary:hover{background:#82ffd1}
+    .btn.secondary:hover{border-color:var(--accent2);background:#112833}
+    .fine{font-size:13px;color:var(--muted);margin-top:22px}
+    .terminal{border:1px solid #35515e;background:#09131a;border-radius:19px;box-shadow:0 20px 90px #0008,0 0 68px #4aebc112;overflow:hidden;min-width:0}
+    .termhead{display:flex;gap:9px;align-items:center;padding:15px 19px;border-bottom:1px solid #2b414c;background:#101d25;font-size:12px;color:#bacfd4}
+    .dot{width:9px;height:9px;border-radius:50%;background:#e88079}
+    .dot:nth-child(2){background:#e4bf68}.dot:nth-child(3){background:#59cfa1}
+    .termhead span.label{margin-left:auto}
+    pre{white-space:pre-wrap;overflow-wrap:anywhere;font:13.5px/1.75 ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace}
+    .termcode{padding:22px 21px;margin:0;min-height:285px}
+    .prompt{color:var(--accent)}.err{color:#ffaaa6}.comment{color:#8dabb3}.ok{color:#79ebad}
+    .termfoot{border-top:1px solid #20333c;padding:14px 19px;display:flex;justify-content:space-between;align-items:center;gap:12px;color:#94b3ba;font-size:12px}
+    .copy{color:var(--accent);border:1px solid #35665b;background:#163b35;padding:6px 11px;border-radius:7px;font-size:12px;font-weight:700}
+    .section{padding:63px 0}
+    .section-head{max-width:710px;margin-bottom:33px}
+    h2{font-size:clamp(28px,3.3vw,42px);letter-spacing:-.038em;line-height:1.2;margin:10px 0 16px}
+    .section-head p{color:var(--muted);margin:0}
+    .cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:17px}
+    .card{border:1px solid var(--edge);border-radius:17px;background:linear-gradient(160deg,#142531,#101a24);padding:24px;min-width:0}
+    .symbol{color:var(--accent);background:#183c34;border:1px solid #306a56;display:grid;place-items:center;font-size:21px;width:41px;height:41px;border-radius:10px;margin-bottom:15px}
+    .card h3{font-size:19px;line-height:1.28;margin:0 0 10px}
+    .card p{margin:0;color:var(--muted);font-size:14px}
+    .code-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+    .codebox{background:#0c1820;border:1px solid #2c434d;border-radius:15px;padding:19px;min-width:0}
+    .codebox header{display:flex;align-items:center;justify-content:space-between;gap:10px;color:var(--accent);font-weight:780;font-size:13px}
+    .codebox pre{margin:10px 0 0;color:#d2f1e6}
+    .steps{display:grid;grid-template-columns:repeat(3,1fr);gap:17px}
+    .step{padding:20px 22px;border:1px solid var(--edge);border-radius:15px;background:#101c26}
+    .number{font-weight:850;font-size:13px;color:var(--accent);letter-spacing:.1em}
+    .step h3{font-size:18px;line-height:1.3;margin:11px 0 9px}
+    .step pre{background:#061016;padding:12px;border-radius:9px;color:#c0ffe0;font-size:12px;margin:12px 0}
+    .step p{font-size:14px;color:var(--muted);margin:0}
+    .pricing{display:grid;grid-template-columns:1fr 1fr;gap:26px;align-items:stretch}
+    .price-card{background:linear-gradient(150deg,#1c443c,#122630 60%,#111a25);border:1px solid #52f5bb66;border-radius:20px;padding:30px}
+    .price-row{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+    .price{font-size:62px;line-height:1.2;letter-spacing:-.07em;font-weight:860}
+    .currency{color:#a6cfc4;font-weight:800}
+    .pricing ul{padding-left:23px;color:#d1e3de}
+    .pricing li{margin:10px 0}
+    .price-sub{color:var(--muted);font-size:14px}
+    .note-panel{background:#0e1b26;border:1px solid #2c4451;border-radius:20px;padding:28px}
+    .note-panel h3{margin:0 0 10px}.note-panel p{color:var(--muted);margin-top:0}
+    .faq{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+    details{border:1px solid var(--edge);background:#101c27;border-radius:12px;padding:17px 19px}
+    summary{cursor:pointer;font-weight:800;list-style-position:outside}
+    details p{color:var(--muted);font-size:14px;margin-bottom:0}
+    .legal{border-top:1px solid var(--edge);padding:30px 0 50px;color:#a6c2c6;font-size:13px}
+    .legal .wrap{display:flex;justify-content:space-between;gap:25px;flex-wrap:wrap}
+    .legal a{color:#b9edec;text-decoration:underline;text-underline-offset:3px}
+    .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
+    @media(max-width:950px){.hero{grid-template-columns:1fr;padding-block:68px}.terminal{max-width:700px}.navlinks{gap:13px}.cards,.steps{grid-template-columns:repeat(2,minmax(0,1fr))}.pricing{grid-template-columns:1fr}}
+    @media(max-width:640px){.wrap{width:min(calc(100% - 30px),var(--max))}.nav{min-height:66px}.brand{font-size:13px}.navlinks a{display:none}.hero{padding-block:60px 35px;gap:30px}.lead{font-size:17px}.buttons .btn{width:100%}.cards,.steps,.faq,.code-grid{grid-template-columns:1fr}.section{padding:45px 0}.price{font-size:52px}}
+    @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+  </style>
+</head>
+<body>
+  <a class="sr-only" href="#main">Skip to content</a>
+  <header class="top"><div class="wrap nav">
+    <a class="brand" href="#home" aria-label="Koschei Lang home"><span class="brand-mark" aria-hidden="true">K</span><span>KOSCHEI <span style="color:var(--accent)">LANG</span></span></a>
+    <nav aria-label="Primary navigation" class="navlinks">
+      <a href="#features" data-en="Features" data-tr="Özellikler">Features</a>
+      <a href="#demo" data-en="Demo" data-tr="Demo">Demo</a>
+      <a href="#start" data-en="Get started" data-tr="Başlangıç">Get started</a>
+      <a href="#pricing" data-en="Pricing" data-tr="Fiyat">Pricing</a>
+      <button id="lang-toggle" type="button" class="lang" aria-label="Switch site language to Turkish">TR</button>
+    </nav>
+  </div></header>
+  <main id="main">
+    <div id="home" class="wrap hero">
+      <section aria-labelledby="headline">
+        <div class="eyebrow">KOSCHEI LANG · v0.10.0 · CAPABILITY SECURITY</div>
+        <h1 id="headline"><span data-en="Security starts with" data-tr="Güvenlik açık">Security starts with</span><br><span class="gradient" data-en="explicit authority." data-tr="yetkiyle başlar.">explicit authority.</span></h1>
+        <p class="lead" data-en="A programming language that makes disk, network, environment and process permissions explicit. Inspect what your code can reach before it runs." data-tr="Disk, ağ, ortam ve işlem yetkilerini açıkça tanımlayan bir programlama dili. Kod çalışmadan önce hangi kaynaklara erişebileceğini denetleyin.">A programming language that makes disk, network, environment and process permissions explicit. Inspect what your code can reach before it runs.</p>
+        <div class="buttons">
+          <a class="btn primary" href="https://buy.polar.sh/polar_cl_H3mMbTpBdziezC3ooJARCQIMHqzVHEeM15E1v0C7XlR" target="_blank" rel="noopener noreferrer" data-en="Get Individual · $49 USD ↗" data-tr="Individual Satın Al · 49 USD ↗">Get Individual · $49 USD ↗</a>
+          <a class="btn secondary" href="#demo" data-en="Explore the security demo ↓" data-tr="Güvenlik demosunu incele ↓">Explore the security demo ↓</a>
+        </div>
+        <p class="fine" data-en="One-time commercial license · One developer · 12 months of updates · Perpetual use of acquired versions" data-tr="Tek seferlik ticari lisans · Bir geliştirici · 12 ay güncelleme · Satın alınan sürümlerde süresiz kullanım">One-time commercial license · One developer · 12 months of updates · Perpetual use of acquired versions</p>
+      </section>
+      <aside class="terminal" aria-label="Illustrative output from the committed supply-chain fixture">
+        <div class="termhead"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="label">koschei — security check</span></div>
+        <pre class="termcode"><span class="prompt">$</span> ks check examples/supply_chain/main.ks
+
+<span class="err">KS2401: Required capability unavailable</span>
+
+<span class="comment">An imported module requested disk access
+without being given a disk capability.</span>
+
+<span class="ok">✓ Unauthorized access rejected
+  before execution</span></pre>
+        <div class="termfoot"><span data-en="Illustrative summary of the included fixture — not an interactive compiler" data-tr="Paketteki örneğin temsili özeti — etkileşimli derleyici değil">Illustrative summary of the included fixture — not an interactive compiler</span><button type="button" class="copy" data-copy="ks check examples/supply_chain/main.ks" data-en="Copy" data-tr="Kopyala">Copy</button></div>
+      </aside>
+    </div>
+    <section id="features" class="section"><div class="wrap">
+      <div class="section-head"><div class="eyebrow" data-en="BUILT FOR CONTROL" data-tr="KONTROL İÇİN TASARLANDI">BUILT FOR CONTROL</div><h2 data-en="Know what your software can do." data-tr="Yazılımınızın yetkilerini görün.">Know what your software can do.</h2><p data-en="Language-level protections you can test and inspect, without claiming every threat outside the Koschei toolchain is solved." data-tr="Koschei araç zincirinin dışındaki bütün tehditleri çözdüğümüzü iddia etmeden, test edilebilir ve denetlenebilir dil düzeyi korumalar.">Language-level protections you can test and inspect, without claiming every threat outside the Koschei toolchain is solved.</p></div>
+      <div class="cards">
+        <article class="card"><div class="symbol">◇</div><h3 data-en="Explicit capabilities" data-tr="Açık yetkiler">Explicit capabilities</h3><p data-en="Disk, network, environment and process operations require capabilities explicitly passed into Koschei code." data-tr="Disk, ağ, ortam ve işlem işlemleri Koschei koduna açıkça verilen yetkileri gerektirir.">Disk, network, environment and process operations require capabilities explicitly passed into Koschei code.</p></article>
+        <article class="card"><div class="symbol">⊘</div><h3 data-en="Compile-time rejection" data-tr="Derleme sırasında ret">Compile-time rejection</h3><p data-en="ks check rejects the bundled unauthorized-import example with diagnostic KS2401 before running it." data-tr="ks check, paketteki yetkisiz modül örneğini çalıştırmadan KS2401 ile reddeder.">ks check rejects the bundled unauthorized-import example with diagnostic KS2401 before running it.</p></article>
+        <article class="card"><div class="symbol">⌁</div><h3 data-en="Auditable reach" data-tr="Denetlenebilir erişim">Auditable reach</h3><p data-en="ks caps reports the program's reachable capabilities. ks caps --deny net can fail CI when network authority appears." data-tr="ks caps programın erişebileceği yetkileri gösterir; ks caps --deny net ağ yetkisi isteyen kodu CI'da reddedebilir.">ks caps reports the program's reachable capabilities. ks caps --deny net can fail CI when network authority appears.</p></article>
+        <article class="card"><div class="symbol">⌘</div><h3 data-en="Run and compile" data-tr="Çalıştır ve derle">Run and compile</h3><p data-en="ks run uses the checked interpreter. ks build compiles native applications through the present Go-based adapter." data-tr="ks run doğrulanmış yorumlayıcıyı kullanır; ks build mevcut Go tabanlı adaptörle native uygulama derler.">ks run uses the checked interpreter. ks build compiles native applications through the present Go-based adapter.</p></article>
+        <article class="card"><div class="symbol">▦</div><h3 data-en="Core Library" data-tr="Core Library">Core Library</h3><p data-en="Typed collections, text helpers and SHA3-256 digest support, with growing libraries authored in Koschei source." data-tr="Tipli koleksiyonlar, metin yardımcıları ve SHA3-256 özet desteği; Koschei kaynak kodunda yazılmış gelişen kütüphaneler.">Typed collections, text helpers and SHA3-256 digest support, with growing libraries authored in Koschei source.</p></article>
+        <article class="card"><div class="symbol">▣</div><h3 data-en="Practical examples" data-tr="Uygulamalı örnekler">Practical examples</h3><p data-en="Includes secretscan, directory-integrity examples, a VS Code extension and bilingual reference guides." data-tr="secretscan, klasör bütünlük örnekleri, VS Code uzantısı ve Türkçe/İngilizce başvuru kılavuzları içerir.">Includes secretscan, directory-integrity examples, a VS Code extension and bilingual reference guides.</p></article>
+      </div>
+    </div></section>
+    <section id="demo" class="section"><div class="wrap">
+      <div class="section-head"><div class="eyebrow" data-en="REAL COMMANDS · EXPLANATORY PREVIEW" data-tr="GERÇEK KOMUTLAR · AÇIKLAYICI ÖN İZLEME">REAL COMMANDS · EXPLANATORY PREVIEW</div><h2 data-en="A denial you can reproduce." data-tr="Tekrar çalıştırabileceğiniz bir ret.">A denial you can reproduce.</h2><p data-en="These commands run locally after installing the official package. This website displays commands; it does not execute code in your browser." data-tr="Bu komutlar resmî paketi kurduktan sonra yerel ortamınızda çalışır. Bu site komutları gösterir; tarayıcınızda kod yürütmez.">These commands run locally after installing the official package. This website displays commands; it does not execute code in your browser.</p></div>
+      <div class="code-grid">
+        <div class="codebox"><header><span data-en="Unauthorized dependency denied" data-tr="Yetkisiz bağımlılık reddedilir">Unauthorized dependency denied</span><button type="button" class="copy" data-copy="ks check examples/supply_chain/main.ks" data-en="Copy" data-tr="Kopyala">Copy</button></header><pre>ks check examples/supply_chain/main.ks
+<span class="err"># Expected: KS2401 · exit 1</span></pre></div>
+        <div class="codebox"><header><span data-en="No unapproved network reach" data-tr="İzinsiz ağ yetkisi yok">No unapproved network reach</span><button type="button" class="copy" data-copy="ks caps --deny net examples/apps/secretscan/main.ks" data-en="Copy" data-tr="Kopyala">Copy</button></header><pre>ks caps --deny net examples/apps/secretscan/main.ks
+<span class="ok"># Expected: exit 0</span></pre></div>
+      </div>
+      <p style="margin:25px 0 0"><a id="security-guide-link" class="btn secondary" href="/security-guide.html" data-en="Read the full capability-security walkthrough ↗" data-tr="Ayrıntılı yetki güvenliği rehberini oku ↗">Read the full capability-security walkthrough ↗</a></p>
+    </div></section>
+    <section id="start" class="section"><div class="wrap">
+      <div class="section-head"><div class="eyebrow" data-en="START IN MINUTES" data-tr="DAKİKALAR İÇİNDE BAŞLAYIN">START IN MINUTES</div><h2 data-en="From ZIP to first program." data-tr="ZIP dosyasından ilk programa.">From ZIP to first program.</h2><p data-en="Extract the purchased ZIP and open a terminal inside its koschei-lang-0.10.0 directory. On Unix-like systems, use Python 3.12+; native builds also require Go 1.24+." data-tr="Satın aldığınız ZIP'i açıp koschei-lang-0.10.0 klasöründe terminal başlatın. Unix benzeri sistemlerde Python 3.12+; native derleme için ayrıca Go 1.24+ gerekir.">Extract the purchased ZIP and open a terminal inside its koschei-lang-0.10.0 directory. On Unix-like systems, use Python 3.12+; native builds also require Go 1.24+.</p></div>
+      <div class="steps">
+        <div class="step"><span class="number">01</span><h3 data-en="Install" data-tr="Kurulum">Install</h3><pre>./install.sh
+ks version</pre><p data-en="Install the language into your own user environment." data-tr="Dili kullanıcı ortamınıza kurun.">Install the language into your own user environment.</p></div>
+        <div class="step"><span class="number">02</span><h3 data-en="Run a program" data-tr="Program çalıştırın">Run a program</h3><pre>ks run examples/hello.ks</pre><p data-en="The bundled hello program prints Koschei and 1." data-tr="Paketteki hello programı Koschei ve 1 çıktısı verir.">The bundled hello program prints Koschei and 1.</p></div>
+        <div class="step"><span class="number">03</span><h3 data-en="Inspect a security boundary" data-tr="Güvenlik sınırını denetleyin">Inspect a security boundary</h3><pre>ks check examples/supply_chain/main.ks</pre><p data-en="Expect KS2401, a deliberate denial of a module that lacks disk authority." data-tr="Disk yetkisi olmayan modülün bilinçli reddi olan KS2401 beklenir.">Expect KS2401, a deliberate denial of a module that lacks disk authority.</p></div>
+      </div>
+      <p class="fine" data-en="Inside the product ZIP: English/Turkish guides, the Core Library reference, examples and release notes. Source-repository access is not included." data-tr="Ürün ZIP'inde İngilizce/Türkçe rehberler, Core Library başvurusu, örnekler ve sürüm notları bulunur. Özel kaynak deposuna erişim dahil değildir.">Inside the product ZIP: English/Turkish guides, the Core Library reference, examples and release notes. Source-repository access is not included.</p>
+    </div></section>
+    <section id="pricing" class="section"><div class="wrap">
+      <div class="section-head"><div class="eyebrow" data-en="STRAIGHTFORWARD LICENSING" data-tr="AÇIK LİSANSLAMA">STRAIGHTFORWARD LICENSING</div><h2 data-en="Build commercially. Pay once." data-tr="Ticari geliştirin. Bir kez ödeyin.">Build commercially. Pay once.</h2></div>
+      <div class="pricing">
+        <article class="price-card"><div class="eyebrow">KOSCHEI LANG · INDIVIDUAL</div><div class="price-row"><span class="price">$49</span><span class="currency">USD</span></div><p class="price-sub" data-en="One-time purchase · One named commercial developer" data-tr="Tek seferlik ödeme · Bir ticari geliştirici">One-time purchase · One named commercial developer</p><ul>
+          <li data-en="Perpetual use of acquired versions" data-tr="Satın alınan sürümleri süresiz kullanım">Perpetual use of acquired versions</li>
+          <li data-en="Releases within the following 12 months included" data-tr="Sonraki 12 ayın sürümleri dahil">Releases within the following 12 months included</li>
+          <li data-en="Compiler, Core Library, docs and included examples" data-tr="Derleyici, Core Library, belgeler ve örnekler">Compiler, Core Library, docs and included examples</li>
+          <li data-en="Programs and generated binaries remain yours" data-tr="Yazdığınız programlar ve derlenen ikililer size ait">Programs and generated binaries remain yours</li>
+        </ul><a class="btn primary" href="https://buy.polar.sh/polar_cl_H3mMbTpBdziezC3ooJARCQIMHqzVHEeM15E1v0C7XlR" target="_blank" rel="noopener noreferrer" data-en="Purchase on Polar ↗" data-tr="Polar'dan Satın Al ↗">Purchase on Polar ↗</a><p class="fine" data-en="USD pricing; tax shown at checkout. Polar is the payment processor / merchant of record." data-tr="USD fiyatı; vergiler ödeme ekranında gösterilir. Polar ödeme hizmetini ve satıcı kayıt hizmetini sağlar.">USD pricing; tax shown at checkout. Polar is the payment processor / merchant of record.</p></article>
+        <aside class="note-panel"><h3 data-en="What this product is — and isn't" data-tr="Ürün ne yapar, ne iddia etmez?">What this product is — and isn't</h3><p data-en="Koschei Lang 0.10.0 is pre-1.0 proprietary developer software. The native compiler uses an existing Go adapter; it is not a fully self-hosted or independently certified banking runtime." data-tr="Koschei Lang 0.10.0, 1.0 öncesi özel lisanslı geliştirici yazılımıdır. Native derleyici mevcut Go adaptörünü kullanır; tamamen kendisini derleyen veya bağımsız sertifikalı bankacılık altyapısı değildir.">Koschei Lang 0.10.0 is pre-1.0 proprietary developer software. The native compiler uses an existing Go adapter; it is not a fully self-hosted or independently certified banking runtime.</p><p data-en="It does not automatically make third-party operating-system executables safe or prevent stolen credentials, compromised endpoints, wallet signing abuses or all supply-chain attacks." data-tr="Üçüncü taraf işletim sistemi programlarını otomatik güvenli hale getirmez; çalınan kimlik bilgilerini, ele geçirilmiş cihazları veya bütün tedarik zinciri saldırılarını engellediği iddia edilmez.">It does not automatically make third-party operating-system executables safe or prevent stolen credentials, compromised endpoints, wallet signing abuses or all supply-chain attacks.</p><p data-en="Personal noncommercial use is free under the license; business evaluation is permitted for up to 30 days. See the included LICENSE for binding terms." data-tr="Lisans koşullarına göre ticari olmayan kişisel kullanım ücretsizdir; işletmelere 30 güne kadar değerlendirme hakkı tanınır. Kesin şartlar paket içindeki LICENSE dosyasındadır.">Personal noncommercial use is free under the license; business evaluation is permitted for up to 30 days. See the included LICENSE for binding terms.</p></aside>
+      </div>
+    </div></section>
+    <section id="faq" class="section"><div class="wrap">
+      <div class="section-head"><div class="eyebrow">FAQ</div><h2 data-en="Before you start." data-tr="Başlamadan önce.">Before you start.</h2></div>
+      <div class="faq">
+        <details><summary data-en="Does the $49 license expire?" data-tr="49 USD lisansı sona erer mi?">Does the $49 license expire?</summary><p data-en="No. You can use acquired versions indefinitely; versions released within 12 months of purchase are included." data-tr="Hayır. Satın aldığınız sürümleri süresiz kullanabilirsiniz; satın alma sonrası 12 ay içinde çıkan sürümler dahildir.">No. You can use acquired versions indefinitely; versions released within 12 months of purchase are included.</p></details>
+        <details><summary data-en="Is Go required?" data-tr="Go gerekli mi?">Is Go required?</summary><p data-en="Python 3.12+ is required for installation and the interpreter. Go 1.24+ is required when you use ks build." data-tr="Kurulum ve yorumlayıcı için Python 3.12+ gerekir. ks build kullanacaksanız Go 1.24+ gerekir.">Python 3.12+ is required for installation and the interpreter. Go 1.24+ is required when you use ks build.</p></details>
+        <details><summary data-en="Is this a Web3-only language?" data-tr="Yalnızca Web3 dili mi?">Is this a Web3-only language?</summary><p data-en="No. Koschei Lang is an independent general-purpose language. Web3 and AI integrations are separate applications, not the language's required runtime." data-tr="Hayır. Koschei Lang bağımsız, genel amaçlı bir dildir. Web3 ve AI entegrasyonları uygulama alanlarıdır; dilin zorunlu çalışma altyapısı değildir.">No. Koschei Lang is an independent general-purpose language. Web3 and AI integrations are separate applications, not the language's required runtime.</p></details>
+        <details><summary data-en="Can I redistribute the compiler?" data-tr="Derleyiciyi yeniden dağıtabilir miyim?">Can I redistribute the compiler?</summary><p data-en="Not without separate permission. Programs you author and the binaries produced by ks build belong to you, subject to the LICENSE. The Koschei toolchain itself is proprietary." data-tr="Ayrı izin olmadan hayır. Yazdığınız programlar ve ks build çıktıları, LICENSE koşullarına göre size aittir; Koschei araç zincirinin kendisi özel lisanslıdır.">Not without separate permission. Programs you author and the binaries produced by ks build belong to you, subject to the LICENSE. The Koschei toolchain itself is proprietary.</p></details>
+      </div>
+    </div></section>
+  </main>
+  <footer class="legal"><div class="wrap"><span>© 2026 Koschei Lang · v0.10.0 · <span data-en="Independent programming language" data-tr="Bağımsız programlama dili">Independent programming language</span></span><span><a href="#pricing" data-en="Licensing overview" data-tr="Lisans özeti">Licensing overview</a> · <a href="https://buy.polar.sh/polar_cl_H3mMbTpBdziezC3ooJARCQIMHqzVHEeM15E1v0C7XlR" rel="noopener noreferrer" target="_blank" data-en="Official checkout ↗" data-tr="Resmî ödeme sayfası ↗">Official checkout ↗</a></span></div></footer>
+  <script>
+  (function(){
+    "use strict";
+    const button=document.getElementById("lang-toggle");
+    const translatable=Array.from(document.querySelectorAll("[data-en][data-tr]"));
+    let locale=/^tr(?:-|$)/i.test(navigator.language||"")?"tr":"en";
+    function render(){
+      document.documentElement.lang=locale;
+      const guideLink=document.getElementById("security-guide-link");
+      if(guideLink)guideLink.setAttribute("href",locale==="tr"?"/security-guide.tr.html":"/security-guide.html");
+      for(const el of translatable)el.textContent=el.getAttribute("data-"+locale);
+      button.textContent=locale==="en"?"TR":"EN";
+      button.setAttribute("aria-label",locale==="en"?"Switch site language to Turkish":"Site dilini İngilizce yap");
+      document.title=locale==="en"?"Koschei Lang 0.10.0 — Capability-secure programming language":"Koschei Lang 0.10.0 — Yetki güvenli programlama dili";
+      const meta=document.querySelector('meta[name="description"]');
+      if(meta)meta.content=locale==="en"?"Koschei Lang 0.10.0: a capability-secure programming language. Individual license $49 USD.":"Koschei Lang 0.10.0: açık yetkilere dayalı programlama dili. Individual lisans 49 USD.";
+    }
+    button.addEventListener("click",()=>{locale=locale==="en"?"tr":"en";render()});
+    document.querySelectorAll("button[data-copy]").forEach(b=>b.addEventListener("click",async()=>{
+      try{
+        await navigator.clipboard.writeText(b.getAttribute("data-copy")||"");
+        const original=b.textContent;
+        b.textContent=locale==="en"?"Copied":"Kopyalandı";
+        setTimeout(()=>{b.textContent=original},1400);
+      }catch(_){b.textContent=locale==="en"?"Select and copy command":"Komutu seçip kopyalayın";}
+    }));
+    render();
+  })();
+  </script>
+</body>
+</html>
