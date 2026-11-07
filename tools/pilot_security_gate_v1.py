@@ -26,6 +26,7 @@ MAX_UNCOMPRESSED_BYTES = 256 * 1024 * 1024
 MAX_MEMBER_BYTES = 64 * 1024 * 1024
 REQUIRED = frozenset({
     "LICENSE", "LICENSING.md", "README.md", "install.sh",
+    "RELEASE_NOTES.md", "RELEASE_NOTES.tr.md",
     "pyproject.toml", "koschei/__main__.py",
     "koschei/core_library/secure.ks", "docs/reference/CORE_LIBRARY.md",
     "examples/hello.ks", "examples/supply_chain/main.ks",
