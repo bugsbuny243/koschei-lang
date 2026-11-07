@@ -11,6 +11,7 @@ from verify_cpu_pf_serial import (
     VALID_IMAGE_FIXTURE,
     VALID_WALK_FIXTURE,
     OWNED_TABLES_RECEIPT,
+    MULTI_PT_RECEIPT,
     validate_live_register_record,
     verify,
 )
@@ -30,7 +31,8 @@ class LiveCpuAndRealPfEvidenceTests(unittest.TestCase):
     def valid(self) -> bytes:
         return (b"OVMF UART prefix\r\n" + EXPECTED_PREFIX +
                 VALID_IMAGE_FIXTURE + VALID_WALK_FIXTURE +
-                OWNED_TABLES_RECEIPT + VALID_LIVE_FIXTURE + EXPECTED_TAIL)
+                OWNED_TABLES_RECEIPT + MULTI_PT_RECEIPT +
+                VALID_LIVE_FIXTURE + EXPECTED_TAIL)
 
     def test_valid_synthetic_fixture_only_for_verifier(self):
         self.assert_receipt(self.valid(), True)
@@ -72,6 +74,20 @@ class LiveCpuAndRealPfEvidenceTests(unittest.TestCase):
             with self.subTest(after=after):
                 self.assertIn(prior, original)
                 self.assert_receipt(original.replace(prior, after), False)
+
+    def test_multi_pt_physical_readback_receipt_fail_closed(self):
+        valid = self.valid()
+        self.assert_receipt(valid.replace(MULTI_PT_RECEIPT, b""), False)
+        self.assert_receipt(valid.replace(
+            b"MULTI-PT/1", b"MULTI-PT/2"), False)
+        self.assert_receipt(valid.replace(
+            b"PHYSICAL-READBACK", b"LOGICAL-MODEL", 1), False)
+        self.assert_receipt(valid.replace(
+            b"MULTI-PT/1 PHYSICAL-READBACK CR3-UNCHANGED",
+            b"MULTI-PT/1 PHYSICAL-READBACK CR3-SWITCHED"), False)
+        self.assert_receipt(valid.replace(
+            MULTI_PT_RECEIPT, MULTI_PT_RECEIPT + MULTI_PT_RECEIPT), False)
+        self.assert_receipt(MULTI_PT_RECEIPT + valid, False)
 
     def test_koschei_owned_table_materialization_receipt_fail_closed(self):
         valid = self.valid()

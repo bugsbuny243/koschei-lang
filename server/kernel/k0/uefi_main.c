@@ -168,6 +168,7 @@ __attribute__((noreturn)) static void stop(K_U8 code) {
 #include "live_image_residency.h"
 #include "live_cr3_inspection.h"
 #include "owned_tables_guest_probe.h"
+#include "multi_pt_guest_probe.h"
 
 /* Record actual CPU-supplied CR2/error in the UART receipt, not placeholders. */
 static void k0_cpu_pf_serial_hex(K_U64 value) {
@@ -431,6 +432,15 @@ EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system) {
         serial_line("KOSCHEI-KERNEL REJECT/1 OWNED-TABLES");
         stop(0x11);
     }
+    /* QEMU only: three additional 2MiB-window PT pages written and
+     * independently read as physical DATA; old firmware CR3 stays active.
+     */
+    if (!k0_mpt_guest_physical_dryrun(
+            &k0_pool, cpu_live.cr3, k0_map_buffer, final_map_size,
+            final_map_stride, final_map_version)) {
+        serial_line("KOSCHEI-KERNEL REJECT/1 MULTI-PT");
+        stop(0x11);
+    }
     if (!k0_cpu_pf_real_guest_probe()) {
         serial_line("KOSCHEI-KERNEL REJECT/1 CPU-PF");
         stop(0x11);
@@ -438,6 +448,7 @@ EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system) {
     k0_live_image_serial_receipt(loaded_image_base, loaded_image_size);
     k0_live_cr3_serial_receipt(&rip_walk, &rsp_walk);
     serial_line("KOSCHEI-KERNEL K0 OWNED-TABLES/1 PHYSICAL-READBACK CR3-UNCHANGED");
+    serial_line("KOSCHEI-KERNEL K0 MULTI-PT/1 PHYSICAL-READBACK CR3-UNCHANGED");
     k0_cpu_live_serial_receipt(&cpu_live);
     k0_cpu_pf_serial_receipt();
 #endif

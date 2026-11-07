@@ -29,6 +29,8 @@ ROOT = Path(__file__).resolve().parent.parent
 FILES = (
     ("distribution/polar/README.md", "README.md"),
     ("distribution/polar/README.tr.md", "README.tr.md"),
+    ("commercial/KOSCHEI_LANG_010_RELEASE_NOTES.md", "RELEASE_NOTES.md"),
+    ("commercial/KOSCHEI_LANG_010_RELEASE_NOTES_TR.md", "RELEASE_NOTES.tr.md"),
     ("LICENSE", "LICENSE"),
     ("LICENSE.tr.md", "LICENSE.tr.md"),
     ("LICENSING.md", "LICENSING.md"),

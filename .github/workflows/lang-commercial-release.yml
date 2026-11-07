@@ -1,0 +1,103 @@
+name: Koschei Lang 0.10.0 Commercial Release Candidate
+
+# Generates PRIVATE operator deliverables. This workflow NEVER publishes a
+# GitHub Release, updates Polar products, changes pricing or enables checkout.
+# The operator publishes only after verifying provenance and rights.
+on:
+  push:
+    branches:
+      - 'staging/lang-commercial-*'
+  workflow_dispatch:
+    inputs:
+      expected_version:
+        description: 'Expected exact Koschei Lang package version'
+        required: true
+        default: '0.10.0'
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: commercial-candidate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  commercial-candidate:
+    name: Verify and assemble private commercial ZIP
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Go 1.24 for native parity checks
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Install test dependencies
+        run: |
+          python -m pip install -e . pytest wasmtime
+          git clean -fdx
+
+      - name: Confirm release version and exact commit identity
+        env:
+          EXPECTED_VERSION: ${{ inputs.expected_version || '0.10.0' }}
+        run: |
+          python - <<'PY'
+          import os
+          import tomllib
+          from pathlib import Path
+          with (Path("pyproject.toml")).open("rb") as stream:
+              candidate = tomllib.load(stream)["project"]["version"]
+          expected = os.environ["EXPECTED_VERSION"]
+          if candidate != expected or candidate != "0.10.0":
+              raise SystemExit(f"Wrong candidate version: {candidate!r}")
+          print(f"Exact release candidate version: {candidate}")
+          PY
+          git rev-parse HEAD
+          test -z "$(git status --porcelain)"
+
+      - name: Execute commercial distribution and adversarial fixture tests
+        run: |
+          python -m pytest -q \
+            tests/test_commercial_release_candidate_v1.py \
+            tests/test_pilot_security_gate_v1.py \
+            tests/test_polar_bundle_v1.py \
+            tests/test_example_apps_v1.py
+
+      - name: Execute canonical full validation for exact commit
+        run: |
+          python -m koschei.local_validation_cli \
+            --profile full \
+            --output /tmp/koschei-commercial-validation.json \
+            --evidence-dir /tmp/koschei-commercial-validation-evidence
+
+      - name: Construct reproducible, hash-bound Polar operator files
+        env:
+          EXPECTED_VERSION: ${{ inputs.expected_version || '0.10.0' }}
+        run: |
+          python tools/commercial_release_candidate_v1.py \
+            --expected-version "$EXPECTED_VERSION" \
+            --validation-receipt /tmp/koschei-commercial-validation.json \
+            --output-dir /tmp/koschei-commercial-operator
+          cp /tmp/koschei-commercial-validation.json \
+            /tmp/koschei-commercial-operator/full-validation-receipt.json
+          cd /tmp/koschei-commercial-operator
+          sha256sum -c SHA256SUMS
+          ls -lh
+
+      - name: Upload private Polar sales deliverables (not public launch)
+        uses: actions/upload-artifact@v4
+        with:
+          name: koschei-lang-0.10.0-commercial-${{ github.sha }}
+          path: /tmp/koschei-commercial-operator/
+          retention-days: 30
+          if-no-files-found: error
