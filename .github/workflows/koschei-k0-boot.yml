@@ -84,6 +84,11 @@ jobs:
           clang -std=c11 -O2 -Wall -Wextra -Werror \
             server/kernel/k0/test_owned_tables_dryrun.c -o /tmp/koschei-k0-evidence/owned-physical-table-tests
           /tmp/koschei-k0-evidence/owned-physical-table-tests
+      - name: Build and validate multiregion CR3 transition topology (HOST MODEL ONLY)
+        run: |
+          clang -std=c11 -O2 -Wall -Wextra -Werror \
+            server/kernel/k0/test_cr3_multi_region_layout.c -o /tmp/koschei-k0-evidence/cr3-multi-region-layout-tests
+          /tmp/koschei-k0-evidence/cr3-multi-region-layout-tests
       - name: Test predicted page-fault and access-denial model (NOT CPU faults)
         run: |
           clang -std=c11 -O2 -Wall -Wextra -Werror \
