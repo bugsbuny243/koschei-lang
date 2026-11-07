@@ -319,7 +319,7 @@ eder.
 | **Matrix dokusu** | Yalıtılmış gerçeklikler arasında mesaj ve kanıt taşıma. Bağlantı yetki değildir. | `koschei/matrix_portal_transit_v1.py` | Kod + test |
 | **Matrix / Hara** | Matrix, bir Veyra içindeki yerel yürütme gerçekliğidir; Hara o Matrix içindeki programa (Aevra) özel ufuktur. İki program aynı Matrix'i paylaşıp aynı Hara'yı paylaşmayabilir. | `koschei/matrix_reality_v1.py` | Kod + test |
 | **Matrix ufuk geçişi — saf karar katmanı** | Veyra/Aevra sabit; yeni Matrix/Hara ve tam bir sonraki epoch. Self-consistent özet kaydı üretir, yetki vermez ve kalıcı durum güncellemez. | `import matrix_horizon` (`koschei/core_library/matrix_horizon.ks`); kalıcı durum hâlâ `matrix_horizon_fence_v1.py` | **Kısmi: Koschei'de** (saf doğrulama; SQLite tombstone değil) |
-| **Portal geçişi** | Gerçeklikler arası geçiş; kaynak ve hedef taahhütlerine, içerik kimliğine, istenen etkiye ve epoch'a bağlıdır | `koschei/matrix_portal_transit_v1.py` | Kod + test |
+| **Portal geçişi** | Gerçeklikler arası içerik bağı, saf politika ön değerlendirmesi ve paylaşılan tek SQLite defterinde atomik tekrar kabul engeli | `import matrix_portal` (`matrix_portal.preview_policy`) + Python `matrix_portal_transit_v1.py`, `matrix_portal_replay_v1.py` | **Kısmi: Koschei'de** (saf politika + host tek-defter replay çiti; imza, kimlik doğrulama ve gerçek yetkili yürütme yok) |
 | **Ufuk çiti** | Yeni bir Matrix/Hara'ya geçince eski Hara mezara konur; eski ufuktan erişim reddedilir | `koschei/matrix_horizon_fence_v1.py` | Kod + test |
 | **Gözlemci izdüşümü (Nyr)** | Gözlemcinin gördüğü yüzey kanonik kimlikleri göstermez (`nur` kökü) | `koschei/nur_nyr_projection_v1.py` | Kod + test |
 | **Neo** | Kanonik semantik kimlik ile gözlemcinin gördüğü temsil arasındaki yetkili çözümleme katmanı | Belge: vizyon raporu | Yalnızca belge |
@@ -354,7 +354,9 @@ gelecek (kuantum sonrası kriptografi) için kullanılır.
   ve Marvel evreninin dört bekçisi (`captain_marvel`, `hela`, `strange`,
   `wanda`). Hepsi `ks run` ve `ks build` ile aynı çıktıyı verir.
 - Matrix'in **saf ufuk-geçişi karar katmanı** artık `import matrix_horizon` ile
-  Koschei'de; kalıcı SQLite tombstone ve atomik güncelleme hâlâ Python host'ta.
+  Koschei'de; Matrix portalının **saf içerik/etki önerisi** de
+  `import matrix_portal` ile Koschei'de. Kalıcı SQLite tombstone, gerçek
+  portal yürütme ve yetki denetimi hâlâ dış güvenlik bileşenlerinde.
   Diğer Matrix, Kuantum ve Galaxy modüllerinin çoğu **Python ile yazılmış host
   makinesidir**; bir Koschei programı onları `import` edemez.
 - Özet artık var: çekirdek `sha3_256` işlemi denetlenmiş host uygulamasına
@@ -446,8 +448,9 @@ gelecek (kuantum sonrası kriptografi) için kullanılır.
    ve `secure` modülü. Bayt tipi hâlâ açık.
 2. ~~**Saf mantıklı bekçiler:** Captain Marvel, Hela, Doctor Strange,
    Wanda.~~ **Tamamlandı:** dört bekçi Koschei'de.
-3. **Matrix:** Saf ufuk-geçişi politika modülü Koschei'de (`matrix_horizon`);
-   kalıcı Hara mezarı, portal geçişi ve gerçek epoch bağlama hâlâ sırada.
+3. **Matrix:** Saf ufuk-geçişi (`matrix_horizon`) ve saf portal içerik bağı
+   (`matrix_portal`) Koschei'de. **Kalıcı Hara mezarı, gerçek portal yürütme,
+   karşılıklı kimlik doğrulama, **çoklu düğüm/defter genelinde replay çiti**,\n   dış etkiyle atomik işlem ve yetkilendirme** hâlâ sırada. Tek SQLite\n   defterindeki atomik replay kaydı host tarafında vardır; tek başına yetki değildir.
 4. **Gezegenler:** sekiz özelliği taşıyan bir gezegen yapısı. PHP2Shell
    ölçümüne göre önerilen sıra:
    1. **Titan** ve **Nidavellir:** bellek bütçesi ve "ya tam ya hiç". Titan'ın

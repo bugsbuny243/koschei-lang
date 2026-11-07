@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import hashlib
 
-from .wanda_reality_integrity_v1 import RealityCommitmentV1
+from .wanda_reality_integrity_v1 import RealityCommitmentV1, commit_reality_v1
 
 _CTX = b"koschei.matrix-portal-transit/v1\x00"
 
@@ -37,10 +37,32 @@ def _d32(value: bytes, label: str) -> bytes:
     return value
 
 
+def _canonical_reality(record: RealityCommitmentV1) -> bool:
+    """A record digest is not an issuer signature, but must match its fields.
+
+    A raw dataclass with a copied old commitment_digest must never satisfy
+    a new portal proof. Independent authenticity and current-state checks
+    still belong to the caller and durable execution gate.
+    """
+    if not isinstance(record, RealityCommitmentV1):
+        return False
+    try:
+        expected = commit_reality_v1(
+            reality_id=record.reality_id,
+            epoch=record.epoch,
+            state_digest=record.state_digest,
+            authority_digest=record.authority_digest,
+            previous_commitment=record.previous_commitment,
+        )
+    except (ValueError, TypeError, AttributeError):
+        return False
+    return record == expected
+
+
 def create_portal_transit_proof_v1(*, source: RealityCommitmentV1,
     destination: RealityCommitmentV1, payload_digest: bytes, effect: str,
     target_digest: bytes, epoch: int) -> PortalTransitProofV1:
-    if not isinstance(source, RealityCommitmentV1) or not isinstance(destination, RealityCommitmentV1):
+    if not _canonical_reality(source) or not _canonical_reality(destination):
         raise MatrixPortalTransitError("canonical source and destination Reality commitments required")
     if source.reality_id == destination.reality_id:
         raise MatrixPortalTransitError("portal transit requires distinct Realities")
@@ -64,20 +86,20 @@ def create_portal_transit_proof_v1(*, source: RealityCommitmentV1,
 def portal_matches_reality_v1(proof: PortalTransitProofV1, *,
     source: RealityCommitmentV1, destination: RealityCommitmentV1,
     payload_digest: bytes, effect: str, target_digest: bytes, epoch: int) -> bool:
+    """Compare an independently re-derived proof, including its own digest.
+
+    This is NOT an authorization or a durable replay fence. A caller can
+    construct a new internally consistent proof for different inputs;
+    authentic current-state and effect grants remain separate requirements.
+    """
     if not isinstance(proof, PortalTransitProofV1):
         return False
     try:
-        payload = _d32(payload_digest, "payload_digest")
-        target = _d32(target_digest, "target_digest")
-    except MatrixPortalTransitError:
+        expected = create_portal_transit_proof_v1(
+            source=source, destination=destination,
+            payload_digest=payload_digest, effect=effect,
+            target_digest=target_digest, epoch=epoch,
+        )
+    except (MatrixPortalTransitError, ValueError, TypeError, AttributeError):
         return False
-    return (
-        proof.source_reality == source.reality_id
-        and proof.destination_reality == destination.reality_id
-        and proof.source_commitment == source.commitment_digest
-        and proof.destination_commitment == destination.commitment_digest
-        and proof.payload_digest == payload
-        and proof.effect == effect
-        and proof.target_digest == target
-        and proof.epoch == epoch
-    )
+    return proof == expected

@@ -9,6 +9,7 @@ Every module is written in Koschei and compiled with the program that imports it
 | [`hela`](#hela) | 4 | 1 |
 | [`list`](#list) | 10 | 0 |
 | [`matrix_horizon`](#matrix_horizon) | 5 | 1 |
+| [`matrix_portal`](#matrix_portal) | 3 | 1 |
 | [`morag`](#morag) | 2 | 3 |
 | [`secure`](#secure) | 5 | 0 |
 | [`strange`](#strange) | 2 | 2 |
@@ -242,6 +243,50 @@ fn matches_snapshot(head: MatrixHorizonProposal, veyra_digest: String, aevra_dig
 ```
 
 Compare a proposal with a CALLER-SUPPLIED observation; this is not require_current(), because only the durable fence knows current state.
+
+## matrix_portal
+
+Pure cross-Reality portal proposal: identity and integrity binding only. A connection does NOT grant network, disk, execution or delegation rights. This ports eligibility checks from matrix_portal_transit_v1.py into .ks. The digest is Koschei's typed, domain-separated SHA3-256 text encoding; it is NOT byte-compatible with the host Python proof's wire encoding. Caller must independently authenticate current Reality commitments, authorize the effect and target, and enforce replay/persistence policy.
+
+### struct `PortalTransitProposal`
+
+Content-bound portal *proposal*, not a signed grant or an executed transit. Public fields are mutable copies: match() reconstructs from canonical Wanda commitments and independently rechecks every field before accepting.
+
+```ks
+source_reality: String
+destination_reality: String
+source_commitment: String
+destination_commitment: String
+payload_digest: String
+effect: String
+target_digest: String
+epoch: Int
+transit_digest: String
+```
+
+### `matrix_portal.propose`
+
+```ks
+fn propose(source: RealityCommitment, destination: RealityCommitment, payload_digest: String, effect: String, target_digest: String, epoch: Int) -> Result<PortalTransitProposal, Error>
+```
+
+Prepare a cross-Reality portal proposal without performing an effect. It does not authenticate the record issuer or authorize the destination.
+
+### `matrix_portal.matches`
+
+```ks
+fn matches(proof: PortalTransitProposal, source: RealityCommitment, destination: RealityCommitment, payload_digest: String, effect: String, target_digest: String, epoch: Int) -> Bool
+```
+
+Recreate expected proof against CALLER-PROVIDED canonical Wanda records. A changed Reality commitment, payload, requested effect, target or epoch fails closed, including when the proposal's digest is manually forged. The returned Bool is an integrity comparison, not execution admission.
+
+### `matrix_portal.preview_policy`
+
+```ks
+fn preview_policy(proof: PortalTransitProposal, source: RealityCommitment, destination: RealityCommitment, payload_digest: String, effect: String, target_digest: String, epoch: Int, allowed_effects: List<String>, allowed_targets: List<String>, consumed_proof_digests: List<String>) -> Bool
+```
+
+Preview the caller-provided policy and consumed-proof snapshot. This is NOT an admission or an authority check: the three lists come from untrusted caller-provided VALUES unless an external authenticated policy/ledger supplies them. In particular a stale empty consumed-list can say "true" after the same proof was durably consumed. Only the host's transactional DurablePortalReplayFence has the replay write gate.
 
 ## morag
 
