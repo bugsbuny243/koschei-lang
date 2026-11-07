@@ -233,6 +233,13 @@ class DurableMatrixHorizonFence:
                 ).fetchone() is not None:
                     raise MatrixHorizonFenceError("previous Hara is already Morth")
 
+                # The successor must never revive an earlier tombstoned Hara.
+                if self._db.execute(
+                    "SELECT 1 FROM matrix_hara_tombstones WHERE hara_digest=?",
+                    (successor.hara_digest,),
+                ).fetchone() is not None:
+                    raise MatrixHorizonFenceError("successor Hara is already Morth")
+
                 self._db.execute(
                     "INSERT INTO matrix_hara_tombstones VALUES (?,?,?,?,?,?)",
                     (

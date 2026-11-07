@@ -318,6 +318,7 @@ eder.
 |---|---|---|---|
 | **Matrix dokusu** | Yalıtılmış gerçeklikler arasında mesaj ve kanıt taşıma. Bağlantı yetki değildir. | `koschei/matrix_portal_transit_v1.py` | Kod + test |
 | **Matrix / Hara** | Matrix, bir Veyra içindeki yerel yürütme gerçekliğidir; Hara o Matrix içindeki programa (Aevra) özel ufuktur. İki program aynı Matrix'i paylaşıp aynı Hara'yı paylaşmayabilir. | `koschei/matrix_reality_v1.py` | Kod + test |
+| **Matrix ufuk geçişi — saf karar katmanı** | Veyra/Aevra sabit; yeni Matrix/Hara ve tam bir sonraki epoch. Self-consistent özet kaydı üretir, yetki vermez ve kalıcı durum güncellemez. | `import matrix_horizon` (`koschei/core_library/matrix_horizon.ks`); kalıcı durum hâlâ `matrix_horizon_fence_v1.py` | **Kısmi: Koschei'de** (saf doğrulama; SQLite tombstone değil) |
 | **Portal geçişi** | Gerçeklikler arası geçiş; kaynak ve hedef taahhütlerine, içerik kimliğine, istenen etkiye ve epoch'a bağlıdır | `koschei/matrix_portal_transit_v1.py` | Kod + test |
 | **Ufuk çiti** | Yeni bir Matrix/Hara'ya geçince eski Hara mezara konur; eski ufuktan erişim reddedilir | `koschei/matrix_horizon_fence_v1.py` | Kod + test |
 | **Gözlemci izdüşümü (Nyr)** | Gözlemcinin gördüğü yüzey kanonik kimlikleri göstermez (`nur` kökü) | `koschei/nur_nyr_projection_v1.py` | Kod + test |
@@ -352,8 +353,10 @@ gelecek (kuantum sonrası kriptografi) için kullanılır.
 - Koschei ile yazılmış olanlar: günlük çekirdek (`text`, `list`, `secure`)
   ve Marvel evreninin dört bekçisi (`captain_marvel`, `hela`, `strange`,
   `wanda`). Hepsi `ks run` ve `ks build` ile aynı çıktıyı verir.
-- Diğer evren modülleri hâlâ **Python ile yazılmış host makinesidir**; bir
-  Koschei programı onları `import` edemez.
+- Matrix'in **saf ufuk-geçişi karar katmanı** artık `import matrix_horizon` ile
+  Koschei'de; kalıcı SQLite tombstone ve atomik güncelleme hâlâ Python host'ta.
+  Diğer Matrix, Kuantum ve Galaxy modüllerinin çoğu **Python ile yazılmış host
+  makinesidir**; bir Koschei programı onları `import` edemez.
 - Özet artık var: çekirdek `sha3_256` işlemi denetlenmiş host uygulamasına
   (Python `hashlib`, Go `crypto/sha3`) devreder; Koschei yeni bir kriptografik
   ilkel yazmaz. Girdi 1 MiB UTF-8 ile sınırlıdır.
@@ -443,7 +446,8 @@ gelecek (kuantum sonrası kriptografi) için kullanılır.
    ve `secure` modülü. Bayt tipi hâlâ açık.
 2. ~~**Saf mantıklı bekçiler:** Captain Marvel, Hela, Doctor Strange,
    Wanda.~~ **Tamamlandı:** dört bekçi Koschei'de.
-3. **Matrix:** portal geçişi ve ufuk çiti.
+3. **Matrix:** Saf ufuk-geçişi politika modülü Koschei'de (`matrix_horizon`);
+   kalıcı Hara mezarı, portal geçişi ve gerçek epoch bağlama hâlâ sırada.
 4. **Gezegenler:** sekiz özelliği taşıyan bir gezegen yapısı. PHP2Shell
    ölçümüne göre önerilen sıra:
    1. **Titan** ve **Nidavellir:** bellek bütçesi ve "ya tam ya hiç". Titan'ın
