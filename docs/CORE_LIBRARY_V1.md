@@ -171,6 +171,35 @@ encodings differ deliberately**: the Koschei version uses the domain
 separated `secure.digest` text contract. They are not interchangeable
 wire proofs.
 
+#### Matrix portal replay: pure preview + durable single-ledger fence
+
+`matrix_portal.preview_policy` is a pure Koschei **preview**. Given the
+canonical portal proof and source/destination commitments, it compares a
+caller-supplied list of allowed effects, target digests and used proof
+digests. It does not acquire any authority, read the real replay ledger
+or authenticate the policy snapshot: a stale or forged list can yield
+`true` for a transit already used. It must NOT be the final gate.
+
+The Python host `koschei/matrix_portal_replay_v1.py` adds a separate
+`DurablePortalReplayFence`, intended for a trusted service **after**
+it has independently authenticated the current Realities and approved
+the exact effect and target. The host rechecks the complete canonical
+portal proof and atomically `INSERT`s its 32-byte identity into one
+SQLite database using `BEGIN IMMEDIATE`, `WAL` and `synchronous=FULL`.
+The primary key rejects repeated proofs, even between two simultaneous
+database connections or after process restart. The host cannot issue
+a grant, send data, or execute an effect.
+
+**Scope is narrow:** at-most-once *bookkeeping in one intact shared
+local SQLite ledger*, not global replay prevention, issuer signing,
+current-state authentication or exactly-once external processing.
+An unauthorized caller with direct mutation access can deliberately
+consume/burn a proof; the caller must authenticate and authorize before
+exposing this mutation. A deleted, replaced, copied or externally
+tampered database invalidates the replay guarantee. Deployments must
+use a shared, protected durable database; network file systems are not
+covered by these tests.
+
 **Remaining external boundaries:** authenticating the authoritative
 source/destination state, validating any granted effect, preventing
 historical replay, verifying a destination's right to accept a message

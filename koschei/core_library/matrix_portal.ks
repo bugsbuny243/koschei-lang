@@ -83,3 +83,23 @@ fn matches(proof: PortalTransitProposal, source: RealityCommitment, destination:
         Err(_) => false,
     }
 }
+
+
+// Preview the caller-provided policy and consumed-proof snapshot.
+// This is NOT an admission or an authority check: the three lists come
+// from untrusted caller-provided VALUES unless an external authenticated
+// policy/ledger supplies them. In particular a stale empty consumed-list
+// can say "true" after the same proof was durably consumed. Only the
+// host's transactional DurablePortalReplayFence has the replay write gate.
+fn preview_policy(proof: PortalTransitProposal, source: RealityCommitment, destination: RealityCommitment, payload_digest: String, effect: String, target_digest: String, epoch: Int, allowed_effects: List<String>, allowed_targets: List<String>, consumed_proof_digests: List<String>) -> Bool {
+    if !matches(proof, source, destination, payload_digest, effect, target_digest, epoch) {
+        return false
+    }
+    if !allowed_effects.contains(effect) || !allowed_targets.contains(target_digest) {
+        return false
+    }
+    if consumed_proof_digests.contains(proof.transit_digest) {
+        return false
+    }
+    return true
+}

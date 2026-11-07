@@ -9,7 +9,7 @@ Every module is written in Koschei and compiled with the program that imports it
 | [`hela`](#hela) | 4 | 1 |
 | [`list`](#list) | 10 | 0 |
 | [`matrix_horizon`](#matrix_horizon) | 5 | 1 |
-| [`matrix_portal`](#matrix_portal) | 2 | 1 |
+| [`matrix_portal`](#matrix_portal) | 3 | 1 |
 | [`morag`](#morag) | 2 | 3 |
 | [`secure`](#secure) | 5 | 0 |
 | [`strange`](#strange) | 2 | 2 |
@@ -279,6 +279,14 @@ fn matches(proof: PortalTransitProposal, source: RealityCommitment, destination:
 ```
 
 Recreate expected proof against CALLER-PROVIDED canonical Wanda records. A changed Reality commitment, payload, requested effect, target or epoch fails closed, including when the proposal's digest is manually forged. The returned Bool is an integrity comparison, not execution admission.
+
+### `matrix_portal.preview_policy`
+
+```ks
+fn preview_policy(proof: PortalTransitProposal, source: RealityCommitment, destination: RealityCommitment, payload_digest: String, effect: String, target_digest: String, epoch: Int, allowed_effects: List<String>, allowed_targets: List<String>, consumed_proof_digests: List<String>) -> Bool
+```
+
+Preview the caller-provided policy and consumed-proof snapshot. This is NOT an admission or an authority check: the three lists come from untrusted caller-provided VALUES unless an external authenticated policy/ledger supplies them. In particular a stale empty consumed-list can say "true" after the same proof was durably consumed. Only the host's transactional DurablePortalReplayFence has the replay write gate.
 
 ## morag
 

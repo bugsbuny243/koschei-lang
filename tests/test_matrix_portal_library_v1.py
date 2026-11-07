@@ -135,6 +135,42 @@ fn main() {
 """
         self.assertEqual(self.run_program(source, native=True), oracle())
 
+    def test_caller_supplied_policy_preview_cannot_override_proof_integrity(self) -> None:
+        source = """
+import secure
+import wanda
+import matrix_portal
+
+fn main() {
+    let source_state = secure.hash("bank-state") or return
+    let source_authority = secure.hash("bank-authority") or return
+    let destination_state = secure.hash("exchange-state") or return
+    let destination_authority = secure.hash("exchange-authority") or return
+    let payload = secure.hash("trade-request") or return
+    let target = secure.hash("trade-target") or return
+    let another_target = secure.hash("different-target") or return
+    let source = wanda.commit("BANK-A", 7, source_state, source_authority, secure.zero_digest()) or return
+    let destination = wanda.commit("EXCHANGE-B", 9, destination_state, destination_authority, secure.zero_digest()) or return
+    let proof = matrix_portal.propose(source, destination, payload, "submit", target, 11) or return
+    println(matrix_portal.preview_policy(proof, source, destination, payload, "submit", target, 11, ["submit"], [target], []))
+    println(matrix_portal.preview_policy(proof, source, destination, payload, "submit", target, 11, ["read"], [target], []))
+    println(matrix_portal.preview_policy(proof, source, destination, payload, "submit", target, 11, ["submit"], [another_target], []))
+    println(matrix_portal.preview_policy(proof, source, destination, payload, "submit", target, 11, ["submit"], [target], [proof.transit_digest]))
+    let mut fake = proof
+    fake.transit_digest = another_target
+    println(matrix_portal.preview_policy(fake, source, destination, payload, "submit", target, 11, ["submit"], [target], []))
+    println(matrix_portal.preview_policy(proof, source, destination, payload, "submit", another_target, 11, ["submit"], [another_target], []))
+    println(matrix_portal.preview_policy(proof, source, destination, payload, "submit", target, 12, ["submit"], [target], []))
+    // An untrusted stale empty snapshot still says true. This is why the
+    // host's durable SQLite gate must be authoritative for replay checks.
+    println(matrix_portal.preview_policy(proof, source, destination, payload, "submit", target, 11, ["submit"], [target], []))
+}
+"""
+        self.assertEqual(self.run_program(source, native=True), [
+            "true", "false", "false", "false",
+            "false", "false", "false", "true",
+        ])
+
     def test_forged_proof_and_noncanonical_wanda_commitments_fail_closed(self) -> None:
         source = """
 import secure
