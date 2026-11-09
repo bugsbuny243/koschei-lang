@@ -3,7 +3,7 @@
 Status: **host conformance adapter; bootstrap evidence only**
 
 `koschei/mir_go_native.py` projects a sealed MIR v4 graph into Go for
-`ks build`. Under the [native execution boundary](../KOSCHEI_NATIVE_EXECUTION_BOUNDARY_V1.md)
+`ks build`. Under the [native execution boundary](design/NATIVE_EXECUTION_BOUNDARY_V1.md)
 it is a host conformance adapter, not a Koschei-native runtime and not a
 semantic authority. v2 changes what the adapter computes, not who owns the
 meaning: every rule it applies is copied from the canonical sealed-MIR

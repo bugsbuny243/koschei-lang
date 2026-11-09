@@ -418,4 +418,4 @@ ile reddedilir; bkz.
 - `ks run` bir programı varsayılan olarak 1.000.000 adımdan sonra
   (`--max-steps`) ve 512 iç içe çağrıda durdurur.
 - Henüz etkileşimli satır okuma yoktur; aracı yalnızca linux/amd64'te vardır
-  ([`../SERVE_KNOWHERE_V1.md`](../SERVE_KNOWHERE_V1.md)); plan için `KOSCHEI_SATISA_HAZIRLIK_V1.md`.
+  ([`../SERVE_KNOWHERE_V1.md`](../SERVE_KNOWHERE_V1.md)).

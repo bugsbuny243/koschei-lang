@@ -418,4 +418,4 @@ the same bytes and the same Error values as `ks run`. Callback members
 - `ks run` stops a program after 1,000,000 steps by default (`--max-steps`)
   and at 512 nested calls.
 - There is no interactive line reading yet, and the broker exists on
-  linux/amd64 only ([`../SERVE_KNOWHERE_V1.md`](../SERVE_KNOWHERE_V1.md)); see `KOSCHEI_SATISA_HAZIRLIK_V1.md` for the plan.
+  linux/amd64 only ([`../SERVE_KNOWHERE_V1.md`](../SERVE_KNOWHERE_V1.md)).

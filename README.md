@@ -4,7 +4,7 @@
 
 Koschei Lang is an independent programming language and library ecosystem for cybersecurity-centered general-purpose software development. Its own semantics, compiler, standard library and runtime define the product; Web3 and AI integrations are applications of the language. Self-contained distribution and surpassing Rust in security remain development goals requiring executed evidence.
 
-**Koschei Lang is sold and licensed separately from Koschei Sentinel and Koschei Web3 Hub.** Interoperability may use explicit SDKs, adapters and versioned contracts, but it does not create shared pricing, entitlement or runtime authority. See [the standalone product charter](docs/PRODUCT_CHARTER_LANG_V1.md), [product direction](docs/PRODUCT_DIRECTION_2026-09-10.md) and the [legacy compatibility bundle contract](docs/COMMERCIAL_BUNDLE_V1.md).
+**Koschei Lang is sold and licensed separately from Koschei Sentinel and Koschei Web3 Hub.** Interoperability may use explicit SDKs, adapters and versioned contracts, but it does not create shared pricing, entitlement or runtime authority. See [the standalone product charter](docs/PRODUCT_CHARTER_LANG_V1.md) and [product direction](docs/PRODUCT_DIRECTION_2026-09-10.md).
 
 > **Private development repository. Koschei Lang is free for personal use; commercial use needs a perpetual commercial license (see [`LICENSING.md`](LICENSING.md)). Access to this repository does not grant redistribution, sublicensing, resale, or publication rights. See `LICENSE`.**
 
