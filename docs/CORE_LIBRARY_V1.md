@@ -4,7 +4,7 @@ Status: **first library modules written in Koschei; `ks run` and `ks build`**
 
 This is the everyday layer of the Koschei library. The four library universes
 (Marvel, Matrix, quantum physics, other universes) that build on it are mapped
-in [`KOSCHEI_KUTUPHANE_EVRENLERI_V1.md`](../KOSCHEI_KUTUPHANE_EVRENLERI_V1.md).
+in [`KOSCHEI_KUTUPHANE_EVRENLERI_V1.md`](design/KUTUPHANE_EVRENLERI_V1.md).
 
 ## Why
 
@@ -213,7 +213,7 @@ Python guardian and return the same decisions, reasons and error causes.
 `xandar` and `morag` are new planets from the PHP2Shell survey and exist only
 in Koschei; an independent Python model of their rules checks them. The
 mapping, rules and status live in
-[`KOSCHEI_KUTUPHANE_EVRENLERI_V1.md`](../KOSCHEI_KUTUPHANE_EVRENLERI_V1.md).
+[`KOSCHEI_KUTUPHANE_EVRENLERI_V1.md`](design/KUTUPHANE_EVRENLERI_V1.md).
 
 | Module | Records | Functions |
 |---|---|---|

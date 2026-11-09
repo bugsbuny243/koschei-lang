@@ -64,7 +64,7 @@ yasaları `KOSCHEI_SIGIL_LEXICON_V1.md` içindedir.
 | **vor** | Sınırlandırılmış güç, yetki ve erişim. Yetki açıktır, yalnızca daralır, asla kendiliğinden genişlemez. | Güç, Uzay | Yetki modeli, Captain Marvel (yayılma bütçesi), Titan (kaynak bütçesi), Sakaar (varış yetki değildir) |
 | **shi** | Kanıt, doğrulama ve tanıklık. İddia kanıt değildir; yazan kendi işini kesinleştiremez. | Gerçeklik, Zihin | Wanda (taahhüt zinciri), `secure` (özet), Doctor Strange (etki öncesi kanıt), Neo/Sentinel |
 | **thal** | Koruma, hasarı sınırlama ve güvenli kurtarma. Kurtarma yetki üretmez; eski yetki dirilmez. | Zaman | Hela, Captain Marvel (hasarı sınırlar), Nidavellir (yarım kalan iz bırakmaz), Morth Kara Delik |
-| **nur** | Görünürlük, bilgi kontrolü ve gizlilik. Görmek yetki değildir. | — | Loki, Matrix/Nyr, Object Space, [görünmez kod](KOSCHEI_GORUNMEZ_DEGISEN_KOD_V1.md) |
+| **nur** | Görünürlük, bilgi kontrolü ve gizlilik. Görmek yetki değildir. | — | Loki, Matrix/Nyr, Object Space, [görünmez kod](GORUNMEZ_DEGISEN_KOD_V1.md) |
 
 `nur`'un bilerek taşı yoktur: altı taş kabul kararının girdileridir ve
 görünürlük hiçbir zaman kabul veya yetki girdisi olamaz. `nur` yalnızca
@@ -256,7 +256,7 @@ Koleksiyoncu'ya verilir; Ruh Taşı Vormir'dedir; Eldiven Nidavellir'de
 dövülür; Thanos Titan'dandır.
 
 Kodu ve yapıyı dış saldırgana göstermeme hedefi ayrı belgededir:
-[Koschei Görünmez ve Sürekli Değişen Kod](KOSCHEI_GORUNMEZ_DEGISEN_KOD_V1.md).
+[Koschei Görünmez ve Sürekli Değişen Kod](GORUNMEZ_DEGISEN_KOD_V1.md).
 
 ### Marvel bekçileri
 
