@@ -31,6 +31,22 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 INDEX_HTML = HERE / "index.html"
+# The public product site (commercial/lang-site) is served from the same
+# process so one service hosts both the landing page and /play.
+SITE_DIR = Path(os.environ.get("KOSCHEI_SITE_DIR", HERE.parent.parent / "commercial" / "lang-site"))
+SITE_FILES = {
+    "/": ("index.html", "text/html; charset=utf-8"),
+    "/index.html": ("index.html", "text/html; charset=utf-8"),
+    "/security-guide.html": ("security-guide.html", "text/html; charset=utf-8"),
+    "/security-guide.tr.html": ("security-guide.tr.html", "text/html; charset=utf-8"),
+    "/robots.txt": ("robots.txt", "text/plain; charset=utf-8"),
+    "/sitemap.xml": ("sitemap.xml", "application/xml; charset=utf-8"),
+}
+SITE_CSP = (
+    "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data:; "
+    "font-src 'self'; connect-src 'none'; form-action 'none'; frame-ancestors 'none'; base-uri 'none'"
+)
+PLAY_CSP = SITE_CSP.replace("connect-src 'none'", "connect-src 'self'")
 
 MAX_SOURCE_BYTES = 16 * 1024
 MAX_OUTPUT_BYTES = 16 * 1024
@@ -145,14 +161,19 @@ LIMITER = RateLimiter(RATE_LIMIT_REQUESTS, RATE_LIMIT_WINDOW_SECONDS)
 class Handler(BaseHTTPRequestHandler):
     server_version = "KoscheiPlayground/1"
 
-    def _send(self, status: int, body: bytes, content_type: str) -> None:
+    def _send(self, status: int, body: bytes, content_type: str, csp: str | None = None) -> None:
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "strict-origin-when-cross-origin")
+        self.send_header("X-Frame-Options", "DENY")
         self.send_header("Cache-Control", "no-store")
+        if csp:
+            self.send_header("Content-Security-Policy", csp)
         self.end_headers()
-        self.wfile.write(body)
+        if self.command != "HEAD":
+            self.wfile.write(body)
 
     def _json(self, status: int, payload: dict) -> None:
         self._send(status, json.dumps(payload, ensure_ascii=False).encode("utf-8"), "application/json; charset=utf-8")
@@ -162,12 +183,21 @@ class Handler(BaseHTTPRequestHandler):
         return forwarded.split(",")[0].strip() or self.client_address[0]
 
     def do_GET(self) -> None:  # noqa: N802
-        if self.path in ("/", "/index.html"):
-            self._send(HTTPStatus.OK, INDEX_HTML.read_bytes(), "text/html; charset=utf-8")
-        elif self.path == "/health":
+        path = self.path.split("?", 1)[0]
+        site = SITE_FILES.get(path)
+        if path in ("/play", "/play/"):
+            self._send(HTTPStatus.OK, INDEX_HTML.read_bytes(), "text/html; charset=utf-8", PLAY_CSP)
+        elif site and (SITE_DIR / site[0]).is_file():
+            self._send(HTTPStatus.OK, (SITE_DIR / site[0]).read_bytes(), site[1], SITE_CSP)
+        elif path in ("/", "/index.html"):
+            # No product site bundled: the playground is the home page.
+            self._send(HTTPStatus.OK, INDEX_HTML.read_bytes(), "text/html; charset=utf-8", PLAY_CSP)
+        elif path == "/health":
             self._json(HTTPStatus.OK, {"ok": True})
         else:
             self._json(HTTPStatus.NOT_FOUND, {"error": "not_found"})
+
+    do_HEAD = do_GET
 
     def do_POST(self) -> None:  # noqa: N802
         if self.path != "/api/evaluate":

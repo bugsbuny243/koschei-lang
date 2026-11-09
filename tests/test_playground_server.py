@@ -118,10 +118,22 @@ def _post(url: str, body: bytes) -> tuple[int, dict]:
         return error.code, json.loads(error.read())
 
 
-def test_http_index_and_evaluate(server):
+def test_http_site_and_playground_pages(server):
     with urllib.request.urlopen(server + "/", timeout=10) as response:
+        body = response.read()
         assert response.status == 200
+        assert b"buy.polar.sh" in body and b'href="/play"' in body
+        assert "connect-src 'none'" in response.headers["Content-Security-Policy"]
+    with urllib.request.urlopen(server + "/play", timeout=10) as response:
         assert b"Koschei Playground" in response.read()
+        assert "connect-src 'self'" in response.headers["Content-Security-Policy"]
+    with urllib.request.urlopen(server + "/security-guide.html", timeout=10) as response:
+        assert response.status == 200
+    with pytest.raises(urllib.error.HTTPError):
+        urllib.request.urlopen(server + "/../pyproject.toml", timeout=10)
+
+
+def test_http_evaluate(server):
     status, data = _post(server + "/api/evaluate", json.dumps({"source": HELLO, "action": "run"}).encode())
     assert status == 200 and data["run"]["stdout"].strip() == "hello"
 

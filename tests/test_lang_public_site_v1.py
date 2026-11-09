@@ -49,7 +49,9 @@ def test_static_responsive_no_tracking_or_fake_live_compiler():
     assert "@media(max-width:640px)" in source
     assert not re.search(r"<(?:img|iframe|embed|object)\b", source, re.I)
     assert "fetch(" not in source
-    assert "not an interactive compiler" in source
+    # The hero terminal is illustrative; real code runs on the /play playground.
+    assert "Illustrative summary of the included fixture" in source
+    assert any(a.get("href") == "/play" for a in p.links)
     assert "navigator.clipboard.writeText" in source
 
 
@@ -72,7 +74,7 @@ def test_bilingual_switch_and_all_site_anchors():
 def test_current_checkout_and_pricing_only():
     source, p = parsed()
     assert sum(x.get("href") == POLAR for x in p.links) >= 2
-    assert all(a.get("href") in (POLAR, "/security-guide.html") or a.get("href", "").startswith("#") for a in p.links)
+    assert all(a.get("href") in (POLAR, "/security-guide.html", "/play") or a.get("href", "").startswith("#") for a in p.links)
     for expected in ("$49", "49 USD", "One-time purchase", "12 months", "Perpetual", "Python 3.12+", "Go 1.24+"):
         assert expected in source
     for false_claim in ("49 EUR", "49€", "EVM-compatible", "hack-proof", "100x safer", "bank certified"):

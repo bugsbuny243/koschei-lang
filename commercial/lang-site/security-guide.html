@@ -54,7 +54,7 @@
     <h1>Why should imported code inherit <em>all</em> your permissions?</h1>
     <p class="lead">Koschei Lang is an independent programming language centered on <strong>explicit capability values</strong>. In Koschei source, a function must be given authority before it can read the disk, access the network, inspect the environment or launch a process.</p>
     <p>Many development workflows make it easy for a dependency to perform operations with the ambient permissions of its host process. Koschei takes a more explicit approach for code compiled by its own toolchain: access must appear in the program's authority flow, and unauthorized operations can be rejected before execution.</p>
-    <div class="notice"><p><strong>This is a static technical walkthrough, not a browser-based live compiler.</strong> The commands below use fixtures included in the licensed ZIP. The expected diagnostic is grounded in the repository's tested example.</p></div>
+    <div class="notice"><p><strong>This is a static technical walkthrough, not a browser-based live compiler.</strong> The commands below use fixtures included in the licensed ZIP. The expected diagnostic is grounded in the repository's tested example. To run real Koschei code in your browser, open the <a href="/play">playground</a>.</p></div>
 
     <h2>1. See an unauthorized import fail</h2>
     <p>The packaged example <code>examples/supply_chain/analytics.ks</code> deliberately attempts to access disk content without a disk capability in scope. Run the checker locally:</p>
