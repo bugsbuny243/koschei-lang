@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Koschei Playground</title>
+<style>
+:root{--bg:#0d1215;--panel:#131b20;--line:#26323a;--text:#dde6e2;--muted:#8a9a93;--ok:#7cc5a1;--bad:#e3798a;--warn:#d9b76e;--accent:#9fd9bd}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,-apple-system,Segoe UI,sans-serif}
+main{max-width:980px;margin:0 auto;padding:24px 16px 48px}
+h1{margin:0 0 4px;font-size:24px}
+.lead{margin:0 0 20px;color:var(--muted)}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px}
+.bar span{color:var(--muted);font-size:13px;margin-right:4px}
+button{padding:8px 14px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--text);font:inherit;font-size:14px;cursor:pointer}
+button:hover{border-color:#3d4d57}
+button.primary{border-color:#3c6b58;background:#12201a;color:var(--accent);font-weight:600}
+button:disabled{opacity:.6;cursor:default}
+textarea{width:100%;min-height:260px;padding:14px;border:1px solid var(--line);border-radius:8px;background:#0a0f12;color:var(--text);font:14px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace;resize:vertical;tab-size:4;white-space:pre;overflow-wrap:normal;overflow-x:auto}
+.verdict{margin:16px 0 8px;padding:12px 14px;border-radius:8px;border-left:4px solid var(--line);background:var(--panel);font-weight:600}
+.verdict.ok{border-left-color:var(--ok)}.verdict.bad{border-left-color:var(--bad)}.verdict.warn{border-left-color:var(--warn)}
+.verdict small{display:block;font-weight:400;color:var(--muted);margin-top:4px}
+pre{margin:0 0 10px;padding:12px 14px;border:1px solid var(--line);border-radius:8px;background:#0a0f12;white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}
+.label{margin:12px 0 4px;color:var(--muted);font-size:12px;letter-spacing:.06em;text-transform:uppercase}
+footer{margin-top:28px;color:var(--muted);font-size:13px}
+</style>
+</head>
+<body>
+<main>
+  <p style="margin:0 0 14px"><a href="/" style="color:var(--muted);text-decoration:none">← Koschei Lang</a></p>
+  <h1>Koschei Playground</h1>
+  <p class="lead">Koschei code cannot touch your disk, network, environment or processes unless it is handed a capability for it. Try to break that rule below.</p>
+
+  <div class="bar"><span>Examples:</span>
+    <button data-example="hello">Hello</button>
+    <button data-example="steal">Read a secret file</button>
+    <button data-example="env">Read an API key</button>
+    <button data-example="compute">Pure computation</button>
+  </div>
+  <textarea id="src" spellcheck="false" aria-label="Koschei source"></textarea>
+  <div class="bar" style="margin-top:10px">
+    <button id="run" class="primary">Run</button>
+    <button id="check">Check only</button>
+  </div>
+  <div id="out" aria-live="polite"></div>
+  <footer>Programs run on our server under a strict policy: only computation, clock and random are allowed. Time, memory and step limits apply.</footer>
+</main>
+<script>
+const EXAMPLES={
+hello:`fn main() {
+    print("hello from Koschei")
+}
+`,
+steal:`// A "helpful" package that quietly tries to read a file.
+// It compiles, but nobody granted it disk access.
+fn main(caps: SystemCaps) {
+    let d = caps.disk.allow_read_only("/etc")
+    let s = d.read("/etc/hostname") or "none"
+    print(s)
+}
+`,
+env:`// Tries to read an environment variable such as an API key.
+fn main(caps: SystemCaps) {
+    let e = caps.env.allow("HOME")
+    print(e.get("HOME") or "none")
+}
+`,
+compute:`fn fib(n: Int) -> Int {
+    if n < 2 {
+        return n
+    }
+    return fib(n - 1) + fib(n - 2)
+}
+
+fn main() {
+    print(fib(15))
+}
+`};
+const src=document.getElementById('src'),out=document.getElementById('out');
+const runBtn=document.getElementById('run'),checkBtn=document.getElementById('check');
+src.value=EXAMPLES.hello;
+document.querySelectorAll('[data-example]').forEach(b=>b.addEventListener('click',()=>{src.value=EXAMPLES[b.dataset.example];out.replaceChildren();}));
+src.addEventListener('keydown',e=>{if(e.key==='Tab'){e.preventDefault();const s=src.selectionStart;src.setRangeText('    ',s,src.selectionEnd,'end');}
+  if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){e.preventDefault();go('run');}});
+
+function block(label,text){if(!text)return [];const l=document.createElement('div');l.className='label';l.textContent=label;const p=document.createElement('pre');p.textContent=text;return [l,p];}
+function verdict(cls,title,note){const d=document.createElement('div');d.className='verdict '+cls;d.textContent=title;if(note){const s=document.createElement('small');s.textContent=note;d.appendChild(s);}return d;}
+
+const DOMAINS={disk:'Disk',net:'Network',env:'Environment variables',process:'Processes',serve:'HTTP server',persist:'Persistent state',input:'Program input',clock:'Clock',random:'Random numbers'};
+function manifestText(m){
+  if(!m)return '';
+  if(!m.has_capabilities)return 'No side-effect capabilities. Pure computation: no disk, network, environment or process access.';
+  const lines=[];
+  for(const g of m.grants||[]){
+    const ops=(m.operations||{})[g.domain]||[];
+    lines.push(`${DOMAINS[g.domain]||g.domain}: ${g.scope}${g.domain==='disk'?(g.read_only?' (read-only)':' (read/write)'):''}  · line ${g.line}${ops.length?'  · uses '+ops.join(', '):''}`);
+  }
+  for(const d of m.required_domains||[])lines.push(`${DOMAINS[d]||d}: must be supplied by the caller`);
+  return lines.join('\n');
+}
+
+function show(r){
+  const nodes=[];const p=r.policy||{};
+  if(r.stage==='policy'){
+    nodes.push(verdict('bad','Blocked before running: the program asked for authority it was not given.','The compiler read the capability manifest and refused. Not a single line executed.'));
+    nodes.push(...block('What the program asked for',manifestText(r.manifest)));
+    nodes.push(...block('Policy',p.stderr.trim()));
+  }else if(r.stage==='check'&&p.exit_code!==0){
+    nodes.push(verdict(p.timed_out?'warn':'bad',p.timed_out?'Checking took too long.':'The program does not compile.'));
+    nodes.push(...block('Compiler output',(p.stderr+'\n'+p.stdout).trim()));
+  }else if(!r.ran){
+    nodes.push(verdict('ok','Compiles, and requests no forbidden capability.'));
+    nodes.push(...block('Capability manifest',manifestText(r.manifest)));
+  }else{
+    const x=r.run;
+    if(x.timed_out)nodes.push(verdict('warn','Stopped: time limit reached.'));
+    else if(x.exit_code===0)nodes.push(verdict('ok','Ran successfully.'));
+    else nodes.push(verdict('warn','Ran, then stopped with an error.'));
+    nodes.push(...block('Output',x.stdout.trimEnd()));
+    nodes.push(...block('Errors',x.stderr.trimEnd()));
+  }
+  out.replaceChildren(...nodes);
+}
+
+async function go(action){
+  runBtn.disabled=checkBtn.disabled=true;
+  out.replaceChildren(verdict('','Working…'));
+  try{
+    const res=await fetch('/api/evaluate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({source:src.value,action,lang:'en'})});
+    const data=await res.json().catch(()=>({}));
+    if(!res.ok)out.replaceChildren(verdict('bad',data.message||('Request failed (HTTP '+res.status+')')));
+    else show(data);
+  }catch(e){out.replaceChildren(verdict('bad','Could not reach the playground server.'));}
+  finally{runBtn.disabled=checkBtn.disabled=false;}
+}
+runBtn.addEventListener('click',()=>go('run'));
+checkBtn.addEventListener('click',()=>go('check'));
+</script>
+</body>
+</html>
