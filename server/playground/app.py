@@ -192,6 +192,10 @@ class Handler(BaseHTTPRequestHandler):
         elif path in ("/", "/index.html"):
             # No product site bundled: the playground is the home page.
             self._send(HTTPStatus.OK, INDEX_HTML.read_bytes(), "text/html; charset=utf-8", PLAY_CSP)
+        elif path == "/favicon.ico":
+            self.send_response(HTTPStatus.NO_CONTENT)
+            self.send_header("Cache-Control", "public, max-age=86400")
+            self.end_headers()
         elif path == "/health":
             self._json(HTTPStatus.OK, {"ok": True})
         else:
@@ -224,10 +228,33 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError, KeyError, TypeError, json.JSONDecodeError):
             self._json(HTTPStatus.BAD_REQUEST, {"error": "invalid_request", "message": "Send JSON with a 'source' string and action 'check' or 'run'."})
             return
+        log_event(result)
         self._json(HTTPStatus.OK, result)
 
     def log_message(self, fmt: str, *args) -> None:  # keep logs free of program source
-        sys.stderr.write("%s %s\n" % (self.log_date_time_string(), fmt % args))
+        sys.stdout.write("%s %s\n" % (self.log_date_time_string(), fmt % args))
+        sys.stdout.flush()
+
+
+def outcome(result: dict) -> str:
+    """One word describing how an evaluation ended."""
+    if result["stage"] == "policy":
+        return "blocked"
+    if not result["ran"]:
+        return "checked" if result["policy"]["exit_code"] == 0 else "compile_error"
+    run = result["run"]
+    if run["timed_out"]:
+        return "timeout"
+    return "ok" if run["exit_code"] == 0 else "runtime_error"
+
+
+def log_event(result: dict) -> None:
+    """Aggregate usage line: no source code, no client address."""
+    manifest = result.get("manifest") or {}
+    domains = sorted({g.get("domain", "") for g in manifest.get("grants", [])} | set(manifest.get("required_domains", [])))
+    event = {"event": "evaluate", "action": result["action"], "outcome": outcome(result), "domains": domains}
+    sys.stdout.write("PLAYGROUND " + json.dumps(event, sort_keys=True) + "\n")
+    sys.stdout.flush()
 
 
 def main() -> None:

