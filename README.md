@@ -145,6 +145,7 @@ ks explain KS2401             # diagnostics, --lang tr for Turkish
 ks check --json src/main.ks   # stable code/message/line/column for editors
 ks mir src/main.ks            # sealed checked backend contract
 ks lsp                        # zero-dependency language server
+ks-mcp --allow-read ./data    # MCP server: agents run Koschei under a policy (docs/MCP_SERVER.md)
 ks tokens / ks ast
 ```
 

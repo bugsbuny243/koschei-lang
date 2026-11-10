@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Koschei for AI agents</title>
+<meta name="description" content="Let an AI agent run code on your machine and see exactly what each program can touch before it runs.">
+<link rel="canonical" href="https://koschei.dev/agents">
+<style>
+:root{--bg:#0d1215;--panel:#131b20;--line:#26323a;--text:#dde6e2;--muted:#8a9a93;--ok:#7cc5a1;--bad:#e3798a;--accent:#9fd9bd}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.6 system-ui,-apple-system,Segoe UI,sans-serif}
+main{max-width:780px;margin:0 auto;padding:24px 16px 56px}
+a{color:var(--accent)}
+.back{color:var(--muted);text-decoration:none;font-size:15px}
+h1{margin:14px 0 8px;font-size:30px;line-height:1.2}
+h2{margin:36px 0 10px;font-size:20px}
+.lead{margin:0 0 8px;color:var(--muted);font-size:18px}
+pre{margin:12px 0;padding:14px;border:1px solid var(--line);border-radius:8px;background:#0a0f12;overflow-x:auto;font:13.5px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace}
+code{font:0.92em ui-monospace,SFMono-Regular,Menlo,monospace}
+.blocked{border-left:4px solid var(--bad)}
+.ran{border-left:4px solid var(--ok)}
+.blocked,.ran{white-space:pre-wrap;overflow-wrap:anywhere}
+ol,ul{padding-left:22px}
+li{margin:6px 0}
+.cta{display:inline-block;margin-top:8px;padding:10px 16px;border:1px solid #3c6b58;border-radius:7px;background:#12201a;color:var(--accent);font-weight:600;text-decoration:none}
+.note{margin-top:36px;padding:14px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--muted);font-size:14.5px}
+</style>
+</head>
+<body>
+<main>
+  <a class="back" href="/">← Koschei Lang</a>
+  <h1>Let an agent run code. Know what it can touch before it runs.</h1>
+  <p class="lead">Coding agents ask for permission so often that people stop reading the prompts. Koschei moves the decision to one place: a policy you set once, checked by a compiler.</p>
+
+  <h2>How it works</h2>
+  <ol>
+    <li>You start the Koschei MCP server and say what programs may touch.</li>
+    <li>The agent writes a small Koschei program instead of a shell command or a Python script.</li>
+    <li>The compiler lists every directory, network origin and environment variable the program asks for.</li>
+    <li>If the list fits your policy, the program runs. If not, it is rejected and none of its code executes.</li>
+  </ol>
+
+  <h2>Set the policy once</h2>
+<pre>ks-mcp --allow-read /srv/reports --allow-net https://api.example.com</pre>
+  <p>With no options, programs can only compute. The agent cannot change the policy.</p>
+
+  <h2>What the agent sees</h2>
+  <p>A program that stays inside the policy runs, and the result says what it used:</p>
+<pre class="ran">Ran successfully.
+
+Capability manifest:
+- Disk: /srv/reports (read-only), line 2; uses read
+
+Output:
+Q3 revenue: 418200</pre>
+  <p>A program that reaches further is stopped before its first line:</p>
+<pre class="blocked">BLOCKED before running. The program asks for authority this server does not allow:
+- Disk read of /home/me/.ssh (line 2) is outside the allowed paths
+Nothing was executed. Allowed: disk read under /srv/reports; clock; random.</pre>
+
+  <h2>Why a language, and not only a sandbox</h2>
+  <ul>
+    <li>A sandbox tells you what a program did. Koschei tells you what it can do, before it runs.</li>
+    <li>The list is exact. Code has no way to reach the disk or the network except through a token the compiler can see.</li>
+    <li>The runtime holds each token to its scope: no <code>..</code>, no symbolic links that point outside.</li>
+    <li>Models can write it. In our test, two models that had never seen Koschei wrote 10 small programs each from the language guide alone; all 20 compiled and printed the expected output on the first attempt.</li>
+  </ul>
+
+  <h2>Connect it</h2>
+<pre>{
+  "mcpServers": {
+    "koschei": {
+      "command": "ks-mcp",
+      "args": ["--allow-read", "/srv/reports"]
+    }
+  }
+}</pre>
+  <p>The server offers three tools: a language reference for the agent, a check that never runs code, and a run under your policy.</p>
+  <p><a class="cta" href="/play">Try the language in your browser →</a></p>
+
+  <p class="note">Koschei is pre-1.0. The MCP server runs on Unix-like systems and suits scripts that compute, read and write files, and call HTTP APIs; the standard library is small. The per-run process limits are a backstop, not a container. <code>ks-mcp</code> is part of the Koschei toolchain source and will be in the next packaged release.</p>
+</main>
+</body>
+</html>

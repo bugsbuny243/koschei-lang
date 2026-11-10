@@ -103,6 +103,86 @@ fn main() {
 Lists are values: `push` returns a new list and leaves the original alone.
 `get` may find nothing, so its result must be handled, here with `or`.
 
+### Everyday syntax in one program
+
+```ks
+enum Light {
+    Red,
+    Green,
+}
+
+fn size(n: Int) -> String {
+    if n > 100 {
+        return "large"
+    } else if n > 10 {
+        return "medium"
+    } else {
+        return "small"
+    }
+}
+
+fn positive(value: Int) -> Bool {
+    return value > 0
+}
+
+fn double(value: Int) -> Int {
+    return value * 2
+}
+
+fn main() {
+    println(size(42))
+    let words = "pear, fig ,apple".split(",") or []
+    let mut clean: List<String> = []
+    for word in words {
+        clean = clean.push(word.trim())
+    }
+    let sorted = clean.sort() or []
+    println(" | ".join(sorted))
+    let numbers = [5, -2, 8]
+    println(numbers.filter(positive) or [])
+    println(numbers.map(double) or [])
+    let mut counts: Map<String, Int> = {}
+    for word in ["a", "b", "a"] {
+        let seen = counts.get(word) or 0
+        counts = counts.set(word, seen + 1)
+    }
+    println(counts)
+    println("12".to_int() or 0)
+    print("no newline, ")
+    println("then one")
+    match Green() {
+        Red => println("stop"),
+        Green => println("go"),
+    }
+}
+```
+
+```output
+medium
+apple | fig | pear
+[5, 8]
+[10, -4, 16]
+{"a": 2, "b": 1}
+12
+no newline, then one
+go
+```
+
+- `if` takes `else if` and `else`. Conditions must be `Bool`.
+- There is no range loop. Count with `while`, or iterate a list with `for`.
+- An empty list or map needs its type: `let mut xs: List<Int> = []`,
+  `let mut m: Map<String, Int> = {}`.
+- String methods: `length()`, `contains(text)`, `trim()`, `split(separator)`,
+  `join(list)`, `to_int()`, `to_float()`. `split`, `to_int` and `to_float`
+  can fail, so handle them with `or`.
+- List methods: `length()`, `get(index)`, `push(item)`, `contains(item)`,
+  `sort()`, `filter(function)`, `map(function)`. `filter` and `map` take a
+  named function; there are no lambdas. `sort`, `filter` and `map` can fail,
+  so handle them with `or`.
+- `print` writes without a newline; `println` adds one.
+- `match` works as a statement as well as an expression. A variant without a
+  payload is built with parentheses (`Green()`) and matched without (`Green`).
+
 ## 4. Errors are values
 
 A function that can fail says so in its type, and the caller must handle the
@@ -385,6 +465,27 @@ The token may produce 8 bytes in all: the first `hex(8)` spends them, so the
 second `hex(8)` and `below` (8 bytes) get the `KS3450` Error value and draw
 nothing. Runtime messages are
 Turkish today; their codes are stable.
+
+### Reading a file
+
+```ks
+fn load(disk: DiskReadCaps, path: String) -> String or Error {
+    let content = disk.read(path) or return Error("cannot read {path}")
+    return content
+}
+
+fn main(caps: SystemCaps) {
+    let data = caps.disk.allow_read_only("/data")
+    let content = load(data, "/data/input.txt") or "missing"
+    println(content)
+}
+```
+
+`read(path)` returns the file's text or an Error value, so the caller decides
+what a missing file means. Here the program prints `missing` when
+`/data/input.txt` cannot be read. `ks caps` reports exactly one grant for it:
+disk, `/data`, read-only. `list(path)` returns the names in a directory, and a
+token from `allow(prefix)` can also `write(path, text)` and `delete(path)`.
 
 ## 10. Tools
 

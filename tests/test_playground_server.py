@@ -78,7 +78,7 @@ def test_infinite_loop_is_stopped():
 
 def test_temp_paths_are_not_leaked():
     result = app.evaluate("fn main( {", "run")
-    assert "ks-playground-" not in result["policy"]["stderr"]
+    assert "ks-untrusted-" not in result["policy"]["stderr"]
 
 
 def test_invalid_action_rejected():
@@ -129,6 +129,8 @@ def test_http_site_and_playground_pages(server):
         assert "connect-src 'self'" in response.headers["Content-Security-Policy"]
     with urllib.request.urlopen(server + "/security-guide.html", timeout=10) as response:
         assert response.status == 200
+    with urllib.request.urlopen(server + "/agents", timeout=10) as response:
+        assert b"ks-mcp" in response.read()
     with pytest.raises(urllib.error.HTTPError):
         urllib.request.urlopen(server + "/../pyproject.toml", timeout=10)
 
