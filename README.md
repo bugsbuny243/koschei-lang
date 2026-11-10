@@ -1,12 +1,14 @@
 # Koschei (`.ks`)
 
+<!-- mcp-name: io.github.bugsbuny243/koschei -->
+
 ## Product direction
 
 Koschei Lang is an independent programming language and library ecosystem for cybersecurity-centered general-purpose software development. Its own semantics, compiler, standard library and runtime define the product; Web3 and AI integrations are applications of the language. Self-contained distribution and surpassing Rust in security remain development goals requiring executed evidence.
 
-**Koschei Lang is sold and licensed separately from Koschei Sentinel and Koschei Web3 Hub.** Interoperability may use explicit SDKs, adapters and versioned contracts, but it does not create shared pricing, entitlement or runtime authority. See [the standalone product charter](docs/PRODUCT_CHARTER_LANG_V1.md) and [product direction](docs/PRODUCT_DIRECTION_2026-09-10.md).
+**Koschei Lang is sold and licensed separately from Koschei Sentinel and Koschei Web3 Hub.** Interoperability may use explicit SDKs, adapters and versioned contracts, but it does not create shared pricing, entitlement or runtime authority. See [the standalone product charter](https://github.com/bugsbuny243/koschei-lang/blob/main/docs/PRODUCT_CHARTER_LANG_V1.md) and [product direction](https://github.com/bugsbuny243/koschei-lang/blob/main/docs/PRODUCT_DIRECTION_2026-09-10.md).
 
-> **Source-available, not open source.** Koschei Lang is free to download, use and modify for personal, non-commercial purposes. Commercial use needs a perpetual commercial license (see [`LICENSING.md`](LICENSING.md)). Redistribution of the toolchain is not permitted. See [`LICENSE`](LICENSE).
+> **Source-available, not open source.** Koschei Lang is free to download, use and modify for personal, non-commercial purposes. Commercial use needs a perpetual commercial license (see [`LICENSING.md`](https://github.com/bugsbuny243/koschei-lang/blob/main/LICENSING.md)). Redistribution of the toolchain is not permitted. See [`LICENSE`](https://github.com/bugsbuny243/koschei-lang/blob/main/LICENSE).
 >
 > **Try it without installing:** [koschei.dev/play](https://koschei.dev/play)
 
@@ -14,7 +16,7 @@ Koschei Lang is an independent programming language and library ecosystem for cy
 
 Most supply-chain attacks work because a dependency inherits every permission the process has. Install a package, and it can read `~/.ssh`, your `.env`, or open a socket — without asking. Koschei removes that ambient authority: side-effect access is a value that must be passed in, and the compiler rejects a program that reaches for authority it was never given.
 
-Türkçe: [README.tr.md](README.tr.md)
+Türkçe: [README.tr.md](https://github.com/bugsbuny243/koschei-lang/blob/main/README.tr.md)
 
 ---
 
@@ -56,12 +58,14 @@ This is not a runtime sandbox catching the call. `disk` does not exist inside `t
 
 ## Distribution and installation
 
-`./install.sh` puts Koschei in its own virtual environment. To install into an environment you manage yourself:
+Koschei is on PyPI:
 
 ```bash
-pip install .
+pip install koschei-lang
 ks version
 ```
+
+From a clone, `./install.sh` puts Koschei in its own virtual environment, and `pip install .` installs it into an environment you manage yourself.
 
 Commercial license holders can also download a packaged release from the store on Polar.
 
@@ -83,10 +87,10 @@ ks run .
 - **Capabilities narrow, never widen.** `caps.disk` is a root token that can only delegate; `caps.disk.allow(path)` produces a narrowed token that cannot re-widen (`KS2403`) and a root token cannot perform I/O directly (`KS2402`).
 - **No `null`.** Values that may be absent are `Option<T>` (`Some` / `None`).
 - **Errors are values.** `Result<T, E>` with a single `or` keyword in three forms: `or return`, `or default`, `or { block }`. An unhandled error value is a compile error (`KS1401`).
-- **Values are bounded.** A String holds at most 16 MiB of UTF-8 and a List at most 1,048,576 items; an operation over the bound produces a `KS3502` Error value at the same point in `ks run` and `ks build` ([Value Budget v1](docs/VALUE_BUDGET_V1.md)).
-- **Program input is a capability too.** `caps.input.allow(65536)` gives `args()` and a byte-bounded `read_text()` of standard input; `ks run app.ks a b` and the compiled `./app a b` return the same texts and the same Error values ([Program Input v1](docs/PROGRAM_INPUT_V1.md)).
-- **Time and randomness are capabilities.** `caps.clock.allow(1000)` reads a clock no finer than its resolution; `caps.random.allow(64)` draws at most 64 bytes from the operating system's secure source ([Clock and Random v1](docs/CLOCK_RANDOM_V1.md)).
-- **Learn it from tested docs.** The [language guide](docs/guide/LANGUAGE_GUIDE.en.md) runs every example in CI; [error codes](docs/reference/ERROR_CODES.md) and the [Core Library reference](docs/reference/CORE_LIBRARY.md) are generated from the toolchain; [`examples/apps`](examples/apps/README.md) holds three complete programs.
+- **Values are bounded.** A String holds at most 16 MiB of UTF-8 and a List at most 1,048,576 items; an operation over the bound produces a `KS3502` Error value at the same point in `ks run` and `ks build` ([Value Budget v1](https://github.com/bugsbuny243/koschei-lang/blob/main/docs/VALUE_BUDGET_V1.md)).
+- **Program input is a capability too.** `caps.input.allow(65536)` gives `args()` and a byte-bounded `read_text()` of standard input; `ks run app.ks a b` and the compiled `./app a b` return the same texts and the same Error values ([Program Input v1](https://github.com/bugsbuny243/koschei-lang/blob/main/docs/PROGRAM_INPUT_V1.md)).
+- **Time and randomness are capabilities.** `caps.clock.allow(1000)` reads a clock no finer than its resolution; `caps.random.allow(64)` draws at most 64 bytes from the operating system's secure source ([Clock and Random v1](https://github.com/bugsbuny243/koschei-lang/blob/main/docs/CLOCK_RANDOM_V1.md)).
+- **Learn it from tested docs.** The [language guide](https://github.com/bugsbuny243/koschei-lang/blob/main/docs/guide/LANGUAGE_GUIDE.en.md) runs every example in CI; [error codes](https://github.com/bugsbuny243/koschei-lang/blob/main/docs/reference/ERROR_CODES.md) and the [Core Library reference](https://github.com/bugsbuny243/koschei-lang/blob/main/docs/reference/CORE_LIBRARY.md) are generated from the toolchain; [`examples/apps`](https://github.com/bugsbuny243/koschei-lang/blob/main/examples/apps/README.md) holds three complete programs.
 - **Immutable by default.** Rebinding requires `let mut`.
 - **Every diagnostic is explainable.** 33 error codes with a bilingual catalog; `ks explain KS2401` prints the cause and a fix.
 
@@ -133,7 +137,7 @@ The `--deny` gate is designed for CI: a build fails if a dependency update silen
 
 Implemented today: functions with typed parameters, inferred generic functions, generic structs and enums, `let` / `let mut`, structs, `List<T>`, immutable `Map<String, V>` (`get`/`set`/`keys`/`contains`), `for`-in, `if`/`else`/`while` with `Bool`-only conditions, enums with exhaustive `match`, real `Option<T>` / `Result<T, E>`, full expression interpolation (`"{items.length()}"`), a daily standard library (`String` `trim`/`split`/`join`, `List` `sort`/`filter`/`contains`), and a module system where `import risk` binds `risk.ks` next to the importing file — no manifest, no build script, no config.
 
-The Core Library is written in Koschei itself: `import text` and `import list` bind library modules shipped with the toolchain (`text.starts_with`, `text.replace`, `text.lines`, `list.first`, `list.reverse`, `list.slice`, …), checked and executed by the same pipeline as your own code. `import secure` adds domain-separated SHA3-256 digests from the audited host implementation, and the first library universe modules are Koschei too: the Marvel guardians `captain_marvel`, `hela`, `strange` and `wanda`. `ks run` executes the library and `ks build` compiles it from the same source; see [Core Library v1](docs/CORE_LIBRARY_V1.md) for the function list.
+The Core Library is written in Koschei itself: `import text` and `import list` bind library modules shipped with the toolchain (`text.starts_with`, `text.replace`, `text.lines`, `list.first`, `list.reverse`, `list.slice`, …), checked and executed by the same pipeline as your own code. `import secure` adds domain-separated SHA3-256 digests from the audited host implementation, and the first library universe modules are Koschei too: the Marvel guardians `captain_marvel`, `hela`, `strange` and `wanda`. `ks run` executes the library and `ks build` compiles it from the same source; see [Core Library v1](https://github.com/bugsbuny243/koschei-lang/blob/main/docs/CORE_LIBRARY_V1.md) for the function list.
 
 ## Toolchain
 
@@ -175,14 +179,14 @@ The protected-source/deception architecture is being hardened through staged att
 
 ## Licensing and distribution
 
-Koschei Lang is free for personal, non-commercial use. Commercial use needs a commercial license, paid once and valid without time limit, covering every version released within 12 months of purchase: Individual 49 USD, Team (up to 10 developers) 249 USD, Enterprise 999 USD. Programs written in Koschei, and the binaries `ks build` produces, belong to their authors. See [`LICENSING.md`](LICENSING.md).
+Koschei Lang is free for personal, non-commercial use. Commercial use needs a commercial license, paid once and valid without time limit, covering every version released within 12 months of purchase: Individual 49 USD, Team (up to 10 developers) 249 USD, Enterprise 999 USD. Programs written in Koschei, and the binaries `ks build` produces, belong to their authors. See [`LICENSING.md`](https://github.com/bugsbuny243/koschei-lang/blob/main/LICENSING.md).
 
 Users download Koschei from its store on Polar (polar.sh). `python tools/polar_bundle_v1.py` builds that download, `dist/polar/koschei-lang-<version>.zip`: the `koschei` package, the installer, the license, the customer README (`distribution/polar/`), the language guide, the references and the examples it runs.
 
 ## Contributions
 
-Bug reports are welcome through GitHub issues. Report vulnerabilities privately, as [`SECURITY.md`](SECURITY.md) describes. Code contributions are not accepted yet: contributor terms must be in place first so that ownership and commercial licensing stay unambiguous.
+Bug reports are welcome through GitHub issues. Report vulnerabilities privately, as [`SECURITY.md`](https://github.com/bugsbuny243/koschei-lang/blob/main/SECURITY.md) describes. Code contributions are not accepted yet: contributor terms must be in place first so that ownership and commercial licensing stay unambiguous.
 
 ## License
 
-**Koschei Lang License 1.0** — free for personal use; commercial use needs a perpetual commercial license. See [`LICENSE`](LICENSE) (Turkish: [`LICENSE.tr.md`](LICENSE.tr.md)). Revisions previously released under the MIT License stay under the MIT License.
+**Koschei Lang License 1.0** — free for personal use; commercial use needs a perpetual commercial license. See [`LICENSE`](https://github.com/bugsbuny243/koschei-lang/blob/main/LICENSE) (Turkish: [`LICENSE.tr.md`](https://github.com/bugsbuny243/koschei-lang/blob/main/LICENSE.tr.md)). Revisions previously released under the MIT License stay under the MIT License.
