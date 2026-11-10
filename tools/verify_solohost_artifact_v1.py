@@ -1,4 +1,4 @@
-"""Fail-closed publication gate for Koschei Pi SoloHost customer artifacts.
+"""Fail-closed publication gate for Koschei customer artifacts.
 
 This verifier intentionally checks the *assembled customer artifact directory*, not
 an ordinary source checkout. A normal koschei-lang repository checkout is expected
