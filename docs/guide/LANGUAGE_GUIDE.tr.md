@@ -103,6 +103,86 @@ fn main() {
 Listeler değerdir: `push` yeni bir liste döndürür, asıl listeye dokunmaz.
 `get` bir şey bulamayabilir; bu yüzden sonucu ele alınmalıdır, burada `or` ile.
 
+### Günlük sözdizimi tek programda
+
+```ks
+enum Light {
+    Red,
+    Green,
+}
+
+fn size(n: Int) -> String {
+    if n > 100 {
+        return "large"
+    } else if n > 10 {
+        return "medium"
+    } else {
+        return "small"
+    }
+}
+
+fn positive(value: Int) -> Bool {
+    return value > 0
+}
+
+fn double(value: Int) -> Int {
+    return value * 2
+}
+
+fn main() {
+    println(size(42))
+    let words = "pear, fig ,apple".split(",") or []
+    let mut clean: List<String> = []
+    for word in words {
+        clean = clean.push(word.trim())
+    }
+    let sorted = clean.sort() or []
+    println(" | ".join(sorted))
+    let numbers = [5, -2, 8]
+    println(numbers.filter(positive) or [])
+    println(numbers.map(double) or [])
+    let mut counts: Map<String, Int> = {}
+    for word in ["a", "b", "a"] {
+        let seen = counts.get(word) or 0
+        counts = counts.set(word, seen + 1)
+    }
+    println(counts)
+    println("12".to_int() or 0)
+    print("no newline, ")
+    println("then one")
+    match Green() {
+        Red => println("stop"),
+        Green => println("go"),
+    }
+}
+```
+
+```output
+medium
+apple | fig | pear
+[5, 8]
+[10, -4, 16]
+{"a": 2, "b": 1}
+12
+no newline, then one
+go
+```
+
+- `if`, `else if` ve `else` alır. Koşullar `Bool` olmalıdır.
+- Aralık döngüsü yoktur. `while` ile sayın ya da `for` ile bir listeyi gezin.
+- Boş liste ya da map tipini ister: `let mut xs: List<Int> = []`,
+  `let mut m: Map<String, Int> = {}`.
+- String metotları: `length()`, `contains(text)`, `trim()`, `split(separator)`,
+  `join(list)`, `to_int()`, `to_float()`. `split`, `to_int` ve `to_float`
+  başarısız olabilir; `or` ile ele alın.
+- List metotları: `length()`, `get(index)`, `push(item)`, `contains(item)`,
+  `sort()`, `filter(function)`, `map(function)`. `filter` ve `map` adlandırılmış
+  bir fonksiyon alır; lambda yoktur. `sort`, `filter` ve `map` başarısız
+  olabilir; `or` ile ele alın.
+- `print` satır sonu eklemeden yazar; `println` ekler.
+- `match` ifade olarak da deyim olarak da çalışır. Payload taşımayan varyant
+  parantezle kurulur (`Green()`), parantezsiz eşlenir (`Green`).
+
 ## 4. Hatalar değerdir
 
 Başarısız olabilen bir fonksiyon bunu tipinde söyler ve çağıran hatayı ele
@@ -385,6 +465,28 @@ KS3450: Rastgele sayı bütçesi tükendi: bu yetki en fazla 8 bayt üretebilir.
 Jeton toplam 8 bayt üretebilir: ilk `hex(8)` hepsini harcar, bu yüzden ikinci
 `hex(8)` ve `below` (8 bayt) `KS3450` hata değerini alır ve hiçbir şey
 çekmez. Çalışma zamanı mesajları bugün Türkçedir; kodları kararlıdır.
+
+### Dosya okuma
+
+```ks
+fn load(disk: DiskReadCaps, path: String) -> String or Error {
+    let content = disk.read(path) or return Error("cannot read {path}")
+    return content
+}
+
+fn main(caps: SystemCaps) {
+    let data = caps.disk.allow_read_only("/data")
+    let content = load(data, "/data/input.txt") or "missing"
+    println(content)
+}
+```
+
+`read(path)` dosyanın metnini ya da bir Error değerini döndürür; eksik dosyanın
+ne anlama geldiğine çağıran karar verir. Bu program `/data/input.txt`
+okunamazsa `missing` yazar. `ks caps` bu program için tek bir yetki bildirir:
+disk, `/data`, salt-okunur. `list(path)` bir dizindeki adları döndürür;
+`allow(prefix)` ile alınan jeton ayrıca `write(path, text)` ve `delete(path)`
+yapabilir.
 
 ## 10. Araçlar
 

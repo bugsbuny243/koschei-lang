@@ -74,7 +74,7 @@ def test_bilingual_switch_and_all_site_anchors():
 def test_current_checkout_and_pricing_only():
     source, p = parsed()
     assert sum(x.get("href") == POLAR for x in p.links) >= 2
-    assert all(a.get("href") in (POLAR, "/security-guide.html", "/play") or a.get("href", "").startswith("#") for a in p.links)
+    assert all(a.get("href") in (POLAR, "/security-guide.html", "/play", "/agents") or a.get("href", "").startswith("#") for a in p.links)
     for expected in ("$49", "49 USD", "One-time purchase", "12 months", "Perpetual", "Python 3.12+", "Go 1.24+"):
         assert expected in source
     for false_claim in ("49 EUR", "49€", "EVM-compatible", "hack-proof", "100x safer", "bank certified"):

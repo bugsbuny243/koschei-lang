@@ -19,15 +19,16 @@ from __future__ import annotations
 
 import json
 import os
-import resource
-import subprocess
 import sys
-import tempfile
 import threading
 import time
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+
+from koschei import untrusted
+from koschei.untrusted import MAX_OUTPUT_BYTES, MAX_SOURCE_BYTES, SIDE_EFFECT_DOMAINS, outcome
+from koschei.untrusted import truncate as _truncate
 
 HERE = Path(__file__).resolve().parent
 INDEX_HTML = HERE / "index.html"
@@ -37,6 +38,7 @@ SITE_DIR = Path(os.environ.get("KOSCHEI_SITE_DIR", HERE.parent.parent / "commerc
 SITE_FILES = {
     "/": ("index.html", "text/html; charset=utf-8"),
     "/index.html": ("index.html", "text/html; charset=utf-8"),
+    "/agents": ("agents.html", "text/html; charset=utf-8"),
     "/security-guide.html": ("security-guide.html", "text/html; charset=utf-8"),
     "/security-guide.tr.html": ("security-guide.tr.html", "text/html; charset=utf-8"),
     "/robots.txt": ("robots.txt", "text/plain; charset=utf-8"),
@@ -51,91 +53,16 @@ PLAY_CSP = SITE_CSP.replace("connect-src 'none'", "connect-src 'self'")
 # are redirected to this canonical host so one address is shared and indexed.
 CANONICAL_HOST = os.environ.get("KOSCHEI_CANONICAL_HOST", "")
 
-MAX_SOURCE_BYTES = 16 * 1024
-MAX_OUTPUT_BYTES = 16 * 1024
-WALL_TIMEOUT_SECONDS = 10
-CPU_SECONDS = 5
-MEMORY_BYTES = 512 * 1024 * 1024
-MAX_STEPS = 200_000
 RATE_LIMIT_REQUESTS = 30
 RATE_LIMIT_WINDOW_SECONDS = 60
 
 # Capability domains a playground program may never request.
-DENIED_DOMAINS = ("disk", "net", "env", "process", "serve", "persist", "input")
-
-KS = [sys.executable, "-m", "koschei"]
-
-
-def _limit_child() -> None:
-    """Applied in the child just before exec."""
-    resource.setrlimit(resource.RLIMIT_CPU, (CPU_SECONDS, CPU_SECONDS))
-    resource.setrlimit(resource.RLIMIT_AS, (MEMORY_BYTES, MEMORY_BYTES))
-    resource.setrlimit(resource.RLIMIT_FSIZE, (1024 * 1024, 1024 * 1024))
-    resource.setrlimit(resource.RLIMIT_NOFILE, (64, 64))
-    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
-    os.setsid()
-
-
-def _child_env() -> dict[str, str]:
-    # No inherited secrets; only what Python needs to start.
-    return {"PATH": "/usr/local/bin:/usr/bin:/bin", "PYTHONIOENCODING": "utf-8", "LANG": "C.UTF-8"}
-
-
-def _truncate(text: str) -> str:
-    data = text.encode("utf-8", "replace")
-    if len(data) <= MAX_OUTPUT_BYTES:
-        return text
-    return data[:MAX_OUTPUT_BYTES].decode("utf-8", "ignore") + "\n… output truncated"
-
-
-def _ks(args: list[str], workdir: str) -> dict:
-    try:
-        done = subprocess.run(
-            KS + args,
-            cwd=workdir,
-            env=_child_env(),
-            stdin=subprocess.DEVNULL,
-            capture_output=True,
-            text=True,
-            timeout=WALL_TIMEOUT_SECONDS,
-            preexec_fn=_limit_child,
-        )
-    except subprocess.TimeoutExpired:
-        return {"exit_code": None, "stdout": "", "stderr": f"Stopped: the program exceeded the {WALL_TIMEOUT_SECONDS}s time limit.", "timed_out": True}
-    # A path inside our temp dir means nothing to the visitor.
-    clean = lambda s: _truncate(s.replace(workdir + os.sep, "").replace(workdir, "."))
-    return {"exit_code": done.returncode, "stdout": clean(done.stdout), "stderr": clean(done.stderr), "timed_out": False}
+DENIED_DOMAINS = SIDE_EFFECT_DOMAINS
 
 
 def evaluate(source: str, action: str, lang: str = "en") -> dict:
     """Check, and for action == "run" also execute, one Koschei program."""
-    if action not in ("check", "run"):
-        raise ValueError("action must be 'check' or 'run'")
-    if lang not in ("en", "tr"):
-        lang = "en"
-    with tempfile.TemporaryDirectory(prefix="ks-playground-") as workdir:
-        Path(workdir, "main.ks").write_text(source, encoding="utf-8")
-        deny: list[str] = []
-        for domain in DENIED_DOMAINS:
-            deny += ["--deny", domain]
-        # `ks caps` type-checks the program and enforces the deny policy.
-        policy = _ks(["--lang", lang, "caps", "--json", "main.ks", *deny], workdir)
-        result = {"action": action, "stage": "check", "policy": policy, "manifest": None, "ran": False}
-        if policy["exit_code"] in (0, 2):
-            try:
-                result["manifest"] = json.loads(policy["stdout"])
-                policy["stdout"] = ""
-            except ValueError:
-                pass
-        if policy["exit_code"] != 0:
-            result["stage"] = "policy" if policy["exit_code"] == 2 else "check"
-            return result
-        if action == "check":
-            return result
-        result["stage"] = "run"
-        result["run"] = _ks(["--lang", lang, "run", "--max-steps", str(MAX_STEPS), "main.ks"], workdir)
-        result["ran"] = True
-        return result
+    return untrusted.evaluate(source, action, lang, DENIED_DOMAINS)
 
 
 class RateLimiter:
@@ -246,22 +173,9 @@ class Handler(BaseHTTPRequestHandler):
         sys.stdout.flush()
 
 
-def outcome(result: dict) -> str:
-    """One word describing how an evaluation ended."""
-    if result["stage"] == "policy":
-        return "blocked"
-    if not result["ran"]:
-        return "checked" if result["policy"]["exit_code"] == 0 else "compile_error"
-    run = result["run"]
-    if run["timed_out"]:
-        return "timeout"
-    return "ok" if run["exit_code"] == 0 else "runtime_error"
-
-
 def log_event(result: dict) -> None:
     """Aggregate usage line: no source code, no client address."""
-    manifest = result.get("manifest") or {}
-    domains = sorted({g.get("domain", "") for g in manifest.get("grants", [])} | set(manifest.get("required_domains", [])))
+    domains = sorted(untrusted.requested_domains(result.get("manifest")))
     event = {"event": "evaluate", "action": result["action"], "outcome": outcome(result), "domains": domains}
     sys.stdout.write("PLAYGROUND " + json.dumps(event, sort_keys=True) + "\n")
     sys.stdout.flush()
