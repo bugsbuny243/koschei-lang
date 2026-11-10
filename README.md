@@ -6,7 +6,9 @@ Koschei Lang is an independent programming language and library ecosystem for cy
 
 **Koschei Lang is sold and licensed separately from Koschei Sentinel and Koschei Web3 Hub.** Interoperability may use explicit SDKs, adapters and versioned contracts, but it does not create shared pricing, entitlement or runtime authority. See [the standalone product charter](docs/PRODUCT_CHARTER_LANG_V1.md) and [product direction](docs/PRODUCT_DIRECTION_2026-09-10.md).
 
-> **Private development repository. Koschei Lang is free for personal use; commercial use needs a perpetual commercial license (see [`LICENSING.md`](LICENSING.md)). Access to this repository does not grant redistribution, sublicensing, resale, or publication rights. See `LICENSE`.**
+> **Source-available, not open source.** Koschei Lang is free to download, use and modify for personal, non-commercial purposes. Commercial use needs a perpetual commercial license (see [`LICENSING.md`](LICENSING.md)). Redistribution of the toolchain is not permitted. See [`LICENSE`](LICENSE).
+>
+> **Try it without installing:** [koschei.dev/play](https://koschei.dev/play)
 
 **A capability-secure programming language. An imported package cannot touch your disk, network, or environment unless you hand it a token.**
 
@@ -16,14 +18,14 @@ Türkçe: [README.tr.md](README.tr.md)
 
 ---
 
-## Internal development quickstart
+## Quickstart
 
-This repository is private. The commands below are for authorized collaborators and licensed development environments only.
+Needs Python 3.12 or newer. Go 1.24+ is optional and only needed for `ks build`.
 
 ```bash
-git clone <authorized-private-koschei-repository>
+git clone https://github.com/bugsbuny243/koschei-lang
 cd koschei-lang
-pip install .
+./install.sh                  # installs into ~/.koschei and links ~/.local/bin/ks
 ks check examples/supply_chain/main.ks
 ```
 
@@ -54,14 +56,14 @@ This is not a runtime sandbox catching the call. `disk` does not exist inside `t
 
 ## Distribution and installation
 
-Koschei is not distributed as an unrestricted public source package. Development builds are installed from authorized private source or an approved licensed artifact channel.
-
-For an authorized source checkout:
+`./install.sh` puts Koschei in its own virtual environment. To install into an environment you manage yourself:
 
 ```bash
 pip install .
 ks version
 ```
+
+Commercial license holders can also download a packaged release from the store on Polar.
 
 Your first program:
 
@@ -165,7 +167,7 @@ The CI suite includes compiler/runtime tests, native/interpreter parity checks, 
 
 ## Status
 
-Koschei is pre-1.0 and under active private commercial development. Syntax, runtime contracts, licensing, distribution, and security architecture may change before the first production release. Do not put it in production yet.
+Koschei is pre-1.0 and under active development. Syntax, runtime contracts, licensing, distribution, and security architecture may change before the first production release. Do not put it in production yet.
 
 Security boundaries currently enforced in the native path include capability denial, narrowed authority, path traversal/symlink escape protection, read-only enforcement, redirect-origin enforcement, call-depth bounds, opaque protected-source object identity, epoch-scoped alias rotation, decoy source views, and epoch-bound read grants. Security claims must continue to be backed by tests and evidence; the project does not claim that any software system is mathematically impossible to compromise.
 
@@ -175,11 +177,11 @@ The protected-source/deception architecture is being hardened through staged att
 
 Koschei Lang is free for personal, non-commercial use. Commercial use needs a commercial license, paid once and valid without time limit, covering every version released within 12 months of purchase: Individual 49 USD, Team (up to 10 developers) 249 USD, Enterprise 999 USD. Programs written in Koschei, and the binaries `ks build` produces, belong to their authors. See [`LICENSING.md`](LICENSING.md).
 
-Users download Koschei from its store on Polar (polar.sh). `python tools/polar_bundle_v1.py` builds that download, `dist/polar/koschei-lang-<version>.zip`: the `koschei` package, the installer, the license, the customer README (`distribution/polar/`), the language guide, the references and the examples it runs. This repository and its internal documents stay private.
+Users download Koschei from its store on Polar (polar.sh). `python tools/polar_bundle_v1.py` builds that download, `dist/polar/koschei-lang-<version>.zip`: the `koschei` package, the installer, the license, the customer README (`distribution/polar/`), the language guide, the references and the examples it runs.
 
 ## Contributions
 
-Contributions are accepted only through authorized private collaboration. Before accepting external code into the proprietary core, contributor/IP terms must be established so ownership and commercial licensing rights remain unambiguous.
+Bug reports are welcome through GitHub issues. Report vulnerabilities privately, as [`SECURITY.md`](SECURITY.md) describes. Code contributions are not accepted yet: contributor terms must be in place first so that ownership and commercial licensing stay unambiguous.
 
 ## License
 

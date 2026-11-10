@@ -21,6 +21,7 @@ fi
 "$home/bin/python" -m pip install --quiet "$here"
 mkdir -p "$bin"
 ln -sf "$home/bin/ks" "$bin/ks"
+ln -sf "$home/bin/ks-mcp" "$bin/ks-mcp"
 
 echo "koschei: installed into $home"
 echo "koschei: 'ks' is linked at $bin/ks"
