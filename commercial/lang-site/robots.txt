@@ -1,3 +1,3 @@
 User-agent: *
 Allow: /
-Sitemap: https://koschei-lang-web-production.up.railway.app/sitemap.xml
+Sitemap: https://koschei.dev/sitemap.xml
