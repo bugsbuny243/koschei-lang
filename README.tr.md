@@ -2,7 +2,9 @@
 
 Koschei Lang; kendi semantiği, derleyicisi, kütüphaneleri ve çalışma ortamıyla siber güvenlik temelli genel amaçlı yazılım geliştirme dilidir. Dış bağımlılıksız ekosistem ve Rust’ı güvenlikte aşmak geliştirme hedefidir. **Lang ve Sentinel aynı ticari paketlerde birlikte sunulacak; dilin bağımsızlığı korunacaktır.** [Güncel ürün yönü](docs/PRODUCT_DIRECTION_2026-09-10.md).
 
-> **Özel geliştirme deposu. Koschei Lang kişisel kullanım için ücretsizdir; ticari kullanım için kalıcı bir ticari lisans gerekir ([`LICENSING.tr.md`](LICENSING.tr.md)). Bu repoya erişim; yeniden dağıtım, alt lisanslama, satış veya kaynak kodu yayımlama hakkı vermez. Ayrıntılar için `LICENSE.tr.md` dosyasına bakın.**
+> **Kaynağı açık, ama açık kaynak değil.** Koschei Lang kişisel ve ticari olmayan amaçlarla ücretsiz indirilebilir, kullanılabilir ve değiştirilebilir. Ticari kullanım için kalıcı bir ticari lisans gerekir ([`LICENSING.tr.md`](LICENSING.tr.md)). Araç zincirinin yeniden dağıtımına izin verilmez. Ayrıntılar: [`LICENSE.tr.md`](LICENSE.tr.md).
+>
+> **Kurmadan deneyin:** [koschei.dev/play](https://koschei.dev/play)
 
 **Capability tabanlı güvenli bir programlama dili. İçe aktardığınız bir paket, siz açıkça bir jeton vermedikçe diskinize, ağınıza veya ortam değişkenlerinize dokunamaz.**
 
@@ -12,14 +14,14 @@ English: [README.md](README.md)
 
 ---
 
-## Yetkili geliştirme hızlı başlangıcı
+## Hızlı başlangıç
 
-Bu repo özeldir. Aşağıdaki komutlar yalnızca yetkili işbirlikçileri ve lisanslı geliştirme ortamları içindir.
+Python 3.12 veya üstü gerekir. Go 1.24+ isteğe bağlıdır; yalnızca `ks build` için gerekir.
 
 ```bash
-git clone <yetkili-private-koschei-reposu>
+git clone https://github.com/bugsbuny243/koschei-lang
 cd koschei-lang
-pip install .
+./install.sh                  # ~/.koschei içine kurar, ~/.local/bin/ks bağlantısını oluşturur
 ks check examples/supply_chain/main.ks
 ```
 
@@ -48,9 +50,7 @@ Program çalıştırılmaz; dosya açılmaz. Bu bir runtime sandbox yakalaması 
 
 ## Dağıtım ve kurulum
 
-Koschei sınırsız herkese açık kaynak paketi olarak dağıtılmaz. Geliştirme sürümleri yetkili private source veya onaylı lisanslı artifact kanalı üzerinden kurulur.
-
-Yetkili source checkout için:
+`./install.sh` Koschei'yi kendi sanal ortamına kurar. Kendi yönettiğiniz bir ortama kurmak için:
 
 ```bash
 pip install .
@@ -122,7 +122,7 @@ CI paketi compiler/runtime testlerini, parity kontrollerini, capability güvenli
 
 ## Durum
 
-Koschei pre-1.0 aşamasında ve özel ticari geliştirme altında. Sözdizimi, runtime sözleşmeleri, lisanslama, dağıtım ve güvenlik mimarisi ilk production sürümüne kadar değişebilir. Henüz production kullanımı önerilmez.
+Koschei pre-1.0 aşamasında ve aktif geliştirme altında. Sözdizimi, runtime sözleşmeleri, lisanslama, dağıtım ve güvenlik mimarisi ilk production sürümüne kadar değişebilir. Henüz production kullanımı önerilmez.
 
 Korunan source/deception mimarisi aşamalı saldırı dalgalarıyla sertleştirilmektedir. Canonical source identity fiziksel source locator'lardan ayrıdır; decoy view'lar deploy edilemez olarak işaretlenir ve kısa ömürlü epoch-bound read grant'ler ile yetki ayrımı yapılır.
 
@@ -130,11 +130,11 @@ Korunan source/deception mimarisi aşamalı saldırı dalgalarıyla sertleştiri
 
 Koschei Lang kişisel ve ticari olmayan kullanım için ücretsizdir. Ticari kullanım için ticari lisans gerekir: bedeli bir kez ödenir, süresi dolmaz ve satın almadan sonraki 12 ay içinde çıkan bütün sürümleri kapsar. Fiyatlar: Bireysel 49 USD, Ekip (en fazla 10 geliştirici) 249 USD, Kurumsal 999 USD. Koschei ile yazılan programlar ve `ks build` ile derlenen ikililer yazarlarına aittir. Ayrıntılar: [`LICENSING.tr.md`](LICENSING.tr.md).
 
-Kullanıcılar Koschei'yi Polar (polar.sh) mağazasından indirir. Bu indirmeyi `python tools/polar_bundle_v1.py` üretir (`dist/polar/koschei-lang-<sürüm>.zip`): `koschei` paketi, kurulum betiği, lisans, müşteri README'si (`distribution/polar/`), dil rehberi, başvuru belgeleri ve README'nin çalıştırdığı örnekler. Bu depo ve iç belgeler özel kalır.
+Kullanıcılar Koschei'yi Polar (polar.sh) mağazasından indirir. Bu indirmeyi `python tools/polar_bundle_v1.py` üretir (`dist/polar/koschei-lang-<sürüm>.zip`): `koschei` paketi, kurulum betiği, lisans, müşteri README'si (`distribution/polar/`), dil rehberi, başvuru belgeleri ve README'nin çalıştırdığı örnekler.
 
 ## Katkı
 
-Katkılar yalnızca yetkili private collaboration üzerinden kabul edilir. Dışarıdan kod kabul edilmeden önce IP ve contributor şartları açıkça belirlenmelidir.
+Hata bildirimleri GitHub issue'ları üzerinden kabul edilir. Güvenlik açıklarını [`SECURITY.md`](SECURITY.md) dosyasında anlatıldığı gibi özel olarak bildirin. Kod katkısı henüz kabul edilmiyor: sahiplik ve ticari lisanslamanın açık kalması için önce katkı şartları belirlenmelidir.
 
 ## Lisans
 
