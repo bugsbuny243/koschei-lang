@@ -2,7 +2,7 @@
 
 **Target:** public USD product listings, successful one-time checkout,
 licensed file delivery for Koschei Lang 0.10.0. Not the $299 founding
-security consulting pilot. No Pi/SoloHost checkout.
+security consulting pilot.
 
 **Product owner/operator:** authenticated Koschei Lang Polar
 organization account, not the compiler runtime or this GitHub workflow.
