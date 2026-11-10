@@ -1,0 +1,22 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.bugsbuny243/koschei",
+  "title": "Koschei",
+  "description": "Run agent-written code under a capability policy: see what a program can touch before it runs.",
+  "repository": {
+    "url": "https://github.com/bugsbuny243/koschei-lang",
+    "source": "github"
+  },
+  "websiteUrl": "https://koschei.dev/agents",
+  "version": "0.10.0",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "koschei-lang",
+      "version": "0.10.0",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}

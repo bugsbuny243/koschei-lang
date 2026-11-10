@@ -5,10 +5,11 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "koschei-lang"
 version = "0.10.0"
-description = "Koschei — a native security programming language with constitutional execution physics and optional Khar-bounded Lang intelligence"
+description = "Koschei: a capability-secure programming language. Code cannot touch the disk, network or environment unless it is handed a capability."
 readme = "README.md"
 requires-python = ">=3.12"
-license = { text = "Koschei Lang License 1.0 (free for personal use; commercial use needs a license)" }
+license = "LicenseRef-Koschei-Lang-1.0"
+license-files = ["LICENSE", "LICENSE.tr.md"]
 authors = [{ name = "Onur Sel" }]
 keywords = [
     "programming-language",
@@ -18,6 +19,8 @@ keywords = [
     "capability-security",
     "supply-chain-security",
     "ai-security",
+    "mcp",
+    "ai-agents",
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -36,7 +39,8 @@ classifiers = [
 dependencies = []
 
 [project.urls]
-Homepage = "https://github.com/bugsbuny243/koschei-lang"
+Homepage = "https://koschei.dev"
+Playground = "https://koschei.dev/play"
 Repository = "https://github.com/bugsbuny243/koschei-lang"
 Issues = "https://github.com/bugsbuny243/koschei-lang/issues"
 
@@ -48,6 +52,8 @@ ks-stdlib = "koschei.stdlib_catalog:main"
 ks-core-library = "koschei.core_library_v1:main"
 ks-differential-fuzz = "koschei.differential_fuzz_cli:main"
 ks-mcp = "koschei.mcp_server:main"
+# `uvx koschei-lang` runs the command named after the package: the MCP server.
+koschei-lang = "koschei.mcp_server:main"
 
 [tool.setuptools]
 packages = ["koschei"]
