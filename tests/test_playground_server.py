@@ -183,3 +183,23 @@ def test_usage_log_has_no_source(capsys):
 def test_favicon_is_not_a_404(server):
     with urllib.request.urlopen(server + "/favicon.ico", timeout=10) as response:
         assert response.status == 204
+
+
+def test_platform_hostname_redirects_to_canonical(server, monkeypatch):
+    monkeypatch.setattr(app, "CANONICAL_HOST", "koschei.dev")
+
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, *args, **kwargs):
+            return None
+
+    opener = urllib.request.build_opener(NoRedirect)
+    request = urllib.request.Request(server + "/play?x=1", headers={"Host": "old-name.up.railway.app"})
+    with pytest.raises(urllib.error.HTTPError) as caught:
+        opener.open(request, timeout=10)
+    assert caught.value.code == 301
+    assert caught.value.headers["Location"] == "https://koschei.dev/play?x=1"
+    # Health checks and the canonical host itself are served directly.
+    request = urllib.request.Request(server + "/health", headers={"Host": "old-name.up.railway.app"})
+    assert opener.open(request, timeout=10).status == 200
+    request = urllib.request.Request(server + "/play", headers={"Host": "koschei.dev"})
+    assert opener.open(request, timeout=10).status == 200

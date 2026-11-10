@@ -100,7 +100,7 @@ def test_public_technical_guide_and_search_discovery():
     sitemap = (root / "sitemap.xml").read_text(encoding="utf-8")
     nginx = (root / "nginx.conf").read_text(encoding="utf-8")
     docker = (root / "Dockerfile").read_text(encoding="utf-8")
-    hostname = "https://koschei-lang-web-production.up.railway.app"
+    hostname = "https://koschei.dev"
     assert f'<link rel="canonical" href="{hostname}/">' in index
     assert any(x.get("href") == "/security-guide.html" for x in parser.links)
     assert f'{hostname}/security-guide.html' in guide

@@ -47,6 +47,9 @@ SITE_CSP = (
     "font-src 'self'; connect-src 'none'; form-action 'none'; frame-ancestors 'none'; base-uri 'none'"
 )
 PLAY_CSP = SITE_CSP.replace("connect-src 'none'", "connect-src 'self'")
+# When set, page requests arriving on a platform hostname (*.up.railway.app)
+# are redirected to this canonical host so one address is shared and indexed.
+CANONICAL_HOST = os.environ.get("KOSCHEI_CANONICAL_HOST", "")
 
 MAX_SOURCE_BYTES = 16 * 1024
 MAX_OUTPUT_BYTES = 16 * 1024
@@ -184,6 +187,13 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802
         path = self.path.split("?", 1)[0]
+        host = self.headers.get("Host", "").split(":")[0].lower()
+        if CANONICAL_HOST and host.endswith(".up.railway.app") and path != "/health":
+            self.send_response(HTTPStatus.MOVED_PERMANENTLY)
+            self.send_header("Location", f"https://{CANONICAL_HOST}{self.path}")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
         site = SITE_FILES.get(path)
         if path in ("/play", "/play/"):
             self._send(HTTPStatus.OK, INDEX_HTML.read_bytes(), "text/html; charset=utf-8", PLAY_CSP)

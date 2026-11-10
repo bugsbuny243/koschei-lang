@@ -1,7 +1,7 @@
 # Koschei Lang 0.10.0 — Global launch package
 
-**Public product website:** https://koschei-lang-web-production.up.railway.app/  
-**Technical article:** https://koschei-lang-web-production.up.railway.app/security-guide.html  
+**Public product website:** https://koschei.dev/  
+**Technical article:** https://koschei.dev/security-guide.html  
 **Individual checkout:** https://buy.polar.sh/polar_cl_H3mMbTpBdziezC3ooJARCQIMHqzVHEeM15E1v0C7XlR  
 **Price:** 49 USD one-time, **not** EUR. Individual covers one named developer.
 
@@ -26,7 +26,7 @@
 **Short description (260-character cap):**
 Koschei Lang checks what imported code can access. Audit disk, network, environment and process authority with ks caps; reject unauthorized operations with ks check. Includes a native build path, a Core Library and practical examples.
 
-**Product URL:** https://koschei-lang-web-production.up.railway.app/
+**Product URL:** https://koschei.dev/
 
 **Suggested topics:** Developer Tools; Programming Languages; Security
 
@@ -44,7 +44,7 @@ An Individual commercial license is $49 USD paid once for one developer and incl
 
 I'd especially appreciate feedback on the capability model, the compiler diagnostics and the developer experience.
 
-Product: https://koschei-lang-web-production.up.railway.app/
+Product: https://koschei.dev/
 
 **Before submitting:** Product Hunt requires a personal account and product gallery asset; use authentic product screenshots and a real demo video. Avoid asking for votes, incentivizing reactions or mass-messaging strangers. Do not claim the submission has been published.
 
@@ -81,7 +81,7 @@ This is deliberately narrower than a general-purpose host sandbox. It does not g
 
 The full explanation, requirements, licensing and supported examples are documented here:
 
-https://koschei-lang-web-production.up.railway.app/security-guide.html
+https://koschei.dev/security-guide.html
 
 ## LinkedIn — short technical launch
 
@@ -92,7 +92,7 @@ The idea: imported Koschei code should not silently inherit access to disk, netw
 With `ks check`, developers can identify unauthorized capability use before execution. With `ks caps`, they can inspect accessible permissions and enforce policy in CI.
 
 See the `KS2401` technical walkthrough:
-https://koschei-lang-web-production.up.railway.app/security-guide.html
+https://koschei.dev/security-guide.html
 
 Individual commercial license: **$49 USD, one-time, for one developer**. Pre-1.0 software; features and constraints are explained on the site.
 
