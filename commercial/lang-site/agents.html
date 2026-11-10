@@ -67,6 +67,12 @@ Nothing was executed. Allowed: disk read under /srv/reports; clock; random.</pre
     <li>Models can write it. In our test, two models that had never seen Koschei wrote 10 small programs each from the language guide alone; all 20 compiled and printed the expected output on the first attempt.</li>
   </ul>
 
+  <h2>Install</h2>
+<pre>git clone https://github.com/bugsbuny243/koschei-lang
+cd koschei-lang
+./install.sh</pre>
+  <p>Needs Python 3.12 or newer. The installer links <code>ks</code> and <code>ks-mcp</code> into <code>~/.local/bin</code>. Source and docs: <a href="https://github.com/bugsbuny243/koschei-lang">github.com/bugsbuny243/koschei-lang</a>.</p>
+
   <h2>Connect it</h2>
 <pre>{
   "mcpServers": {
@@ -79,7 +85,7 @@ Nothing was executed. Allowed: disk read under /srv/reports; clock; random.</pre
   <p>The server offers three tools: a language reference for the agent, a check that never runs code, and a run under your policy.</p>
   <p><a class="cta" href="/play">Try the language in your browser →</a></p>
 
-  <p class="note">Koschei is pre-1.0. The MCP server runs on Unix-like systems and suits scripts that compute, read and write files, and call HTTP APIs; the standard library is small. The per-run process limits are a backstop, not a container. <code>ks-mcp</code> is part of the Koschei toolchain source and will be in the next packaged release.</p>
+  <p class="note">Koschei is pre-1.0. The MCP server runs on Unix-like systems and suits scripts that compute, read and write files, and call HTTP APIs; the standard library is small. The per-run process limits are a backstop, not a container. Koschei is source-available: free for personal use, with a commercial license for commercial use.</p>
 </main>
 </body>
 </html>
