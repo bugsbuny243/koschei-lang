@@ -42,7 +42,7 @@ li{margin:6px 0}
   </ol>
 
   <h2>Set the policy once</h2>
-<pre>ks-mcp --allow-read /srv/reports --allow-net https://api.example.com</pre>
+<pre>uvx koschei-lang --allow-read /srv/reports --allow-net https://api.example.com</pre>
   <p>With no options, programs can only compute. The agent cannot change the policy.</p>
 
   <h2>What the agent sees</h2>
@@ -67,21 +67,17 @@ Nothing was executed. Allowed: disk read under /srv/reports; clock; random.</pre
     <li>Models can write it. In our test, two models that had never seen Koschei wrote 10 small programs each from the language guide alone; all 20 compiled and printed the expected output on the first attempt.</li>
   </ul>
 
-  <h2>Install</h2>
-<pre>git clone https://github.com/bugsbuny243/koschei-lang
-cd koschei-lang
-./install.sh</pre>
-  <p>Needs Python 3.12 or newer. The installer links <code>ks</code> and <code>ks-mcp</code> into <code>~/.local/bin</code>. Source and docs: <a href="https://github.com/bugsbuny243/koschei-lang">github.com/bugsbuny243/koschei-lang</a>.</p>
-
   <h2>Connect it</h2>
+  <p>Add the server to your MCP client. <code>uvx</code> downloads Koschei from PyPI and starts it; nothing else to install.</p>
 <pre>{
   "mcpServers": {
     "koschei": {
-      "command": "ks-mcp",
-      "args": ["--allow-read", "/srv/reports"]
+      "command": "uvx",
+      "args": ["koschei-lang", "--allow-read", "/srv/reports"]
     }
   }
 }</pre>
+  <p>Or install it yourself with <code>pip install koschei-lang</code> and use <code>ks-mcp</code> as the command. Needs Python 3.12 or newer. Source and docs: <a href="https://github.com/bugsbuny243/koschei-lang">github.com/bugsbuny243/koschei-lang</a>.</p>
   <p>The server offers three tools: a language reference for the agent, a check that never runs code, and a run under your policy.</p>
   <p><a class="cta" href="/play">Try the language in your browser →</a></p>
 

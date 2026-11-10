@@ -4,6 +4,14 @@
 
 The agent writes a Koschei program instead of a shell command or a Python script. Before anything runs, the compiler reports exactly what the program asks for: which directories, which network origins, which environment variables. You decide in advance what is allowed. A program that asks for anything else is rejected, and none of its code executes.
 
+## Install
+
+```sh
+pip install koschei-lang      # gives you ks and ks-mcp; needs Python 3.12+
+```
+
+Or skip the install and let `uvx` fetch it: `uvx koschei-lang` is the same program as `ks-mcp`.
+
 ## Start it
 
 ```sh
@@ -26,14 +34,14 @@ All options repeat. The policy is fixed by the command line. The agent cannot ch
 
 ## Connect an agent
 
-Any MCP client that starts a stdio server works. A typical entry:
+Any MCP client that starts a stdio server works. A typical entry (use `"command": "ks-mcp"` without the first argument if you installed with pip):
 
 ```json
 {
   "mcpServers": {
     "koschei": {
-      "command": "ks-mcp",
-      "args": ["--allow-read", "/srv/reports"]
+      "command": "uvx",
+      "args": ["koschei-lang", "--allow-read", "/srv/reports"]
     }
   }
 }
