@@ -1,0 +1,23 @@
+# Koschei Lang
+
+> Koschei is a capability-secure programming language. Code cannot touch the disk, network, environment variables or other processes unless it is handed a capability for it, and the compiler lists exactly what a program can touch before it runs. Pre-1.0; free for personal use, 49 USD per developer for commercial use.
+
+Install with `pip install koschei-lang` (Python 3.12+). The `ks` command checks, runs and builds programs; `ks caps` prints a program's capability manifest; `ks caps --deny net` fails a build that asks for network access.
+
+## Try and learn
+
+- [Playground](https://koschei.dev/play): run Koschei in the browser; programs that ask for disk, network or environment access are blocked before they run
+- [Language guide](https://github.com/bugsbuny243/koschei-lang/blob/main/docs/guide/LANGUAGE_GUIDE.en.md): every example in it is run by the test suite
+- [Security walkthrough](https://koschei.dev/security-guide.html): how capabilities stop a malicious dependency
+
+## For AI agents
+
+- [Koschei for AI agents](https://koschei.dev/agents): run agent-written code under a policy you set once
+- [MCP server guide](https://github.com/bugsbuny243/koschei-lang/blob/main/docs/MCP_SERVER.md): `uvx koschei-lang --allow-read /path` starts the MCP server; listed in the official MCP Registry as `io.github.bugsbuny243/koschei`
+
+## Project
+
+- [Source code](https://github.com/bugsbuny243/koschei-lang)
+- [Package on PyPI](https://pypi.org/project/koschei-lang/)
+- [Licensing and price](https://github.com/bugsbuny243/koschei-lang/blob/main/LICENSING.md)
+- [Security policy](https://github.com/bugsbuny243/koschei-lang/blob/main/SECURITY.md)

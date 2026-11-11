@@ -205,3 +205,31 @@ def test_platform_hostname_redirects_to_canonical(server, monkeypatch):
     assert opener.open(request, timeout=10).status == 200
     request = urllib.request.Request(server + "/play", headers={"Host": "koschei.dev"})
     assert opener.open(request, timeout=10).status == 200
+
+
+def test_discovery_files_and_section_redirects(server):
+    with urllib.request.urlopen(server + "/.well-known/security.txt", timeout=10) as response:
+        text = response.read().decode()
+        assert response.headers["Content-Type"].startswith("text/plain")
+    for field in ("Contact: https://", "Expires: ", "Policy: https://", "Canonical: https://koschei.dev/.well-known/security.txt"):
+        assert field in text
+    with urllib.request.urlopen(server + "/llms.txt", timeout=10) as response:
+        assert response.read().decode().startswith("# Koschei Lang\n")
+
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, *args, **kwargs):
+            return None
+
+    opener = urllib.request.build_opener(NoRedirect)
+    for path, target in (("/pricing", "/#pricing"), ("/faq", "/#faq"), ("/about", "/#features")):
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            opener.open(server + path, timeout=10)
+        assert caught.value.code == 301 and caught.value.headers["Location"] == target
+
+
+def test_security_txt_has_not_expired():
+    from datetime import datetime, timezone
+
+    text = (app.SITE_DIR / "security.txt").read_text(encoding="utf-8")
+    expires = next(line.split(": ", 1)[1] for line in text.splitlines() if line.startswith("Expires: "))
+    assert datetime.fromisoformat(expires.replace("Z", "+00:00")) > datetime.now(timezone.utc)

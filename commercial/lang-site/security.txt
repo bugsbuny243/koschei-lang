@@ -1,0 +1,5 @@
+Contact: https://github.com/bugsbuny243/koschei-lang/security/advisories/new
+Policy: https://github.com/bugsbuny243/koschei-lang/blob/main/SECURITY.md
+Expires: 2027-11-01T00:00:00Z
+Preferred-Languages: en, tr
+Canonical: https://koschei.dev/.well-known/security.txt
