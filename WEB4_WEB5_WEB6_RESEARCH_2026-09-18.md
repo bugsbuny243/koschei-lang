@@ -1,0 +1,543 @@
+# Web4 / Web5 / Web6 Research — 2026-09-18
+
+Status: current technical intake for Koschei Lang. Research evidence is input to design review, not automatic semantic authority.
+
+## Web4 — high-signal
+
+### IETF draft-reilly-web4-00 (26 Aug 2026)
+An active individual Internet-Draft proposes a testable Web4 profile built on the existing Web: independently verifiable permanence evidence, a first-class machine channel, recorded/bounded/revocable agent authority, and disclosed human control over agent-curated presentation.
+
+Koschei relevance: HIGH. The bounded/revocable authority and independently verifiable evidence model aligns with Koschei's Authority Conservation, Evidence, Proof-Carrying Execution, and No Sovereign Component laws. Treat as external draft input only; it does not become Koschei canonical truth.
+
+Source: https://datatracker.ietf.org/doc/draft-reilly-web4/
+
+### Web4 Delegated Authority (12 Sep 2026)
+A new Experimental individual Internet-Draft, draft-jacobs-web4-delegated-authority-00, defines signed, bounded, time-limited and revocable authority mandates for agents/nodes, with governed actions linked to their authority.
+
+Koschei relevance: VERY HIGH. Compare its mandate/revocation model against Khar/Sathra and Koschei entitlement/admission boundaries. Do not import JWT/host representation or any authority mechanism blindly; only semantic invariants that survive Koschei constitutional review are candidates.
+
+Source: https://datatracker.ietf.org/doc/draft-jacobs-web4-delegated-authority/
+
+## Agent authorization adjacent to Web4/Web5
+
+### AI Agent Authentication and Authorization — draft-klrc-aiagent-auth-03 (6 Jul 2026)
+The draft applies existing WIMSE and OAuth-family standards to AI-agent authentication/authorization rather than defining a replacement protocol.
+
+Koschei relevance: HIGH for external interoperability boundary, LOW as internal authority. OAuth/WIMSE credentials may prove external admission facts but MUST NOT manufacture Khar/compiler capability authority.
+
+Source: https://datatracker.ietf.org/doc/draft-klrc-aiagent-auth/
+
+### Agent Identity Protocol — draft-singla-agent-identity-protocol-03 (10 Jun 2026)
+Active individual Standards-Track-intended draft combining DIDs, capability-based authorization, cryptographic delegation chains and deterministic validation for autonomous agents.
+
+Koschei relevance: HIGH. Candidate comparison target for exact identity, delegation attenuation, revocation and deterministic validation. It is an Internet-Draft, not an IETF standard.
+
+Source: https://datatracker.ietf.org/doc/draft-singla-agent-identity-protocol/
+
+### OpenA2A Agent Authorization Protocol — draft-fane-opena2a-aap-01 (22 Jul 2026)
+Active individual draft covering agent identity assertions, scoped capability grants, cross-agent delegation, behavioral attestation, federation and revocation propagation.
+
+Koschei relevance: MEDIUM/HIGH as an interoperability and adversarial-comparison target. No automatic adoption.
+
+Source: https://datatracker.ietf.org/doc/draft-fane-opena2a-aap/
+
+## Web5 — identity signal
+
+### W3C DID Methods note (2 Sep 2026)
+W3C published an updated Group Note collecting known DID methods.
+
+Koschei relevance: MEDIUM. Useful for external identity/wallet/agent admission adapters. DID resolution MUST remain outside canonical Koschei compiler authority unless a future Koschei-native identity contract explicitly admits verified facts.
+
+Source: https://www.w3.org/TR/2026/NOTE-did-extensions-methods-20260902/
+
+### W3C VC lifecycle work (1 Sep 2026 meeting)
+VCWG discussion includes credential lifecycle management, threat-model work and progress toward a Candidate Recommendation stage for current VC lifecycle work.
+
+Koschei relevance: MEDIUM. Revocation/expiry/audit lifecycle should be compared with Koschei proof envelopes and product entitlement receipts.
+
+Source: https://lists.w3.org/Archives/Public/public-vc-wg/2026Sep/0002.html
+
+## Web6 — classification warning
+
+Searches did not find an IETF/W3C consensus standard named Web6. A project calling itself OASIS WEB6 advertises an AI abstraction/orchestration layer with DID/VC identity and multiple agent protocols, but this is project/vendor material, not evidence of a Web6 Internet standard.
+
+Koschei relevance: WATCH ONLY. Individual implementation ideas can be evaluated independently, but the label "Web6" MUST NOT be treated as a standards maturity claim.
+
+Source: https://web6.oasisomniverse.one/
+
+## 2026-09-18 Koschei impact decision
+
+1. Add **bounded + time-limited + revocable delegation** to the comparison checklist for Khar/Sathra authority proofs.
+2. Preserve the hard boundary: external DID/OAuth/WIMSE/AIP evidence may enter only as verified admission facts; it cannot manufacture Koschei authority.
+3. Entitlement/session work should bind expiry and revocation evidence explicitly.
+4. Keep deterministic validation and exact identity as required properties for agent interoperability.
+5. No Web4/Web5/Web6 draft becomes canonical language semantics merely because it is new.
+6. No credible standards evidence found today that justifies a new canonical "Web6" language layer.
+
+## Source maturity
+
+- W3C Group Note: published W3C note, not the same as a W3C Recommendation.
+- IETF items above: Internet-Drafts; drafts may change or expire and are not IETF standards merely by publication.
+- OASIS WEB6 item: project/vendor claim; watch-only.
+
+
+## 2026-09-19 delta
+
+### Agent Registry Protocol (ARPA) — draft-sankarshan-agent-registry-protocol-00 (17 Sep 2026)
+A new individual Standards-Track-intended Internet-Draft defines an HTTP/JSON registry protocol for resolving who operates a software agent, its deployment, typed relationships, bounded delegated authority, lifecycle status, and evidence supporting a reliance decision.
+
+Koschei relevance: VERY HIGH as an external comparison target. The useful invariant is not the HTTP/JSON representation; it is the explicit binding between exact agent/deployment identity, bounded authority, lifecycle/revocation state, and evidence. External ARPA records MUST remain admission evidence and MUST NOT manufacture Khar/compiler authority.
+
+Source: https://www.ietf.org/archive/id/draft-sankarshan-agent-registry-protocol-00.html
+
+### W3C DID / Controlled Identifiers maintenance transition discussion (10–12 Sep 2026)
+W3C DID and Verifiable Credentials participants are discussing moving long-term Controlled Identifiers maintenance toward the DID WG while coordinating an overlap period with VCWG.
+
+Koschei relevance: MEDIUM. This reinforces the need to bind external identity evidence to an explicit specification/version and verifier policy rather than assuming a permanent maintainer or static registry. No Koschei canonical semantic change follows from this governance discussion.
+
+Source: https://lists.w3.org/Archives/Public/public-vc-wg/2026Sep/0030.html
+
+### Agent Web Protocol v0.2 — community project signal
+AWP publishes a /.well-known/agent.json discovery surface for machine-readable capabilities, authentication requirements, typed actions, and references to sibling agent protocols.
+
+Koschei relevance: WATCH/HIGH for external service discovery. Treat the manifest as untrusted observable input until verified and admitted. Discovery MUST NOT equal authority; advertised capability MUST NOT equal Koschei capability.
+
+Source: https://www.agentwebprotocol.org/
+
+### Web6 status re-check
+No new IETF/W3C consensus specification named Web6 was identified in the 2026-09-19 scan. Continue watch-only classification for the label itself.
+
+## 2026-09-19 Koschei delta decision
+
+1. Add exact **agent + deployment + authority + lifecycle + evidence** binding to the external-agent admission comparison checklist.
+2. External registry/discovery documents are observable claims, never canonical authority by themselves.
+3. Bind accepted external identity evidence to specification/version and verifier policy so maintenance transitions cannot silently alter Koschei admission meaning.
+4. Keep revocation/current-lifecycle verification mandatory before converting delegated-agent evidence into any external service admission.
+5. No new Web6 language semantic layer is justified by today's standards evidence.
+
+
+## 2026-09-19 05:57+03 delta
+
+### IETF Agent Communication Protocols (agentproto) proposed WG review
+On 17 Sep 2026 the IESG announced review of a proposed Agent Communication Protocols working group. The announcement explicitly frames agent protocols around delegated user authority and auditability concerns. This is a proposed WG under review, not an established standard.
+
+Koschei relevance: HIGH. Track protocol-layer separation between dialog/communication and authority. Koschei MUST continue to bind an external agent action to the exact delegated authority/evidence rather than treating protocol participation as authority.
+
+Source: https://mailarchive.ietf.org/arch/msg/ietf-announce/PLF82HzLpIZQecDl0rzIm1FTxb4/
+
+### Independent Determinability of Agent Actions — draft-wadkins-agentproto-action-determinability-00
+The 10 Sep 2026 individual Internet-Draft separates authorization, enforcement, execution and intended effect into distinct transitions and requires enough preserved evidence for an independent evaluator to determine the claimed transition later.
+
+Koschei relevance: VERY HIGH. This maps directly onto Koschei's observable-vs-canonical separation and proof-carrying execution. A declared request or authorization MUST NOT stand in for an executed effect. Future Koschei external-action receipts should bind governing revision + material action + resulting effect evidence.
+
+Source: https://www.ietf.org/archive/id/draft-wadkins-agentproto-action-determinability-00.html
+
+### W3C AIKR / Agent Identity trust-layer discussion — declared vs resolved facts
+September discussion highlights a concrete failure class: checking a declared scope against another declared identifier can prove internal consistency while failing to prove the actual resolved/executed target. Participants distinguish consistency checks from evidence checks that recompute or resolve the real target.
+
+Koschei relevance: VERY HIGH as adversarial design input, but this is Community Group discussion rather than W3C Recommendation. Add a hard rule for external adapters: **no declared slot is accepted as the corresponding executed fact**. Effect evidence must be resolved/recomputed and bound to the authority decision.
+
+Sources:
+- https://lists.w3.org/Archives/Public/public-aikr/2026Sep/0029.html
+- https://lists.w3.org/Archives/Public/public-aikr/2026Sep/0028.html
+
+## 2026-09-19 05:57+03 Koschei delta decision
+
+1. Preserve four distinct external-action facts: authorization, enforcement decision, execution, effect.
+2. A protocol declaration/manifest/request is observable evidence, never proof of the executed target/effect by itself.
+3. Future external-action proof envelopes must bind the exact governing revision in force at decision time.
+4. Evidence referenced but unavailable must fail closed where the claim depends on it; silent degradation to unchecked state is forbidden.
+5. Agent communication protocol participation cannot manufacture Khar or compiler authority.
+
+
+## 2026-09-19 identity/canonicalization delta
+
+### W3C AIKR / Agent Identity discussion — canonicalization false-match risk
+A 17 Sep 2026 Community Group discussion records an important conformance failure: numeric identifier values outside the exact interoperable integer range can collapse to the same canonical JSON representation in some processing paths, producing a silent false identity match rather than a visible mismatch. The discussion also notes that canonical bytes alone cannot establish semantic equality when units, namespaces, or schema references differ.
+
+Koschei relevance: VERY HIGH as adversarial input. Canonical serialization MUST NOT be treated as semantic identity by itself. Security-critical identifiers need a domain/type/schema contract before byte-level canonicalization, and unsafe numeric identifier domains must fail closed rather than pass through a lossy host-number representation.
+
+Source: https://lists.w3.org/Archives/Public/public-aikr/2026Sep/0027.html
+
+### Authority continuity across delegation
+September AIKR/Agent Identity discussion separately emphasizes that a traceable A -> B -> C delegation chain proves provenance but does not by itself prove that authority remained within the original principal's scope.
+
+Koschei relevance: VERY HIGH. Every delegation hop must preserve or attenuate authority; provenance alone is insufficient. A downstream agent/tool may never widen scope merely because its own identity and delegation link are valid.
+
+Sources:
+- https://lists.w3.org/Archives/Public/public-aikr/2026Sep/0012.html
+- https://lists.w3.org/Archives/Public/public-aikr/2026Sep/0017.html
+
+## 2026-09-19 identity/canonicalization decision
+
+1. Separate semantic identity from serialization canonicalization.
+2. Security identifiers require explicit namespace/schema/type meaning before equality is admitted.
+3. Reject identifier representations that can undergo lossy host-number conversion.
+4. Delegation validity requires authority continuity/attenuation at every hop; a complete provenance chain is not sufficient.
+5. These Community Group discussions are design/adversarial evidence, not W3C Recommendations and not automatic Koschei semantic authority.
+
+
+## 2026-09-19 protocol-negotiation delta
+
+### Agent Protocol Negotiation Protocol (APNP) — draft-cui-agent-protocol-negotiation-protocol-00 (16 Sep 2026)
+A new individual Internet-Draft proposes a negotiation layer for heterogeneous agent protocols. It defines capability advertisement, intersection, deterministic protocol selection, downgrade protection, and a negotiation transcript hash intended to bind the selected protocol and parameters to the later session.
+
+Koschei relevance: VERY HIGH as an interoperability/adversarial target. The key invariant is that discovery/negotiation cannot silently weaken the security profile. Any external-agent adapter must bind the exact negotiated protocol/version/parameters to the admitted session/evidence and fail closed when no acceptable intersection exists. A fallback must never widen authority or erase required verification.
+
+Source: https://www.ietf.org/archive/id/draft-cui-agent-protocol-negotiation-protocol-00.html
+
+### OAuth authorization across trust domains — draft-parecki-oauth-trust-domain-00 (8 Sep 2026)
+This individual Internet-Draft addresses OAuth authorization when clients and resource servers span different trust domains, introducing explicit trust-domain and authorization-server relationship metadata.
+
+Koschei relevance: MEDIUM/HIGH for external admission adapters. Trust-domain metadata is observable external policy evidence, not Koschei authority. Cross-domain authorization must bind the exact issuer/domain relationship used at decision time and reject ambiguous or conflicting trust paths.
+
+Source: https://www.ietf.org/archive/id/draft-parecki-oauth-trust-domain-00.html
+
+## 2026-09-19 protocol-negotiation decision
+
+1. Bind exact external protocol name, version and security-relevant negotiated parameters to session/evidence identity.
+2. No acceptable protocol intersection = DENY; do not invent a permissive fallback.
+3. Negotiation fallback may preserve or strengthen requirements but must never weaken required identity, authority, evidence, freshness, revocation or effect-verification guarantees.
+4. Cross-domain trust metadata is evidence only and cannot manufacture Khar/compiler authority.
+5. Ambiguous/conflicting external trust paths fail closed.
+
+
+## 2026-09-19 federation/evidence delta
+
+### Web4 Federation Policy Advertisement — draft-jacobs-web4-federation-policy-00 (12 Sep 2026)
+This individual IETF Internet-Draft defines machine-readable federation policy advertisements covering authority, versions/profiles, evidence formats, retention, challenges/appeals, revocation, disclosure, jurisdiction, proof and status.
+
+Koschei impact: advertised policy is observable external evidence, never canonical authority. Admission must bind the exact policy/profile/version/status used at decision time; stale, revoked, ambiguous or unsupported policy fails closed.
+
+### Web4 Evidence Receipts — draft-jacobs-web4-evidence-receipts-00 (12 Sep 2026)
+This individual draft defines durable cryptographically verifiable receipts for assessment, authority, policy, claim and node-lifecycle events without requiring protected evidence itself to be published.
+
+Koschei impact: strengthens the existing receipt architecture. A receipt proves only its explicitly bound event/state and must not be promoted to execution/effect/finality proof. Protected evidence may remain private while its integrity/provenance commitment is independently verifiable.
+
+### Web4 Claims and Verification — draft-jacobs-web4-claims-verification-00 (12 Sep 2026)
+This individual draft explicitly separates claims, evidence, assessments, assertions, verification events, challenges, supersession, suspension, expiration, revocation and receipts.
+
+Koschei impact: preserve these state distinctions rather than collapsing them into a generic "verified" boolean. Revocation/suspension/expiration/supersession are lifecycle facts and must be checked at the authorization/effect boundary.
+
+Sources:
+- https://www.ietf.org/archive/id/draft-jacobs-web4-federation-policy-00.html
+- https://www.ietf.org/archive/id/draft-jacobs-web4-evidence-receipts-00.html
+- https://www.ietf.org/archive/id/draft-jacobs-web4-claims-verification-00.html
+
+### Web5/Web6 recheck
+No new primary IETF/W3C consensus Web5/Web6 technical standard was found in this delta. Do not manufacture semantics from labels alone.
+
+## 2026-09-19 federation/evidence decision
+
+1. External federation policy must bind exact profile/version/status and remains non-authoritative.
+2. Receipt type must state exactly what fact it proves; no receipt-type promotion.
+3. claim != evidence != assessment != verification != execution != effect != finality.
+4. suspension, expiration, revocation and supersession are first-class lifecycle gates.
+5. private evidence may use verifiable commitments, but unavailable evidence required for a decision remains fail-closed.
+
+
+## 2026-09-20 subagent identity / evidence availability delta
+
+### W3C Agent Identity CG discussion — delegated subagents (18 Sep 2026)
+A new community-group issue asks whether a top-level agent identity assertion also covers delegated subagents and what minimum per-run record is required to make that claim independently checkable afterwards.
+
+Koschei relevance: HIGH. Parent identity must not be silently inherited as child identity or child authority. Every delegated execution hop needs an exact subject/deployment/run binding and an auditable parent-child relationship. Missing child evidence fails closed.
+
+Source: https://lists.w3.org/Archives/Public/public-agent-identity/2026Sep/0033.html
+
+### W3C AIKR discussion — carried vs referenced evidence (17 Sep 2026)
+The current community discussion distinguishes declared consistency from recomputed/resolved evidence and notes a failure mode where referenced evidence becomes unavailable. An unavailable reference can otherwise turn a verification step into an unchecked step without any explicit false statement.
+
+Koschei relevance: HIGH. Evidence availability is part of the verification contract. A required external receipt/evidence reference that cannot be resolved must never degrade into success. Receipts should record whether critical evidence is carried or referenced and bind the resolution policy used at decision time.
+
+Source: https://lists.w3.org/Archives/Public/public-aikr/2026Sep/0028.html
+
+These are community discussions, not W3C Recommendations.
+
+## 2026-09-20 decision
+
+1. Parent-agent identity does not imply child/subagent identity or authority.
+2. Delegated execution evidence binds exact parent, child, deployment/run and authority attenuation.
+3. Required referenced evidence becoming unavailable = DENY / unverifiable, never implicit success.
+4. Verification records bind evidence mode (carried/reference) and the resolution policy/version.
+5. None of these external identity/evidence facts mint Khar or compiler authority.
+
+
+## 2026-09-20 execution-time authority delta
+
+### Web4 profile: authority checked at execution boundary
+The active individual Internet-Draft `draft-reilly-web4-00` states that agent authority is a privilege-escalation surface and requires blast-radius classification to be verified at the point of execution rather than only at proposal time. It also separates pending from attested anchor state.
+
+Koschei impact: HIGH and directly aligned with the existing authorization/effect split. A proposal-time decision or permit is not sufficient evidence for a later effect. Security-relevant authority/lifecycle facts must still be current at the execution boundary, and pending evidence must never be promoted to attested/final state.
+
+Source: https://datatracker.ietf.org/doc/html/draft-reilly-web4-00
+
+This is an individual Internet-Draft, not an IETF standard.
+
+### Web5/Web6 recheck
+No new primary IETF/W3C consensus Web5/Web6 technical standard was identified in this delta. Labels alone remain non-authoritative.
+
+## 2026-09-20 execution-boundary decision
+
+1. Revalidate security-relevant authority/lifecycle state at execution, not only proposal/admission.
+2. proposal != authorization != permit != execution != effect != finality.
+3. pending/attested/final states remain distinct and cannot be silently promoted.
+4. Runtime aggregate construction must consume only sealed compiler facts; host/source reconstruction is forbidden.
+
+
+## 2026-09-20 assessment-envelope delta
+
+### Web4 Assessment Assertions — draft-jacobs-web4-assessment-assertions-00 (12 Sep 2026)
+This individual Internet-Draft defines an implementation-neutral envelope for externally presented assessment results, including subject, issuer, policy, result, validity, evidence commitments, proof and current status while allowing protected assessment methods to remain confidential.
+
+Koschei relevance: HIGH for bank/marketplace/exchange-class integrations. An externally supplied risk/compliance/identity assessment can be admitted only as evidence. Its exact subject, issuer, policy/profile, validity interval, evidence commitment, proof and current lifecycle status must be bound before use. An assessment result cannot itself mint Khar, compiler authority, an execution permit, effect completion or finality.
+
+Source: https://www.ietf.org/ietf-ftp/internet-drafts/draft-jacobs-web4-assessment-assertions-00.html
+
+This is an individual Internet-Draft, not an IETF standard.
+
+### Web5/Web6 recheck
+No new primary IETF/W3C consensus Web5/Web6 technical standard was identified in this delta.
+
+## 2026-09-20 assessment-envelope decision
+
+1. External assessment != canonical authority.
+2. Bind subject + issuer + policy/profile + validity + evidence commitment + proof + current status.
+3. Expired, suspended, revoked, superseded, ambiguous or unverifiable assessment fails closed.
+4. Confidential scoring internals do not justify accepting an unverifiable result.
+5. Assessment evidence cannot be promoted into execution/effect/finality proof.
+
+
+## 2026-09-20 durable-reference delta
+
+### Web4 Evidence Receipts — durable reference semantics recheck
+The current individual Web4 evidence-receipt draft treats a receipt as a durable, cryptographically verifiable reference to an event while allowing protected evidence to remain private. That reinforces a distinction Koschei must preserve: durable receipt identity/integrity does not guarantee that separately referenced evidence is currently available, sufficient, fresh or authoritative.
+
+Koschei impact: HIGH for long-lived financial/commerce audit trails. A bank/order/exchange audit record can retain a durable receipt while authorization and effect verification independently check evidence availability, lifecycle and exact event type.
+
+Source: https://www.ietf.org/archive/id/draft-jacobs-web4-evidence-receipts-00.html
+
+This remains an individual Internet-Draft, not an IETF standard.
+
+### Web5/Web6 recheck
+No new primary IETF/W3C consensus Web5/Web6 technical standard was identified in this delta.
+
+## 2026-09-20 durable-reference decision
+
+1. Durable receipt != currently resolvable evidence.
+2. Receipt integrity != evidence sufficiency/freshness/authority.
+3. Long-lived audit identity must not bypass execution-time lifecycle checks.
+4. Financial/commerce receipts must bind exact event class so authorization, execution, effect and finality cannot be confused.
+
+
+## 2026-09-20 receipt-privacy delta
+
+### Web4 Evidence Receipts — selective disclosure / privacy boundary
+The active individual evidence-receipt draft permits protected evidence to remain private while exposing cryptographic commitments and event metadata sufficient for later verification. For Koschei this is useful only if privacy does not erase the verifier's ability to establish the exact event class, subject, issuer, policy/lifecycle state and evidence commitment required by the decision.
+
+Koschei impact: HIGH for regulated financial/commerce systems. Auditability should not require copying sensitive customer evidence into every execution receipt; however, redaction/selective disclosure must never turn a required proof field into an unverifiable wildcard.
+
+Source: https://www.ietf.org/archive/id/draft-jacobs-web4-evidence-receipts-00.html
+
+This remains an individual Internet-Draft, not an IETF standard.
+
+### Web5/Web6 recheck
+No new primary IETF/W3C consensus Web5/Web6 technical standard was identified in this delta.
+
+## 2026-09-20 receipt-privacy decision
+
+1. Sensitive evidence may remain private while exact cryptographic commitments are retained.
+2. Redaction/selective disclosure cannot remove fields required to establish event identity or lifecycle validity.
+3. Missing required disclosed/committed fact = unverifiable, therefore fail closed.
+4. Privacy-preserving audit receipts still cannot mint authority or imply effect/finality.
+
+
+## 2026-09-20 runtime-proof projection delta
+
+### Web4 evidence / execution boundary synthesis
+Current Web4 drafts continue to reinforce a design constraint already adopted by Koschei: externally supplied evidence, receipts and authority declarations are useful only when projected into an exact local execution contract. The runtime must not reconstruct omitted security facts from source text, host objects or permissive defaults.
+
+Koschei impact: HIGH for aggregate/state execution. Sealed MIR aggregate contracts should contain every compiler-owned fact needed for deterministic runtime validation. Runtime construction is therefore a proof-consumption boundary, not a second type checker or semantic authority.
+
+Primary references:
+- https://datatracker.ietf.org/doc/html/draft-reilly-web4-00
+- https://www.ietf.org/archive/id/draft-jacobs-web4-evidence-receipts-00.html
+
+Both are individual Internet-Drafts, not IETF standards.
+
+### Web5/Web6 recheck
+No new primary IETF/W3C consensus Web5/Web6 technical standard was identified in this delta.
+
+## 2026-09-20 runtime-proof projection decision
+
+1. MIR carries exact compiler-owned aggregate invariants required at execution.
+2. Runtime validates/consumes those sealed invariants; it does not reconstruct them from AST/source.
+3. Missing, duplicate, conflicting or already-consumed aggregate state fails closed.
+4. Host representation convenience never defines Koschei aggregate semantics.
+
+
+## 2026-09-20 adversarial execution-evidence delta
+
+### Web4 execution/evidence boundary recheck
+The current Web4 draft set continues to separate declared authority and durable evidence from the actual execution/effect event. For Koschei validation, representation-level assertions are therefore insufficient evidence that a runtime transition enforces the sealed contract.
+
+Koschei impact: HIGH. Adversarial tests for sealed aggregates must drive the real MIR executor path, not merely recreate the expected predicate in test code.
+
+Primary references:
+- https://datatracker.ietf.org/doc/html/draft-reilly-web4-00
+- https://www.ietf.org/archive/id/draft-jacobs-web4-evidence-receipts-00.html
+
+These remain individual Internet-Drafts, not IETF standards.
+
+### Web5/Web6 recheck
+No new primary IETF/W3C consensus Web5/Web6 technical standard was identified in this delta.
+
+## 2026-09-20 adversarial execution-evidence decision
+
+1. Representation tests are not execution evidence.
+2. Security gates must exercise the real canonical runtime transition when that transition exists.
+3. Expected rejection predicates duplicated only inside tests do not prove runtime enforcement.
+4. Exact-head validation remains distinct from source-level test construction.
+
+
+## 2026-09-20 declared-vs-observed runtime evidence delta
+
+### W3C community discussion — run records under identity
+A September Agent Identity Community Group discussion proposes a useful distinction for verifiable agent runs: identity/declarations answer who or what was asserted, while a per-run record is needed to establish what actually executed. The discussion specifically raises delegated subagents and the need to distinguish declared from observed behaviour.
+
+Source: https://lists.w3.org/Archives/Public/public-agent-identity/2026Sep/0021.html
+
+A related AIKR Community Group thread describes consistency checks (declared fact versus declared fact) separately from evidence checks (declared fact versus recomputed/resolved/observed fact). This is directly relevant to Koschei runtime validation: reproducing a sealed-contract predicate in a test is not equivalent to observing the canonical executor enforce it.
+
+Source: https://lists.w3.org/Archives/Public/public-aikr/2026Sep/0028.html
+
+These are W3C Community Group discussions, not W3C Recommendations.
+
+### Web5/Web6 recheck
+No new primary IETF/W3C consensus Web5/Web6 technical standard was identified in this delta.
+
+## 2026-09-20 declared-vs-observed decision
+
+1. Compiler/runtime declarations and observed execution evidence remain separate facts.
+2. Adversarial tests must exercise the actual executor when claiming runtime enforcement.
+3. Delegated/sub-execution evidence binds the exact executing identity/run, not merely the top-level identity.
+4. A declared invariant cannot satisfy an evidence gate by being compared only with another declaration.
+
+
+## 2026-09-20 evidence-qualified authorization delta
+
+### IETF agent evidence boundary
+A new September 2026 individual Internet-Draft, `draft-watts-agent-evidence-boundary-00`, defines Evidence Qualification Receipts for binding an authorization-triggering proposition to an evidence profile, evidence digests, contradiction state, freshness and evaluation result. Its core architectural point is useful for Koschei: identity/delegation/permission alone do not establish that the factual premise used to authorize an operation is adequately supported.
+
+Primary source: https://www.ietf.org/ietf-ftp/internet-drafts/draft-watts-agent-evidence-boundary-00.html
+
+This is an Experimental Internet-Draft, not an IETF standard.
+
+### Koschei impact
+1. A compiler/runtime admission fact that depends on evidence must bind the exact evidence profile/digest and freshness state used for the decision.
+2. Identity, delegation and authorization do not substitute for evidence sufficiency.
+3. Contradictory, stale, unavailable or unverifiable required evidence fails closed.
+4. External evidence qualification remains evidence only; it cannot mint Khar, compiler authority, execution, effect or finality.
+5. For aggregate execution, runtime facts must be compiler-owned sealed facts; source literals cannot self-declare the contract they are being checked against.
+
+### Web5/Web6 recheck
+No new primary IETF/W3C consensus Web5/Web6 technical standard was identified in this delta.
+
+
+## 2026-09-21 evidence-profile version binding delta
+
+### Evidence qualification profile stability
+The current evidence-boundary draft makes evidence qualification dependent on a named/profiled evaluation contract rather than an unversioned assertion. For Koschei, the useful consequence is that a security decision must not silently change meaning when the evidence-evaluation profile changes.
+
+Primary source: https://www.ietf.org/ietf-ftp/internet-drafts/draft-watts-agent-evidence-boundary-00.html
+
+This remains an Experimental Internet-Draft, not an IETF standard.
+
+### Koschei decision
+1. Evidence-dependent admission binds the exact evaluation profile/version used.
+2. Re-evaluation under another profile is a new decision fact, not continuation of the old one.
+3. Compiler-owned aggregate contracts follow the same conservation rule: runtime consumes the exact checked contract and may not substitute source-visible structure.
+4. Missing canonical checked resolution fails closed before execution.
+
+### Web5/Web6 recheck
+No new primary IETF/W3C consensus Web5/Web6 technical standard was identified in this delta.
+
+
+## 2026-09-21 resolved-target execution delta
+
+### Fresh primary-source recheck
+A fresh W3C Community Group recheck found a concrete execution-boundary failure mode: authorization may compare a declared scope with another declared identifier while the actual resolved outbound target never enters the check. A related discussion distinguishes consistency checks (declared-vs-declared) from evidence checks (declared-vs-resolved/recomputed/observed).
+
+Primary W3C sources:
+- https://lists.w3.org/Archives/Public/public-agent-identity/2026Sep/0024.html
+- https://lists.w3.org/Archives/Public/public-aikr/2026Sep/0029.html
+- https://lists.w3.org/Archives/Public/public-aikr/2026Sep/0028.html
+
+These are Community Group discussions, not W3C Recommendations.
+
+### Koschei decision
+1. A declared source/runtime contract is not proof that the executor enforced it.
+2. Security tests claiming runtime enforcement must drive the actual runtime transition.
+3. Where an action has a resolved target, authorization evidence must bind that resolved target rather than only source-visible/declarative identifiers.
+4. Missing observed/resolved evidence remains fail-closed.
+5. No new primary IETF/W3C consensus Web5/Web6 technical standard was identified in this recheck.
+
+
+## 2026-09-23 observed-execution conformance delta
+
+### Fresh primary-source recheck
+A fresh W3C Agent Conformance Community Group recheck produced a directly relevant implementation lesson: an earlier comparison used declared expected fields without running the checker; the later emitter ran the pinned checker and treated its output as the observation. The distinction is exactly the boundary Koschei needs between representation tests and runtime enforcement evidence.
+
+Primary source: https://lists.w3.org/Archives/Public/public-agent-conformance/2026Sep/0052.html
+
+Related W3C AIKR discussion continues to distinguish declared-vs-declared consistency from declared-vs-resolved/recomputed/observed evidence, including binding the actual resolved execution target.
+
+Primary sources:
+- https://lists.w3.org/Archives/Public/public-aikr/2026Sep/0028.html
+- https://lists.w3.org/Archives/Public/public-aikr/2026Sep/0029.html
+
+These are W3C Community Group discussions, not W3C Recommendations.
+
+### Koschei decision
+1. Expected-state assertions alone do not prove runtime enforcement.
+2. Security gates claiming execution enforcement must exercise the canonical executor and observe its result.
+3. Declared contracts remain compiler-owned inputs; observed execution remains a separate evidence class.
+4. Unresolvable required evidence is not success and cannot silently degrade to an unchecked allow.
+5. No new primary IETF/W3C consensus Web5/Web6 technical standard was identified in this recheck.
+
+
+## 2026-09-23 evidence-resolution identity delta
+
+### Fresh primary-source recheck
+A fresh W3C AIKR Community Group recheck reinforces a useful execution-evidence boundary: a verifier must distinguish declared identifiers from the value actually resolved/recomputed/observed during verification. A consistency comparison between declarations is not evidence that the real execution target or effect matched them.
+
+Primary sources:
+- https://lists.w3.org/Archives/Public/public-aikr/2026Sep/0028.html
+- https://lists.w3.org/Archives/Public/public-aikr/2026Sep/0029.html
+
+These are W3C Community Group discussions, not W3C Recommendations.
+
+### Koschei decision
+1. Map semantics cannot be inherited accidentally from a host container.
+2. Duplicate-key behavior must come from a compiler/language-owned canonical rule or remain unsupported/fail-closed.
+3. Runtime evidence must record the actual canonical transition, not a declaration of expected host behavior.
+4. No new primary IETF/W3C consensus Web5/Web6 technical standard was identified in this recheck.
+
+
+## 2026-09-23 authority-transition receipt delta
+
+### Fresh primary IETF recheck
+A fresh IETF Datatracker search found `draft-watts-agent-authority-transition-receipts-00` (12 Sep 2026). It defines a signed, non-bearer receipt binding an operation to principal, policy, evidence set, decision, audience, validity interval, and predecessor authority state. It is an Informational Internet-Draft, not an IETF standard.
+
+Primary source: https://datatracker.ietf.org/doc/html/draft-watts-agent-authority-transition-receipts-00
+
+The recheck also reconfirmed `draft-wadkins-agentproto-action-determinability-00`: authorization, enforcement, execution and intended effect are distinct transitions whose evidence must not be promoted across boundaries.
+
+Primary source: https://datatracker.ietf.org/doc/html/draft-wadkins-agentproto-action-determinability-00
+
+### Koschei impact
+1. State-transition evidence binds predecessor state as well as the resulting decision/state.
+2. A receipt remains non-authoritative evidence; possession of it cannot itself grant Khar/compiler/runtime authority.
+3. Runtime collection semantics must be Koschei-owned transitions, not inherited from host containers.
+4. Until Map duplicate-key behavior is explicitly defined by the language contract, native execution must fail closed rather than silently inherit host overwrite semantics.
+5. No new primary IETF/W3C consensus Web5/Web6 technical standard was identified in this recheck.
