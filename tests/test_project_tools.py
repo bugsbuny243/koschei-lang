@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import io
 import json
+
+import koschei
 import shutil
 import subprocess
 import tempfile
@@ -82,7 +84,7 @@ class ProjectCliTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(error, "")
         payload = json.loads(output)
-        self.assertEqual(payload["version"], "0.10.0")
+        self.assertEqual(payload["version"], koschei.__version__)
 
     def test_new_rejects_non_empty_destination(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

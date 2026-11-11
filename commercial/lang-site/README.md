@@ -1,4 +1,4 @@
-# Koschei Lang 0.10.0 product site
+# Koschei Lang 0.10.1 product site
 
 Self-contained, mobile-responsive, bilingual (English/Turkish) landing page for the **independent Koschei Lang programming language**, not the separate Koschei Sentinel, Web3 Hub or existing founding-pilot consulting offer.
 
