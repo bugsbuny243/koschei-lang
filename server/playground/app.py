@@ -43,6 +43,15 @@ SITE_FILES = {
     "/security-guide.tr.html": ("security-guide.tr.html", "text/html; charset=utf-8"),
     "/robots.txt": ("robots.txt", "text/plain; charset=utf-8"),
     "/sitemap.xml": ("sitemap.xml", "application/xml; charset=utf-8"),
+    "/llms.txt": ("llms.txt", "text/plain; charset=utf-8"),
+    "/.well-known/security.txt": ("security.txt", "text/plain; charset=utf-8"),
+    "/security.txt": ("security.txt", "text/plain; charset=utf-8"),
+}
+# Paths people and crawlers look for that live as sections of the home page.
+SITE_REDIRECTS = {
+    "/pricing": "/#pricing",
+    "/faq": "/#faq",
+    "/about": "/#features",
 }
 SITE_CSP = (
     "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data:; "
@@ -118,6 +127,12 @@ class Handler(BaseHTTPRequestHandler):
         if CANONICAL_HOST and host.endswith(".up.railway.app") and path != "/health":
             self.send_response(HTTPStatus.MOVED_PERMANENTLY)
             self.send_header("Location", f"https://{CANONICAL_HOST}{self.path}")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        if path in SITE_REDIRECTS:
+            self.send_response(HTTPStatus.MOVED_PERMANENTLY)
+            self.send_header("Location", SITE_REDIRECTS[path])
             self.send_header("Content-Length", "0")
             self.end_headers()
             return
