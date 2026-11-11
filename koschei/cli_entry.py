@@ -4,8 +4,9 @@ The compiler CLI historically lived in :mod:`koschei.cli`, while the language
 server was installed only as the separate ``ks-lsp`` executable. This adapter
 keeps the existing CLI implementation stable, exposes ``ks lsp``, attaches V5
 interpreter runtime budgets to the public ``ks run`` path, enforces optional
-locked native builds and manifests, and hosts the sealed foreign-contract, differential-fuzzing, module-lock and
-native-build verification commands.
+locked native builds and manifests, and hosts the sealed foreign-contract,
+maturity, differential-fuzzing, foundation-export, module-lock, native-build
+verification, reproducibility, release proof, and maturity-attestation commands.
 """
 
 from __future__ import annotations
@@ -26,7 +27,10 @@ from .build_manifest import (
 from .build_manifest_cli import add_build_verify_parser, command_build_verify
 from .differential_fuzz_cli import add_differential_fuzz_parser, command_differential_fuzz
 from .foreign_cli import add_foreign_parser, command_foreign
+from .foundation_export_cli import add_foundation_export_parser, command_foundation_export
 from .lock_cli import add_lock_parser, command_lock
+from .maturity_attestation_cli import add_maturity_attest_parser, command_maturity_attest
+from .maturity_cli import add_maturity_parser, command_maturity
 from .mir import require_mir
 from .mir_go_native import generate_go_mir_native, inspect_mir_go_support
 from .module_lock import load_module_lock, verify_module_lock
@@ -34,6 +38,14 @@ from .modules import check_graph
 from .native_http_transport_v1 import (
     native_http_transport_guard_fragment_go_v1,
     native_http_transport_guard_go_v1,
+)
+from .release_proof_cli import add_release_proof_parser, command_release_proof
+from .uefi_boot_cli import add_uefi_boot_parser, command_uefi_boot
+from .reproducibility_cli import (
+    add_build_compare_parser,
+    add_build_compare_verify_parser,
+    command_build_compare,
+    command_build_compare_verify,
 )
 from .runtime_budget import (
     DEFAULT_MAX_STEPS,
@@ -96,9 +108,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     add_foreign_parser(subcommands)
+    add_maturity_parser(subcommands)
+    add_maturity_attest_parser(subcommands)
     add_differential_fuzz_parser(subcommands)
+    add_foundation_export_parser(subcommands)
     add_lock_parser(subcommands)
     add_build_verify_parser(subcommands)
+    add_build_compare_parser(subcommands)
+    add_build_compare_verify_parser(subcommands)
+    add_release_proof_parser(subcommands)
+    add_uefi_boot_parser(subcommands)
 
     check = subcommands.choices["check"]
     check.add_argument(
@@ -460,12 +479,26 @@ def main(argv: list[str] | None = None) -> int:
         return command_lsp()
     if args.command == "foreign":
         return command_foreign(args)
+    if args.command == "maturity":
+        return command_maturity(args)
+    if args.command == "maturity-attest":
+        return command_maturity_attest(args)
     if args.command == "differential-fuzz":
         return command_differential_fuzz(args)
+    if args.command == "foundation-export":
+        return command_foundation_export(args)
     if args.command == "lock":
         return command_lock(args)
     if args.command == "build-verify":
         return command_build_verify(args)
+    if args.command == "build-compare":
+        return command_build_compare(args)
+    if args.command == "build-compare-verify":
+        return command_build_compare_verify(args)
+    if args.command == "release-proof":
+        return command_release_proof(args)
+    if args.command == "uefi-boot":
+        return command_uefi_boot(args)
     if args.command == "check" and args.native:
         print(
             "KS4101: Native check requires a trusted in-process host ingress; "

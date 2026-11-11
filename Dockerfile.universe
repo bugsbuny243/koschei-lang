@@ -1,0 +1,11 @@
+FROM python:3.13-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /app
+COPY . /app
+
+# Koschei compiler/runtime intentionally has zero third-party runtime dependencies.
+# Railway injects PORT; Universe secrets/project identity are supplied as env vars.
+CMD ["python", "-m", "koschei.universe_remote_app_v1"]
