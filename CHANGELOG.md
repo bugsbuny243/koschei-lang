@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.10.1 — 2026-11-11
+
+- Restore the modules, tests, tools and workflows removed on 2026-11-09: native realities, Koschei Universe, Strange, decoy and protected-source representations, the adversarial lab, maturity, reproducibility, release proof and the attestation and provenance chain. The `maturity`, `maturity-attest`, `foundation-export`, `build-compare`, `build-compare-verify`, `release-proof` and `uefi-boot` subcommands and the `ks-local-validate`, `ks-universe` and related console scripts are back. 0.10.0 on PyPI shipped without them.
+- Restore the vision, roadmap and architecture documents removed in the same cleanup.
+- Remove every Pi Network adapter, profile, server, page and test.
+- Add `ks-mcp` (also `uvx koschei-lang`): an MCP server that lets an AI agent run Koschei programs under a capability policy fixed on its command line (`--allow-read`, `--allow-write`, `--allow-net`, `--allow-env`). A program that asks for more is rejected before it runs. See `docs/MCP_SERVER.md`.
+- Add the browser playground served at koschei.dev/play, and publish to PyPI and the MCP Registry from GitHub Actions without stored tokens.
+
 ## Unreleased — Core Library v1
 
 - Add `ServeCaps.reply_as(status, content_type, body)` under `ks run` and in native binaries, so a server can answer JSON or HTML: the reply carries the given `Content-Type` instead of `text/plain; charset=utf-8`. The content type follows `NetCaps.post`'s rule (1–256 printable ASCII characters, no surrounding space), so it cannot add a header; otherwise the client gets `500` and the call returns `KS3472`.
