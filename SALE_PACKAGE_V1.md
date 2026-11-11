@@ -1,6 +1,6 @@
 # Koschei Lang — Sale Package v1
 
-For an organisation evaluating a Team or Enterprise license, or anyone given
+For an organisation evaluating commercial licenses for its developers, or anyone given
 access to this repository. Every claim below points to something you can run
 or read in this repository; nothing here is a valuation, legal advice or a
 promise beyond the repository's own evidence. Koschei Lang is sold as
@@ -72,8 +72,8 @@ Koschei Lang is under the Koschei Lang License 1.0 (`LICENSE`, Turkish
 
 - personal, non-commercial use is free;
 - commercial use needs a one-time, perpetual license that covers every
-  version released within 12 months of purchase: Individual 49 USD, Team (up
-  to 10 developers) 249 USD, Enterprise 999 USD (`LICENSING.md`);
+  version released within 12 months of purchase: 49 USD per developer
+  (`LICENSING.md`);
 - programs written in Koschei, and binaries built from them, belong to their
   authors and may be shipped without royalties;
 - revisions released earlier under the MIT License stay under it

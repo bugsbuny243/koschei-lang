@@ -11,10 +11,9 @@ and the license never expires. The full terms are in `LICENSE`
 |---|---|---|
 | Personal | Learning, teaching, hobby projects, non-commercial research, trying Koschei out | **Free** |
 | Individual | One named developer, commercial use | **49 USD** |
-| Team | Up to 10 developers of one organisation | **249 USD** |
-| Enterprise | Any number of developers of one organisation | **999 USD** |
 
-Licenses are sold on Koschei Lang's store on Polar (polar.sh). Polar is the
+An organisation buys one Individual license for each developer who uses
+Koschei commercially. Licenses are sold on Koschei Lang's store on Polar (polar.sh). Polar is the
 merchant of record: it takes the payment, handles sales tax or VAT, and sends
 the invoice. The free Personal download is on the same store.
 
@@ -44,10 +43,9 @@ point; you do not need one for the time before.
 
 ## Questions
 
-- **Can I share my license?** An Individual license is for one developer.
-  A Team license covers up to 10 developers of one organisation, and an
-  Enterprise license covers all developers of one organisation. Licenses
-  cannot be transferred to another organisation.
+- **Can I share my license?** No. An Individual license is for one named
+  developer; each developer who uses Koschei commercially needs their own.
+  Licenses cannot be transferred to another person or organisation.
 - **Can I modify Koschei?** Yes, for your own use. You may not redistribute
   Koschei itself, modified or not.
 - **Is there a warranty?** No. Koschei is provided as is; see sections 7

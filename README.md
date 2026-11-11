@@ -179,7 +179,7 @@ The protected-source/deception architecture is being hardened through staged att
 
 ## Licensing and distribution
 
-Koschei Lang is free for personal, non-commercial use. Commercial use needs a commercial license, paid once and valid without time limit, covering every version released within 12 months of purchase: Individual 49 USD, Team (up to 10 developers) 249 USD, Enterprise 999 USD. Programs written in Koschei, and the binaries `ks build` produces, belong to their authors. See [`LICENSING.md`](https://github.com/bugsbuny243/koschei-lang/blob/main/LICENSING.md).
+Koschei Lang is free for personal, non-commercial use. Commercial use needs a commercial license, paid once and valid without time limit, covering every version released within 12 months of purchase: 49 USD per developer. Programs written in Koschei, and the binaries `ks build` produces, belong to their authors. See [`LICENSING.md`](https://github.com/bugsbuny243/koschei-lang/blob/main/LICENSING.md).
 
 Users download Koschei from its store on Polar (polar.sh). `python tools/polar_bundle_v1.py` builds that download, `dist/polar/koschei-lang-<version>.zip`: the `koschei` package, the installer, the license, the customer README (`distribution/polar/`), the language guide, the references and the examples it runs.
 

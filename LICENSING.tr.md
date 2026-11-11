@@ -11,10 +11,9 @@ bedeli bir kez ödenir ve lisansın süresi dolmaz. Tam şartlar
 |---|---|---|
 | Kişisel | Öğrenme, öğretme, hobi projeleri, ticari olmayan araştırma, Koschei'yi denemek | **Ücretsiz** |
 | Bireysel | Adı belli bir geliştirici, ticari kullanım | **49 USD** |
-| Ekip | Bir kuruluşun en fazla 10 geliştiricisi | **249 USD** |
-| Kurumsal | Bir kuruluşun sınırsız sayıda geliştiricisi | **999 USD** |
 
-Lisanslar Koschei Lang'in Polar (polar.sh) mağazasında satılır. Satıcı
+Bir kuruluş, Koschei'yi ticari olarak kullanan her geliştiricisi için bir
+Bireysel lisans alır. Lisanslar Koschei Lang'in Polar (polar.sh) mağazasında satılır. Satıcı
 olarak Polar görünür: ödemeyi alır, satış vergisini veya KDV'yi öder ve
 faturayı keser. Ücretsiz kişisel indirme de aynı mağazadadır.
 
@@ -44,10 +43,10 @@ alırsınız; önceki süre için lisans gerekmez.
 
 ## Sorular
 
-- **Lisansımı paylaşabilir miyim?** Bireysel lisans tek bir geliştirici
-  içindir. Ekip lisansı bir kuruluşun en fazla 10 geliştiricisini, Kurumsal
-  lisans bir kuruluşun bütün geliştiricilerini kapsar. Lisanslar başka bir
-  kuruluşa devredilemez.
+- **Lisansımı paylaşabilir miyim?** Hayır. Bireysel lisans adı belli tek bir
+  geliştirici içindir; Koschei'yi ticari olarak kullanan her geliştiricinin
+  kendi lisansı olmalıdır. Lisanslar başka bir kişiye veya kuruluşa
+  devredilemez.
 - **Koschei'yi değiştirebilir miyim?** Evet, kendi kullanımınız için.
   Koschei'nin kendisini, değiştirilmiş olsun ya da olmasın, dağıtamazsınız.
 - **Garanti var mı?** Hayır. Koschei olduğu gibi sunulur; `LICENSE.tr.md`

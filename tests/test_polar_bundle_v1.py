@@ -95,7 +95,7 @@ class PolarBundleTests(unittest.TestCase):
         def prices(name: str) -> list[str]:
             return re.findall(r"\*\*(\d+) USD\*\*", (ROOT / name).read_text(encoding="utf-8"))
 
-        self.assertEqual(prices("LICENSING.md"), ["49", "249", "999"])
+        self.assertEqual(prices("LICENSING.md"), ["49"])
         self.assertEqual(prices("LICENSING.tr.md"), prices("LICENSING.md"))
 
 

@@ -28,14 +28,12 @@ Yazılımın şu şekilde kullanılmasını da içerir:
    veya desteklemek için;
 3. bir müşteri ya da işveren için yapılan işte.
 
-Ticari lisanslar Lisans Verenin Polar (polar.sh) mağazasında üç düzeyde
-satılır:
+Ticari lisanslar Lisans Verenin Polar (polar.sh) mağazasında Bireysel
+lisans olarak satılır. Bireysel lisans adı belli bir geliştiriciyi kapsar;
+bir kuruluş, Yazılımı ticari olarak kullanan her geliştiricisi için bir
+Bireysel lisans alır.
 
-- **Bireysel:** adı belli bir geliştirici;
-- **Ekip:** bir kuruluşun en fazla 10 geliştiricisi;
-- **Kurumsal:** bir kuruluşun sınırsız sayıda geliştiricisi.
-
-Güncel fiyatlar `LICENSING.tr.md` dosyasında ve mağazada yazılıdır.
+Güncel fiyat `LICENSING.tr.md` dosyasında ve mağazada yazılıdır.
 
 ## 3. Ticari lisans kalıcıdır
 

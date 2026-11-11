@@ -57,8 +57,6 @@ production workloads.
 |---|---|---:|
 | Personal | Noncommercial learning and projects | Free |
 | Individual | 1 named commercial developer | $49 |
-| Team | Up to 10 developers in one organization | $249 |
-| Enterprise | Any number of developers in one organization | $999 |
 
 Each paid license permits perpetual use of acquired releases and
 includes releases issued within 12 months after purchase. Programs and
@@ -119,8 +117,6 @@ dosyayı engellediği, hesap ele geçirmeyi önlediği veya banka/borsa
 |---|---|---:|
 | Personal | Ticari olmayan kullanım | Ücretsiz |
 | Individual | 1 ticari geliştirici | 49 USD |
-| Team | Aynı kuruluşta en çok 10 geliştirici | 249 USD |
-| Enterprise | Aynı kuruluşta sınırsız geliştirici | 999 USD |
 
 Ücretli lisanslar satın alınan sürümler için süresiz kullanım ve
 satın alma tarihinden itibaren 12 ay içinde çıkan yeni sürümleri
