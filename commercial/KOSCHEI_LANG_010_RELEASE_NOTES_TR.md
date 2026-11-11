@@ -1,8 +1,20 @@
-# Koschei Lang 0.10.0 — Sürüm Notları
+# Koschei Lang 0.10.1 — Sürüm Notları
 
 **Ürün:** Koschei Lang (Koschei Sentinel ve Web3 Hub'dan bağımsız)  
-**Sürüm:** 0.10.0  
+**Sürüm:** 0.10.1  
 **Ürün hattı:** ticari lisanslı, 1.0 öncesi programlama dili ve araç zinciri
+
+## 0.10.1'de yeni
+
+- `ks-mcp` (veya `uvx koschei-lang`): yapay zekâ ajanlarının Koschei
+  programlarını, komut satırında bir kez belirlediğiniz yetki politikası
+  altında çalıştırmasını sağlayan MCP sunucusu. Fazlasını isteyen program
+  çalışmadan reddedilir. Ayrıntılar kaynak depodaki `docs/MCP_SERVER.md`
+  dosyasında.
+- Sürüm güveni araçları geri geldi: `ks maturity`, `ks maturity-attest`,
+  `ks release-proof`, `ks build-compare` ve `ks build-compare-verify`.
+- PyPI'da da var: `pip install koschei-lang`. PyPI dosyaları, kaynak
+  deponun yayın iş akışına bağlı Sigstore kaynak kanıtı taşır.
 
 ## Bu sürümde
 
@@ -39,9 +51,9 @@ Dil derleyicisi işletim sisteminin tamamını izole etmez.
 ## Lisans
 
 Ticari olmayan kişisel kullanım ücretsizdir. Ticari lisanslar
-tek ödemelidir: Individual 49 USD (1 geliştirici), Team 249 USD
-(10 geliştiriciye kadar), Enterprise 999 USD (aynı kuruluşta
-sınırsız geliştirici). Satın alınan sürümlerin kullanımı
+tek ödemelidir: geliştirici başına 49 USD. Bir kuruluş, Koschei'yi
+ticari olarak kullanan her geliştiricisi için bir lisans alır.
+Satın alınan sürümlerin kullanımı
 süresizdir; 12 aylık güncelleme hakkı vardır.
 Kesin hükümler paket içindeki `LICENSE` ve `LICENSING.md`
 ile Türkçe karşılıklarında bulunur.

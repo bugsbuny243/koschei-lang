@@ -128,7 +128,7 @@ Korunan source/deception mimarisi aşamalı saldırı dalgalarıyla sertleştiri
 
 ## Lisans ve dağıtım
 
-Koschei Lang kişisel ve ticari olmayan kullanım için ücretsizdir. Ticari kullanım için ticari lisans gerekir: bedeli bir kez ödenir, süresi dolmaz ve satın almadan sonraki 12 ay içinde çıkan bütün sürümleri kapsar. Fiyatlar: Bireysel 49 USD, Ekip (en fazla 10 geliştirici) 249 USD, Kurumsal 999 USD. Koschei ile yazılan programlar ve `ks build` ile derlenen ikililer yazarlarına aittir. Ayrıntılar: [`LICENSING.tr.md`](LICENSING.tr.md).
+Koschei Lang kişisel ve ticari olmayan kullanım için ücretsizdir. Ticari kullanım için ticari lisans gerekir: bedeli bir kez ödenir, süresi dolmaz ve satın almadan sonraki 12 ay içinde çıkan bütün sürümleri kapsar. Fiyat: geliştirici başına 49 USD. Koschei ile yazılan programlar ve `ks build` ile derlenen ikililer yazarlarına aittir. Ayrıntılar: [`LICENSING.tr.md`](LICENSING.tr.md).
 
 Kullanıcılar Koschei'yi Polar (polar.sh) mağazasından indirir. Bu indirmeyi `python tools/polar_bundle_v1.py` üretir (`dist/polar/koschei-lang-<sürüm>.zip`): `koschei` paketi, kurulum betiği, lisans, müşteri README'si (`distribution/polar/`), dil rehberi, başvuru belgeleri ve README'nin çalıştırdığı örnekler.
 

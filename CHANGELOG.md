@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Sell one commercial license: 49 USD per developer. An organisation buys one license for each developer who uses Koschei commercially. The Team (249 USD) and Enterprise (999 USD) tiers are withdrawn; `LICENSE`, `LICENSE.tr.md`, `LICENSING.md` and `LICENSING.tr.md` say so.
+- Add the `polar-bundle.yml` workflow: it builds the Polar download, installs and runs it, and signs it with a Sigstore build-provenance attestation. Customers verify it with `gh attestation verify`.
+- Update the bundled release notes to 0.10.1.
+
 ## 0.10.1 — 2026-11-11
 
 - Restore the modules, tests, tools and workflows removed on 2026-11-09: native realities, Koschei Universe, Strange, decoy and protected-source representations, the adversarial lab, maturity, reproducibility, release proof and the attestation and provenance chain. The `maturity`, `maturity-attest`, `foundation-export`, `build-compare`, `build-compare-verify`, `release-proof` and `uefi-boot` subcommands and the `ks-local-validate`, `ks-universe` and related console scripts are back. 0.10.0 on PyPI shipped without them.

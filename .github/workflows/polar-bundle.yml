@@ -1,0 +1,51 @@
+name: Build signed Polar download
+
+# Run by hand from the Actions tab. Builds the download sold on Polar
+# (koschei-lang-<version>.zip), checks that it installs and runs, and signs it
+# with a Sigstore build-provenance attestation tied to this repository and
+# workflow. No key is stored anywhere. The zip is uploaded as a workflow
+# artifact for the owner to put on Polar; nothing is published.
+#
+# A customer verifies the download with:
+#   gh attestation verify koschei-lang-<version>.zip --repo bugsbuny243/koschei-lang
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Test the bundle builder
+        run: |
+          python -m pip install pytest
+          python -m pytest -q tests/test_polar_bundle_v1.py
+      - name: Build the download
+        run: python tools/polar_bundle_v1.py --output-dir dist/polar
+      - name: Install the download and run it
+        run: |
+          mkdir /tmp/customer && cd /tmp/customer
+          unzip -q "$GITHUB_WORKSPACE"/dist/polar/koschei-lang-*.zip
+          cd koschei-lang-*/
+          KOSCHEI_HOME=/tmp/customer/home KOSCHEI_BIN=/tmp/customer/bin ./install.sh
+          /tmp/customer/bin/ks version
+          /tmp/customer/bin/ks run examples/hello.ks
+      - name: Record checksum
+        run: cd dist/polar && sha256sum koschei-lang-*.zip | tee SHA256SUMS
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/polar/koschei-lang-*.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: polar-download
+          path: dist/polar/

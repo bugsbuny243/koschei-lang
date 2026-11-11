@@ -43,22 +43,16 @@ Create the following **one-time** products, not recurring subscriptions:
 |---|---:|---|
 | Koschei Lang Personal | Free | Personal, non-commercial |
 | Koschei Lang Individual | $49 | One named commercial developer |
-| Koschei Lang Team | $249 | Up to 10 developers, one organization |
-| Koschei Lang Enterprise | $999 | Any number of developers, one organization |
 
 Copy the relevant English/Turkish description from
 `commercial/KOSCHEI_LANG_010_STORE_LISTING_EN_TR.md`. Include the
 published `LICENSE`, `LICENSING.md` links and the supported platform
 requirements before a customer pays.
 
-**Pricing decision requiring owner verification:** the authoritative
-repository's `LICENSING.md`, `LICENSING.tr.md` and customer README
-all say $49/$249/$999. The separate active commercial policy
-`commercial/USD_ONLY_SALES_POLICY_V1.md` refers to a proposed $1,000
-license target awaiting approval. These two sources are not automatically
-equivalent. Do **not** silently replace the Enterprise checkout with
-$1,000 or claim both are active. Resolve this source discrepancy before
-the live Enterprise listing is enabled.
+**Pricing decision (owner, 2026-11-11):** the store sells one paid product,
+Individual at $49 per developer. An organisation buys one Individual license
+per developer who uses Koschei commercially. There are no Team or Enterprise
+listings.
 
 Polar supports **one-time fixed-price** products and **free** products.
 The price currency is USD; set an actual one-time pricing model.

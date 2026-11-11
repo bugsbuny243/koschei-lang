@@ -1,8 +1,19 @@
-# Koschei Lang 0.10.0 — Release Notes
+# Koschei Lang 0.10.1 — Release Notes
 
 **Product:** Koschei Lang (independent of Koschei Sentinel and Web3 Hub)  
-**Version:** 0.10.0  
+**Version:** 0.10.1  
 **Release line:** commercially licensed, pre-1.0 language/toolchain
+
+## New in 0.10.1
+
+- `ks-mcp` (also `uvx koschei-lang`): an MCP server that lets an AI agent
+  run Koschei programs under a capability policy you set once on its
+  command line. A program that asks for more is rejected before it runs.
+  See `docs/MCP_SERVER.md` in the source repository.
+- Restored release-trust tooling: `ks maturity`, `ks maturity-attest`,
+  `ks release-proof`, `ks build-compare` and `ks build-compare-verify`.
+- Also on PyPI: `pip install koschei-lang`. PyPI files carry Sigstore
+  provenance tied to the source repository's publishing workflow.
 
 ## Included
 
@@ -40,10 +51,9 @@ The installer does not make the host operating system a sandbox.
 
 ## Licensing
 
-Personal non-commercial use is free. Commercial licenses are
-one-time USD purchases: Individual $49 (one developer),
-Team $249 (up to 10 developers) and Enterprise $999
-(unlimited developers in one organization). Purchased releases
+Personal non-commercial use is free. A commercial license is a
+one-time purchase of $49 per developer; an organization buys one
+license for each developer who uses Koschei commercially. Purchased releases
 can be used perpetually; releases in the next 12 months
 are included. The authoritative terms are in `LICENSE`,
 `LICENSING.md` and their Turkish versions.
