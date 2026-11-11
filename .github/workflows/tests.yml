@@ -66,9 +66,12 @@ jobs:
             tests/test_matrix_horizon_library_v1.py \
             tests/test_matrix_horizon_fence_v1.py
 
-      - name: Run the full test suite
+      - name: Run canonical full validation recipe
         run: |
-          python -m pytest -q tests
+          python -m koschei.local_validation_cli \
+            --profile full \
+            --output /tmp/koschei-local-validation.json \
+            --evidence-dir /tmp/koschei-validation-evidence
 
       - name: Capture P0 host binary symbol evidence
         run: |
