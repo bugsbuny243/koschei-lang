@@ -233,3 +233,29 @@ def test_security_txt_has_not_expired():
     text = (app.SITE_DIR / "security.txt").read_text(encoding="utf-8")
     expires = next(line.split(": ", 1)[1] for line in text.splitlines() if line.startswith("Expires: "))
     assert datetime.fromisoformat(expires.replace("Z", "+00:00")) > datetime.now(timezone.utc)
+
+
+def test_forwarded_for_does_not_override_peer_identity():
+    """Untrusted forwarding headers must not influence rate limiting."""
+    class FakeClient:
+        headers = {"X-Forwarded-For": "203.0.113.44"}
+        client_address = ("127.0.0.1", 12345)
+
+    assert app.Handler._client(FakeClient()) == "127.0.0.1"
+
+
+def test_concurrent_evaluation_limit(server, monkeypatch):
+    """Busy requests fail quickly rather than spawning another interpreter."""
+    import threading
+
+    monkeypatch.setattr(app, "EVALUATION_SLOTS", threading.BoundedSemaphore(1))
+    assert app.EVALUATION_SLOTS.acquire(blocking=False)
+    try:
+        status, data = _post(
+            server + "/api/evaluate",
+            json.dumps({"source": HELLO, "action": "run"}).encode(),
+        )
+        assert status == 503
+        assert data["error"] == "busy"
+    finally:
+        app.EVALUATION_SLOTS.release()
