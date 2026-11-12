@@ -41,19 +41,24 @@ The policy binds all of:
 - maximum response bytes;
 - request deadline in milliseconds.
 
-## Loopback-only bootstrap
+## Binds
 
-The initial authority accepts only explicit loopback hosts:
+A bind is one of:
 
-- `localhost`
-- addresses in `127.0.0.0/8`
-- IPv6 `::1`
+- an explicit loopback host: `localhost`, an address in `127.0.0.0/8`, or
+  `[::1]`;
+- every interface, spelled exactly `0.0.0.0:PORT` (IPv4) or `[::]:PORT`
+  (IPv6; on Linux it also accepts IPv4 connections). This is how a web
+  application is reached from outside the machine
+  (`koschei/serve_public_bind_v1.py`).
 
 The port must be in `1..65535`.
 
-Wildcard and public interfaces such as `0.0.0.0` are rejected with `KS2411`.
-Public ingress needs a separate reviewed authority contract; it is not smuggled
-into the first listener implementation.
+Any other address, such as `10.0.0.1:80`, `[2001:db8::1]:80` or a host name,
+is rejected with `KS2411`: its meaning depends on the host's network setup,
+which the manifest cannot state. A public bind is still a literal, so
+`ks caps` names it before the program runs and `ks caps --deny serve`
+refuses it.
 
 ## Hard budget envelope
 
@@ -89,8 +94,7 @@ A function may receive `ServeCaps` only through an explicit parameter contract.
 
 ## Backend fail-closed rule
 
-The interpreter can create and pass the bounded token, but v1 deliberately has no
-listener ABI.
+The listener ABI arrived with Knowhere (`SERVE_KNOWHERE_V1.md`).
 
 Native Go generation rejects every program that uses the provisional Serve
 authority with `KS4001`. It must not generate a binary whose `SystemCaps` silently
@@ -101,6 +105,6 @@ bind and budget contract in that backend.
 
 ## Non-claims
 
-This contract does not open a port, accept a request, route HTTP, expose public
-interfaces, or claim production server readiness. It establishes the authority
+This contract does not open a port, accept a request or route HTTP, and does
+not claim production server readiness. It establishes the authority
 envelope that those operations must obey.

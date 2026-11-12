@@ -256,6 +256,13 @@ func _ksParseLoopbackBind(raw string) (string, int, bool) {{
 	if strings.ToLower(host) == "localhost" {{
 		return "localhost", port, true
 	}}
+	// serve_public_bind_v1: every interface, spelled exactly.
+	if host == "0.0.0.0" && !strings.HasPrefix(text, "[") {{
+		return "0.0.0.0", port, true
+	}}
+	if host == "::" && strings.HasPrefix(text, "[") {{
+		return "::", port, true
+	}}
 	if strings.Contains(host, "%") {{
 		return "", 0, false
 	}}
@@ -340,7 +347,9 @@ func _ksServeListen(scope *_ksServeScope) error {{
 	}}
 	if family == syscall.AF_INET6 {{
 		address := &syscall.SockaddrInet6{{Port: scope.port}}
-		copy(address.Addr[:], net.IPv6loopback)
+		if scope.host != "::" {{
+			copy(address.Addr[:], net.IPv6loopback)
+		}}
 		err = syscall.Bind(fd, address)
 	}} else {{
 		address := &syscall.SockaddrInet4{{Port: scope.port}}

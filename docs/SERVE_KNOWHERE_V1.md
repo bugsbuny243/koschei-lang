@@ -1,6 +1,6 @@
 # Koschei Server v1 (Knowhere and Sakaar)
 
-Status: **multi-request loopback server under `ks run` and in native binaries
+Status: **multi-request server under `ks run` and in native binaries
 (linux/amd64, through the capability broker); readiness gate G4.** The
 one-shot `exchange` is still refused by `ks build` (`KS4004`).
 
@@ -33,7 +33,7 @@ fn main(caps: SystemCaps) {
 
 | Expression | Type | Meaning |
 |---|---|---|
-| `caps.serve.allow(bind, max_connections, max_request_bytes, max_response_bytes, deadline_ms)` | `ServeCaps` | loopback-only bind; static literals (`KS2410`/`KS2411`) |
+| `caps.serve.allow(bind, max_connections, max_request_bytes, max_response_bytes, deadline_ms)` | `ServeCaps` | a loopback bind, or `0.0.0.0:PORT` / `[::]:PORT` for every interface; static literals (`KS2410`/`KS2411`) |
 | `server.accept()` | `HttpRequest or Error` | opens the listener on first use, accepts and reads one request |
 | `server.reply(status, body)` | `Void or Error` | answers the pending request as `text/plain; charset=utf-8` (`String` or `Bytes` body) and closes it |
 | `server.reply_as(status, content_type, body)` | `Void or Error` | the same with the given content type, such as `application/json` or `text/html; charset=utf-8` |
@@ -64,9 +64,11 @@ it gives.
 ## The Sakaar law: no implicit input processing
 
 The program sees the raw path (query string included, nothing decoded),
-header values by name and the body. There is no routing, URL decoding, cookie,
-form or JSON parsing: every interpretation of input is code the program
-writes and can be reviewed.
+header values by name and the body. The server does no routing, URL decoding,
+cookie, form or JSON parsing: every interpretation of input is code the
+program calls and can be reviewed. The `http` Core Library module
+(`route`, `query`, `params`, `decode`, `escape_html`) and `parse_json` are
+that code, written in Koschei and pure.
 
 ## Budgets
 
@@ -120,3 +122,34 @@ bytes. More cases cover the connection budget (`KS3471`), a port already in
 use, and forty servers opened in turn on two binds: dropped servers close
 their unanswered connections and free their bind, a held one does not. The worker runs under seccomp and holds no socket but its
 broker channel while serving.
+
+## Public servers
+
+`caps.serve.allow("0.0.0.0:8080", ...)` listens on every interface, so other
+machines can connect. Everything above still applies: one request per
+connection, the strict grammar, every budget and every Error text.
+
+- **Serve with a binary.** `ks run` stops a program after its step budget
+  (`--max-steps`, one million by default), so a long-running server is built
+  with `ks build` and run as a native binary.
+- **More requests than one token allows.** `max_connections` (at most 4096)
+  bounds one token. A program that serves for longer opens a fresh server when
+  one is spent; the bind is freed when the old token is dropped:
+
+  ```text
+  fn main(caps: SystemCaps) {
+      while true {
+          let server = caps.serve.allow("0.0.0.0:8080", 4096, 65536, 65536, 10000)
+          serve(server, 4096)
+      }
+  }
+  ```
+
+  Connections that arrive in the moment between two servers are refused, so
+  put a reverse proxy or a platform router that retries in front of it.
+- **One request at a time.** A server answers requests in turn; a slow client
+  holds it for at most `deadline_ms`. Keep the deadline short on a public
+  server.
+- **Containers.** A platform that sets `PORT` cannot pass it to the program,
+  since the bind is a literal: set the platform's port to the one the program
+  names.

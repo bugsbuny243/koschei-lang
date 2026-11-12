@@ -677,8 +677,8 @@ fn main(caps: SystemCaps) {
 
 `curl localhost:8080/users/ada` answers `{"name":"ada"}`; any other path
 gets `404`. `ks caps` reports one grant: serve, `127.0.0.1:8080` with its
-four budgets. The bind is loopback only. The server runs the same under
-`ks build`. See [`../SERVE_KNOWHERE_V1.md`](../SERVE_KNOWHERE_V1.md) for every
+four budgets. `0.0.0.0:8080` would listen on every interface, for a
+public server. The server runs the same under `ks build`. See [`../SERVE_KNOWHERE_V1.md`](../SERVE_KNOWHERE_V1.md) for every
 rule.
 
 ## 10. Tools

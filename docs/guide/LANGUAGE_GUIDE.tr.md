@@ -677,8 +677,8 @@ fn main(caps: SystemCaps) {
 
 `curl localhost:8080/users/ada` `{"name":"ada"}` döndürür; başka her adres
 `404` alır. `ks caps` tek bir yetki bildirir: serve, `127.0.0.1:8080` ve dört
-bütçesi. Adres yalnızca loopback olabilir. Sunucu `ks build` ile de aynı
-çalışır. Bütün kurallar için
+bütçesi. `0.0.0.0:8080` bütün arayüzlerden dinler; herkese açık sunucu
+böyle açılır. Sunucu `ks build` ile de aynı çalışır. Bütün kurallar için
 [`../SERVE_KNOWHERE_V1.md`](../SERVE_KNOWHERE_V1.md).
 
 ## 10. Araçlar

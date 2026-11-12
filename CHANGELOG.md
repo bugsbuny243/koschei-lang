@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Let a server listen on every interface: `caps.serve.allow` accepts exactly `0.0.0.0:PORT` and `[::]:PORT` besides loopback binds, under `ks run` and in native binaries, so a Koschei web application can be reached from other machines. Every budget, the strict HTTP grammar and the one-request-per-connection rule are unchanged; any other non-loopback address is still `KS2411`. `docs/SERVE_KNOWHERE_V1.md` explains running a public server.
 - Add the `http` Core Library module, written in Koschei: `route` matches a request target against a pattern such as `/users/:id`, `query` and `params` read query strings and form bodies, `decode` and `decode_form` undo percent-encoding, and `escape_html` makes text safe for a page. All pure; malformed escapes and non-UTF-8 results are Error values. A test compares them with Python's `urllib.parse` and `html.escape` under `ks run` and in native binaries. Both language guides gain a section on serving HTTP.
 
 ## 0.11.0 — 2026-11-12
