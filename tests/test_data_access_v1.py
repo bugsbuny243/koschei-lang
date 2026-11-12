@@ -19,7 +19,8 @@ from koschei.diagnostics import CATALOG, ENGLISH_CATALOG
 from koschei.mir import require_mir
 from koschei.mir_native_runtime import inspect_native_mir_support, run_mir_native
 from koschei.modules import check_graph, load_graph
-from koschei.runtime_budget import BudgetedInterpreter
+from koschei.canonical_mir_budget_runtime_v1 import _run_budgeted_canonical_mir
+from koschei.runtime_budget import BudgetedInterpreter, RuntimeBudget
 from koschei.semantic import SemanticError
 
 DOCUMENT = (
@@ -168,6 +169,21 @@ class DataAccessV1Tests(unittest.TestCase):
         with redirect_stdout(direct):
             self.assertEqual(run_mir_native(sealed), 0)
         self.assertEqual(direct.getvalue(), EXPECTED)
+
+    def test_programs_with_imports_run_data_too(self) -> None:
+        # A program that imports any module runs on the canonical MIR executor,
+        # which used to reject parse_json with KS3101.
+        path = self.write("import math\n" + SURFACE)
+        stdout = io.StringIO()
+        with redirect_stdout(stdout), redirect_stderr(io.StringIO()) as errors:
+            self.assertEqual(cli_main(["run", str(path)]), 0, errors.getvalue())
+        self.assertEqual(stdout.getvalue(), EXPECTED)
+        graph = load_graph(path)
+        check_graph(graph)
+        canonical = io.StringIO()
+        with redirect_stdout(canonical):
+            _run_budgeted_canonical_mir(graph.mir, [], RuntimeBudget())
+        self.assertEqual(canonical.getvalue(), EXPECTED)
 
     def test_the_checker_types_every_builtin(self) -> None:
         self.assertEqual(self.check_error('    println(json_get(v))'), "KS1301")

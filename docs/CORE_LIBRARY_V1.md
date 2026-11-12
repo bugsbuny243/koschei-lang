@@ -94,6 +94,21 @@ All functions are generic over the item type and never mutate their input.
 
 Out-of-range indices produce an `Error` value; they are never clamped silently.
 
+### `json`
+
+Builds JSON text from Koschei values. `array` and `object` take parts that are
+already encoded, so documents nest. Pass the result to `parse_json` to get a
+`Data` value, which also checks it.
+
+| Function | Result | Meaning |
+|---|---|---|
+| `string(value)` | `String` | a JSON string; quotes, backslashes and control characters are escaped |
+| `int(value)` | `String` | a JSON number |
+| `float(value)` | `String or Error` | a JSON number; infinity is an Error, since JSON has none |
+| `bool(value)` / `null()` | `String` | `true`, `false`, `null` |
+| `array(items)` | `String` | `items: List<String>` of encoded values |
+| `object(members)` | `String` | `members: Map<String, String>` of encoded values, in the map's order |
+
 ### `math`
 
 `Int` never wraps: a result outside signed 64 bits is an `Error` value, never a

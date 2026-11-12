@@ -399,6 +399,25 @@ KS3709: json_int() expects a JSON number, found string
 - JSON `ks run` altında çalışır. `ks build`, native arka uç destekleyene kadar
   `Data` kullanan programları reddeder (`KS4004`).
 
+JSON yazmak için metni `json` Core Library modülüyle kurun; parçalar iç içe geçer:
+
+```ks
+import json
+
+fn main() {
+    let tags = json.array([json.string("pen"), json.string("ink")])
+    let order = json.object({"shop": json.string("Ada's"), "total": json.int(15), "tags": tags})
+    println(order)
+    let data = parse_json(order) or return Error("not JSON")
+    println(json_kind(data))
+}
+```
+
+```output
+{"shop":"Ada's","total":15,"tags":["pen","ink"]}
+object
+```
+
 ### Bytes
 
 `String` her zaman UTF-8 metindir; ikili veri `Bytes`'tır ve ikisi asla

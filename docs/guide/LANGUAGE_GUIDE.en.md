@@ -399,6 +399,25 @@ KS3709: json_int() expects a JSON number, found string
 - JSON runs under `ks run`. `ks build` refuses programs that use `Data`
   (`KS4004`) until the native backend supports it.
 
+To write JSON, build the text with the `json` Core Library module; its parts nest:
+
+```ks
+import json
+
+fn main() {
+    let tags = json.array([json.string("pen"), json.string("ink")])
+    let order = json.object({"shop": json.string("Ada's"), "total": json.int(15), "tags": tags})
+    println(order)
+    let data = parse_json(order) or return Error("not JSON")
+    println(json_kind(data))
+}
+```
+
+```output
+{"shop":"Ada's","total":15,"tags":["pen","ink"]}
+object
+```
+
 ### Bytes
 
 `String` is always UTF-8 text; binary data is `Bytes`, and the two never

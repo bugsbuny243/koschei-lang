@@ -86,6 +86,8 @@ fn main() {
   `json_length(d)`, `json_keys(d)`, `json_items(d)` (all `or`-handled), `json_has(data, "key")`, `json_kind(d)`.
   Write `{` and `}` inside a string literal as `\\{` and `\\}`. `encode_json(data)` gives the text back.
   Bind each step with `let`: `let f = json_get(data, "n") or return Error("no n")` then `json_int(f) or 0`.
+- Writing JSON: `import json`, then `json.object({"name": json.string(n), "n": json.int(3), "xs": json.array([json.int(1)])})`;
+  also `json.bool(b)`, `json.null()`, `json.float(f) or "null"`. The result is a String.
 
 ## Capabilities
 
