@@ -8,6 +8,7 @@ Every module is written in Koschei and compiled with the program that imports it
 | [`captain_marvel`](#captain_marvel) | 3 | 2 |
 | [`hela`](#hela) | 4 | 1 |
 | [`list`](#list) | 10 | 0 |
+| [`math`](#math) | 12 | 0 |
 | [`matrix_horizon`](#matrix_horizon) | 5 | 1 |
 | [`matrix_portal`](#matrix_portal) | 3 | 1 |
 | [`morag`](#morag) | 2 | 3 |
@@ -184,6 +185,90 @@ fn replace_at<T>(items: List<T>, index: Int, item: T) -> Result<List<T>, Error>
 ```
 
 Replaces the item at `index`; requires 0 <= index < length.
+
+## math
+
+Written in Koschei. Int is signed 64-bit and never wraps: a result that would leave that range is an Error value, never a silently wrong number. Functions that cannot overflow return a plain Int or Float.
+
+### `math.min`
+
+```ks
+fn min(a: Int, b: Int) -> Int
+```
+
+### `math.max`
+
+```ks
+fn max(a: Int, b: Int) -> Int
+```
+
+### `math.clamp`
+
+```ks
+fn clamp(value: Int, low: Int, high: Int) -> Int or Error
+```
+
+The bounds must be in order: low > high is an Error value, not a guess.
+
+### `math.sign`
+
+```ks
+fn sign(value: Int) -> Int
+```
+
+### `math.abs`
+
+```ks
+fn abs(value: Int) -> Int or Error
+```
+
+The smallest Int has no positive counterpart within 64 bits.
+
+### `math.is_even`
+
+```ks
+fn is_even(value: Int) -> Bool
+```
+
+### `math.pow`
+
+```ks
+fn pow(base: Int, exponent: Int) -> Int or Error
+```
+
+base raised to a non-negative exponent, by repeated squaring.
+
+### `math.gcd`
+
+```ks
+fn gcd(a: Int, b: Int) -> Int or Error
+```
+
+Greatest common divisor; gcd(0, 0) is 0.
+
+### `math.min_float`
+
+```ks
+fn min_float(a: Float, b: Float) -> Float
+```
+
+### `math.max_float`
+
+```ks
+fn max_float(a: Float, b: Float) -> Float
+```
+
+### `math.abs_float`
+
+```ks
+fn abs_float(value: Float) -> Float
+```
+
+### `math.clamp_float`
+
+```ks
+fn clamp_float(value: Float, low: Float, high: Float) -> Float or Error
+```
 
 ## matrix_horizon
 

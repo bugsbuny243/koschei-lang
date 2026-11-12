@@ -94,6 +94,24 @@ All functions are generic over the item type and never mutate their input.
 
 Out-of-range indices produce an `Error` value; they are never clamped silently.
 
+### `math`
+
+`Int` never wraps: a result outside signed 64 bits is an `Error` value, never a
+silently wrong number. Functions that cannot overflow return a plain value.
+
+| Function | Result | Meaning |
+|---|---|---|
+| `min(a, b)` / `max(a, b)` | `Int` | the smaller / larger value |
+| `clamp(value, low, high)` | `Int or Error` | `value` limited to `low..high`; `low > high` is an Error |
+| `sign(value)` | `Int` | `-1`, `0` or `1` |
+| `abs(value)` | `Int or Error` | absolute value; the smallest `Int` has none within `Int` |
+| `is_even(value)` | `Bool` | divisible by 2 |
+| `pow(base, exponent)` | `Int or Error` | `base` to a non-negative power; overflow is an Error |
+| `gcd(a, b)` | `Int or Error` | greatest common divisor; `gcd(0, 0)` is `0` |
+| `min_float(a, b)` / `max_float(a, b)` | `Float` | the smaller / larger value |
+| `abs_float(value)` | `Float` | absolute value |
+| `clamp_float(value, low, high)` | `Float or Error` | `value` limited to `low..high` |
+
 ### `secure`
 
 Written in Koschei over the kernel `sha3_256(text) -> String or Error`, which
