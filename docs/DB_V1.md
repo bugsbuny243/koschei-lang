@@ -5,6 +5,7 @@ program that uses it (`KS4004`): native binaries are built without cgo and
 link no SQLite yet. Implementation: `koschei/db_v1.py`; tests:
 `tests/test_db_v1.py`.
 
+<!-- verify: compile -->
 ```ks
 import json
 
