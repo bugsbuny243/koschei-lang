@@ -7,6 +7,7 @@ Every module is written in Koschei and compiled with the program that imports it
 |---|---|---|
 | [`captain_marvel`](#captain_marvel) | 3 | 2 |
 | [`hela`](#hela) | 4 | 1 |
+| [`json`](#json) | 8 | 0 |
 | [`list`](#list) | 10 | 0 |
 | [`math`](#math) | 12 | 0 |
 | [`matrix_horizon`](#matrix_horizon) | 5 | 1 |
@@ -112,6 +113,70 @@ fn is_resurrection_attempt(tombstone: AuthorityTombstone, principal_digest: Stri
 ```
 
 The same decision, named for the caller that is about to grant authority.
+
+## json
+
+Written in Koschei. Builds JSON text from Koschei values. Each function returns the encoded text of one JSON value; `array` and `object` take values that are already encoded, so documents nest:
+
+json.object({"name": json.string("Ada"), "tags": json.array([json.int(1)])})
+
+The result is text. Pass it to `parse_json` to get a `Data` value, which also checks it: `array` and `object` trust their parts to be encoded JSON.
+
+### `json.string`
+
+```ks
+fn string(value: String) -> String
+```
+
+### `json.escape`
+
+```ks
+fn escape(b: Int) -> String
+```
+
+The escape for one byte that may not appear raw inside a JSON string.
+
+### `json.int`
+
+```ks
+fn int(value: Int) -> String
+```
+
+### `json.float`
+
+```ks
+fn float(value: Float) -> String or Error
+```
+
+JSON has no infinity or NaN: those are an Error value, never invalid text.
+
+### `json.bool`
+
+```ks
+fn bool(value: Bool) -> String
+```
+
+### `json.null`
+
+```ks
+fn null() -> String
+```
+
+### `json.array`
+
+```ks
+fn array(items: List<String>) -> String
+```
+
+items: already-encoded JSON values.
+
+### `json.object`
+
+```ks
+fn object(members: Map<String, String>) -> String
+```
+
+members: names to already-encoded JSON values, written in the map's order.
 
 ## list
 

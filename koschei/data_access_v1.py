@@ -306,7 +306,12 @@ def install_data_access_v1() -> None:
     _runtime.Interpreter._evaluate = _runtime_evaluate
     _ORIGINAL_RUNTIME_INVOKE = _runtime.Interpreter._invoke
     _runtime.Interpreter._invoke = _runtime_invoke
-    RuntimePrimitiveFacadeV1._BUILTIN_CALLS = frozenset(RuntimePrimitiveFacadeV1._BUILTIN_CALLS | NAMES)
+    # parse_json and encode_json were never on this allowlist, so any program
+    # that imported a module (and so ran on the canonical MIR executor) failed
+    # with KS3101 at its first parse_json call. Add them with the readers.
+    RuntimePrimitiveFacadeV1._BUILTIN_CALLS = frozenset(
+        RuntimePrimitiveFacadeV1._BUILTIN_CALLS | NAMES | {"parse_json", "encode_json"}
+    )
 
     # Direct MIR runtime.
     _mir._BUILTINS = frozenset(set(_mir._BUILTINS) | NAMES)
