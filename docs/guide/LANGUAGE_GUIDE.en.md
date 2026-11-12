@@ -594,6 +594,93 @@ what a missing file means. Here the program prints `missing` when
 disk, `/data`, read-only. `list(path)` returns the names in a directory, and a
 token from `allow(prefix)` can also `write(path, text)` and `delete(path)`.
 
+### Serving HTTP
+
+The `http` Core Library module reads what a server receives: `route` matches
+a request target against a pattern and captures the `:name` segments,
+decoded; `query` reads the query string; `params` reads a form body;
+`escape_html` makes text safe to put in a page. They are pure, so the
+answer to a request can be computed and tested without a socket.
+
+```ks
+import http
+
+fn page(target: String) -> String {
+    let found = http.route("/users/:name", target) or return "404"
+    let name = found.get("name") or "?"
+    let query = http.query(target) or return "400 bad query"
+    let tab = query.get("tab") or "posts"
+    return "user {name}, tab {tab}"
+}
+
+fn main() {
+    println(page("/users/ada%20lovelace?tab=likes"))
+    println(page("/users/alan"))
+    println(page("/teams/1"))
+    println(http.escape_html("<b>Tom & Jerry</b>"))
+}
+```
+
+```output
+user ada lovelace, tab likes
+user alan, tab posts
+404
+&lt;b&gt;Tom &amp; Jerry&lt;/b&gt;
+```
+
+A server takes `caps.serve.allow(bind, max_requests, max_request_bytes,
+max_response_bytes, deadline_ms)`. `accept()` waits for one request and
+`reply_as(status, content_type, body)` answers it. The token moves into
+the function that serves, so the loop lives there, and a pure function
+decides each reply.
+
+```ks
+import http
+import json
+
+struct Reply {
+    status: Int,
+    content_type: String,
+    body: String,
+}
+
+// Pure: decides the answer from the request target alone.
+fn respond(target: String) -> Reply {
+    let found = http.route("/users/:name", target) or {
+        return Reply { status: 404, content_type: "text/plain", body: "not found" }
+    }
+    let name = found.get("name") or "?"
+    let body = json.object({"name": json.string(name)})
+    return Reply { status: 200, content_type: "application/json", body: body }
+}
+
+fn serve(server: ServeCaps, rounds: Int) -> Int {
+    let mut served = 0
+    while served < rounds {
+        served = served + 1
+        let request = server.accept() or {
+            continue
+        }
+        let reply = respond(request.path())
+        let sent = server.reply_as(reply.status, reply.content_type, reply.body) or {
+            continue
+        }
+    }
+    return served
+}
+
+fn main(caps: SystemCaps) {
+    let server = caps.serve.allow("127.0.0.1:8080", 1000, 65536, 65536, 5000)
+    println(serve(server, 1000))
+}
+```
+
+`curl localhost:8080/users/ada` answers `{"name":"ada"}`; any other path
+gets `404`. `ks caps` reports one grant: serve, `127.0.0.1:8080` with its
+four budgets. `0.0.0.0:8080` would listen on every interface, for a
+public server. The server runs the same under `ks build`. See [`../SERVE_KNOWHERE_V1.md`](../SERVE_KNOWHERE_V1.md) for every
+rule.
+
 ## 10. Tools
 
 | Command | Does |

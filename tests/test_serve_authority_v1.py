@@ -62,13 +62,22 @@ class ServeAuthorityV1Tests(unittest.TestCase):
         self.assertIn("request_bytes=65536", text)
         self.assertIn("deadline_ms=5000", text)
 
-    def test_wildcard_public_bind_is_rejected(self) -> None:
-        with self.assertRaisesRegex(SemanticError, "KS2411"):
+    def test_only_the_exact_every_interface_binds_leave_loopback(self) -> None:
+        # serve_public_bind_v1: 0.0.0.0:PORT and [::]:PORT are the public binds;
+        # any other non-loopback address stays refused.
+        for bind in ("0.0.0.0:8080", "[::]:8080"):
             self.checked(
                 "fn main(caps: SystemCaps) { "
-                'let server = caps.serve.allow("0.0.0.0:8080", 64, 65536, 65536, 5000) '
+                f'let server = caps.serve.allow("{bind}", 64, 65536, 65536, 5000) '
                 "}"
             )
+        for bind in ("10.0.0.1:8080", "[2001:db8::1]:8080", "example.com:8080"):
+            with self.assertRaisesRegex(SemanticError, "KS2411"):
+                self.checked(
+                    "fn main(caps: SystemCaps) { "
+                    f'let server = caps.serve.allow("{bind}", 64, 65536, 65536, 5000) '
+                    "}"
+                )
 
     def test_dynamic_budget_is_rejected_for_exact_v1_policy(self) -> None:
         with self.assertRaisesRegex(SemanticError, "KS2410"):
