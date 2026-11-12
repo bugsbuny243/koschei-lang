@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="dark">
-  <meta name="description" content="Koschei Lang 0.11.0: açık yetkilerle programlama, KS2401 derleme hatası, ks caps ile yetki analizi ve 49 USD Individual lisansı için Türkçe teknik kılavuz.">
+  <meta name="description" content="Koschei Lang 0.12.0: açık yetkilerle programlama, KS2401 derleme hatası, ks caps ile yetki analizi ve 49 USD Individual lisansı için Türkçe teknik kılavuz.">
   <meta name="robots" content="index,follow">
   <link rel="canonical" href="https://koschei.dev/security-guide.tr.html">
   <link rel="alternate" hreflang="tr" href="https://koschei.dev/security-guide.tr.html">
@@ -14,7 +14,7 @@
   <meta property="og:title" content="Koschei Lang: modüller neden bütün yetkilerinizi devralmamalı?">
   <meta property="og:description" content="Yetkisiz disk erişimi, KS2401, ks caps ve CI yetki denetimini gerçek Koschei komutlarıyla açıklayan Türkçe kılavuz.">
   <meta property="og:url" content="https://koschei.dev/security-guide.tr.html">
-  <title>Koschei Lang 0.11.0 — Açık yetki güvenliği ve KS2401 rehberi</title>
+  <title>Koschei Lang 0.12.0 — Açık yetki güvenliği ve KS2401 rehberi</title>
   <style>
     *{box-sizing:border-box}
     :root{--bg:#080f16;--panel:#101f2a;--border:#284653;--ink:#e9faf7;--muted:#b6cdd0;--green:#64f4bf;--blue:#75c9ff}
@@ -50,7 +50,7 @@
 <body>
   <header><div class="wrap"><a class="brand" href="/">KOSCHEI <b>LANG</b></a><a class="toplink" href="/security-guide.html" lang="en">English →</a></div></header>
   <main class="wrap">
-    <span class="tag">Teknik rehber · Koschei Lang 0.11.0 · 1.0 öncesi</span>
+    <span class="tag">Teknik rehber · Koschei Lang 0.12.0 · 1.0 öncesi</span>
     <h1>İçe aktarılan modüller neden bütün yetkilerinizi devralsın?</h1>
     <p class="lead">Koschei Lang, <strong>açıkça verilen yetki değerleri</strong> üzerine kurulu bağımsız bir programlama dilidir. Koschei kodunda disk erişimi, ağ bağlantısı, ortam değişkenlerini okuma veya işlem başlatma gibi etkiler için uygun yetkinin fonksiyona verilmesi gerekir.</p>
     <p>Birçok yazılımda bağımlılıklar, ana sürecin geniş işletim sistemi izinlerinden dolaylı olarak yararlanabilir. Koschei, kendi derleyicisinin desteklediği kod için daha açık bir sınır tanımlar: Bir işlem için gereken yetki, kodun erişebildiği kapsamda bulunmalı; bulunmuyorsa derleme sırasında hata verilebilir.</p>
@@ -93,7 +93,7 @@ fn main(caps: SystemCaps) {
     </div>
 
     <h2>4. Güvenlik kapsamının sınırları</h2>
-    <p>Koschei Lang 0.11.0 <strong>1.0 öncesi</strong> bir üründür. Yetki denetimleri, Koschei dilinin ve araç zincirinin desteklediği kapsama uygulanır. Rastgele üçüncü taraf yürütülebilir dosyaları güvenli hâle getirdiği, ele geçirilmiş cihazları veya çalınan kimlik bilgilerini koruduğu, cüzdan imzalama kötüye kullanımını önlediği ya da banka sistemleri için bağımsız sertifikalı olduğu iddia edilmez. Mevcut native derleme yolu Go tabanlı bir adaptör kullanır.</p>
+    <p>Koschei Lang 0.12.0 <strong>1.0 öncesi</strong> bir üründür. Yetki denetimleri, Koschei dilinin ve araç zincirinin desteklediği kapsama uygulanır. Rastgele üçüncü taraf yürütülebilir dosyaları güvenli hâle getirdiği, ele geçirilmiş cihazları veya çalınan kimlik bilgilerini koruduğu, cüzdan imzalama kötüye kullanımını önlediği ya da banka sistemleri için bağımsız sertifikalı olduğu iddia edilmez. Mevcut native derleme yolu Go tabanlı bir adaptör kullanır.</p>
 
     <h2>5. Ürünü deneyin</h2>
     <p>Individual ticari lisans, araç zinciri ZIP'i, Core Library, güvenlik örnekleri, Türkçe/İngilizce belgeler ve sonraki 12 ayın sürümlerini kapsar. Adına lisanslanan bir geliştirici, satın aldığı sürümleri ticari projelerde süresiz kullanabilir.</p>

@@ -1,8 +1,21 @@
-# Koschei Lang 0.11.0 — Sürüm Notları
+# Koschei Lang 0.12.0 — Sürüm Notları
 
 **Ürün:** Koschei Lang (Koschei Sentinel ve Web3 Hub'dan bağımsız)  
-**Sürüm:** 0.11.0  
+**Sürüm:** 0.12.0  
 **Ürün hattı:** ticari lisanslı, 1.0 öncesi programlama dili ve araç zinciri
+
+## 0.12.0'da yeni
+
+- Dışa açık sunucu: `caps.serve.allow("0.0.0.0:8080", ...)` (veya
+  `[::]:PORT`) bütün arayüzlerden dinler; Koschei web uygulamasına başka
+  makinelerden erişilebilir. Bütçeler, sıkı HTTP kuralları ve bağlantı
+  başına tek istek kuralı değişmedi; başka loopback dışı adresler reddedilir.
+- `http` Core Library modülü: `route` `/users/:id` kalıbını eşleştirir,
+  `query` ve `params` sorgu ile form gövdesini, `cookies` `Cookie` başlığını
+  okur; `escape_html` metni sayfaya güvenle koymaya hazırlar.
+- `server.reply_with(durum, başlıklar, gövde)` `Location` ve `Set-Cookie`
+  gibi başlıklar gönderir; yönlendirmeler (301, 302, 303, 307, 308) ve 401
+  kullanılabilir. Bir başlık değeri başka bir başlık ekleyemez.
 
 ## 0.11.0'da yeni
 
