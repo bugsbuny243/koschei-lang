@@ -1,8 +1,22 @@
-# Koschei Lang 0.10.1 — Release Notes
+# Koschei Lang 0.11.0 — Release Notes
 
 **Product:** Koschei Lang (independent of Koschei Sentinel and Web3 Hub)  
-**Version:** 0.10.1  
+**Version:** 0.11.0  
 **Release line:** commercially licensed, pre-1.0 language/toolchain
+
+## New in 0.11.0
+
+- Read JSON: `json_kind`, `json_has`, `json_get`, `json_at`, `json_text`,
+  `json_int`, `json_float`, `json_bool`, `json_length`, `json_keys` and
+  `json_items` read the `Data` value `parse_json` returns. A missing member
+  or a value of the wrong kind is an Error value, never a crash.
+- Write JSON: the `json` Core Library module builds JSON text with every
+  quote, backslash and control character escaped.
+- `math`: `min`, `max`, `clamp`, `abs`, `pow`, `gcd` and Float variants.
+  A result outside 64-bit Int is an Error value, never a wrapped number.
+- `time`: UTC timestamps to dates and back, and ISO 8601 text, for
+  years 1 to 9999. An impossible date is an Error value.
+- `parse_json` now works in programs that import modules.
 
 ## New in 0.10.1
 
