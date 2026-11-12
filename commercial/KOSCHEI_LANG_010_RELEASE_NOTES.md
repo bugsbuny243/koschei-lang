@@ -1,8 +1,21 @@
-# Koschei Lang 0.11.0 — Release Notes
+# Koschei Lang 0.12.0 — Release Notes
 
 **Product:** Koschei Lang (independent of Koschei Sentinel and Web3 Hub)  
-**Version:** 0.11.0  
+**Version:** 0.12.0  
 **Release line:** commercially licensed, pre-1.0 language/toolchain
+
+## New in 0.12.0
+
+- Public servers: `caps.serve.allow("0.0.0.0:8080", ...)` (or `[::]:PORT`)
+  listens on every interface, so a Koschei web application can be reached
+  from other machines. Budgets, the strict HTTP grammar and one request per
+  connection are unchanged; other non-loopback addresses are refused.
+- The `http` Core Library module: `route` matches `/users/:id`, `query`
+  and `params` read query strings and form bodies, `cookies` reads a
+  `Cookie` header and `escape_html` makes text safe for a page.
+- `server.reply_with(status, headers, body)` sends response headers such
+  as `Location` and `Set-Cookie`; redirects (301, 302, 303, 307, 308) and
+  401 are allowed. A header value can never add another header.
 
 ## New in 0.11.0
 

@@ -143,7 +143,7 @@ def test_localized_technical_article_and_structured_product_metadata():
     schema = json.loads(match.group(1))
     assert schema["@type"] == "SoftwareApplication"
     assert schema["name"] == "Koschei Lang"
-    assert schema["softwareVersion"] == "0.11.0"
+    assert schema["softwareVersion"] == "0.12.0"
     assert schema["applicationCategory"] == "DeveloperApplication"
     assert schema["offers"]["price"] == "49.00"
     assert schema["offers"]["priceCurrency"] == "USD"
