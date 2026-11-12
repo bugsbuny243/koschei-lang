@@ -42,6 +42,7 @@ CORE_LIBRARY_MODULES_V1: tuple[str, ...] = (
     "secure",
     "strange",
     "text",
+    "time",
     "wanda",
     "xandar",
 )
