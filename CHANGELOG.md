@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.11.0 — 2026-11-12
 
 - Add the `json` Core Library module, written in Koschei: `string`, `int`, `float`, `bool`, `null`, `array` and `object` build JSON text, with every control character, quote and backslash escaped; `float` refuses infinity. A test reads every ASCII character and multi-byte UTF-8 back through Python's `json` parser, and the native binary prints the same bytes.
 - Fix `parse_json` and `encode_json` in programs that import a module: those run on the canonical MIR executor, whose builtin allowlist never had them, so the first call stopped with `KS3101`.
@@ -9,7 +9,7 @@
 - Add JSON read access under `ks run`: `json_kind`, `json_has`, `json_get`, `json_at`, `json_text`, `json_int`, `json_float`, `json_bool`, `json_length`, `json_keys` and `json_items` read an opaque `Data` value from `parse_json`. They are pure and need no capability. A value of the wrong kind is a `KS3709` Error value and a missing member or index is `KS3710`; `json_int` refuses fractions and numbers outside `Int`. The checked-AST interpreter and the direct MIR runtime agree; native builds still refuse `Data` programs with `KS4004`. Both language guides gain a JSON section, and the MCP quick reference describes the functions.
 - Sell one commercial license: 49 USD per developer. An organisation buys one license for each developer who uses Koschei commercially. The Team (249 USD) and Enterprise (999 USD) tiers are withdrawn; `LICENSE`, `LICENSE.tr.md`, `LICENSING.md` and `LICENSING.tr.md` say so.
 - Add the `polar-bundle.yml` workflow: it builds the Polar download, installs and runs it, and signs it with a Sigstore build-provenance attestation. Customers verify it with `gh attestation verify`.
-- Update the bundled release notes to 0.10.1.
+- Update the bundled release notes to 0.11.0.
 
 ## 0.10.1 — 2026-11-11
 

@@ -1,8 +1,22 @@
-# Koschei Lang 0.10.1 — Sürüm Notları
+# Koschei Lang 0.11.0 — Sürüm Notları
 
 **Ürün:** Koschei Lang (Koschei Sentinel ve Web3 Hub'dan bağımsız)  
-**Sürüm:** 0.10.1  
+**Sürüm:** 0.11.0  
 **Ürün hattı:** ticari lisanslı, 1.0 öncesi programlama dili ve araç zinciri
+
+## 0.11.0'da yeni
+
+- JSON okuma: `json_kind`, `json_has`, `json_get`, `json_at`, `json_text`,
+  `json_int`, `json_float`, `json_bool`, `json_length`, `json_keys` ve
+  `json_items`, `parse_json`'un döndürdüğü `Data` değerini okur. Eksik alan
+  veya yanlış türde değer program çökertmez, hata değeri döner.
+- JSON yazma: `json` Core Library modülü; tırnak, ters bölü ve kontrol
+  karakterlerini doğru kaçıran JSON metni üretir.
+- `math`: `min`, `max`, `clamp`, `abs`, `pow`, `gcd` ve Float karşılıkları.
+  64 bit Int dışına taşan sonuç hata değeridir, yanlış sayı değil.
+- `time`: UTC zaman damgasından tarihe ve geri, ISO 8601 metni; 1–9999
+  yılları. Olmayan bir tarih hata değeridir.
+- `parse_json` artık modül içe aktaran programlarda da çalışır.
 
 ## 0.10.1'de yeni
 
