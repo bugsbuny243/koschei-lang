@@ -71,7 +71,7 @@ def install_serve_loopback_exchange_catalog_v1() -> None:
                         "family."
                     ),
                 )
-                for name in ("accept", "reply", "reply_as")
+                for name in ("accept", "reply", "reply_as", "reply_with")
             ),
         ),
     )

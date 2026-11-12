@@ -125,6 +125,7 @@ and `html.escape` (`tests/test_core_library_http_v1.py`).
 | `segments(path)` | `List<String>` | the non-empty segments, still encoded |
 | `decode(text)` | `String or Error` | percent-decoding for a path; `+` stays `+` |
 | `decode_form(text)` | `String or Error` | percent-decoding for a query or form; `+` is a space |
+| `cookies(header)` | `Map<String, String>` | the cookies of a `Cookie` header, as sent; the first of a repeated name wins |
 | `escape_html(text)` | `String` | `&`, `<`, `>`, `"` and `'` as character references |
 
 ### `math`

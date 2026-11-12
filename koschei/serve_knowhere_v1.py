@@ -55,7 +55,7 @@ from . import _typed_expr
 from . import _typed_ops
 from .runtime_primitive_facade_v1 import RuntimePrimitiveFacadeV1
 from .serve_authority_v1 import ServeCaps, _parse_loopback_bind
-from .type_system import ERROR, STRING, NamedType, VOID, union_type
+from .type_system import ERROR, STRING, GenericType, NamedType, VOID, union_type
 
 HTTP_REQUEST = NamedType("HttpRequest")
 REQUEST_METHODS = {"method": 0, "path": 0, "body": 0, "body_bytes": 0, "header": 1}
@@ -70,11 +70,74 @@ CONTENT_TYPE_MESSAGE = (
     "karakter olmalı ve iki ucunda boşluk olmamalı."
 )
 PLAIN_TEXT = "text/plain; charset=utf-8"
+# reply_with(status, headers, body): the program's own response headers.
+MAX_RESPONSE_HEADERS = 32
+MAX_HEADER_NAME_BYTES = 64
+MAX_HEADER_VALUE_BYTES = 4096
+# The server frames every response itself, so these are never the program's.
+RESERVED_RESPONSE_HEADERS = (
+    "connection", "content-length", "keep-alive", "proxy-connection", "te", "trailer",
+    "transfer-encoding", "upgrade",
+)
+HEADERS_MESSAGE = (
+    f"KS3472: Yanıt başlıkları geçersiz: en fazla {MAX_RESPONSE_HEADERS} başlık; her ad "
+    f"1-{MAX_HEADER_NAME_BYTES} baytlık bir HTTP token'ı ve bir kez; değer "
+    f"1-{MAX_HEADER_VALUE_BYTES} yazdırılabilir ASCII karakter, iki ucunda boşluk yok; "
+    "Connection, Content-Length, Keep-Alive, Proxy-Connection, TE, Trailer, "
+    "Transfer-Encoding ve Upgrade sunucunundur."
+)
+_TOKEN_CHARACTERS = frozenset(
+    "!#$%&'*+-.^_`|~0123456789"
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+)
+
+
+def response_headers(pairs: list[tuple[Any, Any]]) -> tuple[str, list[tuple[str, str]]] | str:
+    """(content type, other headers) for a reply, or the Error text.
+
+    The native broker ports this check in the same order.
+    """
+
+    if len(pairs) > MAX_RESPONSE_HEADERS:
+        return HEADERS_MESSAGE
+    content_type = PLAIN_TEXT
+    extra: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for name, value in pairs:
+        if (
+            not isinstance(name, str)
+            or not 0 < len(name) <= MAX_HEADER_NAME_BYTES
+            or any(character not in _TOKEN_CHARACTERS for character in name)
+        ):
+            return HEADERS_MESSAGE
+        folded = name.translate(_ASCII_LOWER)
+        if folded in seen:
+            return HEADERS_MESSAGE
+        seen.add(folded)
+        if folded == "content-type":
+            if not net_v1.valid_content_type(value):
+                return CONTENT_TYPE_MESSAGE
+            content_type = value
+            continue
+        if folded in RESERVED_RESPONSE_HEADERS:
+            return HEADERS_MESSAGE
+        if (
+            not isinstance(value, str)
+            or not 0 < len(value) <= MAX_HEADER_VALUE_BYTES
+            or any(not "\x20" <= character <= "\x7e" for character in value)
+            or value[0] == " "
+            or value[-1] == " "
+        ):
+            return HEADERS_MESSAGE
+        extra.append((name, value))
+    return content_type, extra
 HEADER_MESSAGE = "KS3473: İstekte '{name}' başlığı yok."
 BODY_TEXT_MESSAGE = "KS3430: İstek gövdesi geçerli UTF-8 metin değil."
 
 REASONS = {
-    200: "OK", 201: "Created", 204: "No Content", 400: "Bad Request", 403: "Forbidden",
+    200: "OK", 201: "Created", 204: "No Content",
+    301: "Moved Permanently", 302: "Found", 303: "See Other", 307: "Temporary Redirect",
+    308: "Permanent Redirect", 400: "Bad Request", 401: "Unauthorized", 403: "Forbidden",
     404: "Not Found", 405: "Method Not Allowed", 409: "Conflict", 413: "Content Too Large",
     422: "Unprocessable Content", 429: "Too Many Requests", 500: "Internal Server Error",
     503: "Service Unavailable",
@@ -110,11 +173,14 @@ class _Server:
         self.accepted = 0
 
 
-def _wire(status: int, body: bytes, content_type: str = PLAIN_TEXT) -> bytes:
+def _wire(
+    status: int, body: bytes, content_type: str = PLAIN_TEXT, extra: tuple[tuple[str, str], ...] = ()
+) -> bytes:
     head = (
         f"HTTP/1.1 {status} {REASONS[status]}\r\n"
         f"Content-Type: {content_type}\r\n"
-        f"Content-Length: {len(body)}\r\n"
+        + "".join(f"{name}: {value}\r\n" for name, value in extra)
+        + f"Content-Length: {len(body)}\r\n"
         "Connection: close\r\n\r\n"
     ).encode("ascii")
     return head + body
@@ -236,14 +302,19 @@ def _accept(self: ServeCaps):
 
 
 def _reply(self: ServeCaps, status: Any, body: Any):
-    return _respond(self, status, PLAIN_TEXT, body)
+    return _respond(self, status, [("Content-Type", PLAIN_TEXT)], body)
 
 
 def _reply_as(self: ServeCaps, status: Any, content_type: Any, body: Any):
-    return _respond(self, status, content_type, body)
+    return _respond(self, status, [("Content-Type", content_type)], body)
 
 
-def _respond(self: ServeCaps, status: Any, content_type: Any, body: Any):
+def _reply_with(self: ServeCaps, status: Any, headers: Any, body: Any):
+    pairs = list(headers.items()) if isinstance(headers, dict) else [(None, None)]
+    return _respond(self, status, pairs, body)
+
+
+def _respond(self: ServeCaps, status: Any, headers: list[tuple[Any, Any]], body: Any):
     server = self._server
     if server is None or server.pending is None:
         return _runtime.KsError(NO_PENDING_MESSAGE)
@@ -252,9 +323,11 @@ def _respond(self: ServeCaps, status: Any, content_type: Any, body: Any):
     if type(status) is not int or status not in REASONS:
         _close(connection, 500)
         return _runtime.KsError(STATUS_MESSAGE.format(status=status))
-    if not net_v1.valid_content_type(content_type):
+    checked = response_headers(headers)
+    if isinstance(checked, str):
         _close(connection, 500)
-        return _runtime.KsError(CONTENT_TYPE_MESSAGE)
+        return _runtime.KsError(checked)
+    content_type, extra = checked
     if not isinstance(body, (str, bytes)):
         _close(connection, 500)
         return _exchange._protocol_error("ServeCaps.reply() body must be String or Bytes")
@@ -262,7 +335,7 @@ def _respond(self: ServeCaps, status: Any, content_type: Any, body: Any):
     if status == 204 and payload:
         _close(connection, 500)
         return _runtime.KsError(EMPTY_BODY_MESSAGE)
-    wire = _wire(status, payload, content_type)
+    wire = _wire(status, payload, content_type, tuple(extra))
     if len(wire) > self.policy.max_response_bytes:
         _close(connection, 500)
         return _exchange._protocol_error("response exceeds max_response_bytes")
@@ -309,8 +382,8 @@ def request_method(request: HttpRequest, name: str, arguments: list[Any]) -> Any
 
 def _check_method_call(self, receiver_type, method_name, location, argument_types=None, arguments=None):
     values = argument_types or []
-    if receiver_type == "ServeCaps" and method_name in {"accept", "reply", "reply_as"}:
-        expected = {"accept": 0, "reply": 2, "reply_as": 3}[method_name]
+    if receiver_type == "ServeCaps" and method_name in {"accept", "reply", "reply_as", "reply_with"}:
+        expected = {"accept": 0, "reply": 2, "reply_as": 3, "reply_with": 3}[method_name]
         if len(values) != expected:
             raise _semantic.SemanticError(
                 "KS1301", f"ServeCaps.{method_name}() {expected} argüman bekler, {len(values)} verildi.", location
@@ -320,6 +393,8 @@ def _check_method_call(self, receiver_type, method_name, location, argument_type
             self._require_assignable(("Int",), values[0], f"{subject} durum kodu", location)
             if method_name == "reply_as":
                 self._require_assignable(("String",), values[1], f"{subject} içerik türü", location)
+            if method_name == "reply_with":
+                self._require_assignable(("Map", "Map<String, String>"), values[1], f"{subject} başlıkları", location)
             self._require_assignable(("String", "Bytes"), values[-1], f"{subject} gövdesi", location)
             return "Void or Error"
         return "HttpRequest or Error"
@@ -356,10 +431,13 @@ def _semantic_fallible(self, expression):
     return _ORIGINALS["semantic_fallible"](self, expression)
 
 
+_HEADER_MAP = GenericType("Map", (STRING, STRING))
+
 _TYPED = {
     ("ServeCaps", "accept"): (0, union_type(HTTP_REQUEST, ERROR)),
     ("ServeCaps", "reply"): (2, union_type(VOID, ERROR)),
     ("ServeCaps", "reply_as"): (3, union_type(VOID, ERROR)),
+    ("ServeCaps", "reply_with"): (3, union_type(VOID, ERROR)),
     ("HttpRequest", "method"): (0, STRING),
     ("HttpRequest", "path"): (0, STRING),
     ("HttpRequest", "body"): (0, union_type(STRING, ERROR)),
@@ -377,6 +455,10 @@ def _method_type(receiver, method, arguments, location):
                 raise _semantic.SemanticError(
                     "KS1301", f"{receiver.name}.{method}() {expected} argüman bekler, {len(arguments)} verildi.", location
                 )
+            if (receiver.name, method) == ("ServeCaps", "reply_with") and arguments[1] != _HEADER_MAP:
+                raise _semantic.SemanticError(
+                    "KS1301", "ServeCaps.reply_with() başlıkları Map<String, String> olmalıdır.", location
+                )
             return result
         if receiver.name == "HttpRequest":
             raise _semantic.SemanticError(
@@ -389,7 +471,7 @@ def _method_type(receiver, method, arguments, location):
 
 
 def _member(self, receiver, name, location):
-    if isinstance(receiver, ServeCaps) and name in {"accept", "reply", "reply_as"}:
+    if isinstance(receiver, ServeCaps) and name in {"accept", "reply", "reply_as", "reply_with"}:
         return _runtime._BoundMember(receiver, name, location)
     if isinstance(receiver, HttpRequest) and name in REQUEST_METHODS:
         return _runtime._BoundMember(receiver, name, location)
@@ -424,6 +506,7 @@ def install_serve_knowhere_v1() -> None:
     ServeCaps.accept = _accept
     ServeCaps.reply = _reply
     ServeCaps.reply_as = _reply_as
+    ServeCaps.reply_with = _reply_with
     _runtime.HttpRequest = HttpRequest
     _effects._PURE_VALUE_METHODS.update({"method", "path", "body", "body_bytes", "header"})
     _contracts.RESERVED_TYPE_PARAMETERS.add("HttpRequest")

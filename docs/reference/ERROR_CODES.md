@@ -1027,13 +1027,13 @@ let server = caps.serve.allow("127.0.0.1:8080", 1000, 65536, 65536, 5000)
 
 ### KS3472 — Response rule violated
 
-**EN.** reply() was called with an unsupported status code or a 204 with a body, or reply_as() with an invalid content type. Supported status codes are a small explicit set and a content type cannot add a header; instead of an invalid response the client gets 500.
+**EN.** A reply had an unsupported status code, a 204 with a body, an invalid content type or invalid headers. Supported status codes are a small explicit set; a header value cannot add another header, and the server frames the response itself (Content-Length, Connection, Transfer-Encoding). Instead of an invalid response the client gets 500.
 
-*Fix:* Use 200, 201, 204, 400, 403, 404, 405, 409, 413, 422, 429, 500 or 503, and a content type of 1-256 printable ASCII characters with no space at either end.
+*Fix:* Use 200, 201, 204, 301, 302, 303, 307, 308, 400, 401, 403, 404, 405, 409, 413, 422, 429, 500 or 503; a content type of 1-256 and header values of 1-4096 printable ASCII characters with no space at either end; at most 32 headers, each name once.
 
-**TR — Yanıt kuralı ihlali.** reply() desteklenmeyen bir durum koduyla, gövdeli 204 ile veya reply_as() geçersiz bir içerik türüyle çağrıldı. Desteklenen durum kodları sınırlı ve açıktır ve içerik türü başlık ekleyemez; geçersiz yanıt yerine istemci 500 alır.
+**TR — Yanıt kuralı ihlali.** Yanıt desteklenmeyen bir durum kodu, gövdeli bir 204, geçersiz bir içerik türü veya geçersiz başlıklar taşıyordu. Desteklenen durum kodları sınırlı ve açıktır; bir başlık değeri başka bir başlık ekleyemez ve yanıtın çerçevesini (Content-Length, Connection, Transfer-Encoding) sunucu belirler. Geçersiz yanıt yerine istemci 500 alır.
 
-*Düzeltme:* 200, 201, 204, 400, 403, 404, 405, 409, 413, 422, 429, 500 veya 503 kullanın; içerik türü 1-256 yazdırılabilir ASCII karakter olsun, iki ucunda boşluk olmasın.
+*Düzeltme:* 200, 201, 204, 301, 302, 303, 307, 308, 400, 401, 403, 404, 405, 409, 413, 422, 429, 500 veya 503 kullanın; içerik türü 1-256, başlık değeri 1-4096 yazdırılabilir ASCII karakter olsun, iki ucunda boşluk olmasın; en fazla 32 başlık, her ad bir kez.
 
 ```ks
 server.reply(404, "not found") or return

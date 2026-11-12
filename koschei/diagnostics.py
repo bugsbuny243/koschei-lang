@@ -586,9 +586,9 @@ CATALOG: dict[str, Diagnostic] = {
     "KS3472": Diagnostic(
         code="KS3472",
         title='Yanıt kuralı ihlali',
-        summary='reply() desteklenmeyen bir durum koduyla, gövdeli 204 ile veya reply_as() geçersiz bir içerik türüyle çağrıldı.',
-        why='Desteklenen durum kodları sınırlı ve açıktır ve içerik türü başlık ekleyemez; geçersiz yanıt yerine istemci 500 alır.',
-        fix='200, 201, 204, 400, 403, 404, 405, 409, 413, 422, 429, 500 veya 503 kullanın; içerik türü 1-256 yazdırılabilir ASCII karakter olsun, iki ucunda boşluk olmasın.',
+        summary='Yanıt desteklenmeyen bir durum kodu, gövdeli bir 204, geçersiz bir içerik türü veya geçersiz başlıklar taşıyordu.',
+        why='Desteklenen durum kodları sınırlı ve açıktır; bir başlık değeri başka bir başlık ekleyemez ve yanıtın çerçevesini (Content-Length, Connection, Transfer-Encoding) sunucu belirler. Geçersiz yanıt yerine istemci 500 alır.',
+        fix='200, 201, 204, 301, 302, 303, 307, 308, 400, 401, 403, 404, 405, 409, 413, 422, 429, 500 veya 503 kullanın; içerik türü 1-256, başlık değeri 1-4096 yazdırılabilir ASCII karakter olsun, iki ucunda boşluk olmasın; en fazla 32 başlık, her ad bir kez.',
         example='server.reply(404, "not found") or return',
     ),
     "KS3473": Diagnostic(
@@ -1026,9 +1026,9 @@ ENGLISH_TEXT: dict[str, tuple[str, str, str, str]] = {
     ),
     "KS3472": (
         'Response rule violated',
-        'reply() was called with an unsupported status code or a 204 with a body, or reply_as() with an invalid content type.',
-        'Supported status codes are a small explicit set and a content type cannot add a header; instead of an invalid response the client gets 500.',
-        'Use 200, 201, 204, 400, 403, 404, 405, 409, 413, 422, 429, 500 or 503, and a content type of 1-256 printable ASCII characters with no space at either end.',
+        'A reply had an unsupported status code, a 204 with a body, an invalid content type or invalid headers.',
+        'Supported status codes are a small explicit set; a header value cannot add another header, and the server frames the response itself (Content-Length, Connection, Transfer-Encoding). Instead of an invalid response the client gets 500.',
+        'Use 200, 201, 204, 301, 302, 303, 307, 308, 400, 401, 403, 404, 405, 409, 413, 422, 429, 500 or 503; a content type of 1-256 and header values of 1-4096 printable ASCII characters with no space at either end; at most 32 headers, each name once.',
     ),
     "KS3473": (
         'Request header missing',

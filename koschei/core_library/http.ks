@@ -166,6 +166,30 @@ fn after_colon(segment: String) -> String {
     return rest.to_text() or ""
 }
 
+// The cookies of a `Cookie` request header: "sid=abc; theme=dark".
+// Values are returned as sent, not decoded. A piece without a name or `=`
+// is skipped; when a name repeats, the first value wins, as browsers send
+// the most specific cookie first.
+fn cookies(header: String) -> Map<String, String> {
+    let mut found: Map<String, String> = {}
+    let pieces = header.split(";") or return found
+    for piece in pieces {
+        let pair = piece.trim()
+        let parts = pair.split("=") or return found
+        if parts.length() > 1 {
+            let raw_name = parts.get(0) or ""
+            let name = raw_name.trim()
+            if name.length() > 0 && !found.contains(name) {
+                let data = pair.to_bytes()
+                let rest = data.slice(raw_name.to_bytes().length() + 1, data.length()) or return found
+                let value = rest.to_text() or return found
+                found = found.set(name, value.trim())
+            }
+        }
+    }
+    return found
+}
+
 // Escapes text for HTML element content and quoted attribute values:
 // & < > " and ' become character references.
 fn escape_html(text: String) -> String {

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add `ServeCaps.reply_with(status, headers, body)` under `ks run` and in native binaries: the program sends its own response headers from a `Map<String, String>`, such as `Location`, `Set-Cookie` or `Cache-Control`. Names must be HTTP tokens and appear once, values printable ASCII, so a value can never add a header; the server keeps writing `Content-Length` and `Connection` and refuses them, `Transfer-Encoding` and the other framing headers (`KS3472`, the client gets `500`). Replies may use 301, 302, 303, 307, 308 and 401. `http.cookies` reads a `Cookie` header.
 - Let a server listen on every interface: `caps.serve.allow` accepts exactly `0.0.0.0:PORT` and `[::]:PORT` besides loopback binds, under `ks run` and in native binaries, so a Koschei web application can be reached from other machines. Every budget, the strict HTTP grammar and the one-request-per-connection rule are unchanged; any other non-loopback address is still `KS2411`. `docs/SERVE_KNOWHERE_V1.md` explains running a public server.
 - Add the `http` Core Library module, written in Koschei: `route` matches a request target against a pattern such as `/users/:id`, `query` and `params` read query strings and form bodies, `decode` and `decode_form` undo percent-encoding, and `escape_html` makes text safe for a page. All pure; malformed escapes and non-UTF-8 results are Error values. A test compares them with Python's `urllib.parse` and `html.escape` under `ks run` and in native binaries. Both language guides gain a section on serving HTTP.
 

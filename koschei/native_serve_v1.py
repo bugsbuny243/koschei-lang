@@ -1,12 +1,12 @@
 """The multi-request loopback server in native binaries (gates G4 and G2).
 
 The worker cannot create sockets, so the broker owns the listener and the one
-pending connection. ``accept()``, ``reply()`` and ``reply_as()`` are requests
-on the broker channel; the broker ports ``serve_knowhere_v1`` exactly: the
+pending connection. ``accept()``, ``reply()``, ``reply_as()`` and
+``reply_with()`` are requests on the broker channel; the broker ports ``serve_knowhere_v1`` exactly: the
 loopback bind rule, the strict HTTP/1.x request grammar of
 ``serve_loopback_exchange_v1``, the request, response, connection and deadline
 budgets, the Knowhere rule (one request per connection, answered once), the
-content type rule and every Error text.
+content type and response header rules and every Error text.
 """
 
 from __future__ import annotations
@@ -39,6 +39,11 @@ def serve_runtime() -> str:
         empty_body=_go(_serve.EMPTY_BODY_MESSAGE),
         content_type=_go(_serve.CONTENT_TYPE_MESSAGE),
         plain_text=_go(_serve.PLAIN_TEXT),
+        headers_message=_go(_serve.HEADERS_MESSAGE),
+        max_headers=_serve.MAX_RESPONSE_HEADERS,
+        max_header_name=_serve.MAX_HEADER_NAME_BYTES,
+        max_header_value=_serve.MAX_HEADER_VALUE_BYTES,
+        reserved_headers=", ".join(f"{_go(name)}: true" for name in _serve.RESERVED_RESPONSE_HEADERS),
         max_header=_serve._exchange._MAX_HEADER_BYTES,
         min_connections=_authority._MIN_CONNECTIONS,
         max_connections=_authority._MAX_CONNECTIONS,
@@ -174,17 +179,34 @@ func _ksServeAccept(receiver any) any {{
 }}
 
 func _ksServeReply(receiver any, status any, body any) any {{
-	return _ksServeRespond(receiver, status, {plain_text}, body)
+	return _ksServeRespond(receiver, status, []string{{"Content-Type", {plain_text}}}, body)
 }}
 
 func _ksServeReplyAs(receiver any, status any, contentType any, body any) any {{
 	// A content type that is not a String is refused like an invalid one,
 	// as under ks run; the broker checks it.
 	kind, _ := contentType.(string)
-	return _ksServeRespond(receiver, status, kind, body)
+	return _ksServeRespond(receiver, status, []string{{"Content-Type", kind}}, body)
 }}
 
-func _ksServeRespond(receiver any, status any, contentType string, body any) any {{
+func _ksServeReplyWith(receiver any, status any, headers any, body any) any {{
+	entries := _ksMapOf(headers)
+	pairs := []string{{}}
+	for index, name := range entries.keys {{
+		// One header past the limit is enough for the broker to refuse.
+		if index > {max_headers} {{
+			break
+		}}
+		value, ok := entries.values[index].(string)
+		if !ok {{
+			_ksAbort("KS5002", "ServeCaps.reply_with header drifted")
+		}}
+		pairs = append(pairs, name, value)
+	}}
+	return _ksServeRespond(receiver, status, pairs, body)
+}}
+
+func _ksServeRespond(receiver any, status any, headers []string, body any) any {{
 	code, ok := status.(int64)
 	if !ok {{
 		_ksAbort("KS5002", "ServeCaps.reply status drifted")
@@ -198,7 +220,8 @@ func _ksServeRespond(receiver any, status any, contentType string, body any) any
 	default:
 		_ksAbort("KS5002", "ServeCaps.reply body drifted")
 	}}
-	done, answer := _ksAsk("serve_reply", _ksServeScopeOf(receiver), strconv.FormatInt(code, 10), contentType, kind, payload)
+	fields := append([]string{{"serve_reply", _ksServeScopeOf(receiver), strconv.FormatInt(code, 10), kind, payload}}, headers...)
+	done, answer := _ksAsk(fields...)
 	runtime.KeepAlive(receiver)
 	if !done {{
 		return _ksError{{message: answer[0]}}
@@ -380,9 +403,9 @@ func _ksServeListen(scope *_ksServeScope) error {{
 	return nil
 }}
 
-func _ksServeWire(status int64, contentType string, body string) string {{
+func _ksServeWire(status int64, contentType string, extra string, body string) string {{
 	return "HTTP/1.1 " + strconv.FormatInt(status, 10) + " " + _ksReasons[status] + "\r\n" +
-		"Content-Type: " + contentType + "\r\n" +
+		"Content-Type: " + contentType + "\r\n" + extra +
 		"Content-Length: " + strconv.Itoa(len(body)) + "\r\n" +
 		"Connection: close\r\n\r\n" + body
 }}
@@ -398,7 +421,7 @@ func _ksServeClose(conn net.Conn, status int64, deadline time.Time) {{
 			}}
 		}}
 		conn.SetWriteDeadline(time.Now().Add(remaining))
-		io.WriteString(conn, _ksServeWire(status, {plain_text}, _ksReasons[status]))
+		io.WriteString(conn, _ksServeWire(status, {plain_text}, "", _ksReasons[status]))
 	}}
 	conn.Close()
 }}
@@ -674,7 +697,63 @@ func _ksServeAcceptBroker(scope *_ksServeScope, retry bool) []string {{
 	return append([]string{{"ok"}}, fields...)
 }}
 
-func _ksServeReplyBroker(scope *_ksServeScope, statusText string, contentType string, kind string, body string) []string {{
+var _ksReservedResponseHeaders = map[string]bool{{{reserved_headers}}}
+
+func _ksResponseToken(name string) bool {{
+	for index := 0; index < len(name); index++ {{
+		character := name[index]
+		switch {{
+		case character >= '0' && character <= '9', character >= 'A' && character <= 'Z', character >= 'a' && character <= 'z':
+		case strings.IndexByte("!#$%&'*+-.^_`|~", character) >= 0:
+		default:
+			return false
+		}}
+	}}
+	return true
+}}
+
+// serve_knowhere_v1.response_headers, in the same order.
+func _ksServeHeaders(pairs []string) (string, string, string) {{
+	if len(pairs)/2 > {max_headers} {{
+		return "", "", {headers_message}
+	}}
+	contentType := {plain_text}
+	extra := ""
+	seen := map[string]bool{{}}
+	for index := 0; index+1 < len(pairs); index += 2 {{
+		name, value := pairs[index], pairs[index+1]
+		if len(name) == 0 || len(name) > {max_header_name} || !_ksResponseToken(name) {{
+			return "", "", {headers_message}
+		}}
+		folded := strings.ToLower(name)
+		if seen[folded] {{
+			return "", "", {headers_message}
+		}}
+		seen[folded] = true
+		if folded == "content-type" {{
+			if !_ksValidContentType(value) {{
+				return "", "", {content_type}
+			}}
+			contentType = value
+			continue
+		}}
+		if _ksReservedResponseHeaders[folded] {{
+			return "", "", {headers_message}
+		}}
+		if len(value) == 0 || len(value) > {max_header_value} || value[0] == ' ' || value[len(value)-1] == ' ' {{
+			return "", "", {headers_message}
+		}}
+		for position := 0; position < len(value); position++ {{
+			if value[position] < 0x20 || value[position] > 0x7e {{
+				return "", "", {headers_message}
+			}}
+		}}
+		extra += name + ": " + value + "\r\n"
+	}}
+	return contentType, extra, ""
+}}
+
+func _ksServeReplyBroker(scope *_ksServeScope, statusText string, kind string, body string, headers []string) []string {{
 	if scope.pending == nil {{
 		return []string{{"err", {no_pending}}}
 	}}
@@ -685,9 +764,10 @@ func _ksServeReplyBroker(scope *_ksServeScope, statusText string, contentType st
 		_ksServeClose(conn, 500, time.Time{{}})
 		return []string{{"err", {status_prefix} + statusText + {status_suffix}}}
 	}}
-	if !_ksValidContentType(contentType) {{
+	contentType, extra, failure := _ksServeHeaders(headers)
+	if failure != "" {{
 		_ksServeClose(conn, 500, time.Time{{}})
-		return []string{{"err", {content_type}}}
+		return []string{{"err", failure}}
 	}}
 	if kind != "s" && kind != "b" {{
 		return nil
@@ -696,7 +776,7 @@ func _ksServeReplyBroker(scope *_ksServeScope, statusText string, contentType st
 		_ksServeClose(conn, 500, time.Time{{}})
 		return []string{{"err", {empty_body}}}
 	}}
-	wire := _ksServeWire(status, contentType, body)
+	wire := _ksServeWire(status, contentType, extra, body)
 	if len(wire) > scope.responseBytes {{
 		_ksServeClose(conn, 500, time.Time{{}})
 		return []string{{"err", _ksProtocolError("response exceeds max_response_bytes")}}
@@ -718,7 +798,8 @@ func _ksBrokerServeServe(request []string) ([]string, bool) {{
 		answer := _ksServeOpenScope(request)
 		return answer, answer != nil
 	case (request[0] == "serve_accept" && len(request) == 3 && (request[2] == "retry" || request[2] == "final")) ||
-		(request[0] == "serve_reply" && len(request) == 6) || (request[0] == "serve_release" && len(request) == 2):
+		(request[0] == "serve_reply" && len(request) >= 5 && (len(request)-5)%2 == 0 && (len(request)-5)/2 <= {max_headers}+1) ||
+		(request[0] == "serve_release" && len(request) == 2):
 		index, err := strconv.Atoi(request[1])
 		// A released server is never addressed again.
 		if err != nil || index < 1 || index >= len(_ksServeScopes) || _ksServeScopes[index] == nil {{
@@ -730,7 +811,7 @@ func _ksBrokerServeServe(request []string) ([]string, bool) {{
 		case "serve_accept":
 			answer = _ksServeAcceptBroker(scope, request[2] == "retry")
 		case "serve_reply":
-			answer = _ksServeReplyBroker(scope, request[2], request[3], request[4], request[5])
+			answer = _ksServeReplyBroker(scope, request[2], request[3], request[4], request[5:])
 		default:
 			// serve_knowhere_v1: a dropped server's sockets close, the
 			// listener first (_Server's slot order); an unanswered client
