@@ -109,6 +109,24 @@ already encoded, so documents nest. Pass the result to `parse_json` to get a
 | `array(items)` | `String` | `items: List<String>` of encoded values |
 | `object(members)` | `String` | `members: Map<String, String>` of encoded values, in the map's order |
 
+### `http`
+
+Reads what `ServeCaps.accept()` leaves raw. Pure: no socket, no capability.
+A `%` without two hex digits, or decoded bytes that are not UTF-8, is an
+`Error` value or `None`, never a guess. Results match Python's `urllib.parse`
+and `html.escape` (`tests/test_core_library_http_v1.py`).
+
+| Function | Result | Meaning |
+|---|---|---|
+| `route(pattern, target)` | `Option<Map<String, String>>` | matches `"/users/:id"`; `:name` segments are captured decoded; the query string and empty segments are ignored |
+| `query(target)` | `Map<String, String> or Error` | the query string's names and values |
+| `params(text)` | `Map<String, String> or Error` | `a=1&b=two+words`, as in a form body; the last repeated name wins |
+| `path_of(target)` / `query_of(target)` | `String` | the parts before and after the first `?` |
+| `segments(path)` | `List<String>` | the non-empty segments, still encoded |
+| `decode(text)` | `String or Error` | percent-decoding for a path; `+` stays `+` |
+| `decode_form(text)` | `String or Error` | percent-decoding for a query or form; `+` is a space |
+| `escape_html(text)` | `String` | `&`, `<`, `>`, `"` and `'` as character references |
+
 ### `math`
 
 `Int` never wraps: a result outside signed 64 bits is an `Error` value, never a

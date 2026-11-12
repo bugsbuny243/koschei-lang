@@ -7,6 +7,7 @@ Every module is written in Koschei and compiled with the program that imports it
 |---|---|---|
 | [`captain_marvel`](#captain_marvel) | 3 | 2 |
 | [`hela`](#hela) | 4 | 1 |
+| [`http`](#http) | 12 | 0 |
 | [`json`](#json) | 8 | 0 |
 | [`list`](#list) | 10 | 0 |
 | [`math`](#math) | 12 | 0 |
@@ -113,6 +114,106 @@ fn is_resurrection_attempt(tombstone: AuthorityTombstone, principal_digest: Stri
 ```
 
 The same decision, named for the caller that is about to grant authority.
+
+## http
+
+Written in Koschei. Reads the parts of a request that `ServeCaps.accept()` leaves raw: the request target (`request.path()`, query string included), percent-encoded text, query strings and `application/x-www-form-urlencoded` bodies, and route patterns such as "/users/:id". It also escapes text for HTML. Every function is pure: nothing here touches a socket, so no capability is needed, and the program decides when input is interpreted.
+
+Malformed input is an Error value or None, never a guess: a `%` that is not followed by two hex digits, or bytes that are not UTF-8 once decoded.
+
+### `http.path_of`
+
+```ks
+fn path_of(target: String) -> String
+```
+
+The path part of a request target: everything before the first `?`.
+
+### `http.query_of`
+
+```ks
+fn query_of(target: String) -> String
+```
+
+The query part of a request target, without the `?`; "" when there is none.
+
+### `http.is_hex_digit`
+
+```ks
+fn is_hex_digit(b: Int) -> Bool
+```
+
+### `http.unescape`
+
+```ks
+fn unescape(text: String, plus_is_space: Bool) -> String or Error
+```
+
+Percent-decoding. With `plus_is_space`, `+` is a space, as in query strings and form bodies; in a path it stays `+`.
+
+### `http.decode`
+
+```ks
+fn decode(text: String) -> String or Error
+```
+
+Decodes a path segment: `%2F` becomes `/`, `+` stays `+`.
+
+### `http.decode_form`
+
+```ks
+fn decode_form(text: String) -> String or Error
+```
+
+Decodes a query or form component: `+` is a space.
+
+### `http.params`
+
+```ks
+fn params(text: String) -> Map<String, String> or Error
+```
+
+Names and values of a query string or a form body: "a=1&b=two+words". A pair without `=` has the value "". Empty pairs are skipped. When a name repeats, the last value wins; the map keeps first-seen order.
+
+### `http.query`
+
+```ks
+fn query(target: String) -> Map<String, String> or Error
+```
+
+The query parameters of a request target, such as `request.path()`.
+
+### `http.segments`
+
+```ks
+fn segments(path: String) -> List<String>
+```
+
+The non-empty segments of a path, still encoded: "/a//b/" is ["a", "b"].
+
+### `http.route`
+
+```ks
+fn route(pattern: String, target: String) -> Option<Map<String, String>>
+```
+
+Matches a request target against a pattern such as "/users/:id/posts". A segment starting with `:` captures the decoded segment under that name; other segments are plain text and must equal the decoded segment. The query string is ignored, and so are empty segments, so "/users/" matches "/users". None when the target does not match or a segment is not valid percent-encoded UTF-8.
+
+### `http.after_colon`
+
+```ks
+fn after_colon(segment: String) -> String
+```
+
+"id" for ":id"; "" for a literal segment.
+
+### `http.escape_html`
+
+```ks
+fn escape_html(text: String) -> String
+```
+
+Escapes text for HTML element content and quoted attribute values: & < > " and ' become character references.
 
 ## json
 

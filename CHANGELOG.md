@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Add the `http` Core Library module, written in Koschei: `route` matches a request target against a pattern such as `/users/:id`, `query` and `params` read query strings and form bodies, `decode` and `decode_form` undo percent-encoding, and `escape_html` makes text safe for a page. All pure; malformed escapes and non-UTF-8 results are Error values. A test compares them with Python's `urllib.parse` and `html.escape` under `ks run` and in native binaries. Both language guides gain a section on serving HTTP.
+
 ## 0.11.0 — 2026-11-12
 
 - Add the `json` Core Library module, written in Koschei: `string`, `int`, `float`, `bool`, `null`, `array` and `object` build JSON text, with every control character, quote and backslash escaped; `float` refuses infinity. A test reads every ASCII character and multi-byte UTF-8 back through Python's `json` parser, and the native binary prints the same bytes.

@@ -88,6 +88,9 @@ fn main() {
   Bind each step with `let`: `let f = json_get(data, "n") or return Error("no n")` then `json_int(f) or 0`.
 - Writing JSON: `import json`, then `json.object({"name": json.string(n), "n": json.int(3), "xs": json.array([json.int(1)])})`;
   also `json.bool(b)`, `json.null()`, `json.float(f) or "null"`. The result is a String.
+- URLs and forms: `import http`, then `http.route("/users/:id", target)` (Option of a Map; `or return ...`),
+  `http.query(target) or return Error("bad query")`, `http.params(body)`, `http.decode(s)`, `http.path_of(target)`,
+  `http.escape_html(text)` before putting text in a page.
 
 ## Capabilities
 

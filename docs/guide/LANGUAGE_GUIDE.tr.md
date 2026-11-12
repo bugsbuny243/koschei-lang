@@ -595,6 +595,92 @@ disk, `/data`, salt-okunur. `list(path)` bir dizindeki adları döndürür;
 `allow(prefix)` ile alınan jeton ayrıca `write(path, text)` ve `delete(path)`
 yapabilir.
 
+### HTTP sunucusu
+
+`http` Core Library modülü sunucunun aldığı isteği okur: `route` istek
+adresini bir kalıpla eşleştirir ve `:ad` parçalarını çözülmüş hâlde yakalar;
+`query` sorgu metnini, `params` form gövdesini okur; `escape_html` metni
+sayfaya güvenle koymaya hazırlar. Hepsi saftır; bir isteğin cevabı soket
+olmadan hesaplanıp test edilebilir.
+
+```ks
+import http
+
+fn page(target: String) -> String {
+    let found = http.route("/users/:name", target) or return "404"
+    let name = found.get("name") or "?"
+    let query = http.query(target) or return "400 bad query"
+    let tab = query.get("tab") or "posts"
+    return "user {name}, tab {tab}"
+}
+
+fn main() {
+    println(page("/users/ada%20lovelace?tab=likes"))
+    println(page("/users/alan"))
+    println(page("/teams/1"))
+    println(http.escape_html("<b>Tom & Jerry</b>"))
+}
+```
+
+```output
+user ada lovelace, tab likes
+user alan, tab posts
+404
+&lt;b&gt;Tom &amp; Jerry&lt;/b&gt;
+```
+
+Sunucu `caps.serve.allow(adres, en_fazla_istek, istek_bayt, cevap_bayt,
+süre_ms)` ile alınır. `accept()` bir isteği bekler, `reply_as(durum,
+içerik_türü, gövde)` onu cevaplar. Jeton, sunan fonksiyona taşınır; bu yüzden
+döngü orada yaşar ve her cevaba saf bir fonksiyon karar verir.
+
+```ks
+import http
+import json
+
+struct Reply {
+    status: Int,
+    content_type: String,
+    body: String,
+}
+
+// Pure: decides the answer from the request target alone.
+fn respond(target: String) -> Reply {
+    let found = http.route("/users/:name", target) or {
+        return Reply { status: 404, content_type: "text/plain", body: "not found" }
+    }
+    let name = found.get("name") or "?"
+    let body = json.object({"name": json.string(name)})
+    return Reply { status: 200, content_type: "application/json", body: body }
+}
+
+fn serve(server: ServeCaps, rounds: Int) -> Int {
+    let mut served = 0
+    while served < rounds {
+        served = served + 1
+        let request = server.accept() or {
+            continue
+        }
+        let reply = respond(request.path())
+        let sent = server.reply_as(reply.status, reply.content_type, reply.body) or {
+            continue
+        }
+    }
+    return served
+}
+
+fn main(caps: SystemCaps) {
+    let server = caps.serve.allow("127.0.0.1:8080", 1000, 65536, 65536, 5000)
+    println(serve(server, 1000))
+}
+```
+
+`curl localhost:8080/users/ada` `{"name":"ada"}` döndürür; başka her adres
+`404` alır. `ks caps` tek bir yetki bildirir: serve, `127.0.0.1:8080` ve dört
+bütçesi. Adres yalnızca loopback olabilir. Sunucu `ks build` ile de aynı
+çalışır. Bütün kurallar için
+[`../SERVE_KNOWHERE_V1.md`](../SERVE_KNOWHERE_V1.md).
+
 ## 10. Araçlar
 
 | Komut | Yaptığı |
