@@ -94,6 +94,42 @@ All functions are generic over the item type and never mutate their input.
 
 Out-of-range indices produce an `Error` value; they are never clamped silently.
 
+### `math`
+
+`Int` never wraps: a result outside signed 64 bits is an `Error` value, never a
+silently wrong number. Functions that cannot overflow return a plain value.
+
+| Function | Result | Meaning |
+|---|---|---|
+| `min(a, b)` / `max(a, b)` | `Int` | the smaller / larger value |
+| `clamp(value, low, high)` | `Int or Error` | `value` limited to `low..high`; `low > high` is an Error |
+| `sign(value)` | `Int` | `-1`, `0` or `1` |
+| `abs(value)` | `Int or Error` | absolute value; the smallest `Int` has none within `Int` |
+| `is_even(value)` | `Bool` | divisible by 2 |
+| `pow(base, exponent)` | `Int or Error` | `base` to a non-negative power; overflow is an Error |
+| `gcd(a, b)` | `Int or Error` | greatest common divisor; `gcd(0, 0)` is `0` |
+| `min_float(a, b)` / `max_float(a, b)` | `Float` | the smaller / larger value |
+| `abs_float(value)` | `Float` | absolute value |
+| `clamp_float(value, low, high)` | `Float or Error` | `value` limited to `low..high` |
+
+### `time`
+
+Pure calendar arithmetic on UTC timestamps in milliseconds since
+1970-01-01T00:00:00Z, the unit `clock.now_ms()` returns. Nothing reads the
+clock, so no capability is needed. Years 1 to 9999; anything outside is an
+`Error` value. No time zones, no leap seconds.
+
+| Function | Result | Meaning |
+|---|---|---|
+| `utc(ms)` | `DateTime or Error` | `year`, `month`, `day`, `hour`, `minute`, `second`, `millisecond`, `weekday` (1 = Monday) |
+| `from_utc(year, month, day, hour, minute, second)` | `Int or Error` | the timestamp; an impossible date such as 31 April is an Error |
+| `iso_utc(ms)` | `String or Error` | `2026-11-12T07:45:48Z` |
+| `iso_utc_ms(ms)` | `String or Error` | `2026-11-12T07:45:48.123Z` |
+| `date_utc(ms)` | `String or Error` | `2026-11-12` |
+| `is_leap_year(year)` | `Bool` | Gregorian rule |
+| `days_in_month(year, month)` | `Int or Error` | 28 to 31 |
+| `seconds(n)`, `minutes(n)`, `hours(n)`, `days(n)` | `Int or Error` | a duration in milliseconds |
+
 ### `secure`
 
 Written in Koschei over the kernel `sha3_256(text) -> String or Error`, which

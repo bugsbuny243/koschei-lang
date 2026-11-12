@@ -8,12 +8,14 @@ Every module is written in Koschei and compiled with the program that imports it
 | [`captain_marvel`](#captain_marvel) | 3 | 2 |
 | [`hela`](#hela) | 4 | 1 |
 | [`list`](#list) | 10 | 0 |
+| [`math`](#math) | 12 | 0 |
 | [`matrix_horizon`](#matrix_horizon) | 5 | 1 |
 | [`matrix_portal`](#matrix_portal) | 3 | 1 |
 | [`morag`](#morag) | 2 | 3 |
 | [`secure`](#secure) | 5 | 0 |
 | [`strange`](#strange) | 2 | 2 |
 | [`text`](#text) | 13 | 0 |
+| [`time`](#time) | 18 | 1 |
 | [`wanda`](#wanda) | 5 | 1 |
 | [`xandar`](#xandar) | 4 | 2 |
 
@@ -184,6 +186,90 @@ fn replace_at<T>(items: List<T>, index: Int, item: T) -> Result<List<T>, Error>
 ```
 
 Replaces the item at `index`; requires 0 <= index < length.
+
+## math
+
+Written in Koschei. Int is signed 64-bit and never wraps: a result that would leave that range is an Error value, never a silently wrong number. Functions that cannot overflow return a plain Int or Float.
+
+### `math.min`
+
+```ks
+fn min(a: Int, b: Int) -> Int
+```
+
+### `math.max`
+
+```ks
+fn max(a: Int, b: Int) -> Int
+```
+
+### `math.clamp`
+
+```ks
+fn clamp(value: Int, low: Int, high: Int) -> Int or Error
+```
+
+The bounds must be in order: low > high is an Error value, not a guess.
+
+### `math.sign`
+
+```ks
+fn sign(value: Int) -> Int
+```
+
+### `math.abs`
+
+```ks
+fn abs(value: Int) -> Int or Error
+```
+
+The smallest Int has no positive counterpart within 64 bits.
+
+### `math.is_even`
+
+```ks
+fn is_even(value: Int) -> Bool
+```
+
+### `math.pow`
+
+```ks
+fn pow(base: Int, exponent: Int) -> Int or Error
+```
+
+base raised to a non-negative exponent, by repeated squaring.
+
+### `math.gcd`
+
+```ks
+fn gcd(a: Int, b: Int) -> Int or Error
+```
+
+Greatest common divisor; gcd(0, 0) is 0.
+
+### `math.min_float`
+
+```ks
+fn min_float(a: Float, b: Float) -> Float
+```
+
+### `math.max_float`
+
+```ks
+fn max_float(a: Float, b: Float) -> Float
+```
+
+### `math.abs_float`
+
+```ks
+fn abs_float(value: Float) -> Float
+```
+
+### `math.clamp_float`
+
+```ks
+fn clamp_float(value: Float, low: Float, high: Float) -> Float or Error
+```
 
 ## matrix_horizon
 
@@ -515,6 +601,139 @@ fn unique_sorted(values: List<String>) -> List<String>
 ```
 
 The distinct values in ascending character order: a canonical set of names. Insertion keeps the work quadratic, which suits the small name sets the library's guardians use.
+
+## time
+
+Written in Koschei. Pure calendar arithmetic on UTC timestamps in milliseconds since 1970-01-01T00:00:00Z, the unit `clock.now_ms()` returns. Nothing here reads the clock, so no capability is needed. Supported years are 1 through 9999; a timestamp or date outside them is an Error value, never a guessed date. There are no time zones and no leap seconds.
+
+### struct `DateTime`
+
+```ks
+year: Int
+month: Int
+day: Int
+hour: Int
+minute: Int
+second: Int
+millisecond: Int
+weekday: Int
+```
+
+### `time.min_ms`
+
+```ks
+fn min_ms() -> Int
+```
+
+0001-01-01T00:00:00.000Z and 9999-12-31T23:59:59.999Z.
+
+### `time.max_ms`
+
+```ks
+fn max_ms() -> Int
+```
+
+### `time.day_ms`
+
+```ks
+fn day_ms() -> Int
+```
+
+### `time.floor_div`
+
+```ks
+fn floor_div(a: Int, b: Int) -> Int
+```
+
+Int division truncates toward zero; calendar math needs floor division.
+
+### `time.floor_mod`
+
+```ks
+fn floor_mod(a: Int, b: Int) -> Int
+```
+
+### `time.is_leap_year`
+
+```ks
+fn is_leap_year(year: Int) -> Bool
+```
+
+### `time.days_in_month`
+
+```ks
+fn days_in_month(year: Int, month: Int) -> Int or Error
+```
+
+### `time.days_from_civil`
+
+```ks
+fn days_from_civil(year: Int, month: Int, day: Int) -> Int
+```
+
+Days since 1970-01-01 for a proleptic Gregorian date (H. Hinnant's algorithm).
+
+### `time.utc`
+
+```ks
+fn utc(ms: Int) -> DateTime or Error
+```
+
+### `time.from_utc`
+
+```ks
+fn from_utc(year: Int, month: Int, day: Int, hour: Int, minute: Int, second: Int) -> Int or Error
+```
+
+### `time.pad`
+
+```ks
+fn pad(value: Int, width: Int) -> String
+```
+
+### `time.date_utc`
+
+```ks
+fn date_utc(ms: Int) -> String or Error
+```
+
+### `time.iso_utc`
+
+```ks
+fn iso_utc(ms: Int) -> String or Error
+```
+
+### `time.iso_utc_ms`
+
+```ks
+fn iso_utc_ms(ms: Int) -> String or Error
+```
+
+### `time.seconds`
+
+```ks
+fn seconds(count: Int) -> Int or Error
+```
+
+Durations in milliseconds, for arithmetic on timestamps.
+
+### `time.minutes`
+
+```ks
+fn minutes(count: Int) -> Int or Error
+```
+
+### `time.hours`
+
+```ks
+fn hours(count: Int) -> Int or Error
+```
+
+### `time.days`
+
+```ks
+fn days(count: Int) -> Int or Error
+```
 
 ## wanda
 

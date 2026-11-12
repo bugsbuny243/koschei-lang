@@ -433,7 +433,9 @@ list is in [`../reference/CORE_LIBRARY.md`](../reference/CORE_LIBRARY.md).
 ```ks
 import text
 import list
+import math
 import secure
+import time
 
 fn main() {
     println(text.starts_with("koschei.ks", "koschei"))
@@ -441,6 +443,10 @@ fn main() {
     println(text.lines("one\ntwo"))
     println(list.reverse([1, 2, 3]))
     println(list.first(["x", "y"]))
+    println(math.max(3, 8))
+    println(math.pow(2, 10) or 0)
+    println(math.pow(2, 63))
+    println(time.iso_utc(1762933548000) or "?")
     println(secure.hash("koschei") or "?")
 }
 ```
@@ -451,6 +457,10 @@ a+b+c
 Ok(["one", "two"])
 [3, 2, 1]
 Some("x")
+8
+1024
+math.pow: the result is outside Int
+2025-11-12T07:45:48Z
 sha3-256:3997da0d8a19346db3fb4c5be74689b753e506c8a03f2bba28be7b3bd3125e8c
 ```
 

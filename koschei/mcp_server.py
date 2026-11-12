@@ -71,6 +71,10 @@ fn main() {
 - Enums: `enum Shape { Circle(Int), Empty }`; build with `Circle(2)`, `Empty()`;
   `match s { Circle(r) => r, Empty => 0 }` must cover every variant.
 - `print` writes without a newline; `println` adds one.
+- Math: `import math`, then `math.min`, `math.max`, `math.sign` (Int), `math.abs(x) or 0`, `math.pow(b, e) or 0`,
+  `math.clamp(x, lo, hi) or 0`, `math.gcd(a, b) or 0`, `math.min_float`, `math.max_float`, `math.abs_float`.
+- Dates: `import time`, then `time.iso_utc(ms) or "?"` (UTC, ms since 1970), `let t = time.utc(ms) or return Error("x")`
+  gives `t.year`, `t.month`, `t.day`, `t.hour`, `t.minute`, `t.second`, `t.weekday`; `time.from_utc(y, mo, d, h, mi, s) or 0`.
 - Operators: `+ - * / %`, `== != < <= > >=`, `&& || !`. `Int / Int` is integer division. `or` is only for errors.
 - `join` joins Strings only. Turn a number into a String with interpolation: `"{n}"`.
 - `match` is an expression (`let label = match s { ... }`) or a statement. Arms are separated by commas.
