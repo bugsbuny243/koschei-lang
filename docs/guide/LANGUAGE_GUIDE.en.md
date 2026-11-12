@@ -321,6 +321,84 @@ false
 Map keys are Strings and keep insertion order. `get` on a missing key is an
 Error value, so handle it with `or` or ask `contains` first.
 
+### JSON
+
+`parse_json` turns text into an opaque `Data` value; the `json_` functions
+read it. Braces inside a Koschei string are escaped (`\{`, `\}`) because
+`{...}` is interpolation.
+
+```ks
+fn price(item: Data) -> Int or Error {
+    let field = json_get(item, "price") or return Error("item has no price")
+    let value = json_int(field) or return Error("price is not a whole number")
+    return value
+}
+
+fn main() {
+    let text = "\{\"shop\":\"Ada's\",\"open\":true,\"items\":[\{\"name\":\"pen\",\"price\":3\},\{\"name\":\"ink\",\"price\":12\},\{\"name\":\"gift\"\}]\}"
+    let order = parse_json(text) or return Error("not JSON")
+    let shop = json_get(order, "shop") or return Error("no shop")
+    println(json_text(shop) or "?")
+    println(json_kind(order))
+    println(json_keys(order) or [])
+    println(json_has(order, "discount"))
+    let list = json_get(order, "items") or return Error("no items")
+    println(json_length(list) or 0)
+    let mut total = 0
+    for item in json_items(list) or [] {
+        let name = json_get(item, "name") or item
+        let cost = price(item) or 0
+        println("{json_text(name) or "?"}: {cost}")
+        total = total + cost
+    }
+    println(total)
+    let first = json_at(list, 0) or return Error("empty")
+    println(encode_json(first) or "?")
+    println(json_at(list, 9))
+    println(json_int(shop))
+}
+```
+
+```output
+Ada's
+object
+["shop", "open", "items"]
+false
+3
+pen: 3
+ink: 12
+gift: 0
+15
+{"name":"pen","price":3}
+KS3710: json_at(): index 9 is outside 0..2
+KS3709: json_int() expects a JSON number, found string
+```
+
+| Function | Returns | For |
+|---|---|---|
+| `parse_json(text)` | `Data or Error` | text to `Data` |
+| `encode_json(data)` | `String or Error` | `Data` back to canonical JSON text |
+| `json_kind(data)` | `String` | `"object"`, `"array"`, `"string"`, `"number"`, `"bool"` or `"null"` |
+| `json_has(data, key)` | `Bool` | whether an object has the member |
+| `json_get(data, key)` | `Data or Error` | an object member |
+| `json_at(data, index)` | `Data or Error` | an array element |
+| `json_text(data)` | `String or Error` | a JSON string |
+| `json_int(data)` | `Int or Error` | a whole number within `Int` |
+| `json_float(data)` | `Float or Error` | any number |
+| `json_bool(data)` | `Bool or Error` | `true` or `false` |
+| `json_length(data)` | `Int or Error` | elements of an array, members of an object |
+| `json_keys(data)` | `List<String> or Error` | member names, in document order |
+| `json_items(data)` | `List<Data> or Error` | array elements, to use with `for` |
+
+- Nothing is converted silently: `json_int` refuses `2.5` and a string, and
+  the wrong kind is a `KS3709` Error value. A missing member or index is
+  `KS3710`. Handle both with `or`.
+- A `Data` value cannot be printed or interpolated; call `encode_json` or
+  read a field first.
+- All of these are pure: they need no capability and work inside `pure fn`.
+- JSON runs under `ks run`. `ks build` refuses programs that use `Data`
+  (`KS4004`) until the native backend supports it.
+
 ### Bytes
 
 `String` is always UTF-8 text; binary data is `Bytes`, and the two never
