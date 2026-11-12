@@ -90,7 +90,7 @@ fn main() {
   also `json.bool(b)`, `json.null()`, `json.float(f) or "null"`. The result is a String.
 - URLs and forms: `import http`, then `http.route("/users/:id", target)` (Option of a Map; `or return ...`),
   `http.query(target) or return Error("bad query")`, `http.params(body)`, `http.decode(s)`, `http.path_of(target)`,
-  `http.escape_html(text)` before putting text in a page.
+  `http.escape_html(text)` before putting text in a page, `http.cookies(request.header("Cookie") or "")`.
 
 ## Capabilities
 

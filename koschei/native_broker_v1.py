@@ -660,7 +660,8 @@ func _ksBrokerLoop(channel *os.File) {{
 	for {{
 		// One value at the string budget plus a net_post body (1 MiB) and
 		// the small fields around them.
-		request, err := _ksReadFrame(channel, 6, _ksBrokerMaxField+(1<<21))
+		// serve_reply: five fields and up to 33 header pairs (serve_knowhere_v1).
+		request, err := _ksReadFrame(channel, 71, _ksBrokerMaxField+(1<<21))
 		if err != nil || len(request) == 0 {{
 			return
 		}}

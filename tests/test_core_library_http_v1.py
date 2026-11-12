@@ -174,6 +174,20 @@ fn main() {
             ["/a/b", "x=1?y", "", '["a", "b"]'],
         )
 
+    def test_cookies(self) -> None:
+        source = """import http
+
+fn main() {
+    println(http.cookies("sid=abc; theme=dark; sid=old; =x; flag; q=a=b ;  sp = v "))
+    println(http.cookies(""))
+    println(http.cookies("a=%20b"))
+}
+"""
+        self.assertEqual(
+            self.ks_run(self.write(source)).splitlines(),
+            ['{"sid": "abc", "theme": "dark", "q": "a=b", "sp": "v"}', "{}", '{"a": "%20b"}'],
+        )
+
     @unittest.skipIf(GO is None, "Go is not installed")
     def test_native_binary_prints_the_same(self) -> None:
         path = self.write(program())

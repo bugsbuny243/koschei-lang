@@ -7,7 +7,7 @@ Every module is written in Koschei and compiled with the program that imports it
 |---|---|---|
 | [`captain_marvel`](#captain_marvel) | 3 | 2 |
 | [`hela`](#hela) | 4 | 1 |
-| [`http`](#http) | 12 | 0 |
+| [`http`](#http) | 13 | 0 |
 | [`json`](#json) | 8 | 0 |
 | [`list`](#list) | 10 | 0 |
 | [`math`](#math) | 12 | 0 |
@@ -206,6 +206,14 @@ fn after_colon(segment: String) -> String
 ```
 
 "id" for ":id"; "" for a literal segment.
+
+### `http.cookies`
+
+```ks
+fn cookies(header: String) -> Map<String, String>
+```
+
+The cookies of a `Cookie` request header: "sid=abc; theme=dark". Values are returned as sent, not decoded. A piece without a name or `=` is skipped; when a name repeats, the first value wins, as browsers send the most specific cookie first.
 
 ### `http.escape_html`
 

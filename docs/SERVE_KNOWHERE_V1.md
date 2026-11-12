@@ -37,18 +37,43 @@ fn main(caps: SystemCaps) {
 | `server.accept()` | `HttpRequest or Error` | opens the listener on first use, accepts and reads one request |
 | `server.reply(status, body)` | `Void or Error` | answers the pending request as `text/plain; charset=utf-8` (`String` or `Bytes` body) and closes it |
 | `server.reply_as(status, content_type, body)` | `Void or Error` | the same with the given content type, such as `application/json` or `text/html; charset=utf-8` |
+| `server.reply_with(status, headers, body)` | `Void or Error` | the same with the program's own headers, a `Map<String, String>`: `Location` for a redirect, `Set-Cookie`, `Cache-Control`, a `Content-Type` (default `text/plain; charset=utf-8`) |
 | `request.method()`, `request.path()` | `String` | raw request line parts |
 | `request.header(name)` | `String or Error` | case-insensitive name; `KS3473` when absent |
 | `request.body()` | `String or Error` | `KS3430` when the body is not UTF-8 |
 | `request.body_bytes()` | `Bytes` | the body as received |
 
-Statuses: 200, 201, 204, 400, 403, 404, 405, 409, 413, 422, 429, 500, 503
-(`KS3472` otherwise; a 204 cannot carry a body). A content type is 1–256
+Statuses: 200, 201, 204, 301, 302, 303, 307, 308, 400, 401, 403, 404, 405,
+409, 413, 422, 429, 500, 503 (`KS3472` otherwise; a 204 cannot carry a body). A content type is 1–256
 printable ASCII characters with no space at either end, the rule of
 `NetCaps.post` (`docs/NET_V1.md`): a line break can never add a header.
 Otherwise the client gets `500` and `reply_as()` returns `KS3472`. Koschei
 does not build JSON or HTML for the program; the body is the text or bytes
 it gives.
+
+## Response headers
+
+`reply_with` sends the headers in the map's order, after `Content-Type` and
+before `Content-Length` and `Connection: close`, which the server always
+writes itself. The client gets `500` and the call returns `KS3472` when:
+
+- the map has more than 32 entries;
+- a name is not an HTTP token of 1–64 bytes, or appears twice in any case;
+- a name is `Connection`, `Content-Length`, `Keep-Alive`, `Proxy-Connection`,
+  `TE`, `Trailer`, `Transfer-Encoding` or `Upgrade`;
+- a value is not 1–4096 printable ASCII characters with no space at either
+  end. A line break is never printable, so a value cannot add a header;
+- a `Content-Type` breaks `reply_as`'s rule.
+
+The headers count toward `max_response_bytes`. One map holds one value per
+name, so a reply sets at most one cookie. `http.cookies(request.header("Cookie")
+or "")` reads the cookies a browser sends back.
+
+```text
+let sent = server.reply_with(303, {"Location": "/thanks", "Set-Cookie": "sid={id}; HttpOnly; Secure; SameSite=Lax; Path=/"}, "") or {
+    continue
+}
+```
 
 ## The Knowhere law: nothing carries over
 
