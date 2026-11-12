@@ -321,6 +321,84 @@ false
 Map anahtarları String'dir ve ekleme sırasını korur. Olmayan bir anahtarda
 `get` bir hata değeridir; `or` ile ele alın veya önce `contains` ile sorun.
 
+### JSON
+
+`parse_json` metni opak bir `Data` değerine çevirir; `json_` fonksiyonları onu
+okur. Koschei metinlerinde süslü parantezler kaçışlanır (`\{`, `\}`), çünkü
+`{...}` interpolasyondur.
+
+```ks
+fn price(item: Data) -> Int or Error {
+    let field = json_get(item, "price") or return Error("item has no price")
+    let value = json_int(field) or return Error("price is not a whole number")
+    return value
+}
+
+fn main() {
+    let text = "\{\"shop\":\"Ada's\",\"open\":true,\"items\":[\{\"name\":\"pen\",\"price\":3\},\{\"name\":\"ink\",\"price\":12\},\{\"name\":\"gift\"\}]\}"
+    let order = parse_json(text) or return Error("not JSON")
+    let shop = json_get(order, "shop") or return Error("no shop")
+    println(json_text(shop) or "?")
+    println(json_kind(order))
+    println(json_keys(order) or [])
+    println(json_has(order, "discount"))
+    let list = json_get(order, "items") or return Error("no items")
+    println(json_length(list) or 0)
+    let mut total = 0
+    for item in json_items(list) or [] {
+        let name = json_get(item, "name") or item
+        let cost = price(item) or 0
+        println("{json_text(name) or "?"}: {cost}")
+        total = total + cost
+    }
+    println(total)
+    let first = json_at(list, 0) or return Error("empty")
+    println(encode_json(first) or "?")
+    println(json_at(list, 9))
+    println(json_int(shop))
+}
+```
+
+```output
+Ada's
+object
+["shop", "open", "items"]
+false
+3
+pen: 3
+ink: 12
+gift: 0
+15
+{"name":"pen","price":3}
+KS3710: json_at(): index 9 is outside 0..2
+KS3709: json_int() expects a JSON number, found string
+```
+
+| Fonksiyon | Döndürür | Ne için |
+|---|---|---|
+| `parse_json(text)` | `Data or Error` | metinden `Data` |
+| `encode_json(data)` | `String or Error` | `Data` değerinden kanonik JSON metni |
+| `json_kind(data)` | `String` | `"object"`, `"array"`, `"string"`, `"number"`, `"bool"` veya `"null"` |
+| `json_has(data, key)` | `Bool` | nesnede üye var mı |
+| `json_get(data, key)` | `Data or Error` | nesne üyesi |
+| `json_at(data, index)` | `Data or Error` | dizi öğesi |
+| `json_text(data)` | `String or Error` | JSON metni |
+| `json_int(data)` | `Int or Error` | `Int` aralığındaki tam sayı |
+| `json_float(data)` | `Float or Error` | herhangi bir sayı |
+| `json_bool(data)` | `Bool or Error` | `true` veya `false` |
+| `json_length(data)` | `Int or Error` | dizinin öğe, nesnenin üye sayısı |
+| `json_keys(data)` | `List<String> or Error` | üye adları, belgedeki sırayla |
+| `json_items(data)` | `List<Data> or Error` | dizi öğeleri, `for` ile gezmek için |
+
+- Sessiz dönüşüm yapılmaz: `json_int`, `2.5` değerini ve metni reddeder; yanlış
+  tür `KS3709` hata değeridir. Eksik üye ya da dizin `KS3710` olur. İkisini de
+  `or` ile ele alın.
+- `Data` değeri yazdırılamaz ve interpolasyona giremez; önce `encode_json`
+  çağırın ya da bir alan okuyun.
+- Bunların hepsi saftır: yetki gerektirmez ve `pure fn` içinde çalışır.
+- JSON `ks run` altında çalışır. `ks build`, native arka uç destekleyene kadar
+  `Data` kullanan programları reddeder (`KS4004`).
+
 ### Bytes
 
 `String` her zaman UTF-8 metindir; ikili veri `Bytes`'tır ve ikisi asla

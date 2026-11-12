@@ -75,6 +75,13 @@ fn main() {
 - `join` joins Strings only. Turn a number into a String with interpolation: `"{n}"`.
 - `match` is an expression (`let label = match s { ... }`) or a statement. Arms are separated by commas.
 - `let x = f() or { println("failed") }` runs the block when `f` fails. Statements end at the newline; no semicolons.
+- `fn main()` may `return Error("why")`, also through `or return Error(...)`: the program stops with that message.
+- Inside a string literal write `\\"` for a double quote.
+- JSON: `let data = parse_json(text) or return Error("not JSON")`, then read with
+  `json_get(data, "key")`, `json_at(data, 0)`, `json_text(d)`, `json_int(d)`, `json_float(d)`, `json_bool(d)`,
+  `json_length(d)`, `json_keys(d)`, `json_items(d)` (all `or`-handled), `json_has(data, "key")`, `json_kind(d)`.
+  Write `{` and `}` inside a string literal as `\\{` and `\\}`. `encode_json(data)` gives the text back.
+  Bind each step with `let`: `let f = json_get(data, "n") or return Error("no n")` then `json_int(f) or 0`.
 
 ## Capabilities
 

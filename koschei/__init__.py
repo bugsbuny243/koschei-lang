@@ -333,6 +333,10 @@ from .capability_opacity_v1 import install_capability_opacity_v1
 
 install_capability_opacity_v1()
 
+from .data_access_v1 import install_data_access_v1
+
+install_data_access_v1()
+
 # Last: the value budget wraps the final behavior of every executor.
 from .value_budget_v1 import install_value_budget_v1
 
