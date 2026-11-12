@@ -27,6 +27,8 @@ SERVE_EXCHANGE = "serve.exchange"
 INPUT_READ = "input.read"
 CLOCK_READ = "clock.read"
 RANDOM_READ = "random.read"
+DB_READ = "db.read"
+DB_WRITE = "db.write"
 
 POWER_DOMAIN_IDENTITY = "identity"
 POWER_DOMAIN_AUTHORITY = "authority"
@@ -58,6 +60,7 @@ _SYSTEM_CAPABILITY_MEMBERS = {
     "serve": "ServeRoot",
     "input": "InputRoot",
     "clock": "ClockRoot",
+    "db": "DbRoot",
     "random": "RandomRoot",
 }
 
@@ -70,6 +73,7 @@ _ROOT_NARROWING = {
     "ServeRoot": {"allow": "ServeCaps"},
     "InputRoot": {"allow": "InputCaps"},
     "ClockRoot": {"allow": "ClockCaps"},
+    "DbRoot": {"allow": "DbCaps"},
     "RandomRoot": {"allow": "RandomCaps"},
 }
 
@@ -83,6 +87,7 @@ _NARROWED_OPERATIONS = {
     "ServeCaps": {"exchange", "accept", "reply", "reply_as", "reply_with"},
     "InputCaps": {"args", "read_text", "read_bytes"},
     "ClockCaps": {"now_ms", "monotonic_ms"},
+    "DbCaps": {"exec", "query"},
     "RandomCaps": {"hex", "below", "bytes"},
 }
 
@@ -98,6 +103,7 @@ _CAPABILITY_METHOD_EFFECTS = {
     "ServeRoot": {"allow": AUTHORITY_DERIVE},
     "InputRoot": {"allow": AUTHORITY_DERIVE},
     "ClockRoot": {"allow": AUTHORITY_DERIVE},
+    "DbRoot": {"allow": AUTHORITY_DERIVE},
     "RandomRoot": {"allow": AUTHORITY_DERIVE},
     "NetCaps": {
         "get": NET_IO,
@@ -133,6 +139,7 @@ _CAPABILITY_METHOD_EFFECTS = {
     },
     "InputCaps": {"args": INPUT_READ, "read_text": INPUT_READ, "read_bytes": INPUT_READ},
     "ClockCaps": {"now_ms": CLOCK_READ, "monotonic_ms": CLOCK_READ},
+    "DbCaps": {"exec": DB_WRITE, "query": DB_READ},
     "RandomCaps": {"hex": RANDOM_READ, "below": RANDOM_READ, "bytes": RANDOM_READ},
 }
 
@@ -165,6 +172,9 @@ _CAPABILITY_POWER_DOMAINS = {
     "ClockCaps": POWER_DOMAIN_DATA,
     "RandomRoot": POWER_DOMAIN_DATA,
     "RandomCaps": POWER_DOMAIN_DATA,
+    # A database file is durable state, like persist.
+    "DbRoot": POWER_DOMAIN_CONTINUITY,
+    "DbCaps": POWER_DOMAIN_CONTINUITY,
 }
 
 _EFFECT_POWER_DOMAINS = {
@@ -179,6 +189,8 @@ _EFFECT_POWER_DOMAINS = {
     INPUT_READ: POWER_DOMAIN_DATA,
     CLOCK_READ: POWER_DOMAIN_DATA,
     RANDOM_READ: POWER_DOMAIN_DATA,
+    DB_READ: POWER_DOMAIN_CONTINUITY,
+    DB_WRITE: POWER_DOMAIN_CONTINUITY,
 }
 
 SYSTEM_CAPABILITY_MEMBERS: Mapping[str, str] = MappingProxyType(

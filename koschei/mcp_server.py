@@ -35,6 +35,7 @@ DOMAIN_LABELS = {
     "process": "Process",
     "serve": "HTTP server",
     "persist": "Persistent state",
+    "db": "Database",
     "input": "Program input",
     "clock": "Clock",
     "random": "Random numbers",
@@ -91,6 +92,10 @@ fn main() {
 - URLs and forms: `import http`, then `http.route("/users/:id", target)` (Option of a Map; `or return ...`),
   `http.query(target) or return Error("bad query")`, `http.params(body)`, `http.decode(s)`, `http.path_of(target)`,
   `http.escape_html(text)` before putting text in a page, `http.cookies(request.header("Cookie") or "")`.
+- Database (only when the server allows `db`): `let db = caps.db.allow("/abs/app.db", 1000, 10485760, 2000)`,
+  `db.exec("INSERT INTO t (a) VALUES (?)", json.array([json.string(a)])) or return Error("x")` (rows changed),
+  `db.query("SELECT a FROM t WHERE id = ?", json.array([json.int(id)]))` gives Data (array of row objects).
+  SQL must be a literal string; values go only through `?` and the JSON array.
 
 ## Capabilities
 

@@ -32,9 +32,9 @@ MEMORY_BYTES = 512 * 1024 * 1024
 MAX_STEPS = 200_000
 
 # Every capability domain, in manifest order.
-ALL_DOMAINS = ("disk", "net", "env", "process", "serve", "persist", "input", "clock", "random")
+ALL_DOMAINS = ("disk", "net", "env", "process", "serve", "persist", "input", "clock", "random", "db")
 # Domains that reach outside the process. Clock and random are left out.
-SIDE_EFFECT_DOMAINS = ("disk", "net", "env", "process", "serve", "persist", "input")
+SIDE_EFFECT_DOMAINS = ("disk", "net", "env", "process", "serve", "persist", "input", "db")
 
 KS = [sys.executable, "-m", "koschei"]
 

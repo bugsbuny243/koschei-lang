@@ -539,6 +539,7 @@ usage: greet NAME
 | `caps.disk` | `allow(prefix)`, `allow_read_only(prefix)` | `read`, `write`, `list`, `delete` |
 | `caps.env` | `allow(name)` | `get()` |
 | `caps.net` | `allow(origin)` | `get(url)`, `post(url, content_type, body)` |
+| `caps.db` | `allow(path, max_rows, max_bytes, deadline_ms)` | `exec(sql, params)`, `query(sql, params)` |
 
 - A root cannot act directly (`KS2402`); a narrowed token cannot widen
   (`KS2403`) or do what it was not given (`KS2404`).
@@ -680,6 +681,45 @@ gets `404`. `ks caps` reports one grant: serve, `127.0.0.1:8080` with its
 four budgets. `0.0.0.0:8080` would listen on every interface, for a
 public server. The server runs the same under `ks build`. See [`../SERVE_KNOWHERE_V1.md`](../SERVE_KNOWHERE_V1.md) for every
 rule.
+
+### A database
+
+`caps.db.allow(path, max_rows, max_bytes, deadline_ms)` opens one SQLite
+file: an absolute path, the most rows a query may return, the largest the
+file may grow and how long one statement may run. `exec(sql, params)` returns
+the number of rows changed; `query(sql, params)` returns the rows as `Data`,
+a JSON array of objects read with the `json_` functions.
+
+The SQL must be a string literal. Values never go into the text: they bind
+to `?` placeholders from a JSON array built with the `json` module. A
+statement assembled at run time is `KS2462` at check time, so SQL injection
+cannot be written.
+
+```ks
+import json
+
+fn add_note(db: DbCaps, body: String) -> Int or Error {
+    let made = db.exec("CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY, body TEXT NOT NULL)", "[]") or return Error("cannot create the table")
+    let added = db.exec("INSERT INTO notes (body) VALUES (?)", json.array([json.string(body)])) or return Error("cannot save the note")
+    let rows = db.query("SELECT count(*) AS total FROM notes", "[]") or return Error("cannot count")
+    let row = json_at(rows, 0) or return Error("no row")
+    let total = json_get(row, "total") or return Error("no total")
+    let count = json_int(total) or return Error("not a number")
+    return count
+}
+
+fn main(caps: SystemCaps) {
+    let db = caps.db.allow("/tmp/notes.db", 1000, 10485760, 2000)
+    let count = add_note(db, "buy tea") or 0
+    println("{count} notes")
+}
+```
+
+Each run adds a row: the first prints `1 notes`, the next `2 notes`. A
+statement may read and write tables, indexes, views and triggers; `ATTACH`,
+`PRAGMA` and extensions are refused (`KS3484`), so the program reaches this
+one file only. The database works under `ks run`; `ks build` refuses it for
+now (`KS4004`). See [`../DB_V1.md`](../DB_V1.md).
 
 ## 10. Tools
 

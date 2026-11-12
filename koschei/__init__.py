@@ -317,6 +317,10 @@ from .clock_random_v1 import install_clock_random_v1
 
 install_clock_random_v1()
 
+from .db_v1 import install_db_v1
+
+install_db_v1()
+
 from .bytes_v1 import install_bytes_v1
 
 install_bytes_v1()
