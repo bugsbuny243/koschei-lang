@@ -452,20 +452,29 @@ CATALOG: tuple[Family, ...] = (
     ),
     _family(
         "database",
-        "planned",
+        "partial",
         "v1",
         "Query-scoped database capabilities and bounded results.",
-        _planned(
-            "query",
-            capability="DatabaseCaps",
-            required=("deadline", "rows", "bytes"),
-            security_sensitive=True,
+        _reserved(
+            "allow",
+            capability="DbRoot",
+            note="db_v1: one SQLite file, static path and budgets; ks run only, native refuses (KS4004).",
         ),
-        _planned(
-            "transaction",
-            capability="DatabaseCaps",
-            required=("deadline", "statements"),
+        _reserved(
+            "exec",
+            capability="DbCaps",
+            required=("deadline", "bytes"),
+            enforced=("deadline", "bytes"),
             security_sensitive=True,
+            note="Literal SQL with ? parameters under an authorizer; ks run only (Python sqlite3).",
+        ),
+        _reserved(
+            "query",
+            capability="DbCaps",
+            required=("deadline", "rows", "bytes"),
+            enforced=("deadline", "rows", "bytes"),
+            security_sensitive=True,
+            note="Rows as Data; ks run only (Python sqlite3).",
         ),
     ),
     _family(

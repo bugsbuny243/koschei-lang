@@ -539,6 +539,7 @@ usage: greet NAME
 | `caps.disk` | `allow(prefix)`, `allow_read_only(prefix)` | `read`, `write`, `list`, `delete` |
 | `caps.env` | `allow(name)` | `get()` |
 | `caps.net` | `allow(origin)` | `get(url)`, `post(url, content_type, body)` |
+| `caps.db` | `allow(path, max_rows, max_bytes, deadline_ms)` | `exec(sql, params)`, `query(sql, params)` |
 
 - Kök yetki doğrudan iş yapamaz (`KS2402`); daraltılmış jeton genişleyemez
   (`KS2403`) ve kendisine verilmeyeni yapamaz (`KS2404`).
@@ -680,6 +681,46 @@ fn main(caps: SystemCaps) {
 bütçesi. `0.0.0.0:8080` bütün arayüzlerden dinler; herkese açık sunucu
 böyle açılır. Sunucu `ks build` ile de aynı çalışır. Bütün kurallar için
 [`../SERVE_KNOWHERE_V1.md`](../SERVE_KNOWHERE_V1.md).
+
+### Veritabanı
+
+`caps.db.allow(yol, en_fazla_satır, en_fazla_bayt, süre_ms)` tek bir SQLite
+dosyası açar: mutlak bir yol, bir sorgunun döndürebileceği en çok satır,
+dosyanın büyüyebileceği en büyük boyut ve bir deyimin çalışabileceği süre.
+`exec(sql, parametreler)` değişen satır sayısını, `query(sql, parametreler)`
+satırları `Data` olarak döndürür: `json_` fonksiyonlarıyla okunan bir JSON
+nesne dizisi.
+
+SQL bir metin literali olmalıdır. Değerler metne hiç girmez: `json` modülüyle
+kurulan bir JSON dizisinden `?` yer tutucularına bağlanır. Çalışma anında
+birleştirilen bir deyim denetimde `KS2462` hatasıdır; SQL enjeksiyonu
+yazılamaz.
+
+```ks
+import json
+
+fn add_note(db: DbCaps, body: String) -> Int or Error {
+    let made = db.exec("CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY, body TEXT NOT NULL)", "[]") or return Error("cannot create the table")
+    let added = db.exec("INSERT INTO notes (body) VALUES (?)", json.array([json.string(body)])) or return Error("cannot save the note")
+    let rows = db.query("SELECT count(*) AS total FROM notes", "[]") or return Error("cannot count")
+    let row = json_at(rows, 0) or return Error("no row")
+    let total = json_get(row, "total") or return Error("no total")
+    let count = json_int(total) or return Error("not a number")
+    return count
+}
+
+fn main(caps: SystemCaps) {
+    let db = caps.db.allow("/tmp/notes.db", 1000, 10485760, 2000)
+    let count = add_note(db, "buy tea") or 0
+    println("{count} notes")
+}
+```
+
+Her çalıştırma bir satır ekler: ilki `1 notes`, sonraki `2 notes` yazar. Bir
+deyim tablo, indeks, görünüm ve tetikleyicileri okuyup yazabilir; `ATTACH`,
+`PRAGMA` ve eklentiler reddedilir (`KS3484`), program yalnızca bu dosyaya
+erişir. Veritabanı `ks run` ile çalışır; `ks build` şimdilik reddeder
+(`KS4004`). Ayrıntılar: [`../DB_V1.md`](../DB_V1.md).
 
 ## 10. Araçlar
 

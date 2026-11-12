@@ -74,6 +74,7 @@ CAPABILITY_MEMBERS = {
     "persist": "PersistRoot",
     "input": "InputRoot",
     "clock": "ClockRoot",
+    "db": "DbRoot",
     "random": "RandomRoot",
 }
 
@@ -86,6 +87,7 @@ ROOT_METHODS: dict[str, dict[str, str]] = {
     "PersistRoot": {"allow": "PersistCaps"},
     "InputRoot": {"allow": "InputCaps"},
     "ClockRoot": {"allow": "ClockCaps"},
+    "DbRoot": {"allow": "DbCaps"},
     "RandomRoot": {"allow": "RandomCaps"},
 }
 
@@ -99,6 +101,7 @@ NARROWED_METHODS: dict[str, set[str]] = {
     "PersistCaps": {"load", "commit"},
     "InputCaps": {"args", "read_text", "read_bytes"},
     "ClockCaps": {"now_ms", "monotonic_ms"},
+    "DbCaps": {"exec", "query"},
     "RandomCaps": {"hex", "below", "bytes"},
 }
 

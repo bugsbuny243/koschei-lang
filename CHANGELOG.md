@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Add the database capability under `ks run`: `caps.db.allow(path, max_rows, max_bytes, deadline_ms)` opens one SQLite file, `exec(sql, params)` changes rows and `query(sql, params)` returns them as `Data`. SQL must be a string literal and values bind to `?` placeholders from a JSON array, so a statement built from text is `KS2462` at check time. An authorizer refuses `ATTACH` (and so `VACUUM INTO`), `PRAGMA`, virtual tables and `load_extension` (`KS3484`); rows, file size and statement time are bounded (`KS3482`, `KS3483`). `ks caps` names the file, `--deny db` refuses it, the playground and MCP server deny it by default, and `ks build` refuses it (`KS4004`). See `docs/DB_V1.md`.
+
 ## 0.12.0 — 2026-11-12
 
 - Add `ServeCaps.reply_with(status, headers, body)` under `ks run` and in native binaries: the program sends its own response headers from a `Map<String, String>`, such as `Location`, `Set-Cookie` or `Cache-Control`. Names must be HTTP tokens and appear once, values printable ASCII, so a value can never add a header; the server keeps writing `Content-Length` and `Connection` and refuses them, `Transfer-Encoding` and the other framing headers (`KS3472`, the client gets `500`). Replies may use 301, 302, 303, 307, 308 and 401. `http.cookies` reads a `Cookie` header.
