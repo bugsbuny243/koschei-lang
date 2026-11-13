@@ -348,6 +348,33 @@ false
 Map keys are Strings and keep insertion order. `get` on a missing key is an
 Error value, so handle it with `or` or ask `contains` first.
 
+Structs take type parameters too. `Page { items: [90, 75, 60], total: 3 }`
+is a `Page<Int>`; an annotation states it, and a value of the wrong type is
+refused at check time.
+
+```ks
+struct Page<T> {
+    items: List<T>,
+    total: Int,
+}
+
+fn count<T>(page: Page<T>) -> Int {
+    return page.items.length()
+}
+
+fn main() {
+    let names: Page<String> = Page { items: ["ada", "alan"], total: 2 }
+    let scores = Page { items: [90, 75, 60], total: 3 }
+    println(count(names))
+    println(count(scores))
+}
+```
+
+```output
+2
+3
+```
+
 ### JSON
 
 `parse_json` turns text into an opaque `Data` value; the `json_` functions
