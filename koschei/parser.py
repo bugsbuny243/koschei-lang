@@ -7,6 +7,7 @@ from ._parser_v09 import ParserError, _OR_RETURN_STOP
 from .ast_nodes import (
     EnumVariant,
     Expression,
+    Identifier,
     OrBlockExpression,
     OrElseExpression,
     OrReturnExpression,
@@ -33,10 +34,61 @@ _SIGIL_TOKENS = {
 }
 
 
+# Lambdas become top-level functions with these names; a program may not
+# declare one itself.
+LAMBDA_PREFIX = "__lambda_"
+
+
 class Parser(_ParserV09):
+    def __init__(self, tokens) -> None:
+        super().__init__(tokens)
+        self._lambdas: list[GenericFunctionDeclaration] = []
+
     @classmethod
     def from_source(cls, source: str) -> "Parser":
         return cls(tokenize(source))
+
+    def _primary(self) -> Expression:
+        # `fn(x: Int) -> Bool { return x > 0 }` in an expression is a lambda.
+        # It is lifted to a top-level function with a reserved name, so it
+        # runs exactly like a named one: no runtime, MIR or native change.
+        # Its body sees only its parameters, globals and modules; a variable
+        # of the enclosing function is undefined there (KS1101).
+        if self._check(TokenType.FN):
+            return self._lambda()
+        return super()._primary()
+
+    def _lambda(self) -> Expression:
+        fn_token = self._advance()
+        self._consume(TokenType.LEFT_PAREN, "Lambda 'fn' sonrasında '(' bekleniyordu.")
+        parameters: list[Parameter] = []
+        if not self._check(TokenType.RIGHT_PAREN):
+            while True:
+                parameters.append(self._parameter())
+                if not self._match(TokenType.COMMA):
+                    break
+                if self._check(TokenType.RIGHT_PAREN):
+                    break
+        self._consume(TokenType.RIGHT_PAREN, "Lambda parametrelerinden sonra ')' bekleniyordu.")
+        return_type: TypeRef | None = None
+        if self._match(TokenType.ARROW):
+            return_type = self._type_ref()
+        body = self._block()
+        location = self._location(fn_token)
+        name = f"{LAMBDA_PREFIX}{fn_token.line}_{fn_token.column}"
+        self._lambdas.append(
+            GenericFunctionDeclaration(
+                name=name,
+                parameters=tuple(parameters),
+                return_type=return_type,
+                body=body,
+                location=location,
+                is_pure=False,
+                type_parameters=(),
+                is_transition=False,
+            )
+        )
+        return Identifier(name, location)
 
     def _match_contextual(self, value: str) -> bool:
         if self._check(TokenType.IDENTIFIER) and self._peek().value == value:
@@ -80,7 +132,14 @@ class Parser(_ParserV09):
             elif self._check(TokenType.ENUM):
                 enums.append(self._enum_declaration())
             else:
-                declarations.append(self._function_declaration())
+                declaration = self._function_declaration()
+                if declaration.name.startswith(LAMBDA_PREFIX):
+                    raise ParserError(
+                        f"[satır {declaration.location.line}, sütun {declaration.location.column}] "
+                        f"'{LAMBDA_PREFIX}' ile başlayan adlar lambda'lara ayrılmıştır."
+                    )
+                declarations.append(declaration)
+        declarations.extend(self._lambdas)
 
         return NativeProgram(
             tuple(declarations),
@@ -265,6 +324,8 @@ class Parser(_ParserV09):
 def parse_expression(source: str) -> Expression:
     parser = Parser.from_source(source)
     expression = parser._expression()
+    if parser._lambdas:
+        raise ParserError("İnterpolasyon içinde lambda kullanılamaz; önce bir değişkene atayın.")
     if not parser._is_at_end():
         parser._error(
             parser._peek(),

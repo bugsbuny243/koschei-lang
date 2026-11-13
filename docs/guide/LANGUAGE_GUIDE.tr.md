@@ -176,12 +176,39 @@ go
   `join(list)`, `to_int()`, `to_float()`. `split`, `to_int` ve `to_float`
   başarısız olabilir; `or` ile ele alın.
 - List metotları: `length()`, `get(index)`, `push(item)`, `contains(item)`,
-  `sort()`, `filter(function)`, `map(function)`. `filter` ve `map` adlandırılmış
-  bir fonksiyon alır; lambda yoktur. `sort`, `filter` ve `map` başarısız
+  `sort()`, `filter(function)`, `map(function)`. `filter` ve `map` bir fonksiyon
+  adı ya da lambda (aşağıda) alır. `sort`, `filter` ve `map` başarısız
   olabilir; `or` ile ele alın.
 - `print` satır sonu eklemeden yazar; `println` ekler.
 - `match` ifade olarak da deyim olarak da çalışır. Payload taşımayan varyant
   parantezle kurulur (`Green()`), parantezsiz eşlenir (`Green`).
+
+### Lambda'lar
+
+Bir değer beklenen yerde yazılan `fn(parametreler) -> Tip { ... }` bir
+lambda'dır: adı olmayan bir fonksiyon. Fonksiyon adının geçebildiği her yere
+geçer: `filter`, `map`, `any`, `partition`, `scan` ya da bir değişken.
+
+```ks
+fn main() {
+    let numbers = [5, -2, 8, 0]
+    println(numbers.filter(fn(x: Int) -> Bool { return x > 0 }) or [])
+    println(numbers.map(fn(x: Int) -> Int { return x * x }) or [])
+    let shout = fn(word: String) -> String { return "{word}!" }
+    println(shout("tea"))
+}
+```
+
+```output
+[5, 8]
+[25, 4, 64, 0]
+tea!
+```
+
+Lambda değer yakalamaz: gövdesi kendi parametrelerini, diğer fonksiyonları ve
+içe aktarılan modülleri görür; yazıldığı fonksiyonun değişkenlerini asla
+görmez (`KS1103`). Böyle bir değeri parametre olarak verin ya da adlandırılmış
+bir fonksiyon yazın. Böylece bir lambda bir yetki jetonunu gizlice tutamaz.
 
 ## 4. Hatalar değerdir
 
