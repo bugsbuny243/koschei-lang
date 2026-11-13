@@ -8,7 +8,7 @@ RUN pip install --no-cache-dir koschei-lang==0.14.0 \
     && chown forms:forms /data
 
 WORKDIR /app
-COPY main.ks rules.ks pages.ks csv.ks ./
+COPY main.ks rules.ks pages.ks csv.ks LICENSE.md ./
 
 USER forms
 EXPOSE 8080
