@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.13.0 — 2026-11-13
 
 - Add the database capability under `ks run`: `caps.db.allow(path, max_rows, max_bytes, deadline_ms)` opens one SQLite file, `exec(sql, params)` changes rows and `query(sql, params)` returns them as `Data`. SQL must be a string literal and values bind to `?` placeholders from a JSON array, so a statement built from text is `KS2462` at check time. An authorizer refuses `ATTACH` (and so `VACUUM INTO`), `PRAGMA`, virtual tables and `load_extension` (`KS3484`); rows, file size and statement time are bounded (`KS3482`, `KS3483`). `ks caps` names the file, `--deny db` refuses it, the playground and MCP server deny it by default, and `ks build` refuses it (`KS4004`). See `docs/DB_V1.md`.
 

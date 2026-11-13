@@ -26,7 +26,7 @@ from typing import Any
 from . import untrusted
 
 PROTOCOL_VERSION = "2025-06-18"
-SERVER_INFO = {"name": "koschei", "title": "Koschei", "version": "0.12.0"}
+SERVER_INFO = {"name": "koschei", "title": "Koschei", "version": "0.13.0"}
 
 DOMAIN_LABELS = {
     "disk": "Disk",
