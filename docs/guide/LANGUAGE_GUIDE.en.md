@@ -177,11 +177,38 @@ go
   can fail, so handle them with `or`.
 - List methods: `length()`, `get(index)`, `push(item)`, `contains(item)`,
   `sort()`, `filter(function)`, `map(function)`. `filter` and `map` take a
-  named function; there are no lambdas. `sort`, `filter` and `map` can fail,
+  function name or a lambda (below). `sort`, `filter` and `map` can fail,
   so handle them with `or`.
 - `print` writes without a newline; `println` adds one.
 - `match` works as a statement as well as an expression. A variant without a
   payload is built with parentheses (`Green()`) and matched without (`Green`).
+
+### Lambdas
+
+`fn(parameters) -> Type { ... }` written where a value is expected is a
+lambda: a function without a name. It goes wherever a function name can go,
+such as `filter`, `map`, `any`, `partition` and `scan`, or into a variable.
+
+```ks
+fn main() {
+    let numbers = [5, -2, 8, 0]
+    println(numbers.filter(fn(x: Int) -> Bool { return x > 0 }) or [])
+    println(numbers.map(fn(x: Int) -> Int { return x * x }) or [])
+    let shout = fn(word: String) -> String { return "{word}!" }
+    println(shout("tea"))
+}
+```
+
+```output
+[5, 8]
+[25, 4, 64, 0]
+tea!
+```
+
+A lambda does not capture: its body sees its own parameters, other functions
+and imported modules, never a variable of the function it is written in
+(`KS1103`). Pass such a value as a parameter, or write a named function. So
+a lambda can never quietly hold a capability token.
 
 ## 4. Errors are values
 

@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Add lambdas: `fn(x: Int) -> Bool { return x > 0 }` where a value is expected is an anonymous function, usable with `filter`, `map`, `any`, `partition`, `scan` or in a variable. The parser lifts it to a top-level function with a reserved `__lambda_` name, so the checker, every executor and the effect rules treat it as a named function. A lambda does not capture: using a variable of the enclosing function is `KS1103`. Both language guides gain a section.
+- Run `ks run` about twice as fast. The canonical MIR executor runs its commonest instructions (arithmetic, loads, stores, bindings, calls, member access, error tests) inline instead of through a 30-step type dispatch and charges the step budget inline; the runtime capability registry is built once instead of on every member access; and parsed type texts are cached. A million-iteration loop drops from 8.5 s to 3.5 s and a call- and string-heavy program from 7.4 s to 3.3 s. Results, Error values and step counts are unchanged: `tests/test_canonical_mir_fast_path_v1.py` runs the same programs through the full dispatch and compares output and steps.
+
 ## 0.13.0 — 2026-11-13
 
 - Add the database capability under `ks run`: `caps.db.allow(path, max_rows, max_bytes, deadline_ms)` opens one SQLite file, `exec(sql, params)` changes rows and `query(sql, params)` returns them as `Data`. SQL must be a string literal and values bind to `?` placeholders from a JSON array, so a statement built from text is `KS2462` at check time. An authorizer refuses `ATTACH` (and so `VACUUM INTO`), `PRAGMA`, virtual tables and `load_extension` (`KS3484`); rows, file size and statement time are bounded (`KS3482`, `KS3483`). `ks caps` names the file, `--deny db` refuses it, the playground and MCP server deny it by default, and `ks build` refuses it (`KS4004`). See `docs/DB_V1.md`.

@@ -321,6 +321,10 @@ from .db_v1 import install_db_v1
 
 install_db_v1()
 
+from .lambda_v1 import install_lambda_v1
+
+install_lambda_v1()
+
 from .bytes_v1 import install_bytes_v1
 
 install_bytes_v1()

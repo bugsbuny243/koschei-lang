@@ -54,6 +54,17 @@ CATALOG: dict[str, Diagnostic] = {
         ),
         example="let user_name = \"onur\"\nprintln(\"Merhaba {user_name}\")",
     ),
+    "KS1103": Diagnostic(
+        code="KS1103",
+        title="Lambda çevresindeki değişkeni kullanıyor",
+        summary="Bir lambda yalnızca kendi parametrelerini, diğer fonksiyonları ve modülleri görür.",
+        why=(
+            "Lambda'lar değer yakalamaz: bir lambda, tanımlandığı fonksiyonun değişkenlerine "
+            "ve jetonlarına gizlice erişemez. Neye eriştiği imzasında görünür."
+        ),
+        fix="Değeri lambda'ya parametre olarak verin ya da adlandırılmış bir fonksiyon yazın.",
+        example="fn above(x: Int, limit: Int) -> Bool { return x > limit }",
+    ),
     "KS1102": Diagnostic(
         code="KS1102",
         title="Aynı scope içinde tekrar tanım",
@@ -837,6 +848,12 @@ ENGLISH_TEXT: dict[str, tuple[str, str, str, str]] = {
         "The variable, parameter, or function is not defined in this scope.",
         "Every name must be declared before use so spelling and scope mistakes fail during compilation.",
         "Check the spelling, declare the value with 'let', pass it as a parameter, or move the use into the declaring scope.",
+    ),
+    "KS1103": (
+        "Lambda uses a variable of the enclosing function",
+        "A lambda sees only its own parameters, other functions and modules.",
+        "Lambdas do not capture: a lambda cannot quietly reach the variables or tokens of the function it is written in. What it uses is visible in its signature.",
+        "Pass the value to the lambda as a parameter, or write a named function.",
     ),
     "KS1102": (
         "Duplicate definition",

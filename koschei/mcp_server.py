@@ -64,7 +64,7 @@ fn main() {
 - Errors are values: `fn f() -> Int or Error`, `return Error("why")`.
   Handle with `or default`, `or return Error("...")`, or `or { ... }`.
 - Lists are immutable values: `xs.push(x)` returns a new list. Methods: length, get, push, contains, sort, filter, map.
-  `get`, `sort`, `filter`, `map` can fail: `xs.get(0) or 0`. `filter`/`map` take a named function; no lambdas.
+  `get`, `sort`, `filter`, `map` can fail: `xs.get(0) or 0`. `filter`/`map` take a function name or a lambda `fn(x: Int) -> Bool { return x > 0 }`; a lambda cannot use outer variables.
 - Empty collections need a type: `let mut xs: List<Int> = []`, `let mut m: Map<String, Int> = {}`.
 - Maps: `{"a": 1}`, `m.get("a") or 0`, `m.set("b", 2)` (returns a new map), `m.keys()`, `m.contains("a")`.
 - Strings: length, contains, trim, split(sep) or [], sep.join(list), to_int() or 0, to_float() or 0.0.
