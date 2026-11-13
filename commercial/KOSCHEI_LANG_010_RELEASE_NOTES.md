@@ -1,8 +1,18 @@
-# Koschei Lang 0.12.0 — Release Notes
+# Koschei Lang 0.13.0 — Release Notes
 
 **Product:** Koschei Lang (independent of Koschei Sentinel and Web3 Hub)  
-**Version:** 0.12.0  
+**Version:** 0.13.0  
 **Release line:** commercially licensed, pre-1.0 language/toolchain
+
+## New in 0.13.0
+
+- A database: `caps.db.allow(path, max_rows, max_bytes, deadline_ms)`
+  opens one SQLite file; `exec(sql, params)` changes rows and
+  `query(sql, params)` returns them as `Data`. SQL must be a string literal
+  and values bind to `?` placeholders, so SQL injection cannot be written.
+  `ATTACH`, `PRAGMA` and extensions are refused; rows, file size and
+  statement time are bounded. Works under `ks run`; `ks build` refuses it
+  for now. See `docs/DB_V1.md` in the source repository.
 
 ## New in 0.12.0
 

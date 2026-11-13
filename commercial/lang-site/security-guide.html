@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="dark">
-  <meta name="description" content="A technical walkthrough of Koschei Lang 0.12.0 capability security: compile-time rejection with KS2401, permission manifests and CI gates.">
+  <meta name="description" content="A technical walkthrough of Koschei Lang 0.13.0 capability security: compile-time rejection with KS2401, permission manifests and CI gates.">
   <meta name="robots" content="index,follow">
   <link rel="canonical" href="https://koschei.dev/security-guide.html">
   <link rel="alternate" hreflang="en" href="https://koschei.dev/security-guide.html">
@@ -50,7 +50,7 @@
 <body>
   <header><div class="wrap"><a class="brand" href="/">KOSCHEI <b>LANG</b></a><a class="toplink" href="/security-guide.tr.html" lang="tr">Türkçe →</a></div></header>
   <main class="wrap">
-    <span class="tag">Technical guide · Koschei Lang 0.12.0 · pre-1.0</span>
+    <span class="tag">Technical guide · Koschei Lang 0.13.0 · pre-1.0</span>
     <h1>Why should imported code inherit <em>all</em> your permissions?</h1>
     <p class="lead">Koschei Lang is an independent programming language centered on <strong>explicit capability values</strong>. In Koschei source, a function must be given authority before it can read the disk, access the network, inspect the environment or launch a process.</p>
     <p>Many development workflows make it easy for a dependency to perform operations with the ambient permissions of its host process. Koschei takes a more explicit approach for code compiled by its own toolchain: access must appear in the program's authority flow, and unauthorized operations can be rejected before execution.</p>
@@ -93,7 +93,7 @@ fn main(caps: SystemCaps) {
     </div>
 
     <h2>4. Know what this does <em>not</em> claim</h2>
-    <p>Koschei Lang 0.12.0 is <strong>pre-1.0</strong>. Its capability rules apply to the supported Koschei language/toolchain boundary. They do not make arbitrary third-party executables safe, secure a compromised endpoint, prevent stolen credentials or unauthorized wallet signing, or provide independent banking-system certification. Native builds currently use a Go-based adapter rather than a self-hosted compiler.</p>
+    <p>Koschei Lang 0.13.0 is <strong>pre-1.0</strong>. Its capability rules apply to the supported Koschei language/toolchain boundary. They do not make arbitrary third-party executables safe, secure a compromised endpoint, prevent stolen credentials or unauthorized wallet signing, or provide independent banking-system certification. Native builds currently use a Go-based adapter rather than a self-hosted compiler.</p>
 
     <h2>5. Try the included examples</h2>
     <p>The Individual commercial license includes the toolchain ZIP, Core Library, security examples, English/Turkish guides and a 12-month window of subsequent releases. One named developer can use acquired releases perpetually for commercial development, under the included license.</p>

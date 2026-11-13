@@ -1,8 +1,18 @@
-# Koschei Lang 0.12.0 — Sürüm Notları
+# Koschei Lang 0.13.0 — Sürüm Notları
 
 **Ürün:** Koschei Lang (Koschei Sentinel ve Web3 Hub'dan bağımsız)  
-**Sürüm:** 0.12.0  
+**Sürüm:** 0.13.0  
 **Ürün hattı:** ticari lisanslı, 1.0 öncesi programlama dili ve araç zinciri
+
+## 0.13.0'da yeni
+
+- Veritabanı: `caps.db.allow(yol, en_fazla_satır, en_fazla_bayt, süre_ms)`
+  tek bir SQLite dosyası açar; `exec(sql, parametreler)` satırları
+  değiştirir, `query(sql, parametreler)` onları `Data` olarak döndürür. SQL
+  bir metin literali olmalıdır, değerler `?` yer tutucularına bağlanır; SQL
+  enjeksiyonu yazılamaz. `ATTACH`, `PRAGMA` ve eklentiler reddedilir;
+  satır, dosya boyutu ve deyim süresi sınırlıdır. `ks run` ile çalışır;
+  `ks build` şimdilik reddeder. Ayrıntılar kaynak depodaki `docs/DB_V1.md`.
 
 ## 0.12.0'da yeni
 
