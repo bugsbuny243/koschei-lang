@@ -1,8 +1,19 @@
-# Koschei Lang 0.13.0 — Release Notes
+# Koschei Lang 0.14.0 — Release Notes
 
 **Product:** Koschei Lang (independent of Koschei Sentinel and Web3 Hub)  
-**Version:** 0.13.0  
+**Version:** 0.14.0  
 **Release line:** commercially licensed, pre-1.0 language/toolchain
+
+## New in 0.14.0
+
+- `ks run` is about twice as fast: a million-iteration loop drops from
+  8.5 s to 3.5 s. Results, Error values and step counts are unchanged.
+- Lambdas: `xs.filter(fn(x: Int) -> Bool { return x > 0 })`. A lambda does
+  not capture variables of the enclosing function, so it can never quietly
+  hold a capability.
+- Generic structs work with annotations (`let page: Page<Int> = ...`) and
+  in generic functions that swap type parameters; type mismatches print
+  source types such as `Pair<Int, String>`.
 
 ## New in 0.13.0
 
