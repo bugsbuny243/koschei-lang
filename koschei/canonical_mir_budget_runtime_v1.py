@@ -16,10 +16,27 @@ from typing import Any
 
 from . import interpreter
 from .interpreter import KsError, KsUnit
-from .mir_executor_v1 import MirExecutionError, MirExecutorV1, _runtime_names
-from .mir_ir import MirAstFallback, MirBranch, MirJump, MirReturn, MirUnreachable
+from .mir_executor_v1 import MirExecutionError, MirExecutorV1, _MirModuleRef, _runtime_names
+from .mir_ir import (
+    MirAstFallback,
+    MirBinary,
+    MirBind,
+    MirBranch,
+    MirCall,
+    MirConst,
+    MirJump,
+    MirLoad,
+    MirMember,
+    MirReturn,
+    MirStore,
+    MirUnreachable,
+)
+from .mir_extension_instructions_v4 import MirIsRuntimeError
+from .semantic import INT_MAX, INT_MIN
 from .mir_instruction_registry_v4 import require_mir_v4_graph_registry
 from .runtime_boot_v1 import require_runtime_ready
+from .runtime_budget import RuntimeBudget
+from .runtime_primitive_facade_v1 import KoscheiFunctionRefV1
 
 
 class BudgetedCanonicalMirExecutorV1(MirExecutorV1):
@@ -79,6 +96,13 @@ class BudgetedCanonicalMirExecutorV1(MirExecutorV1):
         values: dict[int, Any] = {}
         blocks = {block.id: block for block in function.blocks}
         block_id = 0
+        budget = self.runtime_budget
+        consume_step = budget.consume_step
+        inline_budget = type(budget) is RuntimeBudget
+        primitives = self.primitives
+        is_runtime_error = primitives.is_runtime_error
+        execute = self._execute_instruction
+        binary = self._binary
         self.depth += 1
         try:
             while True:
@@ -93,12 +117,63 @@ class BudgetedCanonicalMirExecutorV1(MirExecutorV1):
                 # Charge every instruction and every block transition.  The
                 # latter prevents an empty-block cycle from escaping the budget.
                 for instruction in block.instructions:
-                    self.runtime_budget.consume_step(instruction.location)
-                    self._execute_instruction(
-                        module.key, instruction, values, bindings
-                    )
+                    # RuntimeBudget.consume_step, inlined: it raises once
+                    # steps passes max_steps, so call it only at the limit.
+                    if inline_budget and budget.steps < budget.max_steps:
+                        budget.steps += 1
+                    else:
+                        consume_step(instruction.location)
+                    # Fast paths for the commonest instructions, exactly as
+                    # MirExecutorV1._execute_instruction runs them; anything
+                    # else, and every failure, takes the full dispatch.
+                    kind = type(instruction)
+                    if kind is MirBinary:
+                        values[instruction.target] = binary(instruction, values)
+                        continue
+                    if kind is MirLoad:
+                        cell = bindings.get(instruction.name)
+                        if cell is not None:
+                            values[instruction.target] = cell[0]
+                            continue
+                    elif kind is MirConst:
+                        value = instruction.value
+                        if type(value) is not int or INT_MIN <= value <= INT_MAX:
+                            values[instruction.target] = value
+                            continue
+                    elif kind is MirStore:
+                        cell = bindings.get(instruction.name)
+                        if cell is not None and cell[1]:
+                            cell[0] = values[instruction.source]
+                            continue
+                    elif kind is MirBind:
+                        bindings[instruction.name] = [values[instruction.source], instruction.is_mutable]
+                        continue
+                    elif kind is MirIsRuntimeError:
+                        values[instruction.target] = is_runtime_error(values[instruction.source])
+                        continue
+                    elif kind is MirCall:
+                        callee = values[instruction.callee]
+                        arguments = [values[item] for item in instruction.arguments]
+                        values[instruction.target] = (
+                            self._invoke_function_ref(callee, arguments)
+                            if isinstance(callee, KoscheiFunctionRefV1)
+                            else primitives.invoke_primitive(callee, arguments, instruction.location)
+                        )
+                        continue
+                    elif kind is MirMember:
+                        receiver = values[instruction.object]
+                        if isinstance(receiver, _MirModuleRef):
+                            values[instruction.target] = primitives.function_ref(
+                                receiver.module_key, instruction.member
+                            )
+                        else:
+                            values[instruction.target] = primitives.member(
+                                receiver, instruction.member, instruction.location
+                            )
+                        continue
+                    execute(module.key, instruction, values, bindings)
                 terminator = block.terminator
-                self.runtime_budget.consume_step(
+                consume_step(
                     getattr(terminator, "location", function.declaration.location)
                 )
 
