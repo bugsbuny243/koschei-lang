@@ -1,8 +1,19 @@
-# Koschei Lang 0.13.0 — Sürüm Notları
+# Koschei Lang 0.14.0 — Sürüm Notları
 
 **Ürün:** Koschei Lang (Koschei Sentinel ve Web3 Hub'dan bağımsız)  
-**Sürüm:** 0.13.0  
+**Sürüm:** 0.14.0  
 **Ürün hattı:** ticari lisanslı, 1.0 öncesi programlama dili ve araç zinciri
+
+## 0.14.0'da yeni
+
+- `ks run` yaklaşık iki kat hızlı: bir milyon turluk döngü 8,5 saniyeden
+  3,5 saniyeye indi. Sonuçlar, hata değerleri ve adım sayıları değişmedi.
+- Lambda'lar: `xs.filter(fn(x: Int) -> Bool { return x > 0 })`. Lambda
+  çevresindeki fonksiyonun değişkenlerini yakalamaz; bir yetki jetonunu
+  gizlice tutamaz.
+- Generic struct'lar tip anotasyonuyla (`let page: Page<Int> = ...`) ve tip
+  parametrelerinin yerini değiştiren generic fonksiyonlarda çalışır; tip
+  hataları `Pair<Int, String>` gibi kaynak tipleriyle yazılır.
 
 ## 0.13.0'da yeni
 

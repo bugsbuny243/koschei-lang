@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.14.0 — 2026-11-13
 
 - Fix generic structs under `ks run`: an annotation such as `let page: Page<Int> = Page { ... }` was refused (`KS1301`, "found Page") because the compatibility checker sees generic structs erased, and a generic function that built an instance with its own parameters swapped (`swap<A, B>(p: Pair<A, B>) -> Pair<B, A>`) stopped with `KS3401`/`KS3106` on the canonical MIR executor. Type mismatches now print source types (`Expected Pair<Int, Int>, found Pair<Int, String>`) instead of internal nodes. Native builds still refuse generic structs.
 - Add lambdas: `fn(x: Int) -> Bool { return x > 0 }` where a value is expected is an anonymous function, usable with `filter`, `map`, `any`, `partition`, `scan` or in a variable. The parser lifts it to a top-level function with a reserved `__lambda_` name, so the checker, every executor and the effect rules treat it as a named function. A lambda does not capture: using a variable of the enclosing function is `KS1103`. Both language guides gain a section.
