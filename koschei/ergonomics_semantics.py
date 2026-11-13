@@ -60,6 +60,14 @@ def _coarse_collection(expected, actual):
 
 
 def _attach_type_details(error, expected, actual):
+    # Typed HIR passes structural type nodes; show them as source types.
+    from .type_system import GenericType, NamedType, TypeVariable, UnionType, UnknownType, render_type
+
+    node_types = (GenericType, NamedType, TypeVariable, UnionType, UnknownType)
+    if isinstance(expected, node_types):
+        expected = render_type(expected)
+    if isinstance(actual, node_types):
+        actual = render_type(actual)
     error.v010_details = {
         "en": f"Expected {expected}, found {actual or 'unknown'}.",
         "tr": f"Beklenen {expected}, bulunan {actual or 'bilinmiyor'}.",

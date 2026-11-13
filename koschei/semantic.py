@@ -1014,6 +1014,15 @@ class SemanticChecker:
             return True
         expected_base, expected_args = self._generic_type(expected)
         actual_base, actual_args = self._generic_type(actual)
+        # Generic user structs reach this checker erased to their base name
+        # (legacy_types.erase_node); Typed HIR has already checked their type
+        # arguments, so `Box<Int>` and the erased `Box` are the same here.
+        if (
+            expected_base == actual_base
+            and bool(expected_args) != bool(actual_args)
+            and expected_base in self.structs
+        ):
+            return True
         if expected_base != actual_base or len(expected_args) != len(actual_args):
             return False
         if not expected_args:

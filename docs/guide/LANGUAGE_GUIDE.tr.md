@@ -348,6 +348,33 @@ false
 Map anahtarları String'dir ve ekleme sırasını korur. Olmayan bir anahtarda
 `get` bir hata değeridir; `or` ile ele alın veya önce `contains` ile sorun.
 
+Struct'lar da tip parametresi alır. `Page { items: [90, 75, 60], total: 3 }`
+bir `Page<Int>` değeridir; anotasyon bunu açıkça yazar, yanlış tipte bir
+değer denetimde reddedilir.
+
+```ks
+struct Page<T> {
+    items: List<T>,
+    total: Int,
+}
+
+fn count<T>(page: Page<T>) -> Int {
+    return page.items.length()
+}
+
+fn main() {
+    let names: Page<String> = Page { items: ["ada", "alan"], total: 2 }
+    let scores = Page { items: [90, 75, 60], total: 3 }
+    println(count(names))
+    println(count(scores))
+}
+```
+
+```output
+2
+3
+```
+
 ### JSON
 
 `parse_json` metni opak bir `Data` değerine çevirir; `json_` fonksiyonları onu
