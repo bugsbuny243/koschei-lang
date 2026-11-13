@@ -3,7 +3,6 @@
 Product name: **Koschei Forms**
 Price: **19 USD, one-time** (pay what you want: off)
 Benefit: file download `koschei-forms-1.0.0.zip` (build with `python tools/forms_bundle_v1.py`)
-Live demo: https://koschei-forms-demo-production.up.railway.app
 
 ## English
 
