@@ -75,12 +75,12 @@ def isolated_probe() -> None:
                     preexec_fn=untrusted._limit_child,
                 )
                 check(
-                    result.returncode == 0 and result.stdout == b"ISOLATION_OK\\n",
+                    result.returncode == 0 and result.stdout == b"ISOLATION_OK\n",
                     "child filesystem/network isolation probe failed",
                 )
 
     # Prove that both policy checking and actual .ks execution still work.
-    allowed = untrusted.evaluate('fn main() { println("playground-ok") }\\n', "run")
+    allowed = untrusted.evaluate('fn main() { println("playground-ok") }\n', "run")
     check(
         allowed.get("stage") == "run"
         and allowed.get("ran") is True
@@ -89,10 +89,10 @@ def isolated_probe() -> None:
         "sandboxed Koschei program failed to execute",
     )
     blocked = untrusted.evaluate(
-        'fn main(caps: SystemCaps) {\\n'
-        ' let disk = caps.disk.allow_read_only("/etc")\\n'
-        ' println(disk.read("/etc/passwd"))\\n'
-        '}\\n',
+        'fn main(caps: SystemCaps) {\n'
+        ' let disk = caps.disk.allow_read_only("/etc")\n'
+        ' println(disk.read("/etc/passwd"))\n'
+        '}\n',
         "run",
     )
     check(
