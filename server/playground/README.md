@@ -155,17 +155,64 @@ Unknown mode values abort startup; an execution startup failure never switches
 automatically into website-only mode. This setting is separate from
 `KOSCHEI_UNTRUSTED_SANDBOX`: disabling the sandbox is not an alternative.
 
-This is the first step toward separating website hosting from an isolated
-execution worker. It does **not** implement a remote worker or solve #389.
-Before adding a worker, require a reviewed isolation policy and successful
-live acceptance evidence for its exact release, authenticated private transport,
-bounded queues and deadlines, and no local-execution fallback when it fails.
-Keep online evaluation disabled until that path is implemented and verified.
+This mode keeps the website independent of execution availability. The proposed
+remote worker below does **not** solve host incompatibility (#389). Keep online
+evaluation disabled until a separate worker passes live isolation acceptance.
 
 For an approved website-only deployment, set the environment variable on the
 hosting service. Do not claim deployment success solely from `/health`; also
 check the homepage, `/play` and an evaluation POST for the responses above.
 Re-enabling execution requires the existing live isolation release gates.
+
+### Proposed remote worker (not approved for production execution)
+
+The frontend now supports `KOSCHEI_PLAYGROUND_MODE=remote`. Requests go to one
+operator-configured `KOSCHEI_WORKER_URL` HTTPS origin, authenticated with
+`KOSCHEI_WORKER_TOKEN` (64 hexadecimal characters generated from 32 random bytes).
+The token belongs in the service secret store, never in HTML, URLs, source code
+or commits. Only the frontend and worker should possess it. Rotate by returning
+the frontend to disabled mode, replacing both secrets, checking readiness and
+then explicitly re-enabling remote mode.
+
+Remote transport uses certificate and hostname verification, never follows
+redirects, does not discover HTTP proxies from the environment, caps responses
+at 128 KiB and validates result structure and per-stream output size. It uses a
+25-second socket timeout (not a guaranteed total DNS/request deadline). Errors
+produce the existing sanitized HTTP 503 sandbox response; there is no retry or
+local execution fallback. The frontend retains its request limits and bounded
+evaluation slots. An authenticated versioned worker health response is required
+before the remote frontend listens. Frontend `/health` reports whether execution
+is configured, not a continuously probed guarantee of worker availability.
+
+Run the worker entrypoint with `python server/playground/worker.py` (or
+`python worker.py` in the image). It requires all of:
+
+- `KOSCHEI_PLAYGROUND_MODE=enabled`
+- `KOSCHEI_UNTRUSTED_SANDBOX=bwrap`
+- `KOSCHEI_REQUIRE_CONTAINER_LIMITS=1`
+- the same secret `KOSCHEI_WORKER_TOKEN`
+- successful live cgroup and namespace startup admission
+
+The worker defaults to `127.0.0.1:8081`; `KOSCHEI_WORKER_BIND` and `PORT` control
+the listener. It offers only authenticated `/health` and `/api/evaluate`, with
+the same capability policy, output limits and evaluation concurrency controls
+as the local Playground. Unauthorized requests are rejected before body reads.
+Tokens are not forwarded into compiler subprocess environments.
+
+The worker's HTTP listener must remain behind a private TLS ingress. Binding it
+to `0.0.0.0` does **not** add TLS or network access control. A host operator must
+provide the reviewed isolation runtime, private routing/firewall and trusted
+TLS termination; restrict callers to the frontend, set ingress connection/body
+deadlines and request limits, and prevent direct public access to the listener.
+No cloud resources, TLS ingress or compatible worker host are provisioned by
+this patch. The existing reference Docker profile still has the known namespace
+blocker; moving this entrypoint into that profile does not fix it.
+
+Release gates: successful exact-release kernel isolation evidence, actual
+non-malicious Koschei execution and capability denial, end-to-end frontend/worker
+acceptance with deployment TLS and credentials, timeout/load testing and a
+review of host policy. Unit transport tests and local TLS tests mock evaluation;
+they prove neither a working production sandbox nor isolation from host data.
 
 ### Evaluation responses
 

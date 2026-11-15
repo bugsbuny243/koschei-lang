@@ -27,6 +27,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from koschei import untrusted
+from koschei.playground_remote import RemoteEvaluator
 from koschei.untrusted import MAX_OUTPUT_BYTES, MAX_SOURCE_BYTES, SIDE_EFFECT_DOMAINS, outcome
 from koschei.untrusted import truncate as _truncate
 
@@ -65,12 +66,19 @@ CANONICAL_HOST = os.environ.get("KOSCHEI_CANONICAL_HOST", "")
 
 def playground_mode() -> str:
     mode = os.environ.get("KOSCHEI_PLAYGROUND_MODE", "enabled")
-    if mode not in ("enabled", "disabled"):
-        raise ValueError("KOSCHEI_PLAYGROUND_MODE must be enabled or disabled")
+    if mode not in ("enabled", "disabled", "remote"):
+        raise ValueError("KOSCHEI_PLAYGROUND_MODE must be enabled, disabled or remote")
     return mode
 
 
 PLAYGROUND_MODE = playground_mode()
+REMOTE_WORKER: RemoteEvaluator | None = None
+
+
+def evaluation_enabled() -> bool:
+    return PLAYGROUND_MODE == "enabled" or (PLAYGROUND_MODE == "remote" and REMOTE_WORKER is not None)
+
+
 UNAVAILABLE_HTML = b"""<!doctype html>
 <html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width">
 <title>Playground temporarily unavailable - Koschei</title>
@@ -92,6 +100,10 @@ DENIED_DOMAINS = SIDE_EFFECT_DOMAINS
 
 def evaluate(source: str, action: str, lang: str = "en") -> dict:
     """Check, and for action == "run" also execute, one Koschei program."""
+    if PLAYGROUND_MODE == "remote":
+        if REMOTE_WORKER is None:
+            raise untrusted.SandboxUnavailable("Remote evaluation service unavailable")
+        return REMOTE_WORKER.evaluate(source, action, lang)
     if PLAYGROUND_MODE != "enabled":
         raise untrusted.SandboxUnavailable("Online code execution is disabled")
     return untrusted.evaluate(source, action, lang, DENIED_DOMAINS)
@@ -147,7 +159,7 @@ class Handler(BaseHTTPRequestHandler):
         return self.client_address[0]
 
     def _playground_page(self) -> None:
-        if PLAYGROUND_MODE != "enabled":
+        if not evaluation_enabled():
             self._send(HTTPStatus.SERVICE_UNAVAILABLE, UNAVAILABLE_HTML,
                        "text/html; charset=utf-8", SITE_CSP)
             return
@@ -181,7 +193,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Cache-Control", "public, max-age=86400")
             self.end_headers()
         elif path == "/health":
-            self._json(HTTPStatus.OK, {"ok": True, "evaluation_enabled": PLAYGROUND_MODE == "enabled"})
+            self._json(HTTPStatus.OK, {"ok": True, "evaluation_enabled": evaluation_enabled()})
         else:
             self._json(HTTPStatus.NOT_FOUND, {"error": "not_found"})
 
@@ -191,7 +203,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.path != "/api/evaluate":
             self._json(HTTPStatus.NOT_FOUND, {"error": "not_found"})
             return
-        if PLAYGROUND_MODE != "enabled":
+        if not evaluation_enabled():
             # Reject before reading the body or invoking any compiler path.
             self.close_connection = True
             self._json(HTTPStatus.SERVICE_UNAVAILABLE, {
@@ -249,10 +261,15 @@ def log_event(result: dict) -> None:
 
 
 def main() -> None:
+    global REMOTE_WORKER
     # Fail closed on hosts that disallow required user/mount/network namespaces.
     # Do not expose the playground with a silently weakened sandbox.
-    if PLAYGROUND_MODE not in ("enabled", "disabled"):
+    if PLAYGROUND_MODE not in ("enabled", "disabled", "remote"):
         raise ValueError("Invalid Playground mode")
+    if PLAYGROUND_MODE == "remote":
+        candidate = RemoteEvaluator.from_environment()
+        candidate.require_ready()
+        REMOTE_WORKER = candidate
     if PLAYGROUND_MODE == "enabled":
         untrusted.require_container_limits()
         untrusted.require_sandbox_ready()
