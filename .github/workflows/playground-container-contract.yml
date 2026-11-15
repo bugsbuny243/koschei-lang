@@ -40,6 +40,8 @@ jobs:
             tests/test_playground_namespace_confinement_v1.py \
             tests/test_playground_output_capture_v1.py \
             tests/test_playground_server.py
+      - name: Check live probe Python syntax
+        run: python -m py_compile server/playground/runtime_security_probe.py
       - name: Validate hardened Compose service configuration
         run: docker compose -f server/playground/compose.security.yaml config --quiet
       - name: Build hardened Playground Docker image
