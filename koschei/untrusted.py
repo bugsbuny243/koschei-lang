@@ -113,11 +113,18 @@ def require_sandbox_ready() -> None:
         return
 
     with tempfile.TemporaryDirectory(prefix="ks-sandbox-preflight-") as workdir:
+        # Compare namespace identities to the parent, not merely the
+        # requested bubblewrap flags. Mount and network confinement are both
+        # mandatory; an ignored or disabled unshare must refuse startup.
+        parent_net = os.readlink("/proc/self/ns/net")
+        parent_mnt = os.readlink("/proc/self/ns/mnt")
         probe = (
             "import os; "
             "assert os.getcwd() == '/work'; "
             "assert not os.path.exists('/etc/passwd'); "
-            "print('KOSCHEI_SANDBOX_READY')"
+            "print('KOSCHEI_SANDBOX_READY', "
+            "os.readlink('/proc/self/ns/net'), "
+            "os.readlink('/proc/self/ns/mnt'))"
         )
         command = _sandbox_command([sys.executable, "-c", probe], workdir)
         try:
@@ -133,7 +140,14 @@ def require_sandbox_ready() -> None:
             )
         except (OSError, subprocess.TimeoutExpired) as error:
             raise SandboxUnavailable("OS sandbox preflight failed") from error
-        if completed.returncode != 0 or completed.stdout != b"KOSCHEI_SANDBOX_READY\n":
+        parts = completed.stdout.decode("ascii", "replace").strip().split()
+        if (
+            completed.returncode != 0
+            or len(parts) != 3
+            or parts[0] != "KOSCHEI_SANDBOX_READY"
+            or parts[1] == parent_net
+            or parts[2] == parent_mnt
+        ):
             raise SandboxUnavailable("OS sandbox preflight failed; refusing to start")
 
 
