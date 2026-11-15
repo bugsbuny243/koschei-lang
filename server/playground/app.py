@@ -62,6 +62,25 @@ PLAY_CSP = SITE_CSP.replace("connect-src 'none'", "connect-src 'self'")
 # are redirected to this canonical host so one address is shared and indexed.
 CANONICAL_HOST = os.environ.get("KOSCHEI_CANONICAL_HOST", "")
 
+
+def playground_mode() -> str:
+    mode = os.environ.get("KOSCHEI_PLAYGROUND_MODE", "enabled")
+    if mode not in ("enabled", "disabled"):
+        raise ValueError("KOSCHEI_PLAYGROUND_MODE must be enabled or disabled")
+    return mode
+
+
+PLAYGROUND_MODE = playground_mode()
+UNAVAILABLE_HTML = b"""<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<title>Playground temporarily unavailable - Koschei</title>
+<style>body{margin:0;background:#0d1215;color:#dde6e2;font:16px/1.6 system-ui,sans-serif}
+main{max-width:640px;margin:12vh auto;padding:24px}h1{font-size:28px}
+p{color:#a7b4ae}a{color:#9fd9bd}</style>
+<main><h1>Playground temporarily unavailable</h1>
+<p>Online code execution is paused. You can still browse the Koschei website.</p>
+<p><a href="/">Back to Koschei</a></p></main></html>"""
+
 RATE_LIMIT_REQUESTS = 30
 RATE_LIMIT_WINDOW_SECONDS = 60
 MAX_CONCURRENT_EVALUATIONS = int(os.environ.get("KOSCHEI_MAX_CONCURRENT_EVALUATIONS", "4"))
@@ -73,6 +92,8 @@ DENIED_DOMAINS = SIDE_EFFECT_DOMAINS
 
 def evaluate(source: str, action: str, lang: str = "en") -> dict:
     """Check, and for action == "run" also execute, one Koschei program."""
+    if PLAYGROUND_MODE != "enabled":
+        raise untrusted.SandboxUnavailable("Online code execution is disabled")
     return untrusted.evaluate(source, action, lang, DENIED_DOMAINS)
 
 
@@ -125,6 +146,13 @@ class Handler(BaseHTTPRequestHandler):
         # deployment-specific mechanism; the direct peer is the safe default.
         return self.client_address[0]
 
+    def _playground_page(self) -> None:
+        if PLAYGROUND_MODE != "enabled":
+            self._send(HTTPStatus.SERVICE_UNAVAILABLE, UNAVAILABLE_HTML,
+                       "text/html; charset=utf-8", SITE_CSP)
+            return
+        self._send(HTTPStatus.OK, INDEX_HTML.read_bytes(), "text/html; charset=utf-8", PLAY_CSP)
+
     def do_GET(self) -> None:  # noqa: N802
         path = self.path.split("?", 1)[0]
         host = self.headers.get("Host", "").split(":")[0].lower()
@@ -142,18 +170,18 @@ class Handler(BaseHTTPRequestHandler):
             return
         site = SITE_FILES.get(path)
         if path in ("/play", "/play/"):
-            self._send(HTTPStatus.OK, INDEX_HTML.read_bytes(), "text/html; charset=utf-8", PLAY_CSP)
+            self._playground_page()
         elif site and (SITE_DIR / site[0]).is_file():
             self._send(HTTPStatus.OK, (SITE_DIR / site[0]).read_bytes(), site[1], SITE_CSP)
         elif path in ("/", "/index.html"):
             # No product site bundled: the playground is the home page.
-            self._send(HTTPStatus.OK, INDEX_HTML.read_bytes(), "text/html; charset=utf-8", PLAY_CSP)
+            self._playground_page()
         elif path == "/favicon.ico":
             self.send_response(HTTPStatus.NO_CONTENT)
             self.send_header("Cache-Control", "public, max-age=86400")
             self.end_headers()
         elif path == "/health":
-            self._json(HTTPStatus.OK, {"ok": True})
+            self._json(HTTPStatus.OK, {"ok": True, "evaluation_enabled": PLAYGROUND_MODE == "enabled"})
         else:
             self._json(HTTPStatus.NOT_FOUND, {"error": "not_found"})
 
@@ -162,6 +190,14 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:  # noqa: N802
         if self.path != "/api/evaluate":
             self._json(HTTPStatus.NOT_FOUND, {"error": "not_found"})
+            return
+        if PLAYGROUND_MODE != "enabled":
+            # Reject before reading the body or invoking any compiler path.
+            self.close_connection = True
+            self._json(HTTPStatus.SERVICE_UNAVAILABLE, {
+                "error": "evaluation_disabled",
+                "message": "Online code execution is temporarily unavailable.",
+            })
             return
         if not LIMITER.allow(self._client()):
             self._json(HTTPStatus.TOO_MANY_REQUESTS, {"error": "rate_limited", "message": "Too many requests; wait a minute and try again."})
@@ -215,8 +251,11 @@ def log_event(result: dict) -> None:
 def main() -> None:
     # Fail closed on hosts that disallow required user/mount/network namespaces.
     # Do not expose the playground with a silently weakened sandbox.
-    untrusted.require_container_limits()
-    untrusted.require_sandbox_ready()
+    if PLAYGROUND_MODE not in ("enabled", "disabled"):
+        raise ValueError("Invalid Playground mode")
+    if PLAYGROUND_MODE == "enabled":
+        untrusted.require_container_limits()
+        untrusted.require_sandbox_ready()
     port = int(os.environ.get("PORT", "8080"))
     ThreadingHTTPServer(("0.0.0.0", port), Handler).serve_forever()
 

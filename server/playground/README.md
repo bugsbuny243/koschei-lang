@@ -135,6 +135,40 @@ by passing the static tests alone.
 
 ## API
 
+### Website-only operation while execution is unavailable
+
+Set `KOSCHEI_PLAYGROUND_MODE=disabled` explicitly to serve the product site
+without accepting code execution. Restart the process after changing it.
+In this mode:
+
+- `/`, the documentation pages and discovery files remain available.
+- `/play` and `/play/` show a temporary-unavailability page with HTTP 503.
+- `/api/evaluate` rejects both `check` and `run` with HTTP 503 and
+  `error: evaluation_disabled`, before reading the body or invoking the compiler.
+- `/health` returns `ok: true, evaluation_enabled: false`. This is website
+  health, **not** proof that an execution worker is ready.
+- Execution-only namespace and cgroup admission checks are not run because
+  no evaluation is accepted. External container/host controls still apply.
+
+The default is `enabled`, preserving the existing execution startup gates.
+Unknown mode values abort startup; an execution startup failure never switches
+automatically into website-only mode. This setting is separate from
+`KOSCHEI_UNTRUSTED_SANDBOX`: disabling the sandbox is not an alternative.
+
+This is the first step toward separating website hosting from an isolated
+execution worker. It does **not** implement a remote worker or solve #389.
+Before adding a worker, require a reviewed isolation policy and successful
+live acceptance evidence for its exact release, authenticated private transport,
+bounded queues and deadlines, and no local-execution fallback when it fails.
+Keep online evaluation disabled until that path is implemented and verified.
+
+For an approved website-only deployment, set the environment variable on the
+hosting service. Do not claim deployment success solely from `/health`; also
+check the homepage, `/play` and an evaluation POST for the responses above.
+Re-enabling execution requires the existing live isolation release gates.
+
+### Evaluation responses
+
 `POST /api/evaluate` with `{"source": "...", "action": "run" | "check"}` returns:
 
 - `stage`: `policy`, `check` or `run`
@@ -142,4 +176,4 @@ by passing the static tests alone.
 - `policy`: the output of the policy and check step
 - `run`: the program's output, when it ran
 
-`GET /health` returns `{"ok": true}`.
+`GET /health` returns `{"ok": true, "evaluation_enabled": true}` in enabled mode.
