@@ -259,3 +259,18 @@ def test_concurrent_evaluation_limit(server, monkeypatch):
         assert data["error"] == "busy"
     finally:
         app.EVALUATION_SLOTS.release()
+
+
+def test_required_sandbox_failure_returns_503(server, monkeypatch):
+    """Unexpected sandbox loss must not fall back to unrestricted execution."""
+    def unavailable(*args, **kwargs):
+        raise app.untrusted.SandboxUnavailable("no user namespaces")
+
+    monkeypatch.setattr(app, "evaluate", unavailable)
+    status, data = _post(
+        server + "/api/evaluate",
+        json.dumps({"source": HELLO, "action": "run"}).encode(),
+    )
+    assert status == 503
+    assert data["error"] == "sandbox_unavailable"
+    assert "no user namespaces" not in json.dumps(data)
