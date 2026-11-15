@@ -75,6 +75,26 @@ Local `python server/playground/app.py` still defaults to resource-limited
 development mode without OS namespace/cgroup gates. **Use only with trusted
 local code**.
 
+### Verified incompatibility: GitHub-hosted Docker
+
+On 15 November 2026 the [live integration attempt](https://github.com/bugsbuny243/koschei-lang/actions/runs/43721126775) built the hardened Docker image and passed the cgroup/seccomp preflight, but refused startup at the bubblewrap namespace preflight:
+
+```text
+bwrap: No permissions to create new namespace, likely because the kernel
+does not allow non-privileged user namespaces.
+```
+
+**This is a real deployment compatibility blocker** for the tested Docker
+runner, not evidence that the Playground is safely executable there.
+The service correctly fails closed, and the positive live acceptance job
+remains red. Do not disable `no-new-privileges` / seccomp, run privileged,
+or switch `KOSCHEI_UNTRUSTED_SANDBOX=off` to make the job green.
+
+Use a dedicated host that supports the required isolation or a separately
+sandboxed worker. That host must rerun the **same positive acceptance
+checks** and provide a successful cgroup/namespace/API runtime receipt.
+The static test and image-build workflow passing alone is not sufficient.
+
 ### Validation before enabling public access
 
 ```sh
