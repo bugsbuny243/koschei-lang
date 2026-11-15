@@ -26,13 +26,48 @@ def check(condition: bool, reason: str) -> None:
         raise RuntimeError("PLAYGROUND ISOLATION DENIED: " + reason)
 
 
+def report_bubblewrap_diagnostic() -> None:
+    """Capture a minimal, non-secret namespace-launch failure reason."""
+    with tempfile.TemporaryDirectory(prefix="ks-diagnostic-") as root:
+        command = untrusted._sandbox_command(
+            [sys.executable, "-c", "print('BWRAP_EXEC_OK')"], root
+        )
+        try:
+            result = subprocess.run(
+                command,
+                cwd=root,
+                env=untrusted._child_env(),
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                timeout=5,
+                preexec_fn=untrusted._limit_child,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            print(
+                "BWRAP_DIAGNOSTIC: launch failed (" + type(exc).__name__ + ")",
+                file=sys.stderr,
+            )
+            return
+        # This is intentionally limited to the sandbox tool's diagnostic;
+        # never log the untrusted program or user-submitted source.
+        details = result.stderr.decode("utf-8", "replace")[:500].strip()
+        print(
+            f"BWRAP_DIAGNOSTIC: exit={result.returncode} stderr={details!r}",
+            file=sys.stderr,
+        )
+
+
 def isolated_probe() -> None:
     # Verify the intended parent service has kernel-enforced resource limits
     # and the child launcher passes its startup namespace requirements.
     check(os.environ.get("KOSCHEI_UNTRUSTED_SANDBOX") == "bwrap", "sandbox disabled")
     check(os.environ.get("KOSCHEI_REQUIRE_CONTAINER_LIMITS") == "1", "cgroup check disabled")
     untrusted.require_container_limits()
-    untrusted.require_sandbox_ready()
+    try:
+        untrusted.require_sandbox_ready()
+    except untrusted.SandboxUnavailable:
+        report_bubblewrap_diagnostic()
+        raise
 
     # A listening socket in the *parent* network namespace should be
     # unreachable from the child. Loopback avoids external network probes.
