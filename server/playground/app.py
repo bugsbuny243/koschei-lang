@@ -187,6 +187,12 @@ class Handler(BaseHTTPRequestHandler):
                 result = evaluate(source, action, lang)
             finally:
                 EVALUATION_SLOTS.release()
+        except untrusted.SandboxUnavailable:
+            self._json(
+                HTTPStatus.SERVICE_UNAVAILABLE,
+                {"error": "sandbox_unavailable", "message": "The evaluation sandbox is unavailable."},
+            )
+            return
         except (ValueError, KeyError, TypeError, json.JSONDecodeError):
             self._json(HTTPStatus.BAD_REQUEST, {"error": "invalid_request", "message": "Send JSON with a 'source' string and action 'check' or 'run'."})
             return
