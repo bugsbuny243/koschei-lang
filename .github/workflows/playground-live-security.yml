@@ -26,9 +26,19 @@ jobs:
 
       - name: Prove real Linux namespace and cgroup isolation
         run: |
+          set -o pipefail
           docker compose -f server/playground/compose.security.yaml \
             run --rm --no-deps -T playground \
-            python /opt/playground/runtime_security_probe.py
+            python /opt/playground/runtime_security_probe.py 2>&1 | tee playground-isolation.log
+
+      - name: Save exact-candidate isolation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playground-isolation-${{ github.sha }}
+          path: playground-isolation.log
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Start hardened HTTP server
         run: docker compose -f server/playground/compose.security.yaml up -d --no-build

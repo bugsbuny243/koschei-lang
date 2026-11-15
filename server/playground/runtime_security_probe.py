@@ -26,6 +26,42 @@ def check(condition: bool, reason: str) -> None:
         raise RuntimeError("PLAYGROUND ISOLATION DENIED: " + reason)
 
 
+def host_security_snapshot(proc: Path = Path("/proc"), cgroup: Path = Path("/sys/fs/cgroup")) -> dict:
+    """Allowlisted, bounded evidence only; never dump environment or host files.
+
+    Seccomp mode is not the filter itself. These observations cannot identify
+    which of seccomp, an LSM, or a kernel namespace restriction denied bwrap.
+    Missing evidence is reported as unknown, never as proof of compatibility.
+    """
+    def read(path: Path) -> str | None:
+        try:
+            with path.open(encoding="ascii", errors="replace") as stream:
+                return stream.read(4096).strip()
+        except OSError:
+            return None
+
+    status = read(proc / "self/status") or ""
+    fields = dict(line.split(":", 1) for line in status.splitlines() if ":" in line)
+    return {
+        "process": {key: fields.get(key, "unknown").strip() for key in (
+            "Seccomp", "Seccomp_filters", "NoNewPrivs", "CapEff",
+        )},
+        "namespace_controls": {name: read(proc / path) for name, path in {
+            "max_user_namespaces": "sys/user/max_user_namespaces",
+            "unprivileged_userns_clone": "sys/kernel/unprivileged_userns_clone",
+            "apparmor_restrict_unprivileged_userns": "sys/kernel/apparmor_restrict_unprivileged_userns",
+        }.items()},
+        "cgroup": {name: read(cgroup / name) for name in (
+            "memory.max", "cpu.max", "pids.max",
+        )},
+        "denial_source": "undetermined: inspect effective seccomp and LSM policies on the host",
+    }
+
+
+def report_host_security() -> None:
+    print("HOST_SECURITY: " + json.dumps(host_security_snapshot(), sort_keys=True), file=sys.stderr)
+
+
 def report_bubblewrap_diagnostic() -> None:
     """Capture a minimal, non-secret namespace-launch failure reason."""
     with tempfile.TemporaryDirectory(prefix="ks-diagnostic-") as root:
@@ -62,6 +98,7 @@ def isolated_probe() -> None:
     # and the child launcher passes its startup namespace requirements.
     check(os.environ.get("KOSCHEI_UNTRUSTED_SANDBOX") == "bwrap", "sandbox disabled")
     check(os.environ.get("KOSCHEI_REQUIRE_CONTAINER_LIMITS") == "1", "cgroup check disabled")
+    report_host_security()
     untrusted.require_container_limits()
     try:
         untrusted.require_sandbox_ready()

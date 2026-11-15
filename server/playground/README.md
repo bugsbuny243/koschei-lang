@@ -66,7 +66,27 @@ disable security. Do **not** use `--privileged`, `seccomp:unconfined`, a
 disabled `no-new-privileges` flag, or
 `KOSCHEI_UNTRUSTED_SANDBOX=off` on a public service.
 
-Use a compatible dedicated host or a separately isolated execution worker.
+Moving the same Compose service to a dedicated host is **not sufficient**.
+Docker's [default seccomp policy](https://docs.docker.com/engine/security/seccomp/)
+restricts namespace-related `clone`/`unshare` operations and mounting. These
+can conflict with bubblewrap even when the host kernel enables user namespaces.
+The generic bubblewrap error does not identify whether seccomp, AppArmor/SELinux,
+or kernel namespace policy caused this particular denial. `Seccomp: 2` proves
+only that a filter is active; it does not identify its rules.
+
+The live probe now prints a bounded `HOST_SECURITY` JSON record before admission:
+allowlisted process security fields, namespace sysctls and cgroup limits only.
+Absent controls are unknown, not a pass. It never dumps environment variables.
+The live CI job saves this evidence with the candidate SHA even on failure;
+the command's failing exit status is preserved through the log capture.
+
+The host operator must inspect the effective syscall and LSM policies together
+with this receipt. If the required launcher operations are denied, select a
+separately isolated worker architecture and audit its boundary before deployment.
+This repository does not yet provide a verified replacement worker. Do not
+blindly allow namespace/mount syscalls, add `CAP_SYS_ADMIN`, or disable LSM
+protections to make this configuration pass. Issue #389 remains open until
+the full positive live acceptance test passes under the reviewed policy.
 The previous `docker run -p ...` quickstart is not a production deployment:
 it does not set the required cgroups and no-new-privileges flags and is
 expected to fail startup.

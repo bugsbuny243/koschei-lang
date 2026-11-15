@@ -36,6 +36,7 @@ jobs:
       - name: Sandbox and Playground regression tests
         run: |
           python -m pytest -q \
+            tests/test_playground_host_diagnostics_v1.py \
             tests/test_playground_container_limits_v1.py \
             tests/test_playground_namespace_confinement_v1.py \
             tests/test_playground_output_capture_v1.py \
