@@ -19,20 +19,79 @@ pip install -e .
 python server/playground/app.py      # http://localhost:8080
 ```
 
-## Docker
+## Hosted Docker deployment (reference, not yet production-certified)
+
+This reference profile is designed for a dedicated Linux host with cgroup v2
+and support for unprivileged user, mount and network namespaces.
 
 ```sh
-docker build -f server/playground/Dockerfile -t koschei-playground .
-docker run -p 8080:8080 koschei-playground
+docker compose -f server/playground/compose.security.yaml config --quiet
+docker compose -f server/playground/compose.security.yaml up --build
 ```
 
-## Isolation requirements and limitations
+The profile publishes only `127.0.0.1:8080`. A trusted reverse proxy with
+per-user/request limits and appropriate TLS is required before public access.
 
-- The Docker image sets `KOSCHEI_UNTRUSTED_SANDBOX=bwrap` and installs `bubblewrap`. It refuses to serve if a startup probe cannot establish a private mount and network namespace or cannot run Python in the limited root. **It never silently falls back to unrestricted Python.**
-- The host must support unprivileged user namespaces and compatible mount operations. Some container providers (including default container-seccomp configurations) block this. **If the service fails to start, do not use `--privileged`, disable all container seccomp protections, or set the sandbox mode to `off` as a production workaround.** Choose a runtime offering verified namespace isolation, or use a separately isolated worker.
-- Local `python server/playground/app.py` defaults to `KOSCHEI_UNTRUSTED_SANDBOX=off`, intended **only for trusted local development**. To test OS isolation explicitly, install bubblewrap, use an installed Python toolchain under `/usr`, and set `KOSCHEI_UNTRUSTED_SANDBOX=bwrap`; unsupported hosts fail closed.
-- These namespace boundaries do not replace syscall filtering (seccomp), cgroup CPU/memory/PID quotas, a hardened container profile, or trusted ingress-level rate limiting. Those are remaining public deployment requirements. The startup probe is a sanity check, **not a security audit**.
-- The standard `docker run` example below is only a quick launch attempt: it will fail closed if the container runtime does not permit the required namespaces. A working, verified deployment profile is required before public launch.
+The Compose service specifies **aggregate kernel-enforced limits** for the
+whole container: at most 1536 MiB of memory, 2 CPU cores of quota, and 128
+PIDs. It also uses a read-only root filesystem, drops all Linux capabilities,
+sets `no-new-privileges`, keeps Docker's default seccomp filtering, and gives
+the service a 64 MiB `/tmp` tmpfs. At most two evaluation requests may run
+simultaneously. Each untrusted execution retains its separate, smaller CPU,
+address-space, output and wall-clock limits.
+
+### Required kernel admission checks
+
+The Dockerfile sets `KOSCHEI_REQUIRE_CONTAINER_LIMITS=1` and
+`KOSCHEI_UNTRUSTED_SANDBOX=bwrap`. On startup, the server refuses to listen
+unless it observes all of the following in its **live environment**:
+
+- `/proc/self/status`: `Seccomp: 2` (filtered) and `NoNewPrivs: 1`
+- cgroup v2 `memory.max` is finite and no more than 1536 MiB
+- cgroup v2 `pids.max` is finite and no more than 128
+- cgroup v2 `cpu.max` is finite and no more than two cores
+- `bubblewrap` can launch Python in a private mount and network namespace,
+  with a minimal filesystem and no visible `/etc/passwd`
+
+The kernel-admission gate checks only that a seccomp filter is active, **not
+the individual permitted syscalls**. It does not prove that a Docker host's
+profile is sufficiently restrictive. The namespace startup probe is also not
+an independent security audit.
+
+### When startup fails
+
+Many default container providers block the nested user/mount namespaces
+required by bubblewrap. The correct result is to **refuse startup**, not to
+disable security. Do **not** use `--privileged`, `seccomp:unconfined`, a
+disabled `no-new-privileges` flag, or
+`KOSCHEI_UNTRUSTED_SANDBOX=off` on a public service.
+
+Use a compatible dedicated host or a separately isolated execution worker.
+The previous `docker run -p ...` quickstart is not a production deployment:
+it does not set the required cgroups and no-new-privileges flags and is
+expected to fail startup.
+
+Local `python server/playground/app.py` still defaults to resource-limited
+development mode without OS namespace/cgroup gates. **Use only with trusted
+local code**.
+
+### Validation before enabling public access
+
+```sh
+python -m pytest -q \
+  tests/test_playground_container_limits_v1.py \
+  tests/test_playground_namespace_confinement_v1.py \
+  tests/test_playground_output_capture_v1.py \
+  tests/test_playground_server.py
+docker compose -f server/playground/compose.security.yaml config --quiet
+```
+
+In addition to these unit/configuration checks, a compatible Linux runtime
+must pass real boot, cgroup, no-network, filesystem isolation and output-limit
+integration tests; the hosted API must not become available if any gate fails.
+Review the runtime's actual Docker seccomp policy and deploy independent
+ingress-level anti-abuse limits. No public-production readiness claim is made
+by passing the static tests alone.
 
 ## API
 
