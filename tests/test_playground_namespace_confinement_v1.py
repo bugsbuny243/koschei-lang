@@ -24,7 +24,8 @@ def test_bwrap_command_has_separate_network_and_minimal_filesystem(monkeypatch, 
     assert command[0] == "/usr/bin/bwrap"
     for flag in (
         "--unshare-user", "--unshare-pid", "--unshare-net",
-        "--unshare-ipc", "--unshare-uts", "--die-with-parent",
+        "--unshare-ipc", "--unshare-uts", "--disable-userns",
+        "--die-with-parent",
         "--clearenv",
     ):
         assert flag in command
@@ -39,6 +40,9 @@ def test_bwrap_command_has_separate_network_and_minimal_filesystem(monkeypatch, 
     ]
     assert command[command.index("--tmpfs"):command.index("--tmpfs") + 2] == [
         "--tmpfs", "/tmp",
+    ]
+    assert command[command.index("--size"):command.index("--size") + 2] == [
+        "--size", str(16 * 1024 * 1024),
     ]
     assert command[-len(child) - 1:] == ["--", *child]
     assert not any(
