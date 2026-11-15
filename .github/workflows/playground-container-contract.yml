@@ -1,0 +1,50 @@
+name: Playground Container Security Contract
+
+on:
+  push:
+    branches:
+      - main
+      - 'security/playground-*'
+    paths:
+      - 'koschei/untrusted.py'
+      - 'server/playground/**'
+      - 'tests/test_playground*'
+      - '.github/workflows/playground-container-contract.yml'
+  pull_request:
+    paths:
+      - 'koschei/untrusted.py'
+      - 'server/playground/**'
+      - 'tests/test_playground*'
+      - '.github/workflows/playground-container-contract.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  static-contract-and-image-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout candidate
+        uses: actions/checkout@v4
+      - name: Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install project and pytest
+        run: python -m pip install -e . pytest
+      - name: Sandbox and Playground regression tests
+        run: |
+          python -m pytest -q \
+            tests/test_playground_container_limits_v1.py \
+            tests/test_playground_namespace_confinement_v1.py \
+            tests/test_playground_output_capture_v1.py \
+            tests/test_playground_server.py
+      - name: Validate hardened Compose service configuration
+        run: docker compose -f server/playground/compose.security.yaml config --quiet
+      - name: Build hardened Playground Docker image
+        run: docker compose -f server/playground/compose.security.yaml build
+
+# Deliberately NO privileged/relaxed-seccomp execution in CI.
+# Runtime namespace, seccomp profile and cgroup evidence still need a
+# separate, compatible and independently reviewed deployment test.
