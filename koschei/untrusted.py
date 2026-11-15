@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import os
 import resource
+import shutil
 import signal
 import subprocess
 import sys
@@ -55,6 +56,87 @@ def _child_env() -> dict[str, str]:
     return {"PATH": "/usr/local/bin:/usr/bin:/bin", "PYTHONIOENCODING": "utf-8", "LANG": "C.UTF-8"}
 
 
+class SandboxUnavailable(RuntimeError):
+    """The requested OS sandbox cannot be established; never run unsandboxed."""
+
+
+def _sandbox_command(command: list[str], workdir: str) -> list[str]:
+    """Optionally confine a child using bubblewrap namespaces and a minimal root.
+
+    The Docker playground opts into this mode explicitly. Local development
+    stays on the historical resource-limited path unless opted in; there is
+    no automatic downgrade when bubblewrap is requested but unavailable.
+    """
+    mode = os.environ.get("KOSCHEI_UNTRUSTED_SANDBOX", "off")
+    if mode == "off":
+        return command
+    if mode != "bwrap":
+        raise SandboxUnavailable("Unsupported untrusted sandbox mode")
+    binary = shutil.which("bwrap")
+    if binary is None:
+        raise SandboxUnavailable("Required bubblewrap sandbox is unavailable")
+
+    args = [
+        binary,
+        "--unshare-user", "--unshare-pid", "--unshare-net",
+        "--unshare-ipc", "--unshare-uts",
+        "--cap-drop", "ALL",
+        "--die-with-parent",
+        "--ro-bind", "/usr", "/usr",
+    ]
+    # Debian /bin and /lib* are often symlinks into /usr. Keep loader paths
+    # without exposing host /etc, /root, /home, /opt, or the parent /tmp.
+    for system_path in ("/bin", "/lib", "/lib64"):
+        if os.path.islink(system_path):
+            args += ["--symlink", os.readlink(system_path), system_path]
+        elif os.path.isdir(system_path):
+            args += ["--ro-bind", system_path, system_path]
+
+    args += [
+        "--dev", "/dev",
+        "--proc", "/proc",
+        "--dir", "/work",
+        "--bind", workdir, "/work",
+        "--tmpfs", "/tmp",
+        "--chdir", "/work",
+        "--clearenv",
+    ]
+    for key, value in _child_env().items():
+        args += ["--setenv", key, value]
+    args += ["--setenv", "HOME", "/work", "--", *command]
+    return args
+
+
+def require_sandbox_ready() -> None:
+    """Fail startup if the configured public-program sandbox cannot operate."""
+    if os.environ.get("KOSCHEI_UNTRUSTED_SANDBOX", "off") == "off":
+        return
+
+    with tempfile.TemporaryDirectory(prefix="ks-sandbox-preflight-") as workdir:
+        probe = (
+            "import os; "
+            "assert os.getcwd() == '/work'; "
+            "assert not os.path.exists('/etc/passwd'); "
+            "print('KOSCHEI_SANDBOX_READY')"
+        )
+        command = _sandbox_command([sys.executable, "-c", probe], workdir)
+        try:
+            completed = subprocess.run(
+                command,
+                cwd=workdir,
+                env=_child_env(),
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=5,
+                preexec_fn=_limit_child,
+            )
+        except (OSError, subprocess.TimeoutExpired) as error:
+            raise SandboxUnavailable("OS sandbox preflight failed") from error
+        if completed.returncode != 0 or completed.stdout != b"KOSCHEI_SANDBOX_READY\n":
+            raise SandboxUnavailable("OS sandbox preflight failed; refusing to start")
+
+
 def truncate(text: str) -> str:
     data = text.encode("utf-8", "replace")
     if len(data) <= MAX_OUTPUT_BYTES:
@@ -86,7 +168,7 @@ def _ks(args: list[str], workdir: str) -> dict:
     # child's RLIMIT_FSIZE bounds each underlying file to 1 MiB.
     with tempfile.TemporaryFile(mode="w+b") as stdout_file, tempfile.TemporaryFile(mode="w+b") as stderr_file:
         process = subprocess.Popen(
-            KS + args,
+            _sandbox_command(KS + args, workdir),
             cwd=workdir,
             env=_child_env(),
             stdin=subprocess.DEVNULL,
