@@ -1,0 +1,37 @@
+# Reference Docker Compose deployment for a dedicated Linux host.
+# Requires functional unprivileged user/mount/network namespaces and cgroup v2.
+# DO NOT disable seccomp or run privileged if the namespace preflight fails.
+name: koschei-playground-secure
+
+services:
+  playground:
+    build:
+      context: ../..
+      dockerfile: server/playground/Dockerfile
+    image: koschei-playground:secure-local
+    restart: "no"
+    init: true
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    # Keep Docker's default seccomp filter enabled. The application checks
+    # /proc/self/status and refuses startup without Seccomp=2.
+    mem_limit: 1536m
+    cpus: 2.0
+    pids_limit: 128
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,noexec,size=64m,mode=1777
+    environment:
+      KOSCHEI_REQUIRE_CONTAINER_LIMITS: "1"
+      KOSCHEI_UNTRUSTED_SANDBOX: bwrap
+      KOSCHEI_MAX_CONCURRENT_EVALUATIONS: "2"
+    # Put a properly configured reverse proxy in front of this loopback port.
+    ports:
+      - "127.0.0.1:8080:8080"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
