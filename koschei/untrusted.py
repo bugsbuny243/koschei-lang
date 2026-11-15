@@ -62,33 +62,59 @@ def truncate(text: str) -> str:
     return data[:MAX_OUTPUT_BYTES].decode("utf-8", "ignore") + "\n… output truncated"
 
 
-def _ks(args: list[str], workdir: str) -> dict:
-    process = subprocess.Popen(
-        KS + args,
-        cwd=workdir,
-        env=_child_env(),
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        preexec_fn=_limit_child,
+def _bounded_output(stream, workdir: str) -> str:
+    """Read at most one display window from file-backed subprocess output."""
+    stream.seek(0)
+    data = stream.read(MAX_OUTPUT_BYTES + 1)
+    over_limit = len(data) > MAX_OUTPUT_BYTES
+    text = (
+        data[:MAX_OUTPUT_BYTES].decode("utf-8", "ignore")
+        if over_limit
+        else data.decode("utf-8", "replace")
     )
-    try:
-        stdout, stderr = process.communicate(timeout=WALL_TIMEOUT_SECONDS)
-    except subprocess.TimeoutExpired:
-        # _limit_child creates a fresh session. Kill its whole process group,
-        # not only the interpreter, to avoid leaving descendants behind.
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-        process.communicate()
-        return {"exit_code": None, "stdout": "", "stderr": f"Stopped: the program exceeded the {WALL_TIMEOUT_SECONDS}s time limit.", "timed_out": True}
-    stdout = stdout.decode("utf-8", "replace")
-    stderr = stderr.decode("utf-8", "replace")
-    # A path inside our temp dir means nothing to the caller.
-    clean = lambda s: truncate(s.replace(workdir + os.sep, "").replace(workdir, "."))
-    return {"exit_code": process.returncode, "stdout": clean(stdout), "stderr": clean(stderr), "timed_out": False}
+    # Do not reveal the temporary directory used for compilation.
+    clean = text.replace(workdir + os.sep, "").replace(workdir, ".")
+    clean = truncate(clean)
+    if over_limit and not clean.endswith("output truncated"):
+        clean += "\n… output truncated"
+    return clean
 
+
+def _ks(args: list[str], workdir: str) -> dict:
+    # communicate() buffers *all* output in memory before truncation. Capturing
+    # into anonymous temporary files avoids that untrusted allocation. Each
+    # child's RLIMIT_FSIZE bounds each underlying file to 1 MiB.
+    with tempfile.TemporaryFile(mode="w+b") as stdout_file, tempfile.TemporaryFile(mode="w+b") as stderr_file:
+        process = subprocess.Popen(
+            KS + args,
+            cwd=workdir,
+            env=_child_env(),
+            stdin=subprocess.DEVNULL,
+            stdout=stdout_file,
+            stderr=stderr_file,
+            preexec_fn=_limit_child,
+        )
+        try:
+            process.wait(timeout=WALL_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired:
+            # _limit_child starts a new session; stop the whole process group.
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            process.wait()
+            return {
+                "exit_code": None,
+                "stdout": "",
+                "stderr": f"Stopped: the program exceeded the {WALL_TIMEOUT_SECONDS}s time limit.",
+                "timed_out": True,
+            }
+        return {
+            "exit_code": process.returncode,
+            "stdout": _bounded_output(stdout_file, workdir),
+            "stderr": _bounded_output(stderr_file, workdir),
+            "timed_out": False,
+        }
 
 def evaluate(source: str, action: str, lang: str = "en", denied: tuple[str, ...] = SIDE_EFFECT_DOMAINS) -> dict:
     """Check, and for action == "run" also execute, one Koschei program.
