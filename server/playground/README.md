@@ -8,7 +8,7 @@ A web page where anyone can write a Koschei program and run it on the server, wi
 2. **Process sandbox.** Each check or run happens in a child process in a fresh temporary directory. The child has an empty environment and limits on CPU (5 s), memory (512 MB), file size and open files. It also has a 10 s wall-clock timeout and a 200,000-step interpreter budget.
 3. **Service limits.**
    - Source size is capped at 16 KB.
-   - Output is capped at 16 KB.
+   - Returned output is capped at 16 KB per stream. Child stdout/stderr are first spooled to anonymous files bounded by the child file-size limit (1 MiB each), so the HTTP server does not buffer untrusted output in RAM before truncation.
    - Each client is limited to 30 requests per minute.
    - The container runs as a non-root user.
 
