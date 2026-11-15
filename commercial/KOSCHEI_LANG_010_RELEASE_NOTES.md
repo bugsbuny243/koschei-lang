@@ -1,8 +1,56 @@
-# Koschei Lang 0.10.1 — Release Notes
+# Koschei Lang 0.14.0 — Release Notes
 
 **Product:** Koschei Lang (independent of Koschei Sentinel and Web3 Hub)  
-**Version:** 0.10.1  
+**Version:** 0.14.0  
 **Release line:** commercially licensed, pre-1.0 language/toolchain
+
+## New in 0.14.0
+
+- `ks run` is about twice as fast: a million-iteration loop drops from
+  8.5 s to 3.5 s. Results, Error values and step counts are unchanged.
+- Lambdas: `xs.filter(fn(x: Int) -> Bool { return x > 0 })`. A lambda does
+  not capture variables of the enclosing function, so it can never quietly
+  hold a capability.
+- Generic structs work with annotations (`let page: Page<Int> = ...`) and
+  in generic functions that swap type parameters; type mismatches print
+  source types such as `Pair<Int, String>`.
+
+## New in 0.13.0
+
+- A database: `caps.db.allow(path, max_rows, max_bytes, deadline_ms)`
+  opens one SQLite file; `exec(sql, params)` changes rows and
+  `query(sql, params)` returns them as `Data`. SQL must be a string literal
+  and values bind to `?` placeholders, so SQL injection cannot be written.
+  `ATTACH`, `PRAGMA` and extensions are refused; rows, file size and
+  statement time are bounded. Works under `ks run`; `ks build` refuses it
+  for now. See `docs/DB_V1.md` in the source repository.
+
+## New in 0.12.0
+
+- Public servers: `caps.serve.allow("0.0.0.0:8080", ...)` (or `[::]:PORT`)
+  listens on every interface, so a Koschei web application can be reached
+  from other machines. Budgets, the strict HTTP grammar and one request per
+  connection are unchanged; other non-loopback addresses are refused.
+- The `http` Core Library module: `route` matches `/users/:id`, `query`
+  and `params` read query strings and form bodies, `cookies` reads a
+  `Cookie` header and `escape_html` makes text safe for a page.
+- `server.reply_with(status, headers, body)` sends response headers such
+  as `Location` and `Set-Cookie`; redirects (301, 302, 303, 307, 308) and
+  401 are allowed. A header value can never add another header.
+
+## New in 0.11.0
+
+- Read JSON: `json_kind`, `json_has`, `json_get`, `json_at`, `json_text`,
+  `json_int`, `json_float`, `json_bool`, `json_length`, `json_keys` and
+  `json_items` read the `Data` value `parse_json` returns. A missing member
+  or a value of the wrong kind is an Error value, never a crash.
+- Write JSON: the `json` Core Library module builds JSON text with every
+  quote, backslash and control character escaped.
+- `math`: `min`, `max`, `clamp`, `abs`, `pow`, `gcd` and Float variants.
+  A result outside 64-bit Int is an Error value, never a wrapped number.
+- `time`: UTC timestamps to dates and back, and ISO 8601 text, for
+  years 1 to 9999. An impossible date is an Error value.
+- `parse_json` now works in programs that import modules.
 
 ## New in 0.10.1
 

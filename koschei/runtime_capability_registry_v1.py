@@ -46,9 +46,24 @@ class RuntimeCapabilityRegistry:
         return frozenset({"SystemCaps", *self.capabilities})
 
 
-def canonical_runtime_registry() -> RuntimeCapabilityRegistry:
-    """Build the runtime view from the single canonical language contract."""
+_REGISTRY: RuntimeCapabilityRegistry | None = None
+# runtime module -> (type names, the classes bound to them, resolved mapping)
+_RESOLVED: dict[int, tuple[tuple[str, ...], tuple[object, ...], Mapping[str, type]]] = {}
 
+
+def canonical_runtime_registry() -> RuntimeCapabilityRegistry:
+    """The runtime view of the single canonical language contract.
+
+    The contract's mappings are read-only, so the view is built once.
+    """
+
+    global _REGISTRY
+    if _REGISTRY is None:
+        _REGISTRY = _build_registry()
+    return _REGISTRY
+
+
+def _build_registry() -> RuntimeCapabilityRegistry:
     capabilities: dict[str, RuntimeCapabilitySpec] = {}
     for capability_type, methods in ROOT_NARROWING.items():
         capabilities[capability_type] = RuntimeCapabilitySpec(
@@ -80,6 +95,13 @@ def runtime_capability_types(runtime: ModuleType) -> Mapping[str, type]:
     """
 
     registry = canonical_runtime_registry()
+    # Installers rebind runtime classes (SystemCaps grows with each domain), so
+    # a cached resolution is reused only while every binding is unchanged.
+    cached = _RESOLVED.get(id(runtime))
+    if cached is not None:
+        names, bound, mapping = cached
+        if all(getattr(runtime, name, None) is cls for name, cls in zip(names, bound)):
+            return mapping
     resolved: dict[str, type] = {}
     for type_name in sorted(registry.capability_type_names):
         runtime_type = getattr(runtime, type_name, None)
@@ -88,7 +110,9 @@ def runtime_capability_types(runtime: ModuleType) -> Mapping[str, type]:
                 f"Koschei runtime canonical capability type binding eksik/geçersiz: {type_name}"
             )
         resolved[type_name] = runtime_type
-    return MappingProxyType(resolved)
+    mapping = MappingProxyType(resolved)
+    _RESOLVED[id(runtime)] = (tuple(resolved), tuple(resolved.values()), mapping)
+    return mapping
 
 
 def capability_type_name_for_value(runtime: ModuleType, value: object) -> str | None:

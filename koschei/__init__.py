@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-__version__ = "0.10.1"
+__version__ = "0.14.0"
 
 from .cli import main
 from .runtime_alignment import install_runtime_alignment
@@ -317,6 +317,14 @@ from .clock_random_v1 import install_clock_random_v1
 
 install_clock_random_v1()
 
+from .db_v1 import install_db_v1
+
+install_db_v1()
+
+from .lambda_v1 import install_lambda_v1
+
+install_lambda_v1()
+
 from .bytes_v1 import install_bytes_v1
 
 install_bytes_v1()
@@ -325,6 +333,10 @@ from .serve_knowhere_v1 import install_serve_knowhere_v1
 
 install_serve_knowhere_v1()
 
+from .serve_public_bind_v1 import install_serve_public_bind_v1
+
+install_serve_public_bind_v1()
+
 from .net_typing_v1 import install_net_typing_v1
 
 install_net_typing_v1()
@@ -332,6 +344,10 @@ install_net_typing_v1()
 from .capability_opacity_v1 import install_capability_opacity_v1
 
 install_capability_opacity_v1()
+
+from .data_access_v1 import install_data_access_v1
+
+install_data_access_v1()
 
 # Last: the value budget wraps the final behavior of every executor.
 from .value_budget_v1 import install_value_budget_v1

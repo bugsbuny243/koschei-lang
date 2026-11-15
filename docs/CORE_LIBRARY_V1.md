@@ -94,6 +94,76 @@ All functions are generic over the item type and never mutate their input.
 
 Out-of-range indices produce an `Error` value; they are never clamped silently.
 
+### `json`
+
+Builds JSON text from Koschei values. `array` and `object` take parts that are
+already encoded, so documents nest. Pass the result to `parse_json` to get a
+`Data` value, which also checks it.
+
+| Function | Result | Meaning |
+|---|---|---|
+| `string(value)` | `String` | a JSON string; quotes, backslashes and control characters are escaped |
+| `int(value)` | `String` | a JSON number |
+| `float(value)` | `String or Error` | a JSON number; infinity is an Error, since JSON has none |
+| `bool(value)` / `null()` | `String` | `true`, `false`, `null` |
+| `array(items)` | `String` | `items: List<String>` of encoded values |
+| `object(members)` | `String` | `members: Map<String, String>` of encoded values, in the map's order |
+
+### `http`
+
+Reads what `ServeCaps.accept()` leaves raw. Pure: no socket, no capability.
+A `%` without two hex digits, or decoded bytes that are not UTF-8, is an
+`Error` value or `None`, never a guess. Results match Python's `urllib.parse`
+and `html.escape` (`tests/test_core_library_http_v1.py`).
+
+| Function | Result | Meaning |
+|---|---|---|
+| `route(pattern, target)` | `Option<Map<String, String>>` | matches `"/users/:id"`; `:name` segments are captured decoded; the query string and empty segments are ignored |
+| `query(target)` | `Map<String, String> or Error` | the query string's names and values |
+| `params(text)` | `Map<String, String> or Error` | `a=1&b=two+words`, as in a form body; the last repeated name wins |
+| `path_of(target)` / `query_of(target)` | `String` | the parts before and after the first `?` |
+| `segments(path)` | `List<String>` | the non-empty segments, still encoded |
+| `decode(text)` | `String or Error` | percent-decoding for a path; `+` stays `+` |
+| `decode_form(text)` | `String or Error` | percent-decoding for a query or form; `+` is a space |
+| `cookies(header)` | `Map<String, String>` | the cookies of a `Cookie` header, as sent; the first of a repeated name wins |
+| `escape_html(text)` | `String` | `&`, `<`, `>`, `"` and `'` as character references |
+
+### `math`
+
+`Int` never wraps: a result outside signed 64 bits is an `Error` value, never a
+silently wrong number. Functions that cannot overflow return a plain value.
+
+| Function | Result | Meaning |
+|---|---|---|
+| `min(a, b)` / `max(a, b)` | `Int` | the smaller / larger value |
+| `clamp(value, low, high)` | `Int or Error` | `value` limited to `low..high`; `low > high` is an Error |
+| `sign(value)` | `Int` | `-1`, `0` or `1` |
+| `abs(value)` | `Int or Error` | absolute value; the smallest `Int` has none within `Int` |
+| `is_even(value)` | `Bool` | divisible by 2 |
+| `pow(base, exponent)` | `Int or Error` | `base` to a non-negative power; overflow is an Error |
+| `gcd(a, b)` | `Int or Error` | greatest common divisor; `gcd(0, 0)` is `0` |
+| `min_float(a, b)` / `max_float(a, b)` | `Float` | the smaller / larger value |
+| `abs_float(value)` | `Float` | absolute value |
+| `clamp_float(value, low, high)` | `Float or Error` | `value` limited to `low..high` |
+
+### `time`
+
+Pure calendar arithmetic on UTC timestamps in milliseconds since
+1970-01-01T00:00:00Z, the unit `clock.now_ms()` returns. Nothing reads the
+clock, so no capability is needed. Years 1 to 9999; anything outside is an
+`Error` value. No time zones, no leap seconds.
+
+| Function | Result | Meaning |
+|---|---|---|
+| `utc(ms)` | `DateTime or Error` | `year`, `month`, `day`, `hour`, `minute`, `second`, `millisecond`, `weekday` (1 = Monday) |
+| `from_utc(year, month, day, hour, minute, second)` | `Int or Error` | the timestamp; an impossible date such as 31 April is an Error |
+| `iso_utc(ms)` | `String or Error` | `2026-11-12T07:45:48Z` |
+| `iso_utc_ms(ms)` | `String or Error` | `2026-11-12T07:45:48.123Z` |
+| `date_utc(ms)` | `String or Error` | `2026-11-12` |
+| `is_leap_year(year)` | `Bool` | Gregorian rule |
+| `days_in_month(year, month)` | `Int or Error` | 28 to 31 |
+| `seconds(n)`, `minutes(n)`, `hours(n)`, `days(n)` | `Int or Error` | a duration in milliseconds |
+
 ### `secure`
 
 Written in Koschei over the kernel `sha3_256(text) -> String or Error`, which

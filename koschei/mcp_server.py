@@ -26,7 +26,7 @@ from typing import Any
 from . import untrusted
 
 PROTOCOL_VERSION = "2025-06-18"
-SERVER_INFO = {"name": "koschei", "title": "Koschei", "version": "0.10.1"}
+SERVER_INFO = {"name": "koschei", "title": "Koschei", "version": "0.14.0"}
 
 DOMAIN_LABELS = {
     "disk": "Disk",
@@ -35,6 +35,7 @@ DOMAIN_LABELS = {
     "process": "Process",
     "serve": "HTTP server",
     "persist": "Persistent state",
+    "db": "Database",
     "input": "Program input",
     "clock": "Clock",
     "random": "Random numbers",
@@ -63,7 +64,7 @@ fn main() {
 - Errors are values: `fn f() -> Int or Error`, `return Error("why")`.
   Handle with `or default`, `or return Error("...")`, or `or { ... }`.
 - Lists are immutable values: `xs.push(x)` returns a new list. Methods: length, get, push, contains, sort, filter, map.
-  `get`, `sort`, `filter`, `map` can fail: `xs.get(0) or 0`. `filter`/`map` take a named function; no lambdas.
+  `get`, `sort`, `filter`, `map` can fail: `xs.get(0) or 0`. `filter`/`map` take a function name or a lambda `fn(x: Int) -> Bool { return x > 0 }`; a lambda cannot use outer variables.
 - Empty collections need a type: `let mut xs: List<Int> = []`, `let mut m: Map<String, Int> = {}`.
 - Maps: `{"a": 1}`, `m.get("a") or 0`, `m.set("b", 2)` (returns a new map), `m.keys()`, `m.contains("a")`.
 - Strings: length, contains, trim, split(sep) or [], sep.join(list), to_int() or 0, to_float() or 0.0.
@@ -71,10 +72,30 @@ fn main() {
 - Enums: `enum Shape { Circle(Int), Empty }`; build with `Circle(2)`, `Empty()`;
   `match s { Circle(r) => r, Empty => 0 }` must cover every variant.
 - `print` writes without a newline; `println` adds one.
+- Math: `import math`, then `math.min`, `math.max`, `math.sign` (Int), `math.abs(x) or 0`, `math.pow(b, e) or 0`,
+  `math.clamp(x, lo, hi) or 0`, `math.gcd(a, b) or 0`, `math.min_float`, `math.max_float`, `math.abs_float`.
+- Dates: `import time`, then `time.iso_utc(ms) or "?"` (UTC, ms since 1970), `let t = time.utc(ms) or return Error("x")`
+  gives `t.year`, `t.month`, `t.day`, `t.hour`, `t.minute`, `t.second`, `t.weekday`; `time.from_utc(y, mo, d, h, mi, s) or 0`.
 - Operators: `+ - * / %`, `== != < <= > >=`, `&& || !`. `Int / Int` is integer division. `or` is only for errors.
 - `join` joins Strings only. Turn a number into a String with interpolation: `"{n}"`.
 - `match` is an expression (`let label = match s { ... }`) or a statement. Arms are separated by commas.
 - `let x = f() or { println("failed") }` runs the block when `f` fails. Statements end at the newline; no semicolons.
+- `fn main()` may `return Error("why")`, also through `or return Error(...)`: the program stops with that message.
+- Inside a string literal write `\\"` for a double quote.
+- JSON: `let data = parse_json(text) or return Error("not JSON")`, then read with
+  `json_get(data, "key")`, `json_at(data, 0)`, `json_text(d)`, `json_int(d)`, `json_float(d)`, `json_bool(d)`,
+  `json_length(d)`, `json_keys(d)`, `json_items(d)` (all `or`-handled), `json_has(data, "key")`, `json_kind(d)`.
+  Write `{` and `}` inside a string literal as `\\{` and `\\}`. `encode_json(data)` gives the text back.
+  Bind each step with `let`: `let f = json_get(data, "n") or return Error("no n")` then `json_int(f) or 0`.
+- Writing JSON: `import json`, then `json.object({"name": json.string(n), "n": json.int(3), "xs": json.array([json.int(1)])})`;
+  also `json.bool(b)`, `json.null()`, `json.float(f) or "null"`. The result is a String.
+- URLs and forms: `import http`, then `http.route("/users/:id", target)` (Option of a Map; `or return ...`),
+  `http.query(target) or return Error("bad query")`, `http.params(body)`, `http.decode(s)`, `http.path_of(target)`,
+  `http.escape_html(text)` before putting text in a page, `http.cookies(request.header("Cookie") or "")`.
+- Database (only when the server allows `db`): `let db = caps.db.allow("/abs/app.db", 1000, 10485760, 2000)`,
+  `db.exec("INSERT INTO t (a) VALUES (?)", json.array([json.string(a)])) or return Error("x")` (rows changed),
+  `db.query("SELECT a FROM t WHERE id = ?", json.array([json.int(id)]))` gives Data (array of row objects).
+  SQL must be a literal string; values go only through `?` and the JSON array.
 
 ## Capabilities
 

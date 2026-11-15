@@ -118,8 +118,8 @@ def _policy_from_ast(arguments, location: SourceLocation) -> ServePolicy:
     if _parse_loopback_bind(bind) is None:
         raise _semantic.SemanticError(
             "KS2411",
-            "ServeRoot.allow() v1 yalnızca açık loopback host:port kabul eder; "
-            "wildcard/public bind reddedildi.",
+            "ServeRoot.allow() loopback host:port ya da tam olarak 0.0.0.0:PORT veya "
+            "[::]:PORT kabul eder; bu bind reddedildi.",
             location,
         )
 

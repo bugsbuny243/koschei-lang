@@ -1,10 +1,31 @@
 # Changelog
 
-## Unreleased
+## 0.14.0 — 2026-11-13
 
+- Fix generic structs under `ks run`: an annotation such as `let page: Page<Int> = Page { ... }` was refused (`KS1301`, "found Page") because the compatibility checker sees generic structs erased, and a generic function that built an instance with its own parameters swapped (`swap<A, B>(p: Pair<A, B>) -> Pair<B, A>`) stopped with `KS3401`/`KS3106` on the canonical MIR executor. Type mismatches now print source types (`Expected Pair<Int, Int>, found Pair<Int, String>`) instead of internal nodes. Native builds still refuse generic structs.
+- Add lambdas: `fn(x: Int) -> Bool { return x > 0 }` where a value is expected is an anonymous function, usable with `filter`, `map`, `any`, `partition`, `scan` or in a variable. The parser lifts it to a top-level function with a reserved `__lambda_` name, so the checker, every executor and the effect rules treat it as a named function. A lambda does not capture: using a variable of the enclosing function is `KS1103`. Both language guides gain a section.
+- Run `ks run` about twice as fast. The canonical MIR executor runs its commonest instructions (arithmetic, loads, stores, bindings, calls, member access, error tests) inline instead of through a 30-step type dispatch and charges the step budget inline; the runtime capability registry is built once instead of on every member access; and parsed type texts are cached. A million-iteration loop drops from 8.5 s to 3.5 s and a call- and string-heavy program from 7.4 s to 3.3 s. Results, Error values and step counts are unchanged: `tests/test_canonical_mir_fast_path_v1.py` runs the same programs through the full dispatch and compares output and steps.
+
+## 0.13.0 — 2026-11-13
+
+- Add the database capability under `ks run`: `caps.db.allow(path, max_rows, max_bytes, deadline_ms)` opens one SQLite file, `exec(sql, params)` changes rows and `query(sql, params)` returns them as `Data`. SQL must be a string literal and values bind to `?` placeholders from a JSON array, so a statement built from text is `KS2462` at check time. An authorizer refuses `ATTACH` (and so `VACUUM INTO`), `PRAGMA`, virtual tables and `load_extension` (`KS3484`); rows, file size and statement time are bounded (`KS3482`, `KS3483`). `ks caps` names the file, `--deny db` refuses it, the playground and MCP server deny it by default, and `ks build` refuses it (`KS4004`). See `docs/DB_V1.md`.
+
+## 0.12.0 — 2026-11-12
+
+- Add `ServeCaps.reply_with(status, headers, body)` under `ks run` and in native binaries: the program sends its own response headers from a `Map<String, String>`, such as `Location`, `Set-Cookie` or `Cache-Control`. Names must be HTTP tokens and appear once, values printable ASCII, so a value can never add a header; the server keeps writing `Content-Length` and `Connection` and refuses them, `Transfer-Encoding` and the other framing headers (`KS3472`, the client gets `500`). Replies may use 301, 302, 303, 307, 308 and 401. `http.cookies` reads a `Cookie` header.
+- Let a server listen on every interface: `caps.serve.allow` accepts exactly `0.0.0.0:PORT` and `[::]:PORT` besides loopback binds, under `ks run` and in native binaries, so a Koschei web application can be reached from other machines. Every budget, the strict HTTP grammar and the one-request-per-connection rule are unchanged; any other non-loopback address is still `KS2411`. `docs/SERVE_KNOWHERE_V1.md` explains running a public server.
+- Add the `http` Core Library module, written in Koschei: `route` matches a request target against a pattern such as `/users/:id`, `query` and `params` read query strings and form bodies, `decode` and `decode_form` undo percent-encoding, and `escape_html` makes text safe for a page. All pure; malformed escapes and non-UTF-8 results are Error values. A test compares them with Python's `urllib.parse` and `html.escape` under `ks run` and in native binaries. Both language guides gain a section on serving HTTP.
+
+## 0.11.0 — 2026-11-12
+
+- Add the `json` Core Library module, written in Koschei: `string`, `int`, `float`, `bool`, `null`, `array` and `object` build JSON text, with every control character, quote and backslash escaped; `float` refuses infinity. A test reads every ASCII character and multi-byte UTF-8 back through Python's `json` parser, and the native binary prints the same bytes.
+- Fix `parse_json` and `encode_json` in programs that import a module: those run on the canonical MIR executor, whose builtin allowlist never had them, so the first call stopped with `KS3101`.
+- Add the `time` Core Library module, written in Koschei: `utc`, `from_utc`, `iso_utc`, `iso_utc_ms`, `date_utc`, `is_leap_year`, `days_in_month` and duration helpers. Pure calendar arithmetic on UTC milliseconds since 1970, years 1 to 9999; an impossible date or an out-of-range timestamp is an Error value. A test compares 313 timestamps across the whole range with Python's `datetime` under `ks run` and in native binaries.
+- Add the `math` Core Library module, written in Koschei: `min`, `max`, `clamp`, `sign`, `abs`, `is_even`, `pow`, `gcd`, `min_float`, `max_float`, `abs_float` and `clamp_float`. A result outside signed 64 bits is an Error value (`abs` of the smallest Int, `pow` overflow), never a wrapped number. `ks run` and native binaries print the same output.
+- Add JSON read access under `ks run`: `json_kind`, `json_has`, `json_get`, `json_at`, `json_text`, `json_int`, `json_float`, `json_bool`, `json_length`, `json_keys` and `json_items` read an opaque `Data` value from `parse_json`. They are pure and need no capability. A value of the wrong kind is a `KS3709` Error value and a missing member or index is `KS3710`; `json_int` refuses fractions and numbers outside `Int`. The checked-AST interpreter and the direct MIR runtime agree; native builds still refuse `Data` programs with `KS4004`. Both language guides gain a JSON section, and the MCP quick reference describes the functions.
 - Sell one commercial license: 49 USD per developer. An organisation buys one license for each developer who uses Koschei commercially. The Team (249 USD) and Enterprise (999 USD) tiers are withdrawn; `LICENSE`, `LICENSE.tr.md`, `LICENSING.md` and `LICENSING.tr.md` say so.
 - Add the `polar-bundle.yml` workflow: it builds the Polar download, installs and runs it, and signs it with a Sigstore build-provenance attestation. Customers verify it with `gh attestation verify`.
-- Update the bundled release notes to 0.10.1.
+- Update the bundled release notes to 0.11.0.
 
 ## 0.10.1 — 2026-11-11
 

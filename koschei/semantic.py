@@ -74,6 +74,7 @@ CAPABILITY_MEMBERS = {
     "persist": "PersistRoot",
     "input": "InputRoot",
     "clock": "ClockRoot",
+    "db": "DbRoot",
     "random": "RandomRoot",
 }
 
@@ -86,6 +87,7 @@ ROOT_METHODS: dict[str, dict[str, str]] = {
     "PersistRoot": {"allow": "PersistCaps"},
     "InputRoot": {"allow": "InputCaps"},
     "ClockRoot": {"allow": "ClockCaps"},
+    "DbRoot": {"allow": "DbCaps"},
     "RandomRoot": {"allow": "RandomCaps"},
 }
 
@@ -95,10 +97,11 @@ NARROWED_METHODS: dict[str, set[str]] = {
     "DiskReadCaps": {"read", "list", "read_file", "read_bytes"},
     "EnvCaps": {"get"},
     "ProcessCaps": {"run", "spawn"},
-    "ServeCaps": {"exchange", "accept", "reply", "reply_as"},
+    "ServeCaps": {"exchange", "accept", "reply", "reply_as", "reply_with"},
     "PersistCaps": {"load", "commit"},
     "InputCaps": {"args", "read_text", "read_bytes"},
     "ClockCaps": {"now_ms", "monotonic_ms"},
+    "DbCaps": {"exec", "query"},
     "RandomCaps": {"hex", "below", "bytes"},
 }
 
@@ -1011,6 +1014,15 @@ class SemanticChecker:
             return True
         expected_base, expected_args = self._generic_type(expected)
         actual_base, actual_args = self._generic_type(actual)
+        # Generic user structs reach this checker erased to their base name
+        # (legacy_types.erase_node); Typed HIR has already checked their type
+        # arguments, so `Box<Int>` and the erased `Box` are the same here.
+        if (
+            expected_base == actual_base
+            and bool(expected_args) != bool(actual_args)
+            and expected_base in self.structs
+        ):
+            return True
         if expected_base != actual_base or len(expected_args) != len(actual_args):
             return False
         if not expected_args:

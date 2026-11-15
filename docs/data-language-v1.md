@@ -31,8 +31,19 @@ from becoming part of the language contract. In particular:
 - a `Data` value cannot be printed, interpolated, or passed to `Error` without
   first being explicitly encoded.
 
-Future typed accessors and schema validation will operate on this same opaque
-value rather than revealing the bootstrap representation.
+Read access works on this same opaque value without revealing the bootstrap
+representation (`koschei/data_access_v1.py`):
+
+```ks
+let member = json_get(value, "name") or return Error("no name")
+let name = json_text(member) or "unknown"
+```
+
+`json_kind`, `json_has`, `json_get`, `json_at`, `json_text`, `json_int`,
+`json_float`, `json_bool`, `json_length`, `json_keys` and `json_items` are pure
+kernel builtins. A value of the wrong kind is a `KS3709` Error value and a
+missing member or index is `KS3710`; nothing is converted silently. The
+language guide lists every signature. Schema validation remains planned.
 
 ## Enforced budgets
 

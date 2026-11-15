@@ -191,8 +191,8 @@ fn main() {
 }
 ```
 
-`filter`, lambda sözdizimi gelene kadar tek argüman alan ve `Bool` döndüren yerel,
-adlandırılmış bir fonksiyon kullanır. `sort()` yalnızca homojen String veya sayısal
+`filter`, tek argüman alan ve `Bool` döndüren adlandırılmış bir fonksiyon ya da
+`fn(x: Int) -> Bool { ... }` biçiminde bir lambda kullanır. `sort()` yalnızca homojen String veya sayısal
 List'leri sıralar; desteklenmeyen öğeler hata değeridir. Capability değerleri List
 içine konamaz veya `push` ile eklenemez.
 

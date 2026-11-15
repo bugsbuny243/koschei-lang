@@ -9,6 +9,7 @@ string operations.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import TypeAlias
 
 from .ast_nodes import TypeRef
@@ -81,8 +82,12 @@ def split_top_level(text: str, separator: str) -> tuple[str, ...]:
     return tuple(parts)
 
 
+@lru_cache(maxsize=4096)
 def parse_type_text(text: str) -> TypeNode:
-    """Parse ``Result<List<Int>, Error> or Void`` into structural nodes."""
+    """Parse ``Result<List<Int>, Error> or Void`` into structural nodes.
+
+    Pure, and its results are immutable, so runtime type checks reuse them.
+    """
 
     text = text.strip()
     if not text or text == "_":

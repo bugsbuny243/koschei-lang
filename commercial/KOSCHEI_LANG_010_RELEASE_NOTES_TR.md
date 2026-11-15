@@ -1,8 +1,56 @@
-# Koschei Lang 0.10.1 — Sürüm Notları
+# Koschei Lang 0.14.0 — Sürüm Notları
 
 **Ürün:** Koschei Lang (Koschei Sentinel ve Web3 Hub'dan bağımsız)  
-**Sürüm:** 0.10.1  
+**Sürüm:** 0.14.0  
 **Ürün hattı:** ticari lisanslı, 1.0 öncesi programlama dili ve araç zinciri
+
+## 0.14.0'da yeni
+
+- `ks run` yaklaşık iki kat hızlı: bir milyon turluk döngü 8,5 saniyeden
+  3,5 saniyeye indi. Sonuçlar, hata değerleri ve adım sayıları değişmedi.
+- Lambda'lar: `xs.filter(fn(x: Int) -> Bool { return x > 0 })`. Lambda
+  çevresindeki fonksiyonun değişkenlerini yakalamaz; bir yetki jetonunu
+  gizlice tutamaz.
+- Generic struct'lar tip anotasyonuyla (`let page: Page<Int> = ...`) ve tip
+  parametrelerinin yerini değiştiren generic fonksiyonlarda çalışır; tip
+  hataları `Pair<Int, String>` gibi kaynak tipleriyle yazılır.
+
+## 0.13.0'da yeni
+
+- Veritabanı: `caps.db.allow(yol, en_fazla_satır, en_fazla_bayt, süre_ms)`
+  tek bir SQLite dosyası açar; `exec(sql, parametreler)` satırları
+  değiştirir, `query(sql, parametreler)` onları `Data` olarak döndürür. SQL
+  bir metin literali olmalıdır, değerler `?` yer tutucularına bağlanır; SQL
+  enjeksiyonu yazılamaz. `ATTACH`, `PRAGMA` ve eklentiler reddedilir;
+  satır, dosya boyutu ve deyim süresi sınırlıdır. `ks run` ile çalışır;
+  `ks build` şimdilik reddeder. Ayrıntılar kaynak depodaki `docs/DB_V1.md`.
+
+## 0.12.0'da yeni
+
+- Dışa açık sunucu: `caps.serve.allow("0.0.0.0:8080", ...)` (veya
+  `[::]:PORT`) bütün arayüzlerden dinler; Koschei web uygulamasına başka
+  makinelerden erişilebilir. Bütçeler, sıkı HTTP kuralları ve bağlantı
+  başına tek istek kuralı değişmedi; başka loopback dışı adresler reddedilir.
+- `http` Core Library modülü: `route` `/users/:id` kalıbını eşleştirir,
+  `query` ve `params` sorgu ile form gövdesini, `cookies` `Cookie` başlığını
+  okur; `escape_html` metni sayfaya güvenle koymaya hazırlar.
+- `server.reply_with(durum, başlıklar, gövde)` `Location` ve `Set-Cookie`
+  gibi başlıklar gönderir; yönlendirmeler (301, 302, 303, 307, 308) ve 401
+  kullanılabilir. Bir başlık değeri başka bir başlık ekleyemez.
+
+## 0.11.0'da yeni
+
+- JSON okuma: `json_kind`, `json_has`, `json_get`, `json_at`, `json_text`,
+  `json_int`, `json_float`, `json_bool`, `json_length`, `json_keys` ve
+  `json_items`, `parse_json`'un döndürdüğü `Data` değerini okur. Eksik alan
+  veya yanlış türde değer program çökertmez, hata değeri döner.
+- JSON yazma: `json` Core Library modülü; tırnak, ters bölü ve kontrol
+  karakterlerini doğru kaçıran JSON metni üretir.
+- `math`: `min`, `max`, `clamp`, `abs`, `pow`, `gcd` ve Float karşılıkları.
+  64 bit Int dışına taşan sonuç hata değeridir, yanlış sayı değil.
+- `time`: UTC zaman damgasından tarihe ve geri, ISO 8601 metni; 1–9999
+  yılları. Olmayan bir tarih hata değeridir.
+- `parse_json` artık modül içe aktaran programlarda da çalışır.
 
 ## 0.10.1'de yeni
 

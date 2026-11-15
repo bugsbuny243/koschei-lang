@@ -34,13 +34,17 @@ CORE_LIBRARY_ROOT = (Path(__file__).resolve().parent / "core_library").resolve()
 CORE_LIBRARY_MODULES_V1: tuple[str, ...] = (
     "captain_marvel",
     "hela",
+    "http",
+    "json",
     "list",
+    "math",
     "matrix_horizon",
     "matrix_portal",
     "morag",
     "secure",
     "strange",
     "text",
+    "time",
     "wanda",
     "xandar",
 )

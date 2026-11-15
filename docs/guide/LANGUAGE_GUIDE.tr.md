@@ -176,12 +176,39 @@ go
   `join(list)`, `to_int()`, `to_float()`. `split`, `to_int` ve `to_float`
   başarısız olabilir; `or` ile ele alın.
 - List metotları: `length()`, `get(index)`, `push(item)`, `contains(item)`,
-  `sort()`, `filter(function)`, `map(function)`. `filter` ve `map` adlandırılmış
-  bir fonksiyon alır; lambda yoktur. `sort`, `filter` ve `map` başarısız
+  `sort()`, `filter(function)`, `map(function)`. `filter` ve `map` bir fonksiyon
+  adı ya da lambda (aşağıda) alır. `sort`, `filter` ve `map` başarısız
   olabilir; `or` ile ele alın.
 - `print` satır sonu eklemeden yazar; `println` ekler.
 - `match` ifade olarak da deyim olarak da çalışır. Payload taşımayan varyant
   parantezle kurulur (`Green()`), parantezsiz eşlenir (`Green`).
+
+### Lambda'lar
+
+Bir değer beklenen yerde yazılan `fn(parametreler) -> Tip { ... }` bir
+lambda'dır: adı olmayan bir fonksiyon. Fonksiyon adının geçebildiği her yere
+geçer: `filter`, `map`, `any`, `partition`, `scan` ya da bir değişken.
+
+```ks
+fn main() {
+    let numbers = [5, -2, 8, 0]
+    println(numbers.filter(fn(x: Int) -> Bool { return x > 0 }) or [])
+    println(numbers.map(fn(x: Int) -> Int { return x * x }) or [])
+    let shout = fn(word: String) -> String { return "{word}!" }
+    println(shout("tea"))
+}
+```
+
+```output
+[5, 8]
+[25, 4, 64, 0]
+tea!
+```
+
+Lambda değer yakalamaz: gövdesi kendi parametrelerini, diğer fonksiyonları ve
+içe aktarılan modülleri görür; yazıldığı fonksiyonun değişkenlerini asla
+görmez (`KS1103`). Böyle bir değeri parametre olarak verin ya da adlandırılmış
+bir fonksiyon yazın. Böylece bir lambda bir yetki jetonunu gizlice tutamaz.
 
 ## 4. Hatalar değerdir
 
@@ -321,6 +348,130 @@ false
 Map anahtarları String'dir ve ekleme sırasını korur. Olmayan bir anahtarda
 `get` bir hata değeridir; `or` ile ele alın veya önce `contains` ile sorun.
 
+Struct'lar da tip parametresi alır. `Page { items: [90, 75, 60], total: 3 }`
+bir `Page<Int>` değeridir; anotasyon bunu açıkça yazar, yanlış tipte bir
+değer denetimde reddedilir.
+
+```ks
+struct Page<T> {
+    items: List<T>,
+    total: Int,
+}
+
+fn count<T>(page: Page<T>) -> Int {
+    return page.items.length()
+}
+
+fn main() {
+    let names: Page<String> = Page { items: ["ada", "alan"], total: 2 }
+    let scores = Page { items: [90, 75, 60], total: 3 }
+    println(count(names))
+    println(count(scores))
+}
+```
+
+```output
+2
+3
+```
+
+### JSON
+
+`parse_json` metni opak bir `Data` değerine çevirir; `json_` fonksiyonları onu
+okur. Koschei metinlerinde süslü parantezler kaçışlanır (`\{`, `\}`), çünkü
+`{...}` interpolasyondur.
+
+```ks
+fn price(item: Data) -> Int or Error {
+    let field = json_get(item, "price") or return Error("item has no price")
+    let value = json_int(field) or return Error("price is not a whole number")
+    return value
+}
+
+fn main() {
+    let text = "\{\"shop\":\"Ada's\",\"open\":true,\"items\":[\{\"name\":\"pen\",\"price\":3\},\{\"name\":\"ink\",\"price\":12\},\{\"name\":\"gift\"\}]\}"
+    let order = parse_json(text) or return Error("not JSON")
+    let shop = json_get(order, "shop") or return Error("no shop")
+    println(json_text(shop) or "?")
+    println(json_kind(order))
+    println(json_keys(order) or [])
+    println(json_has(order, "discount"))
+    let list = json_get(order, "items") or return Error("no items")
+    println(json_length(list) or 0)
+    let mut total = 0
+    for item in json_items(list) or [] {
+        let name = json_get(item, "name") or item
+        let cost = price(item) or 0
+        println("{json_text(name) or "?"}: {cost}")
+        total = total + cost
+    }
+    println(total)
+    let first = json_at(list, 0) or return Error("empty")
+    println(encode_json(first) or "?")
+    println(json_at(list, 9))
+    println(json_int(shop))
+}
+```
+
+```output
+Ada's
+object
+["shop", "open", "items"]
+false
+3
+pen: 3
+ink: 12
+gift: 0
+15
+{"name":"pen","price":3}
+KS3710: json_at(): index 9 is outside 0..2
+KS3709: json_int() expects a JSON number, found string
+```
+
+| Fonksiyon | Döndürür | Ne için |
+|---|---|---|
+| `parse_json(text)` | `Data or Error` | metinden `Data` |
+| `encode_json(data)` | `String or Error` | `Data` değerinden kanonik JSON metni |
+| `json_kind(data)` | `String` | `"object"`, `"array"`, `"string"`, `"number"`, `"bool"` veya `"null"` |
+| `json_has(data, key)` | `Bool` | nesnede üye var mı |
+| `json_get(data, key)` | `Data or Error` | nesne üyesi |
+| `json_at(data, index)` | `Data or Error` | dizi öğesi |
+| `json_text(data)` | `String or Error` | JSON metni |
+| `json_int(data)` | `Int or Error` | `Int` aralığındaki tam sayı |
+| `json_float(data)` | `Float or Error` | herhangi bir sayı |
+| `json_bool(data)` | `Bool or Error` | `true` veya `false` |
+| `json_length(data)` | `Int or Error` | dizinin öğe, nesnenin üye sayısı |
+| `json_keys(data)` | `List<String> or Error` | üye adları, belgedeki sırayla |
+| `json_items(data)` | `List<Data> or Error` | dizi öğeleri, `for` ile gezmek için |
+
+- Sessiz dönüşüm yapılmaz: `json_int`, `2.5` değerini ve metni reddeder; yanlış
+  tür `KS3709` hata değeridir. Eksik üye ya da dizin `KS3710` olur. İkisini de
+  `or` ile ele alın.
+- `Data` değeri yazdırılamaz ve interpolasyona giremez; önce `encode_json`
+  çağırın ya da bir alan okuyun.
+- Bunların hepsi saftır: yetki gerektirmez ve `pure fn` içinde çalışır.
+- JSON `ks run` altında çalışır. `ks build`, native arka uç destekleyene kadar
+  `Data` kullanan programları reddeder (`KS4004`).
+
+JSON yazmak için metni `json` Core Library modülüyle kurun; parçalar iç içe geçer:
+
+```ks
+import json
+
+fn main() {
+    let tags = json.array([json.string("pen"), json.string("ink")])
+    let order = json.object({"shop": json.string("Ada's"), "total": json.int(15), "tags": tags})
+    println(order)
+    let data = parse_json(order) or return Error("not JSON")
+    println(json_kind(data))
+}
+```
+
+```output
+{"shop":"Ada's","total":15,"tags":["pen","ink"]}
+object
+```
+
 ### Bytes
 
 `String` her zaman UTF-8 metindir; ikili veri `Bytes`'tır ve ikisi asla
@@ -355,7 +506,9 @@ liste [`../reference/CORE_LIBRARY.md`](../reference/CORE_LIBRARY.md) içinde.
 ```ks
 import text
 import list
+import math
 import secure
+import time
 
 fn main() {
     println(text.starts_with("koschei.ks", "koschei"))
@@ -363,6 +516,10 @@ fn main() {
     println(text.lines("one\ntwo"))
     println(list.reverse([1, 2, 3]))
     println(list.first(["x", "y"]))
+    println(math.max(3, 8))
+    println(math.pow(2, 10) or 0)
+    println(math.pow(2, 63))
+    println(time.iso_utc(1762933548000) or "?")
     println(secure.hash("koschei") or "?")
 }
 ```
@@ -373,6 +530,10 @@ a+b+c
 Ok(["one", "two"])
 [3, 2, 1]
 Some("x")
+8
+1024
+math.pow: the result is outside Int
+2025-11-12T07:45:48Z
 sha3-256:3997da0d8a19346db3fb4c5be74689b753e506c8a03f2bba28be7b3bd3125e8c
 ```
 
@@ -432,6 +593,7 @@ usage: greet NAME
 | `caps.disk` | `allow(prefix)`, `allow_read_only(prefix)` | `read`, `write`, `list`, `delete` |
 | `caps.env` | `allow(name)` | `get()` |
 | `caps.net` | `allow(origin)` | `get(url)`, `post(url, content_type, body)` |
+| `caps.db` | `allow(path, max_rows, max_bytes, deadline_ms)` | `exec(sql, params)`, `query(sql, params)` |
 
 - Kök yetki doğrudan iş yapamaz (`KS2402`); daraltılmış jeton genişleyemez
   (`KS2403`) ve kendisine verilmeyeni yapamaz (`KS2404`).
@@ -487,6 +649,132 @@ okunamazsa `missing` yazar. `ks caps` bu program için tek bir yetki bildirir:
 disk, `/data`, salt-okunur. `list(path)` bir dizindeki adları döndürür;
 `allow(prefix)` ile alınan jeton ayrıca `write(path, text)` ve `delete(path)`
 yapabilir.
+
+### HTTP sunucusu
+
+`http` Core Library modülü sunucunun aldığı isteği okur: `route` istek
+adresini bir kalıpla eşleştirir ve `:ad` parçalarını çözülmüş hâlde yakalar;
+`query` sorgu metnini, `params` form gövdesini okur; `escape_html` metni
+sayfaya güvenle koymaya hazırlar. Hepsi saftır; bir isteğin cevabı soket
+olmadan hesaplanıp test edilebilir.
+
+```ks
+import http
+
+fn page(target: String) -> String {
+    let found = http.route("/users/:name", target) or return "404"
+    let name = found.get("name") or "?"
+    let query = http.query(target) or return "400 bad query"
+    let tab = query.get("tab") or "posts"
+    return "user {name}, tab {tab}"
+}
+
+fn main() {
+    println(page("/users/ada%20lovelace?tab=likes"))
+    println(page("/users/alan"))
+    println(page("/teams/1"))
+    println(http.escape_html("<b>Tom & Jerry</b>"))
+}
+```
+
+```output
+user ada lovelace, tab likes
+user alan, tab posts
+404
+&lt;b&gt;Tom &amp; Jerry&lt;/b&gt;
+```
+
+Sunucu `caps.serve.allow(adres, en_fazla_istek, istek_bayt, cevap_bayt,
+süre_ms)` ile alınır. `accept()` bir isteği bekler, `reply_as(durum,
+içerik_türü, gövde)` onu cevaplar. Jeton, sunan fonksiyona taşınır; bu yüzden
+döngü orada yaşar ve her cevaba saf bir fonksiyon karar verir.
+
+```ks
+import http
+import json
+
+struct Reply {
+    status: Int,
+    content_type: String,
+    body: String,
+}
+
+// Pure: decides the answer from the request target alone.
+fn respond(target: String) -> Reply {
+    let found = http.route("/users/:name", target) or {
+        return Reply { status: 404, content_type: "text/plain", body: "not found" }
+    }
+    let name = found.get("name") or "?"
+    let body = json.object({"name": json.string(name)})
+    return Reply { status: 200, content_type: "application/json", body: body }
+}
+
+fn serve(server: ServeCaps, rounds: Int) -> Int {
+    let mut served = 0
+    while served < rounds {
+        served = served + 1
+        let request = server.accept() or {
+            continue
+        }
+        let reply = respond(request.path())
+        let sent = server.reply_as(reply.status, reply.content_type, reply.body) or {
+            continue
+        }
+    }
+    return served
+}
+
+fn main(caps: SystemCaps) {
+    let server = caps.serve.allow("127.0.0.1:8080", 1000, 65536, 65536, 5000)
+    println(serve(server, 1000))
+}
+```
+
+`curl localhost:8080/users/ada` `{"name":"ada"}` döndürür; başka her adres
+`404` alır. `ks caps` tek bir yetki bildirir: serve, `127.0.0.1:8080` ve dört
+bütçesi. `0.0.0.0:8080` bütün arayüzlerden dinler; herkese açık sunucu
+böyle açılır. Sunucu `ks build` ile de aynı çalışır. Bütün kurallar için
+[`../SERVE_KNOWHERE_V1.md`](../SERVE_KNOWHERE_V1.md).
+
+### Veritabanı
+
+`caps.db.allow(yol, en_fazla_satır, en_fazla_bayt, süre_ms)` tek bir SQLite
+dosyası açar: mutlak bir yol, bir sorgunun döndürebileceği en çok satır,
+dosyanın büyüyebileceği en büyük boyut ve bir deyimin çalışabileceği süre.
+`exec(sql, parametreler)` değişen satır sayısını, `query(sql, parametreler)`
+satırları `Data` olarak döndürür: `json_` fonksiyonlarıyla okunan bir JSON
+nesne dizisi.
+
+SQL bir metin literali olmalıdır. Değerler metne hiç girmez: `json` modülüyle
+kurulan bir JSON dizisinden `?` yer tutucularına bağlanır. Çalışma anında
+birleştirilen bir deyim denetimde `KS2462` hatasıdır; SQL enjeksiyonu
+yazılamaz.
+
+```ks
+import json
+
+fn add_note(db: DbCaps, body: String) -> Int or Error {
+    let made = db.exec("CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY, body TEXT NOT NULL)", "[]") or return Error("cannot create the table")
+    let added = db.exec("INSERT INTO notes (body) VALUES (?)", json.array([json.string(body)])) or return Error("cannot save the note")
+    let rows = db.query("SELECT count(*) AS total FROM notes", "[]") or return Error("cannot count")
+    let row = json_at(rows, 0) or return Error("no row")
+    let total = json_get(row, "total") or return Error("no total")
+    let count = json_int(total) or return Error("not a number")
+    return count
+}
+
+fn main(caps: SystemCaps) {
+    let db = caps.db.allow("/tmp/notes.db", 1000, 10485760, 2000)
+    let count = add_note(db, "buy tea") or 0
+    println("{count} notes")
+}
+```
+
+Her çalıştırma bir satır ekler: ilki `1 notes`, sonraki `2 notes` yazar. Bir
+deyim tablo, indeks, görünüm ve tetikleyicileri okuyup yazabilir; `ATTACH`,
+`PRAGMA` ve eklentiler reddedilir (`KS3484`), program yalnızca bu dosyaya
+erişir. Veritabanı `ks run` ile çalışır; `ks build` şimdilik reddeder
+(`KS4004`). Ayrıntılar: [`../DB_V1.md`](../DB_V1.md).
 
 ## 10. Araçlar
 

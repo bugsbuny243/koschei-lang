@@ -7,13 +7,17 @@ Every module is written in Koschei and compiled with the program that imports it
 |---|---|---|
 | [`captain_marvel`](#captain_marvel) | 3 | 2 |
 | [`hela`](#hela) | 4 | 1 |
+| [`http`](#http) | 13 | 0 |
+| [`json`](#json) | 8 | 0 |
 | [`list`](#list) | 10 | 0 |
+| [`math`](#math) | 12 | 0 |
 | [`matrix_horizon`](#matrix_horizon) | 5 | 1 |
 | [`matrix_portal`](#matrix_portal) | 3 | 1 |
 | [`morag`](#morag) | 2 | 3 |
 | [`secure`](#secure) | 5 | 0 |
 | [`strange`](#strange) | 2 | 2 |
 | [`text`](#text) | 13 | 0 |
+| [`time`](#time) | 18 | 1 |
 | [`wanda`](#wanda) | 5 | 1 |
 | [`xandar`](#xandar) | 4 | 2 |
 
@@ -111,6 +115,178 @@ fn is_resurrection_attempt(tombstone: AuthorityTombstone, principal_digest: Stri
 
 The same decision, named for the caller that is about to grant authority.
 
+## http
+
+Written in Koschei. Reads the parts of a request that `ServeCaps.accept()` leaves raw: the request target (`request.path()`, query string included), percent-encoded text, query strings and `application/x-www-form-urlencoded` bodies, and route patterns such as "/users/:id". It also escapes text for HTML. Every function is pure: nothing here touches a socket, so no capability is needed, and the program decides when input is interpreted.
+
+Malformed input is an Error value or None, never a guess: a `%` that is not followed by two hex digits, or bytes that are not UTF-8 once decoded.
+
+### `http.path_of`
+
+```ks
+fn path_of(target: String) -> String
+```
+
+The path part of a request target: everything before the first `?`.
+
+### `http.query_of`
+
+```ks
+fn query_of(target: String) -> String
+```
+
+The query part of a request target, without the `?`; "" when there is none.
+
+### `http.is_hex_digit`
+
+```ks
+fn is_hex_digit(b: Int) -> Bool
+```
+
+### `http.unescape`
+
+```ks
+fn unescape(text: String, plus_is_space: Bool) -> String or Error
+```
+
+Percent-decoding. With `plus_is_space`, `+` is a space, as in query strings and form bodies; in a path it stays `+`.
+
+### `http.decode`
+
+```ks
+fn decode(text: String) -> String or Error
+```
+
+Decodes a path segment: `%2F` becomes `/`, `+` stays `+`.
+
+### `http.decode_form`
+
+```ks
+fn decode_form(text: String) -> String or Error
+```
+
+Decodes a query or form component: `+` is a space.
+
+### `http.params`
+
+```ks
+fn params(text: String) -> Map<String, String> or Error
+```
+
+Names and values of a query string or a form body: "a=1&b=two+words". A pair without `=` has the value "". Empty pairs are skipped. When a name repeats, the last value wins; the map keeps first-seen order.
+
+### `http.query`
+
+```ks
+fn query(target: String) -> Map<String, String> or Error
+```
+
+The query parameters of a request target, such as `request.path()`.
+
+### `http.segments`
+
+```ks
+fn segments(path: String) -> List<String>
+```
+
+The non-empty segments of a path, still encoded: "/a//b/" is ["a", "b"].
+
+### `http.route`
+
+```ks
+fn route(pattern: String, target: String) -> Option<Map<String, String>>
+```
+
+Matches a request target against a pattern such as "/users/:id/posts". A segment starting with `:` captures the decoded segment under that name; other segments are plain text and must equal the decoded segment. The query string is ignored, and so are empty segments, so "/users/" matches "/users". None when the target does not match or a segment is not valid percent-encoded UTF-8.
+
+### `http.after_colon`
+
+```ks
+fn after_colon(segment: String) -> String
+```
+
+"id" for ":id"; "" for a literal segment.
+
+### `http.cookies`
+
+```ks
+fn cookies(header: String) -> Map<String, String>
+```
+
+The cookies of a `Cookie` request header: "sid=abc; theme=dark". Values are returned as sent, not decoded. A piece without a name or `=` is skipped; when a name repeats, the first value wins, as browsers send the most specific cookie first.
+
+### `http.escape_html`
+
+```ks
+fn escape_html(text: String) -> String
+```
+
+Escapes text for HTML element content and quoted attribute values: & < > " and ' become character references.
+
+## json
+
+Written in Koschei. Builds JSON text from Koschei values. Each function returns the encoded text of one JSON value; `array` and `object` take values that are already encoded, so documents nest:
+
+json.object({"name": json.string("Ada"), "tags": json.array([json.int(1)])})
+
+The result is text. Pass it to `parse_json` to get a `Data` value, which also checks it: `array` and `object` trust their parts to be encoded JSON.
+
+### `json.string`
+
+```ks
+fn string(value: String) -> String
+```
+
+### `json.escape`
+
+```ks
+fn escape(b: Int) -> String
+```
+
+The escape for one byte that may not appear raw inside a JSON string.
+
+### `json.int`
+
+```ks
+fn int(value: Int) -> String
+```
+
+### `json.float`
+
+```ks
+fn float(value: Float) -> String or Error
+```
+
+JSON has no infinity or NaN: those are an Error value, never invalid text.
+
+### `json.bool`
+
+```ks
+fn bool(value: Bool) -> String
+```
+
+### `json.null`
+
+```ks
+fn null() -> String
+```
+
+### `json.array`
+
+```ks
+fn array(items: List<String>) -> String
+```
+
+items: already-encoded JSON values.
+
+### `json.object`
+
+```ks
+fn object(members: Map<String, String>) -> String
+```
+
+members: names to already-encoded JSON values, written in the map's order.
+
 ## list
 
 Written in Koschei. Every function is total and never mutates its input: a result list is always a fresh value. Index arguments outside the valid range produce an Error value; they are never clamped silently.
@@ -184,6 +360,90 @@ fn replace_at<T>(items: List<T>, index: Int, item: T) -> Result<List<T>, Error>
 ```
 
 Replaces the item at `index`; requires 0 <= index < length.
+
+## math
+
+Written in Koschei. Int is signed 64-bit and never wraps: a result that would leave that range is an Error value, never a silently wrong number. Functions that cannot overflow return a plain Int or Float.
+
+### `math.min`
+
+```ks
+fn min(a: Int, b: Int) -> Int
+```
+
+### `math.max`
+
+```ks
+fn max(a: Int, b: Int) -> Int
+```
+
+### `math.clamp`
+
+```ks
+fn clamp(value: Int, low: Int, high: Int) -> Int or Error
+```
+
+The bounds must be in order: low > high is an Error value, not a guess.
+
+### `math.sign`
+
+```ks
+fn sign(value: Int) -> Int
+```
+
+### `math.abs`
+
+```ks
+fn abs(value: Int) -> Int or Error
+```
+
+The smallest Int has no positive counterpart within 64 bits.
+
+### `math.is_even`
+
+```ks
+fn is_even(value: Int) -> Bool
+```
+
+### `math.pow`
+
+```ks
+fn pow(base: Int, exponent: Int) -> Int or Error
+```
+
+base raised to a non-negative exponent, by repeated squaring.
+
+### `math.gcd`
+
+```ks
+fn gcd(a: Int, b: Int) -> Int or Error
+```
+
+Greatest common divisor; gcd(0, 0) is 0.
+
+### `math.min_float`
+
+```ks
+fn min_float(a: Float, b: Float) -> Float
+```
+
+### `math.max_float`
+
+```ks
+fn max_float(a: Float, b: Float) -> Float
+```
+
+### `math.abs_float`
+
+```ks
+fn abs_float(value: Float) -> Float
+```
+
+### `math.clamp_float`
+
+```ks
+fn clamp_float(value: Float, low: Float, high: Float) -> Float or Error
+```
 
 ## matrix_horizon
 
@@ -515,6 +775,139 @@ fn unique_sorted(values: List<String>) -> List<String>
 ```
 
 The distinct values in ascending character order: a canonical set of names. Insertion keeps the work quadratic, which suits the small name sets the library's guardians use.
+
+## time
+
+Written in Koschei. Pure calendar arithmetic on UTC timestamps in milliseconds since 1970-01-01T00:00:00Z, the unit `clock.now_ms()` returns. Nothing here reads the clock, so no capability is needed. Supported years are 1 through 9999; a timestamp or date outside them is an Error value, never a guessed date. There are no time zones and no leap seconds.
+
+### struct `DateTime`
+
+```ks
+year: Int
+month: Int
+day: Int
+hour: Int
+minute: Int
+second: Int
+millisecond: Int
+weekday: Int
+```
+
+### `time.min_ms`
+
+```ks
+fn min_ms() -> Int
+```
+
+0001-01-01T00:00:00.000Z and 9999-12-31T23:59:59.999Z.
+
+### `time.max_ms`
+
+```ks
+fn max_ms() -> Int
+```
+
+### `time.day_ms`
+
+```ks
+fn day_ms() -> Int
+```
+
+### `time.floor_div`
+
+```ks
+fn floor_div(a: Int, b: Int) -> Int
+```
+
+Int division truncates toward zero; calendar math needs floor division.
+
+### `time.floor_mod`
+
+```ks
+fn floor_mod(a: Int, b: Int) -> Int
+```
+
+### `time.is_leap_year`
+
+```ks
+fn is_leap_year(year: Int) -> Bool
+```
+
+### `time.days_in_month`
+
+```ks
+fn days_in_month(year: Int, month: Int) -> Int or Error
+```
+
+### `time.days_from_civil`
+
+```ks
+fn days_from_civil(year: Int, month: Int, day: Int) -> Int
+```
+
+Days since 1970-01-01 for a proleptic Gregorian date (H. Hinnant's algorithm).
+
+### `time.utc`
+
+```ks
+fn utc(ms: Int) -> DateTime or Error
+```
+
+### `time.from_utc`
+
+```ks
+fn from_utc(year: Int, month: Int, day: Int, hour: Int, minute: Int, second: Int) -> Int or Error
+```
+
+### `time.pad`
+
+```ks
+fn pad(value: Int, width: Int) -> String
+```
+
+### `time.date_utc`
+
+```ks
+fn date_utc(ms: Int) -> String or Error
+```
+
+### `time.iso_utc`
+
+```ks
+fn iso_utc(ms: Int) -> String or Error
+```
+
+### `time.iso_utc_ms`
+
+```ks
+fn iso_utc_ms(ms: Int) -> String or Error
+```
+
+### `time.seconds`
+
+```ks
+fn seconds(count: Int) -> Int or Error
+```
+
+Durations in milliseconds, for arithmetic on timestamps.
+
+### `time.minutes`
+
+```ks
+fn minutes(count: Int) -> Int or Error
+```
+
+### `time.hours`
+
+```ks
+fn hours(count: Int) -> Int or Error
+```
+
+### `time.days`
+
+```ks
+fn days(count: Int) -> Int or Error
+```
 
 ## wanda
 

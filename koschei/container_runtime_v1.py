@@ -12,7 +12,18 @@ from typing import Any, Callable
 from .ast_nodes import SourceLocation, StructDeclaration
 from .interpreter import KoscheiRuntimeError, StructValue
 from .type_contracts import declaration_type
-from .type_system import GenericType, NamedType, TypeNode, alternatives, render_type, substitute_type
+from .type_system import (
+    UNKNOWN,
+    GenericType,
+    NamedType,
+    TypeNode,
+    TypeVariable,
+    UnionType,
+    alternatives,
+    render_type,
+    substitute_type,
+    union_type,
+)
 
 
 ContainsCapability = Callable[[Any], bool]
@@ -257,7 +268,11 @@ class StructBuilderV1:
                 declaration_type(self.declaration, field.type_ref),
                 mapping,
             )
-            expected_names = (render_type(expected_type),)
+            # Inside a generic function the instance may still name that
+            # function's own parameters (`Pair<B, A>` in `swap<A, B>`). They
+            # are checked at the call boundary; here they accept any value,
+            # and a capability was already refused above.
+            expected_names = (render_type(_without_type_variables(expected_type)),)
         if not matches_type(value, expected_names):
             raise ContainerRuntimeError(
                 "KS3401",
@@ -290,8 +305,20 @@ class StructBuilderV1:
         self.consumed = True
         ordered = {name: self.fields[name] for name in self.required_fields}
         type_arguments = (
-            tuple(render_type(item) for item in self.concrete_arguments)
+            tuple(render_type(_without_type_variables(item)) for item in self.concrete_arguments)
             if self.concrete_arguments is not None
             else ()
         )
         return StructValue(self.declaration.name, ordered, type_arguments)
+
+
+def _without_type_variables(type_node):
+    if isinstance(type_node, TypeVariable):
+        return UNKNOWN
+    if isinstance(type_node, GenericType):
+        return GenericType(
+            type_node.name, tuple(_without_type_variables(item) for item in type_node.arguments)
+        )
+    if isinstance(type_node, UnionType):
+        return union_type(*(_without_type_variables(item) for item in type_node.options))
+    return type_node

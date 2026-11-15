@@ -28,9 +28,16 @@ def capability_members_for_type(type_name: str) -> frozenset[str]:
     return frozenset(NARROWED_OPERATIONS.get(type_name, frozenset()))
 
 
+# Values of exactly these types are never capabilities: every capability is an
+# instance of a runtime class, never of a builtin.
+_PLAIN_TYPES = frozenset({str, int, float, bool, bytes, list, dict, tuple, type(None)})
+
+
 def runtime_capability_type_name(runtime: ModuleType, value: Any) -> str | None:
     """Resolve a runtime capability value to its canonical Koschei type name."""
 
+    if type(value) in _PLAIN_TYPES:
+        return None
     for type_name, runtime_type in runtime_capability_types(runtime).items():
         if isinstance(value, runtime_type):
             return type_name
