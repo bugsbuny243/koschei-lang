@@ -79,7 +79,7 @@ def _sandbox_command(command: list[str], workdir: str) -> list[str]:
     args = [
         binary,
         "--unshare-user", "--unshare-pid", "--unshare-net",
-        "--unshare-ipc", "--unshare-uts",
+        "--unshare-ipc", "--unshare-uts", "--disable-userns",
         "--cap-drop", "ALL",
         "--die-with-parent",
         "--ro-bind", "/usr", "/usr",
@@ -97,7 +97,7 @@ def _sandbox_command(command: list[str], workdir: str) -> list[str]:
         "--proc", "/proc",
         "--dir", "/work",
         "--bind", workdir, "/work",
-        "--tmpfs", "/tmp",
+        "--size", str(16 * 1024 * 1024), "--tmpfs", "/tmp",
         "--chdir", "/work",
         "--clearenv",
     ]
