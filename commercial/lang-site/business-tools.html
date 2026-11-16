@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#06131b">
+<meta name="description" content="Koschei Lang ile çalışan ücretsiz tarayıcı araçları: teklif hesaplama, stok alarmı, kasa özeti. Kurulum veya ZIP gerekmez.">
+<meta name="robots" content="index,follow">
+<link rel="canonical" href="https://koschei.dev/tools">
+<title>Koschei Business Tools — Tarayıcıda Çalışan Uygulamalar</title>
+<style>
+:root{--bg:#07121b;--surface:#0f2230;--surface2:#112a38;--border:#284958;--text:#eaf8f6;--muted:#9fb9bd;--accent:#62efc2;--accent2:#44bcd3;--red:#ffad9a;--shadow:#0005}
+*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:radial-gradient(ellipse at 85% 0%,#153e3d70,transparent 35%),var(--bg);color:var(--text);font:15px/1.55 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+button,input,select{font:inherit}button{cursor:pointer}a{color:var(--accent)}.wrap{width:min(1180px,calc(100% - 32px));margin:auto}
+.top{border-bottom:1px solid #24424a;background:#07121be8;position:sticky;top:0;z-index:5;backdrop-filter:blur(12px)}
+.nav{min-height:65px;display:flex;align-items:center;justify-content:space-between;gap:15px}.brand{color:var(--text);text-decoration:none;font-weight:850;letter-spacing:.06em;display:flex;align-items:center;gap:10px;font-size:13px}
+.brand-mark{display:grid;place-items:center;width:32px;height:32px;border-radius:9px;background:#13553e;border:1px solid #438e75;color:#adf4cf}.nav-side{display:flex;align-items:center;gap:18px}.nav-side a{color:#c6e0dc;text-decoration:none;font-size:13px}
+.pill{border:1px solid #39716c;border-radius:999px;color:#a5f7ce;font-size:11px;padding:5px 9px;background:#12372e;font-weight:780}
+.hero{padding:50px 0 32px}.eyebrow{font-size:11px;font-weight:850;letter-spacing:.16em;color:var(--accent);text-transform:uppercase}
+h1{font-size:clamp(31px,5vw,56px);line-height:1.09;letter-spacing:-.048em;margin:14px 0}
+.lead{font-size:17px;max-width:690px;color:var(--muted);margin:0}.infobar{display:flex;gap:9px;flex-wrap:wrap;margin-top:22px}
+.infobar span{border:1px solid var(--border);color:#c8e3e3;padding:5px 11px;border-radius:100px;font-size:12px}
+.tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:11px;margin-bottom:23px}.tab{border:1px solid var(--border);border-radius:14px;background:#102330;color:#c5deda;padding:15px 14px;text-align:left;display:flex;gap:11px;align-items:center;font-weight:750;line-height:1.3}
+.tab svg{flex:none}.tab[aria-pressed=true]{border-color:#5ce8b8;background:#174638;color:#dcfff1;box-shadow:0 0 0 1px #3fbc90}.tab small{display:block;color:#8eabb1;font-weight:500;font-size:11px;margin-top:3px}
+.workarea{display:grid;grid-template-columns:minmax(0,1fr) minmax(300px,.85fr);gap:22px;align-items:start;margin-bottom:80px}
+.panel,.receipt{border:1px solid var(--border);border-radius:20px;background:linear-gradient(165deg,#142b3a,#0b1a25);box-shadow:0 14px 50px var(--shadow);min-width:0}
+.panel{padding:24px}.receipt{padding:24px;position:sticky;top:90px;min-height:420px}.panel h2,.receipt h2{font-size:24px;line-height:1.25;letter-spacing:-.03em;margin:0 0 9px}.desc{color:var(--muted);font-size:13px;margin:0 0 22px}
+label{display:block;color:#c9e1df;font-size:12px;font-weight:750;line-height:1.3}input,select{display:block;width:100%;margin-top:7px;background:#071821;color:#f2fffc;border:1px solid #37606c;border-radius:9px;padding:11px 12px;min-width:0;font-size:14px}
+input:focus,select:focus{outline:2px solid #5ce8b8;outline-offset:1px}input::placeholder{color:#718b92}
+.options{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:13px;margin:15px 0}
+.entries{display:grid;gap:12px;margin:13px 0 15px}.entry{border:1px solid #2b4a56;border-radius:12px;background:#0a1b26;padding:13px;display:grid;gap:10px;grid-template-columns:minmax(110px,1.8fr) repeat(2,minmax(65px,.8fr)) auto;align-items:end}
+.entry.stock-entry{grid-template-columns:minmax(100px,1.6fr) repeat(3,minmax(65px,.8fr)) auto}
+.entry.cash-entry{grid-template-columns:minmax(100px,1.6fr) minmax(85px,1fr) minmax(90px,1fr) auto}
+.remove{height:43px;min-width:42px;border:1px solid #59454a;border-radius:9px;background:#34232b;color:#f5c8c3;font-size:18px}
+.actions{display:flex;align-items:center;gap:11px;flex-wrap:wrap;margin-top:18px}.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;text-decoration:none;font-weight:830;border-radius:11px;padding:13px 19px;border:1px solid #3e6d72;background:#102631;color:#dbf4ef}
+.btn.main{background:linear-gradient(120deg,#71efc0,#56e3b6);border-color:#78f2c8;color:#063b2b}.btn:disabled{opacity:.55;cursor:not-allowed}.btn:hover:not(:disabled){filter:brightness(1.07)}
+.hint{color:var(--muted);font-size:12px;margin:13px 0 0}.receipt-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px}
+.receipt .status{color:#a1becc;font-size:12px;font-weight:750}.empty{border:1px dashed #37606b;border-radius:15px;min-height:275px;display:grid;place-items:center;text-align:center;padding:25px;color:#9ab6bd}
+.empty .circle{display:grid;place-items:center;font-size:29px;width:62px;height:62px;margin:0 auto 18px;background:#153830;border:1px solid #387967;color:#71edbe;border-radius:50%}
+.result{display:none}.metric-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px;margin:15px 0}.metric{background:#09212b;border:1px solid #31515c;border-radius:12px;padding:13px}.metric span{font-size:12px;color:#a3c1c2}.metric strong{display:block;color:#eefcf8;font-size:22px;letter-spacing:-.025em;overflow-wrap:anywhere}.metric.big{background:#143c33;border-color:#409575;grid-column:1/-1}.metric.big strong{color:#88f9c8;font-size:31px}
+.report-table{width:100%;border-collapse:collapse;font-size:12px;margin-top:16px}.report-table th,.report-table td{border-bottom:1px solid #28505b;padding:10px 5px;text-align:left;overflow-wrap:anywhere}.report-table th{color:#a1bec4;font-weight:650}.report-table td:last-child{text-align:right}
+.error{display:none;border:1px solid #a65c56;color:#ffcbc1;background:#3c2429;padding:10px 13px;border-radius:11px;font-size:13px;margin-top:14px}
+.info{border-top:1px solid #28434e;padding:25px 0 45px;color:#9eb9c0;font-size:12px}.info a{color:#bcf8e0}
+[hidden]{display:none!important}
+@media(max-width:960px){.workarea{grid-template-columns:1fr}.receipt{position:static}}
+@media(max-width:640px){.hero{padding:33px 0 26px}.tabs{gap:7px}.tab{padding:11px 9px;gap:7px;font-size:12px}.tab svg{width:17px}.tab small{display:none}.panel,.receipt{padding:17px}.entry,.entry.stock-entry,.entry.cash-entry{grid-template-columns:repeat(2,minmax(0,1fr))}.entry label:first-child{grid-column:1/-1}.entry .remove{grid-column:2;justify-self:end}.options{grid-template-columns:repeat(2,minmax(0,1fr))}.nav-side{gap:9px}.nav-side a{font-size:11px}.metric strong{font-size:18px}.metric.big strong{font-size:25px}}
+@media print{body{background:white;color:#17212b}.top,.hero,.tabs,.panel,.info,.no-print{display:none!important}.wrap{width:100%}.workarea{display:block;margin:0}.receipt{border:0;box-shadow:none;padding:0;color:#17212b}.receipt *{color:#17212b!important}.metric,.metric.big{background:#fff;border:1px solid #bbb}.result{display:block!important}.empty{display:none!important}.report-table th,.report-table td{border-color:#bbb}}
+</style>
+</head>
+<body>
+<header class="top"><div class="wrap nav"><a class="brand" href="/"><span class="brand-mark">K</span> KOSCHEI <span style="color:var(--accent)">LANG</span></a><div class="nav-side"><span class="pill">BROWSER TOOLS</span><a href="/#apps">Uygulamalar</a><a href="/">Ana sayfa</a></div></div></header>
+<main class="wrap">
+  <div class="hero">
+    <div class="eyebrow">KOSCHEI BUSINESS TOOLS · WEB V1</div>
+    <h1>İşlerini tarayıcıdan hallet.</h1>
+    <p class="lead">Kurulum yok, ZIP yok. Ürünlerini gir, Koschei Lang ile hesapla, sonucu görüntüle veya PDF olarak kaydet.</p>
+    <div class="infobar"><span>✓ Telefondan çalışır</span><span>✓ Koschei hesaplama motoru</span><span>✓ Ücretsiz web sürümü</span><span>✓ Veri saklanmaz</span></div>
+  </div>
+  <nav class="tabs" aria-label="Araçlar">
+    <button type="button" class="tab" data-tool="quote" aria-pressed="true"><svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M8 3h8l4 4v14H4V3h4m7 0v5h5M8 12h8M8 16h8"/></svg><span>Teklif Ustası<small>Fiyat ve KDV hesabı</small></span></button>
+    <button type="button" class="tab" data-tool="stock" aria-pressed="false"><svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m3 7 9-4 9 4-9 4-9-4Zm0 0v10l9 4 9-4V7M12 11v10"/></svg><span>Stok Alarm<small>Eksik stokları bul</small></span></button>
+    <button type="button" class="tab" data-tool="cash" aria-pressed="false"><svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="2.5" y="5" width="19" height="14" rx="2"/><path d="M2.5 10h19M16 15h3"/></svg><span>Kasa Özet<small>Gün sonu raporu</small></span></button>
+  </nav>
+  <div class="workarea">
+    <section class="panel" id="quote-panel" aria-labelledby="quote-title">
+      <h2 id="quote-title">Teklif oluştur</h2><p class="desc">Ürün veya hizmet ekle; indirimi ve KDV'yi tek tek hesaplat.</p>
+      <label>Teklif / müşteri başlığı <input id="quote-title-input" maxlength="80" placeholder="Örnek: Kasım ayı tasarım teklifi" value="Yeni fiyat teklifi"></label>
+      <div class="options">
+        <label>İndirim (%) <input id="discount" type="number" min="0" max="100" step="1" value="0"></label>
+        <label>KDV (%) <input id="vat" type="number" min="0" max="100" step="1" value="20"></label>
+        <label>Para birimi <select class="currency"><option value="TRY">TRY ₺</option><option value="USD">USD $</option><option value="EUR">EUR €</option></select></label>
+      </div>
+      <div class="eyebrow" style="margin-top:15px">KALEMLER</div><div id="quote-rows" class="entries"></div>
+      <div class="actions"><button type="button" class="btn" data-add="quote">+ Kalem ekle</button><button type="button" class="btn main" data-calc="quote">Teklifi hesapla</button></div>
+      <p class="hint">Bu araç teklif özeti oluşturur; resmî fatura veya vergi danışmanlığı hizmeti değildir.</p>
+    </section>
+    <section class="panel" id="stock-panel" aria-labelledby="stock-title" hidden>
+      <h2 id="stock-title">Stokları analiz et</h2><p class="desc">Ürün miktarını ve minimum stok eşiğini gir; satın alma önerisini gör.</p>
+      <div class="options"><label>Para birimi <select class="currency"><option value="TRY">TRY ₺</option><option value="USD">USD $</option><option value="EUR">EUR €</option></select></label></div>
+      <div class="eyebrow">ÜRÜNLER</div><div id="stock-rows" class="entries"></div>
+      <div class="actions"><button type="button" class="btn" data-add="stock">+ Ürün ekle</button><button type="button" class="btn main" data-calc="stock">Stokları kontrol et</button></div>
+      <p class="hint">Sipariş verilmez veya haricî stok kaydı değiştirilmez. Öneriler örnek stok eşiği kuralına dayanır.</p>
+    </section>
+    <section class="panel" id="cash-panel" aria-labelledby="cash-title" hidden>
+      <h2 id="cash-title">Gün sonu kasa özeti</h2><p class="desc">Açılış bakiyesini, gelirleri ve giderleri ekle. Kapanışı gör.</p>
+      <div class="options"><label>Açılış kasası <input id="opening" inputmode="decimal" value="0.00" placeholder="0.00"></label><label>Para birimi <select class="currency"><option value="TRY">TRY ₺</option><option value="USD">USD $</option><option value="EUR">EUR €</option></select></label></div>
+      <div class="eyebrow">İŞLEMLER</div><div id="cash-rows" class="entries"></div>
+      <div class="actions"><button type="button" class="btn" data-add="cash">+ İşlem ekle</button><button type="button" class="btn main" data-calc="cash">Kasayı hesapla</button></div>
+      <p class="hint">Özet amaçlıdır; resmî muhasebe kaydı yerine geçmez.</p>
+    </section>
+    <aside class="receipt" aria-live="polite" aria-atomic="false"><div class="receipt-top"><div><div class="eyebrow">KOSCHEI ENGINE · REPORT</div><h2>Hesaplama sonucu</h2></div><span class="status" id="engine-status">Hazır</span></div>
+      <div id="empty" class="empty"><div><div class="circle">⌁</div><strong>Sonucun burada görünecek.</strong><p>Soldan bilgileri gir ve hesapla. Hesaplamayı Koschei Lang yapar.</p></div></div>
+      <div id="result" class="result"><h3 id="result-heading"></h3><div id="metrics" class="metric-row"></div><div id="result-details"></div><div class="actions no-print"><button type="button" class="btn" id="print">Yazdır / PDF kaydet</button><button type="button" class="btn" id="reset-report">Sonucu temizle</button></div></div>
+      <div id="error" class="error" role="alert"></div>
+    </aside>
+  </div>
+</main>
+<footer class="info"><div class="wrap">Koschei Lang · Web Tools v1 · Hesaplama Koschei kaynak koduyla sunucuda yapılır. Girilen veriler kaydedilmez; yalnızca hesaplama için işlenir. Genel erişime açık, ücretsiz başlangıç sürümüdür. Kaydedilebilir rapor için tarayıcının Yazdır / PDF seçeneğini kullanın. <a href="/">Ana sayfa</a> · <a href="/#roadmap">Yol haritası</a></div></footer>
+<script>
+(function(){
+  "use strict";
+  const $=id=>document.getElementById(id),qs=(root,selector)=>root.querySelector(selector);
+  let active="quote",pending=false;
+  const labels={quote:"Teklif Ustası",stock:"Stok Alarm",cash:"Kasa Özet"};
+  const moneyPattern=/^(?:0|[1-9]\d{0,8})(?:\.\d{1,2})?$/;
+  const fmt=(amount,code)=>new Intl.NumberFormat("tr-TR",{style:"currency",currency:code,minimumFractionDigits:2,maximumFractionDigits:2}).format(amount/100);
+  const input=(row,selector)=>qs(row,selector).value.trim();
+  const decimal=s=>s.trim().replace(",",".");
+  function whole(text,max,zero=true){
+    if(!/^\d+$/.test(text))throw Error("Adetler tam sayı olmalı.");
+    const n=Number(text);
+    if(!Number.isSafeInteger(n)||n>max||(!zero&&n===0))throw Error("Lütfen geçerli bir adet gir.");
+    return n;
+  }
+  function currency(){
+    return input($(active+"-panel"),".currency");
+  }
+  function cleanResult(){
+    $("empty").hidden=false;$("result").style.display="none";$("error").style.display="none";
+    $("engine-status").textContent="Hazır";
+  }
+  function useTool(tool){
+    if(!labels[tool])return;
+    active=tool;
+    document.querySelectorAll(".tab").forEach(btn=>btn.setAttribute("aria-pressed",String(btn.dataset.tool===tool)));
+    ["quote","stock","cash"].forEach(t=>$(t+"-panel").hidden=t!==tool);
+    history.replaceState(null,"","/tools?tool="+tool);
+    cleanResult();
+  }
+  document.querySelectorAll(".tab").forEach(btn=>btn.addEventListener("click",()=>useTool(btn.dataset.tool)));
+  const maxRows={quote:24,stock:40,cash:40};
+  const templates={
+    quote:'<label>Ürün / hizmet<input class="name" maxlength="60" placeholder="Örn. Tasarım hizmeti"></label><label>Adet<input class="quantity" type="number" min="1" max="1000" value="1"></label><label>Birim fiyat<input class="price" inputmode="decimal" value="100.00"></label>',
+    stock:'<label>Ürün adı<input class="name" maxlength="60" placeholder="Örn. Yazıcı kartuşu"></label><label>Stok<input class="quantity" type="number" min="0" max="100000" value="5"></label><label>Minimum<input class="minimum" type="number" min="0" max="100000" value="10"></label><label>Birim maliyet<input class="cost" inputmode="decimal" value="50.00"></label>',
+    cash:'<label>Açıklama<input class="name" maxlength="60" placeholder="Örn. Günlük satış"></label><label>İşlem türü<select class="type"><option value="income">Gelir +</option><option value="expense">Gider -</option></select></label><label>Tutar<input class="amount" inputmode="decimal" value="100.00"></label>'
+  };
+  function addRow(kind){
+    const wrap=$(kind+"-rows");
+    if(wrap.children.length>=maxRows[kind]){showError("Bu araçta en fazla "+maxRows[kind]+" kayıt desteklenir.");return;}
+    const div=document.createElement("div");div.className="entry "+kind+"-entry";
+    div.innerHTML=templates[kind]+'<button type="button" class="remove" aria-label="Satırı sil" title="Satırı sil">×</button>';
+    qs(div,".remove").addEventListener("click",()=>{if(wrap.children.length>1)div.remove();else showError("En az bir satır gerekli.");});
+    wrap.appendChild(div);
+  }
+  function showError(message){$("error").textContent=message;$("error").style.display="block";$("engine-status").textContent="Hata";}
+  function getRequest(kind){
+    const rows=Array.from($(kind+"-rows").children);
+    if(!rows.length)throw Error("Önce bir satır ekle.");
+    const names=rows.map((row,i)=>input(row,".name")||"Kalem "+(i+1));
+    const validAmount=value=>{const v=decimal(value);if(!moneyPattern.test(v))throw Error("Tutarları 100.00 gibi iki ondalık basamakla yaz.");return v;};
+    if(kind==="quote")return {names,payload:{kind,discount:whole($("discount").value,100),vat:whole($("vat").value,100),items:rows.map(row=>({quantity:whole(input(row,".quantity"),1000,false),price:validAmount(input(row,".price"))}))}};
+    if(kind==="stock")return {names,payload:{kind,items:rows.map(row=>({quantity:whole(input(row,".quantity"),100000),minimum:whole(input(row,".minimum"),100000),cost:validAmount(input(row,".cost"))}))}};
+    return {names,payload:{kind,opening:validAmount($("opening").value),items:rows.map(row=>({type:input(row,".type"),amount:validAmount(input(row,".amount"))}))}};
+  }
+  function metrics(rows){
+    const box=$("metrics");box.replaceChildren();
+    for(const row of rows){const el=document.createElement("div");el.className="metric"+(row.big?" big":"");
+      const s=document.createElement("span");s.textContent=row.label;
+      const b=document.createElement("strong");b.textContent=row.value;el.append(s,b);box.appendChild(el);}
+  }
+  function table(columns,rows){
+    const el=document.createElement("table");el.className="report-table";
+    const thead=document.createElement("thead"),head=document.createElement("tr");
+    for(const h of columns){const th=document.createElement("th");th.textContent=h;head.appendChild(th)}
+    thead.appendChild(head);el.appendChild(thead);
+    const body=document.createElement("tbody");
+    for(const row of rows){const tr=document.createElement("tr");for(const c of row){const td=document.createElement("td");td.textContent=String(c);tr.appendChild(td)}body.appendChild(tr)}
+    el.appendChild(body);$("result-details").replaceChildren(el);
+  }
+  function render(data,request,names,code){
+    $("empty").hidden=true;$("error").style.display="none";$("result").style.display="block";$("engine-status").textContent="Koschei · Tamam";
+    $("result-heading").textContent=data.kind==="quote"?($("quote-title-input").value.trim()||"Fiyat teklifi"):labels[active]+" · Rapor";
+    if(active==="quote"){
+      metrics([{label:"Ara toplam",value:fmt(data.subtotal,code)},{label:"İndirim",value:"−"+fmt(data.discount,code)},{label:"KDV",value:"+"+fmt(data.vat,code)},{label:"Toplam teklif",value:fmt(data.total,code),big:true}]);
+      table(["Ürün / hizmet","Adet","Birim"],request.items.map((x,i)=>[names[i],x.quantity,fmt(Math.round(Number(x.price)*100),code)]));
+    }else if(active==="stock"){
+      metrics([{label:"Toplam ürün",value:data.count},{label:"Alım uyarısı",value:data.alerts},{label:"Stok maliyet değeri",value:fmt(data.inventory_value,code),big:true}]);
+      table(["Ürün","Stok","Durum / Öneri"],request.items.map((x,i)=>[names[i],x.quantity,data.items[i].low?"Düşük · +"+data.items[i].reorder:"Normal"]));
+    }else{
+      metrics([{label:"Açılış",value:fmt(data.opening,code)},{label:"Gelir",value:"+"+fmt(data.income,code)},{label:"Gider",value:"−"+fmt(data.expenses,code)},{label:"Kapanış",value:fmt(data.closing,code),big:true}]);
+      table(["İşlem","Tür","Tutar"],request.items.map((x,i)=>[names[i],x.type==="income"?"Gelir":"Gider",fmt(Math.round(Number(x.amount)*100),code)]));
+    }
+  }
+  async function calculate(kind){
+    if(pending)return;
+    cleanResult();
+    let submitted;
+    try{submitted=getRequest(kind);}catch(e){showError(e.message||"Geçersiz bilgi.");return;}
+    pending=true;
+    document.querySelectorAll("[data-calc]").forEach(b=>b.disabled=true);
+    $("engine-status").textContent="Koschei hesaplıyor…";
+    try{
+      const resp=await fetch("/api/business/calculate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(submitted.payload),cache:"no-store"});
+      let data;try{data=await resp.json();}catch(_){throw Error("Sunucudan geçersiz yanıt geldi.");}
+      if(!resp.ok)throw Error(resp.status===429?"Çok fazla istek. Biraz sonra yeniden dene.":resp.status===400?"Lütfen tutarları ve miktarları kontrol et.":"Hesaplama servisi şu anda kullanılamıyor.");
+      if(data.kind!==kind)throw Error("Hesaplama yanıtı hatalı.");
+      render(data,submitted.payload,submitted.names,currency());
+    }catch(e){showError(e.message||"Ağ bağlantısını kontrol et.");}
+    finally{pending=false;document.querySelectorAll("[data-calc]").forEach(b=>b.disabled=false);}
+  }
+  document.querySelectorAll("[data-add]").forEach(b=>b.addEventListener("click",()=>addRow(b.dataset.add)));
+  document.querySelectorAll("[data-calc]").forEach(b=>b.addEventListener("click",()=>calculate(b.dataset.calc)));
+  $("print").addEventListener("click",()=>window.print());
+  $("reset-report").addEventListener("click",cleanResult);
+  for(const kind of ["quote","stock","cash"]){addRow(kind);addRow(kind);}
+  const initial=new URLSearchParams(location.search).get("tool");useTool(labels[initial]?initial:"quote");
+})();
+</script>
+</body>
+</html>
