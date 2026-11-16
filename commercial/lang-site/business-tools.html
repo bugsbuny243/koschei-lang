@@ -42,7 +42,23 @@ input:focus,select:focus{outline:2px solid #5ce8b8;outline-offset:1px}input::pla
 .error{display:none;border:1px solid #a65c56;color:#ffcbc1;background:#3c2429;padding:10px 13px;border-radius:11px;font-size:13px;margin-top:14px}
 .info{border-top:1px solid #28434e;padding:25px 0 45px;color:#9eb9c0;font-size:12px}.info a{color:#bcf8e0}
 [hidden]{display:none!important}
-@media(max-width:960px){.workarea{grid-template-columns:1fr}.receipt{position:static}}
+/* A touch browser can request a desktop-sized CSS viewport. Stack forms on
+   touch devices regardless of the reported width; this is an app, not a screenshot. */
+@media (max-width:1200px), (hover:none) and (pointer:coarse){
+ body{font-size:17px}
+ .workarea{grid-template-columns:minmax(0,1fr);gap:18px}
+ .receipt{position:static;min-height:320px}
+ .panel,.receipt{padding:clamp(18px,3vw,29px)}
+ .panel h2,.receipt h2{font-size:26px}
+ label{font-size:14px}
+ input,select{min-height:47px;font-size:16px}
+ .tab{min-height:70px;font-size:15px}
+ .btn{min-height:48px}
+ .receipt .status,.desc,.hint{font-size:14px}
+ .report-table{font-size:14px}
+ .info{font-size:13px}
+}
+
 @media(max-width:640px){.hero{padding:33px 0 26px}.tabs{gap:7px}.tab{padding:11px 9px;gap:7px;font-size:12px}.tab svg{width:17px}.tab small{display:none}.panel,.receipt{padding:17px}.entry,.entry.stock-entry,.entry.cash-entry{grid-template-columns:repeat(2,minmax(0,1fr))}.entry label:first-child{grid-column:1/-1}.entry .remove{grid-column:2;justify-self:end}.options{grid-template-columns:repeat(2,minmax(0,1fr))}.nav-side{gap:9px}.nav-side a{font-size:11px}.metric strong{font-size:18px}.metric.big strong{font-size:25px}}
 @media print{body{background:white;color:#17212b}.top,.hero,.tabs,.panel,.info,.no-print{display:none!important}.wrap{width:100%}.workarea{display:block;margin:0}.receipt{border:0;box-shadow:none;padding:0;color:#17212b}.receipt *{color:#17212b!important}.metric,.metric.big{background:#fff;border:1px solid #bbb}.result{display:block!important}.empty{display:none!important}.report-table th,.report-table td{border-color:#bbb}}
 </style>
@@ -195,6 +211,13 @@ input:focus,select:focus{outline:2px solid #5ce8b8;outline-offset:1px}input::pla
       if(!resp.ok)throw Error(resp.status===429?"Çok fazla istek. Biraz sonra yeniden dene.":resp.status===400?"Lütfen tutarları ve miktarları kontrol et.":"Hesaplama servisi şu anda kullanılamıyor.");
       if(data.kind!==kind)throw Error("Hesaplama yanıtı hatalı.");
       render(data,submitted.payload,submitted.names,currency());
+      // On phones the report follows the form; reveal it after calculation.
+      if(window.matchMedia("(max-width:1200px), (hover:none) and (pointer:coarse)").matches){
+        document.querySelector(".receipt").scrollIntoView({
+          behavior:window.matchMedia("(prefers-reduced-motion:reduce)").matches?"instant":"smooth",
+          block:"start"
+        });
+      }
     }catch(e){showError(e.message||"Ağ bağlantısını kontrol et.");}
     finally{pending=false;document.querySelectorAll("[data-calc]").forEach(b=>b.disabled=false);}
   }
