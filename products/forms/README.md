@@ -110,11 +110,11 @@ submission.
 
 ## Limits
 
-- **One connection is served at a time, for up to 10 s.** A client that opens
-  a connection and sends nothing holds the server for those 10 s; three such
-  connections delayed a normal request by 30 s in our test. Run it behind a
-  reverse proxy that buffers whole requests before passing them on (nginx and
-  Caddy do by default), so slow or idle clients wait at the proxy, not here.
+- Requests are answered one at a time. Up to 128 connections are read at
+  once beside that, so a few idle or slow clients do not hold the server;
+  each takes a reader for at most its 10 s deadline. Many more than that
+  still can: run it behind a reverse proxy (nginx, Caddy) that buffers whole
+  requests.
 - Every admin page lists the whole directory, so it slows down as
   submissions accumulate; export and remove old submissions now and then.
 - One administrator password; no user accounts.
