@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import os
 import resource
+import signal
 import subprocess
 import sys
 import tempfile
@@ -62,22 +63,31 @@ def truncate(text: str) -> str:
 
 
 def _ks(args: list[str], workdir: str) -> dict:
+    process = subprocess.Popen(
+        KS + args,
+        cwd=workdir,
+        env=_child_env(),
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        preexec_fn=_limit_child,
+    )
     try:
-        done = subprocess.run(
-            KS + args,
-            cwd=workdir,
-            env=_child_env(),
-            stdin=subprocess.DEVNULL,
-            capture_output=True,
-            text=True,
-            timeout=WALL_TIMEOUT_SECONDS,
-            preexec_fn=_limit_child,
-        )
+        stdout, stderr = process.communicate(timeout=WALL_TIMEOUT_SECONDS)
     except subprocess.TimeoutExpired:
+        # _limit_child creates a fresh session. Kill its whole process group,
+        # not only the interpreter, to avoid leaving descendants behind.
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        process.communicate()
         return {"exit_code": None, "stdout": "", "stderr": f"Stopped: the program exceeded the {WALL_TIMEOUT_SECONDS}s time limit.", "timed_out": True}
+    stdout = stdout.decode("utf-8", "replace")
+    stderr = stderr.decode("utf-8", "replace")
     # A path inside our temp dir means nothing to the caller.
     clean = lambda s: truncate(s.replace(workdir + os.sep, "").replace(workdir, "."))
-    return {"exit_code": done.returncode, "stdout": clean(done.stdout), "stderr": clean(done.stderr), "timed_out": False}
+    return {"exit_code": process.returncode, "stdout": clean(stdout), "stderr": clean(stderr), "timed_out": False}
 
 
 def evaluate(source: str, action: str, lang: str = "en", denied: tuple[str, ...] = SIDE_EFFECT_DOMAINS) -> dict:

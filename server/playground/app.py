@@ -64,6 +64,8 @@ CANONICAL_HOST = os.environ.get("KOSCHEI_CANONICAL_HOST", "")
 
 RATE_LIMIT_REQUESTS = 30
 RATE_LIMIT_WINDOW_SECONDS = 60
+MAX_CONCURRENT_EVALUATIONS = int(os.environ.get("KOSCHEI_MAX_CONCURRENT_EVALUATIONS", "4"))
+EVALUATION_SLOTS = threading.BoundedSemaphore(MAX_CONCURRENT_EVALUATIONS)
 
 # Capability domains a playground program may never request.
 DENIED_DOMAINS = SIDE_EFFECT_DOMAINS
@@ -118,8 +120,10 @@ class Handler(BaseHTTPRequestHandler):
         self._send(status, json.dumps(payload, ensure_ascii=False).encode("utf-8"), "application/json; charset=utf-8")
 
     def _client(self) -> str:
-        forwarded = self.headers.get("X-Forwarded-For", "")
-        return forwarded.split(",")[0].strip() or self.client_address[0]
+        # Never trust client-supplied forwarding headers for security decisions.
+        # A trusted ingress may provide a verified client address via a separate
+        # deployment-specific mechanism; the direct peer is the safe default.
+        return self.client_address[0]
 
     def do_GET(self) -> None:  # noqa: N802
         path = self.path.split("?", 1)[0]
@@ -176,7 +180,13 @@ class Handler(BaseHTTPRequestHandler):
             lang = payload.get("lang", "en")
             if not isinstance(source, str) or len(source.encode("utf-8")) > MAX_SOURCE_BYTES:
                 raise ValueError("source")
-            result = evaluate(source, action, lang)
+            if not EVALUATION_SLOTS.acquire(blocking=False):
+                self._json(HTTPStatus.SERVICE_UNAVAILABLE, {"error": "busy", "message": "Playground is busy; retry shortly."})
+                return
+            try:
+                result = evaluate(source, action, lang)
+            finally:
+                EVALUATION_SLOTS.release()
         except (ValueError, KeyError, TypeError, json.JSONDecodeError):
             self._json(HTTPStatus.BAD_REQUEST, {"error": "invalid_request", "message": "Send JSON with a 'source' string and action 'check' or 'run'."})
             return
