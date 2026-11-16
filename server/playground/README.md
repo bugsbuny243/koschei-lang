@@ -232,11 +232,14 @@ egress IPs are bought for it. Two supported settings:
 A changing address never needs the service filter touched; never widen
 `IPAddressAllow` on the service to reach the frontend.
 
-The socket unit owns the port, so a crashed worker is restarted on the next
-connection. If the worker fails its preflight five times, systemd's start
-limit fails the socket as well and the port closes: the frontend then gets a
-fast connection error and answers 503. Stopping the worker on purpose means
-stopping both: `systemctl stop koschei-worker.socket koschei-worker.service`.
+The socket unit owns the port, so the port stays open while the worker
+restarts; connections wait in the backlog and the frontend's 25 s deadline
+turns a worker that does not come up into a 503. A worker that fails its
+preflight never serves a request (verified by `degrade.sh`). Not yet
+verified: how the socket unit behaves once the service hits systemd's start
+limit. Stopping the worker on purpose means stopping both:
+`systemctl stop koschei-worker.socket koschei-worker.service` (verified:
+the frontend then answers 503 in about 20 ms and the site stays up).
 
 The unit `vm/koschei-worker.service`:
 
