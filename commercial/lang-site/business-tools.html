@@ -263,23 +263,27 @@ input:focus,select:focus{outline:2px solid #5ce8b8;outline-offset:1px}input::pla
     setTimeout(()=>URL.revokeObjectURL(url),5000);
   }
 
+  function currentProjectDocument(){
+    const {names,payload}=getRequest(active);
+    const doc={schema:PROJECT_SCHEMA,tool:active,currency:currency(),names,payload};
+    if(active==="quote"){
+      doc.details={
+        title:$("quote-title-input").value.trim(),
+        company:$("company-name").value.trim(),
+        customer:$("customer-name").value.trim(),
+        reference:$("quote-ref").value.trim(),
+        date:$("quote-date").value
+      };
+    }
+    if(!savedCurrencies.includes(doc.currency))throw Error("Para birimi geçersiz.");
+    validateSavedProject(doc);
+    if(JSON.stringify(doc).length>24000)throw Error("Proje çok büyük.");
+    return doc;
+  }
+
   function saveProject(){
     try{
-      const {names,payload}=getRequest(active);
-      const doc={
-        schema:PROJECT_SCHEMA,tool:active,currency:currency(),
-        names,payload
-      };
-      if(active==="quote"){
-        doc.details={
-          title:$("quote-title-input").value.trim(),
-          company:$("company-name").value.trim(),
-          customer:$("customer-name").value.trim(),
-          reference:$("quote-ref").value.trim(),
-          date:$("quote-date").value
-        };
-      }
-      if(!savedCurrencies.includes(doc.currency))throw Error("Para birimi geçersiz.");
+      const doc=currentProjectDocument();
       const json=JSON.stringify(doc,null,2);
       if(json.length>24000)throw Error("Dosya kaydedilemeyecek kadar büyük.");
       downloadLocal("koschei-"+active+"-"+todayString()+".json",json+"\n","application/json;charset=utf-8");
