@@ -126,6 +126,12 @@ class CommerceTests(unittest.TestCase):
         self.assertEqual(fulfilled["order"]["status"],"fulfilled")
         status,invalid,_=self.http("/api/admin/orders/"+ref,"PATCH",{"action":"cancel"},cookie)
         self.assertEqual(status,409,invalid)
+        status,redacted,_=self.http("/api/admin/orders/"+ref,"PATCH",{"action":"redact"},cookie)
+        self.assertEqual(status,200,redacted)
+        self.assertEqual(redacted["order"]["status"],"fulfilled")
+        self.assertEqual(redacted["order"]["customer"]["email"],"redacted@invalid.example")
+        self.assertEqual(redacted["order"]["customer"]["note"],"")
+        self.assertEqual(self.db.products()[0]["stock"],1)
 
     def test_cancel_restores_stock_and_repeated_transitions_rejected(self):
         cookie=self.seed(stock=2)
@@ -137,6 +143,9 @@ class CommerceTests(unittest.TestCase):
         self.assertEqual(self.http("/api/admin/orders/"+ref,"PATCH",{"action":"cancel"},cookie)[0],200)
         self.assertEqual(self.db.products()[0]["stock"],2)
         self.assertEqual(self.http("/api/admin/orders/"+ref,"PATCH",{"action":"cancel"},cookie)[0],409)
+        status,redacted,_=self.http("/api/admin/orders/"+ref,"PATCH",{"action":"redact"},cookie)
+        self.assertEqual(status,200)
+        self.assertEqual(redacted["order"]["customer"]["name"],"[redacted]")
 
     def test_two_pending_orders_cannot_oversell(self):
         cookie=self.seed(stock=1)
@@ -201,6 +210,7 @@ class CommerceTests(unittest.TestCase):
             self.assertIn('id="merchant-orders"',html)
             self.assertIn("kredi kartı",html)
             self.assertNotIn("https://cdn.",html)
+            self.assertNotIn('style="',html,"all styles must comply with the nonce CSP")
         restricted=make_handler(self.db,Config(ORIGIN,SECRET,accept_orders=False))
         alt=ThreadingHTTPServer(("127.0.0.1",0),restricted)
         thread=Thread(target=alt.serve_forever,daemon=True);thread.start()
