@@ -171,12 +171,12 @@ input:focus,select:focus{outline:2px solid #5ce8b8;outline-offset:1px}input::pla
     </aside>
   </div>
 </main>
-<footer class="info"><div class="wrap">Koschei Lang · Web Tools v1 · Hesaplama Koschei kaynak koduyla sunucuda yapılır. Girilen veriler kaydedilmez; yalnızca hesaplama için işlenir. Genel erişime açık, ücretsiz başlangıç sürümüdür. Kaydedilebilir rapor için tarayıcının Yazdır / PDF seçeneğini kullanın. <a href="/">Ana sayfa</a> · <a href="/#roadmap">Yol haritası</a></div></footer>
+<footer class="info"><div class="wrap">Koschei Lang · Web Tools v1 · Hesaplama Koschei kaynak koduyla sunucuda yapılır. Girilen veriler sunucuda proje olarak kaydedilmez; “Bu cihazda kaydet” seçilirse çalışmalar yalnızca bu tarayıcıda saklanır. Genel erişime açık, ücretsiz başlangıç sürümüdür. Kaydedilebilir rapor için tarayıcının Yazdır / PDF seçeneğini kullanın. <a href="/">Ana sayfa</a> · <a href="/#roadmap">Yol haritası</a></div></footer>
 <script>
 (function(){
   "use strict";
   const $=id=>document.getElementById(id),qs=(root,selector)=>root.querySelector(selector);
-  let active="quote",pending=false,revision=0,lastReport=null;
+  let active="quote",pending=false,revision=0,lastReport=null,editingRecordId=null;
   const labels={quote:"Teklif Ustası",stock:"Stok Alarm",cash:"Kasa Özet"};
   const moneyPattern=/^(?:0|[1-9]\d{0,8})(?:\.\d{1,2})?$/;
   const fmt=(amount,code)=>new Intl.NumberFormat("tr-TR",{style:"currency",currency:code,minimumFractionDigits:2,maximumFractionDigits:2}).format(amount/100);
@@ -196,8 +196,13 @@ input:focus,select:focus{outline:2px solid #5ce8b8;outline-offset:1px}input::pla
     $("empty").hidden=false;$("result").style.display="none";$("error").style.display="none";
     $("engine-status").textContent="Hazır";
   }
+  function setWorkspaceEditingId(id){
+    editingRecordId=id;
+    $("save-device").textContent=id?"Bu kaydı güncelle":"Bu cihazda kaydet";
+  }
   function useTool(tool){
     if(!labels[tool])return;
+    setWorkspaceEditingId(null);
     revision++;
     active=tool;
     document.querySelectorAll(".tab").forEach(btn=>btn.setAttribute("aria-pressed",String(btn.dataset.tool===tool)));
@@ -530,22 +535,38 @@ input:focus,select:focus{outline:2px solid #5ce8b8;outline-offset:1px}input::pla
     }
   }
 
+  // Reopening an existing project binds edits to that record, rather than
+  // creating a duplicate every time the user presses save.
+  async function workspaceUpsert(doc,id){
+    validateSavedProject(doc);
+    if(id!==null){
+      const existing=await workspaceRead(id);
+      if(existing.tool!==doc.tool)throw Error("Kayıt türü uyuşmuyor.");
+      const record={...existing,doc,savedAt:new Date().toISOString()};
+      await workspaceWrite(record);
+      return {record,updated:true};
+    }
+    const all=await workspaceAll();
+    if(all.length>=WORKSPACE_LIMIT)throw Error("En fazla 30 kayıt saklanabilir. Eski kayıtları sil veya JSON olarak yedekle.");
+    const title=doc.tool==="quote"
+      ?(doc.details.title||doc.details.customer||"Fiyat teklifi")
+      :(doc.names[0]||labels[doc.tool]);
+    const record=workspaceNewRecord(doc,title);
+    await workspaceWrite(record);
+    return {record,updated:false};
+  }
+
   async function workspaceSave(){
     if(workspaceBusy)return;
     workspaceBusy=true;
     try{
       const doc=currentProjectDocument();
-      const all=await workspaceAll();
-      if(all.length>=WORKSPACE_LIMIT)throw Error("En fazla 30 kayıt saklanabilir. Eski kayıtları sil veya JSON olarak yedekle.");
-      const title=doc.tool==="quote"
-        ?(doc.details.title||doc.details.customer||"Fiyat teklifi")
-        :(doc.names[0]||labels[doc.tool]);
-      const record=workspaceNewRecord(doc,title);
-      await workspaceWrite(record);
+      const {record,updated}=await workspaceUpsert(doc,editingRecordId);
+      setWorkspaceEditingId(record.id);
       $("workspace-panel").hidden=false;
       $("toggle-workspace").setAttribute("aria-expanded","true");
       await workspaceRefresh();
-      workspaceNotice("Kaydedildi: "+record.name+" · Yalnızca bu tarayıcıda saklanır.");
+      workspaceNotice((updated?"Güncellendi: ":"Kaydedildi: ")+record.name+" · Yalnızca bu tarayıcıda saklanır.");
     }catch(e){
       $("workspace-panel").hidden=false;
       $("toggle-workspace").setAttribute("aria-expanded","true");
@@ -560,6 +581,7 @@ input:focus,select:focus{outline:2px solid #5ce8b8;outline-offset:1px}input::pla
     try{
       const stored=await workspaceRead(record.id);
       restoreProject(stored.doc);
+      setWorkspaceEditingId(stored.id);
       $("workspace-panel").hidden=true;
       $("toggle-workspace").setAttribute("aria-expanded","false");
       $("engine-status").textContent="Proje açıldı · Hesapla";
@@ -588,6 +610,7 @@ input:focus,select:focus{outline:2px solid #5ce8b8;outline-offset:1px}input::pla
     workspaceBusy=true;
     try{
       await workspaceRemove(record.id);
+      if(editingRecordId===record.id)setWorkspaceEditingId(null);
       await workspaceRefresh();
       workspaceNotice("Cihazdaki kayıt silindi. Bu işlem JSON yedeklerini silmez.");
     }catch(e){workspaceNotice(e.message||"Kayıt silinemedi.",true);}
@@ -734,7 +757,7 @@ input:focus,select:focus{outline:2px solid #5ce8b8;outline-offset:1px}input::pla
   $("print").addEventListener("click",()=>window.print());
   $("reset-report").addEventListener("click",cleanResult);
   $("quote-date").value=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
-  for(const kind of ["quote","stock","cash"]){addRow(kind);addRow(kind);}
+  for(const kind of ["quote","stock","cash"]){addRow(kind);}
   const initial=new URLSearchParams(location.search).get("tool");useTool(labels[initial]?initial:"quote");
 })();
 </script>
