@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - 'staging/lang-public-business-*'
+      - 'feat/business-tools-project-files-*'
   pull_request:
     branches:
       - main
