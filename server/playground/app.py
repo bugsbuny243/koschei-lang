@@ -187,6 +187,12 @@ class Handler(BaseHTTPRequestHandler):
                 result = evaluate(source, action, lang)
             finally:
                 EVALUATION_SLOTS.release()
+        except untrusted.SandboxUnavailable:
+            self._json(
+                HTTPStatus.SERVICE_UNAVAILABLE,
+                {"error": "sandbox_unavailable", "message": "The evaluation sandbox is unavailable."},
+            )
+            return
         except (ValueError, KeyError, TypeError, json.JSONDecodeError):
             self._json(HTTPStatus.BAD_REQUEST, {"error": "invalid_request", "message": "Send JSON with a 'source' string and action 'check' or 'run'."})
             return
@@ -207,6 +213,9 @@ def log_event(result: dict) -> None:
 
 
 def main() -> None:
+    # Fail closed on hosts that disallow required user/mount/network namespaces.
+    # Do not expose the playground with a silently weakened sandbox.
+    untrusted.require_sandbox_ready()
     port = int(os.environ.get("PORT", "8080"))
     ThreadingHTTPServer(("0.0.0.0", port), Handler).serve_forever()
 
