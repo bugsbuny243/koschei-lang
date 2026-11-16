@@ -1,4 +1,9 @@
-"""Koschei Forms (products/forms): the whole product, driven over HTTP."""
+"""Koschei Forms (products/forms): the whole product, driven over HTTP.
+
+Every flow runs twice: under `ks run`, and as the native binary `ks build`
+makes, where a broker holds the authority and a seccomp-confined worker runs
+the program.
+"""
 from __future__ import annotations
 
 from contextlib import redirect_stderr, redirect_stdout
@@ -28,27 +33,43 @@ def free_port() -> int:
         return probe.getsockname()[1]
 
 
+GO = shutil.which("go")
+
+
 class _FormsServer(unittest.TestCase):
     """Starts one Koschei Forms server per test class."""
+
+    native = False
 
     @classmethod
     def setUpClass(cls) -> None:
         cls.directory = tempfile.TemporaryDirectory(prefix="koschei-forms-")
         cls.root = Path(cls.directory.name)
+        cls.data = cls.root / "data"
+        cls.data.mkdir()
         cls.port = free_port()
-        for name in ("rules.ks", "pages.ks", "csv.ks"):
+        for name in ("rules.ks", "pages.ks", "csv.ks", "store.ks"):
             shutil.copy(PRODUCT / name, cls.root / name)
-        # The product's database path and bind are literals; the test copy
+        # The product's data directory and bind are literals; the test copy
         # points them at a temporary directory and a free loopback port.
         source = (PRODUCT / "main.ks").read_text(encoding="utf-8")
-        source = source.replace("/data/koschei-forms.db", str(cls.root / "forms.db"))
+        source = source.replace("/data/koschei-forms", str(cls.data))
         source = source.replace("0.0.0.0:8080", f"127.0.0.1:{cls.port}")
         (cls.root / "main.ks").write_text(source, encoding="utf-8")
-        cls.process = subprocess.Popen(
-            [sys.executable, "-m", "koschei", "run", "--max-steps", "1000000000000", str(cls.root / "main.ks")],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            env=dict(os.environ, PYTHONPATH=str(ROOT), KOSCHEI_FORMS_PASSWORD=PASSWORD),
-        )
+        environment = dict(os.environ, PYTHONPATH=str(ROOT), KOSCHEI_FORMS_PASSWORD=PASSWORD)
+        if cls.native:
+            binary = cls.root / "koschei-forms"
+            built = subprocess.run(
+                [sys.executable, "-m", "koschei", "build", str(cls.root / "main.ks"), "-o", str(binary)],
+                # Static, as products/forms/Dockerfile builds it.
+                capture_output=True, text=True, env=dict(environment, CGO_ENABLED="0"), timeout=600,
+            )
+            if built.returncode != 0:
+                raise RuntimeError(f"ks build failed: {built.stdout}{built.stderr}")
+            command = [str(binary)]
+        else:
+            command = [sys.executable, "-m", "koschei", "run", "--max-steps", "1000000000000", str(cls.root / "main.ks")]
+        cls.process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=environment)
         deadline = time.monotonic() + 30
         while True:
             try:
@@ -96,9 +117,9 @@ class KoscheiFormsTests(_FormsServer):
         with redirect_stdout(stdout), redirect_stderr(stdout):
             self.assertEqual(cli_main(["caps", "--json", str(PRODUCT / "main.ks")]), 0)
         output = stdout.getvalue()
-        for expected in ('"serve"', "0.0.0.0:8080", '"db"', "/data/koschei-forms.db", "KOSCHEI_FORMS_PASSWORD", '"clock"', '"random"'):
+        for expected in ('"serve"', "0.0.0.0:8080", '"domain": "disk"', '"scope": "/data/koschei-forms"', "KOSCHEI_FORMS_PASSWORD", '"clock"', '"random"'):
             self.assertIn(expected, output)
-        for domain in ('"domain": "disk"', '"domain": "net"', '"domain": "process"'):
+        for domain in ('"domain": "db"', '"domain": "net"', '"domain": "process"'):
             self.assertNotIn(domain, output)
 
     def test_full_flow(self) -> None:
@@ -137,6 +158,23 @@ class KoscheiFormsTests(_FormsServer):
         status, _, dashboard = self.request("GET", "/admin", cookie=token)
         self.assertIn('<a href="/admin/f/survey">survey</a></td><td>2</td>', dashboard)
         self.assertIn("http://forms.example/f/contact", dashboard)
+
+        # Storage: one file per form and per kept submission, never the
+        # session token itself.
+        names = sorted(path.name for path in self.data.iterdir())
+        self.assertIn("form_survey", names)
+        self.assertEqual(sum(name.startswith("sub_survey_") for name in names), 2)
+        self.assertFalse(any(token in name for name in names))
+
+    def test_fields_round_trip_exactly(self) -> None:
+        token = self.sign_in()
+        self.assertEqual(self.request("POST", "/admin/forms", {"slug": "exact", "redirect_url": ""}, token)[0], 303)
+        sent = {"e-mail": "a+b@example.com", "note": "x=1&y=2 %41 Ayşe\n\"q\"", "empty": ""}
+        self.assertEqual(self.request("POST", "/f/exact", sent)[0], 200)
+        _, _, csv_text = self.request("GET", "/admin/f/exact/csv", cookie=token)
+        lines = csv_text.split("\r\n")
+        self.assertEqual(lines[0], '"id","received","e-mail","note","empty"')
+        self.assertTrue(lines[1].endswith('"a+b@example.com","x=1&y=2 %41 Ayşe\n""q""",""'), lines[1])
 
     def test_redirects_are_set_by_the_administrator_only(self) -> None:
         token = self.sign_in()
@@ -177,6 +215,27 @@ class SignInPauseTests(_FormsServer):
         statuses = [self.request("POST", "/admin/login", {"password": f"wrong-{index}"})[0] for index in range(10)]
         self.assertEqual(statuses, [401] * 10)
         self.assertEqual(self.request("POST", "/admin/login", {"password": PASSWORD})[0], 429)
+
+
+@unittest.skipUnless(GO, "Go unavailable: the native Forms binary was not built")
+class KoscheiFormsNativeTests(KoscheiFormsTests):
+    native = True
+
+    def test_worker_is_confined(self) -> None:
+        # The process the test started is the broker; its child runs the
+        # program under seccomp with no_new_privs and an empty environment.
+        children = Path(f"/proc/{self.process.pid}/task/{self.process.pid}/children").read_text().split()
+        self.assertEqual(len(children), 1)
+        status = Path(f"/proc/{children[0]}/status").read_text()
+        self.assertIn("Seccomp:\t2", status)
+        self.assertIn("NoNewPrivs:\t1", status)
+        environment = Path(f"/proc/{children[0]}/environ").read_bytes().split(b"\0")
+        self.assertEqual([item for item in environment if item], [b"KOSCHEI_NATIVE_WORKER=v1"])
+
+
+@unittest.skipUnless(GO, "Go unavailable: the native Forms binary was not built")
+class SignInPauseNativeTests(SignInPauseTests):
+    native = True
 
 
 if __name__ == "__main__":
