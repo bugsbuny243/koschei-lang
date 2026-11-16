@@ -79,6 +79,10 @@ footer{border-top:1px solid #284a56;padding:25px 0 38px;color:#92acb4;font-size:
 [hidden]{display:none!important}
 @media(max-width:1000px){.hero{grid-template-columns:1fr}.hero-graphic{display:none}.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.drawer-layout{grid-template-columns:1fr}.cart-panel{position:static}}
 @media(max-width:680px){.nav{min-height:68px}.nav-actions .btn{font-size:12px;padding:9px}.hero{padding:42px 0 26px}.grid{grid-template-columns:1fr}.section{padding-bottom:35px}.admin-grid{grid-template-columns:1fr}.panel{padding:17px}.section-heading{align-items:start}.admin-form-grid{grid-template-columns:1fr}.product-art{height:132px}.hero h1{font-size:40px}}
+.online-status{color:#76f2c3}.small-lead{font-size:14px}.store-status{color:#b1cfce}
+.privacy-copy{color:#a2c5c5;font-size:13px}.admin-title{font-size:40px}.admin-lead{margin-bottom:25px}
+.admin-login{max-width:500px}.admin-toolbar{justify-content:space-between;margin-bottom:20px}
+.orders-title{margin-top:8px}.footer-link{color:#b2ffe0}
 </style>
 </head>
 <body>
@@ -87,11 +91,11 @@ footer{border-top:1px solid #284a56;padding:25px 0 38px;color:#92acb4;font-size:
 <section id="store-page">
   <div class="hero">
     <div><div class="eyebrow">KOSCHEI COMMERCE · GERÇEK MAĞAZA ALTYAPISI</div><h1>Mağazan. Ürünlerin.<br>Kontrol sende.</h1><p class="lead">Ürünleri incele, sepete ekle ve mağazaya teslim alma talebi gönder. Siparişler satıcının onayından sonra işleme alınır.</p><div class="tags"><span class="tag">Koschei fiyat motoru</span><span class="tag">Stok kontrollü</span><span class="tag">Teslim alma talepleri</span></div></div>
-    <div class="hero-graphic" aria-hidden="true"><div class="graphic-top"><b>COMMERCE / MERCHANT</b><span style="color:#76f2c3">● ONLINE</span></div><div class="mock-item"><div class="mock-art">▣</div><div class="mock-lines"><strong>Ürün kataloğu</strong><small>Fiyat · Stok · Durum</small></div><span>↗</span></div><div class="mock-item"><div class="mock-art">≡</div><div class="mock-lines"><strong>Sipariş yönetimi</strong><small>Onay · Teslim · İptal</small></div><span>↗</span></div><div class="mock-total"><span>POWERED BY</span><b>KOSCHEI</b></div></div>
+    <div class="hero-graphic" aria-hidden="true"><div class="graphic-top"><b>COMMERCE / MERCHANT</b><span class="online-status">● ONLINE</span></div><div class="mock-item"><div class="mock-art">▣</div><div class="mock-lines"><strong>Ürün kataloğu</strong><small>Fiyat · Stok · Durum</small></div><span>↗</span></div><div class="mock-item"><div class="mock-art">≡</div><div class="mock-lines"><strong>Sipariş yönetimi</strong><small>Onay · Teslim · İptal</small></div><span>↗</span></div><div class="mock-total"><span>POWERED BY</span><b>KOSCHEI</b></div></div>
   </div>
   <section class="section" aria-labelledby="products-title"><div class="section-heading"><div><div class="eyebrow">KATALOG</div><h2 id="products-title">Ürünler</h2><p>Fiyatlar TRY cinsinden, vergi dâhil girilen satış fiyatlarıdır.</p></div><button class="btn" id="refresh-products">Yenile</button></div><div id="products" class="grid"></div><p class="state" id="store-message" role="status"></p></section>
   <section class="section" id="cart-section"><div class="drawer-layout">
-    <div class="panel"><div class="eyebrow">SİPARİŞ TALEBİ</div><h2>Sepet ve teslim alma</h2><p class="lead" style="font-size:14px">Bu sürümde yalnızca mağazadan teslim alma talebi oluşturulur. Online ödeme alınmaz; kart bilgisi girmeyin.</p><div class="divider"></div>
+    <div class="panel"><div class="eyebrow">SİPARİŞ TALEBİ</div><h2>Sepet ve teslim alma</h2><p class="lead small-lead">Bu sürümde yalnızca mağazadan teslim alma talebi oluşturulur. Online ödeme alınmaz; kart bilgisi girmeyin.</p><div class="divider"></div>
       <div id="cart-lines"></div><div class="cart-total"><span>Toplam</span><b id="cart-total">₺0,00</b></div><button class="btn" id="recalculate">Koschei ile toplamı doğrula</button>
       <div class="notice">Talebin satıcı tarafından onaylanmadan kesinleşmez. Fatura veya online ödeme hizmeti sunulmaz.</div>
       <form id="order-form">
@@ -102,12 +106,12 @@ footer{border-top:1px solid #284a56;padding:25px 0 38px;color:#92acb4;font-size:
       </form>
       <p class="state" id="checkout-message" role="status"></p>
     </div>
-    <aside class="panel cart-panel"><div class="eyebrow">SİSTEM DURUMU</div><h3>Mağaza bilgisi</h3><p id="store-status" style="color:#b1cfce">Yükleniyor…</p><div class="divider"></div><p style="color:#a2c5c5;font-size:13px">Bu sistem banka kartı veya kredi kartı bilgisi toplamaz. Sipariş talebinde verilen ad ve e-posta satıcı panelinde saklanır. Kişisel bilgileri yalnızca gerçek bir mağazaya göndermelisin.</p></aside>
+    <aside class="panel cart-panel"><div class="eyebrow">SİSTEM DURUMU</div><h3>Mağaza bilgisi</h3><p id="store-status" class="store-status">Yükleniyor…</p><div class="divider"></div><p class="privacy-copy">Bu sistem banka kartı veya kredi kartı bilgisi toplamaz. Sipariş talebinde verilen ad ve e-posta satıcı panelinde saklanır. Kişisel bilgileri yalnızca gerçek bir mağazaya göndermelisin.</p></aside>
   </div></section>
 </section>
-<section id="admin-page" class="admin" hidden><div class="eyebrow">MERCHANT OPERATIONS</div><h1 style="font-size:40px">Satıcı kontrol paneli</h1><p class="lead" style="margin-bottom:25px">Ürün ekle, fiyat ve stok güncelle, siparişleri onayla veya iptal et.</p>
-  <div id="admin-login" class="panel" style="max-width:500px"><h2>Güvenli giriş</h2><form id="login-form"><label class="field">Satıcı parolası<input type="password" name="password" autocomplete="current-password" minlength="16" required></label><button class="btn primary" type="submit">Giriş yap</button></form><p id="login-message" class="state" role="status"></p></div>
-  <div id="admin-workspace" hidden><div class="nav-actions" style="justify-content:space-between;margin-bottom:20px"><h2>Mağaza yönetimi</h2><button class="btn" id="logout">Çıkış</button></div><div class="admin-grid">
+<section id="admin-page" class="admin" hidden><div class="eyebrow">MERCHANT OPERATIONS</div><h1 class="admin-title">Satıcı kontrol paneli</h1><p class="lead admin-lead">Ürün ekle, fiyat ve stok güncelle, siparişleri onayla veya iptal et.</p>
+  <div id="admin-login" class="panel admin-login"><h2>Güvenli giriş</h2><form id="login-form"><label class="field">Satıcı parolası<input type="password" name="password" autocomplete="current-password" minlength="16" required></label><button class="btn primary" type="submit">Giriş yap</button></form><p id="login-message" class="state" role="status"></p></div>
+  <div id="admin-workspace" hidden><div class="nav-actions admin-toolbar"><h2>Mağaza yönetimi</h2><button class="btn" id="logout">Çıkış</button></div><div class="admin-grid">
     <section class="panel"><div class="eyebrow">KATALOG YÖNETİMİ</div><h3 id="editor-title">Yeni ürün ekle</h3><form id="product-form">
       <label class="field">Ürün kodu (a-z, 0-9, -)<input name="sku" minlength="3" maxlength="32" pattern="[a-z][a-z0-9-]{2,31}" required placeholder="ornek-urun"></label>
       <label class="field">Ürün adı<input name="name" maxlength="100" required placeholder="Ürün adı"></label>
@@ -116,11 +120,11 @@ footer{border-top:1px solid #284a56;padding:25px 0 38px;color:#92acb4;font-size:
       <label class="toggle"><input name="active" type="checkbox" checked> Katalogda göster</label>
       <div class="nav-actions"><button class="btn primary" id="save-product" type="submit">Ürünü kaydet</button><button class="btn" id="new-product" type="button">Yeni ürün</button></div>
     </form><p class="state" id="product-message" role="status"></p></section>
-    <section class="panel"><div class="eyebrow">ÜRÜNLER</div><h3>Ürün ve stok kontrolü</h3><div id="merchant-products"></div><div class="divider"></div><div class="eyebrow">SİPARİŞLER</div><h3 style="margin-top:8px">Teslim alma talepleri</h3><div id="merchant-orders"></div><p class="state" id="order-admin-message" role="status"></p></section>
+    <section class="panel"><div class="eyebrow">ÜRÜNLER</div><h3>Ürün ve stok kontrolü</h3><div id="merchant-products"></div><div class="divider"></div><div class="eyebrow">SİPARİŞLER</div><h3 class="orders-title">Teslim alma talepleri</h3><div id="merchant-orders"></div><p class="state" id="order-admin-message" role="status"></p></section>
   </div></div>
 </section>
 </main>
-<footer><div class="wrap">Koschei Commerce · Tek mağazalı ilk sürüm · Stok yönetimi ve fiyatlandırma Koschei Lang ile doğrulanır. Sipariş alımı yalnızca kalıcı veritabanı ve satıcı ayarları yapılandırıldığında açılır. Ödeme ve kart bilgisi alınmaz. <a href="https://koschei.dev" style="color:#b2ffe0">Koschei Lang</a></div></footer>
+<footer><div class="wrap">Koschei Commerce · Tek mağazalı ilk sürüm · Stok yönetimi ve fiyatlandırma Koschei Lang ile doğrulanır. Sipariş alımı yalnızca kalıcı veritabanı ve satıcı ayarları yapılandırıldığında açılır. Ödeme ve kart bilgisi alınmaz. <a href="https://koschei.dev" class="footer-link">Koschei Lang</a></div></footer>
 <script nonce="__NONCE__">
 (function(){
 "use strict";
