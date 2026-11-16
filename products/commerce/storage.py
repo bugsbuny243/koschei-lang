@@ -308,7 +308,7 @@ class CommerceStore:
     def change_order(self, oid: str, action: str) -> dict:
         if not isinstance(oid,str) or not ID_RE.fullmatch(oid):
             raise CommerceError("invalid_order_id")
-        if action not in ("accept","fulfill","cancel"):
+        if action not in ("accept","fulfill","cancel","redact"):
             raise CommerceError("invalid_action")
         with self.connection(write=True) as db:
             order = db.execute("SELECT * FROM orders WHERE id=?",(oid,)).fetchone()
@@ -336,6 +336,12 @@ class CommerceStore:
                         if r.rowcount!=1:
                             raise CommerceError("stock_restoration_failed",409)
                 target="cancelled"
+            elif action=="redact" and previous in ("cancelled","fulfilled"):
+                db.execute(
+                    "UPDATE orders SET customer_name=?,customer_email=?,customer_note='',updated_at=? WHERE id=?",
+                    ("[redacted]","redacted@invalid.example",int(time.time()),oid)
+                )
+                target=previous
             else:
                 raise CommerceError("invalid_order_transition",409)
             db.execute("UPDATE orders SET status=?,updated_at=? WHERE id=?",
