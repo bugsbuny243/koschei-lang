@@ -75,6 +75,20 @@ let sent = server.reply_with(303, {"Location": "/thanks", "Set-Cookie": "sid={id
 }
 ```
 
+## Requests are read beside the program
+
+Once the listener is open, the server accepts connections and reads their
+requests concurrently, up to `min(max_connections, 128)` at a time.
+`accept()` returns the earliest-accepted request that has arrived in full.
+A client that connects and sends nothing, or sends slowly, occupies one of
+those readers until its deadline; it no longer holds the program. Before
+this, three idle connections delayed every other client by three deadlines.
+
+The program still handles one request at a time, and the Knowhere rules
+below are unchanged. `max_connections` still bounds the requests accepted in
+total, and a dropped server closes every connection it accepted but did not
+hand to the program.
+
 ## The Knowhere law: nothing carries over
 
 - Each connection carries exactly one request and is closed after its reply
@@ -102,7 +116,7 @@ that code, written in Koschei and pure.
 | `max_connections` | total requests one token may accept; then `KS3471` |
 | `max_request_bytes` | headers (hard ceiling 64 KiB) plus body; over it the client gets `413` and `accept()` returns the Error value |
 | `max_response_bytes` | the complete response; over it the client gets `500` and `reply()` returns the Error value |
-| `deadline_ms` | per request: waiting in `accept()` (then `KS3411`) and reading the whole request |
+| `deadline_ms` | per request: waiting in `accept()` (then `KS3411`), and reading the whole request, counted from when its connection was accepted |
 
 The strict HTTP/1.x grammar of the one-shot `exchange` applies: one `Host`
 for HTTP/1.1, a single `Content-Length`, no `Transfer-Encoding`, no
@@ -119,8 +133,8 @@ deadline; checker rules; and the native `KS4004` refusal of `exchange`.
 ## Native binaries
 
 The worker has no sockets. The broker binds the listener on the first
-`accept()` (backlog `min(max_connections, 128)`), keeps the one pending
-connection, and ports every rule above: the loopback bind, the effective
+`accept()` (backlog `min(max_connections, 128)`), reads requests concurrently
+as above, keeps the one pending connection, and ports every rule above: the loopback bind, the effective
 request grammar (`serve_loopback_exchange_v1` with its strict and parity
 layers), the budgets, the Knowhere rule and each Error text. Failures name
 socket codes (`KS3411: listener failed: EADDRINUSE`), never host messages,

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from . import serve_knowhere_v1 as _serve
 
-SERVE_IMPORTS = ("errors", "io", "net", "time")
+SERVE_IMPORTS = ("errors", "io", "net", "sync", "time")
 
 
 def _go(value: str) -> str:
@@ -245,6 +245,128 @@ type _ksServeScope struct {{
 	listener      net.Listener
 	pending       net.Conn
 	accepted      int
+	// serve_knowhere_v1._Server: requests are read beside the program.
+	mu       sync.Mutex
+	ready    []_ksServeReady
+	reading  int
+	slots    chan struct{{}}
+	changed  chan struct{{}}
+	open     map[net.Conn]bool
+	closed   bool
+}}
+
+// One request read in full (conn set) or a failure already answered.
+type _ksServeReady struct {{
+	sequence int
+	conn     net.Conn
+	fields   []string
+	message  string
+}}
+
+func _ksServeSignal(scope *_ksServeScope) {{
+	select {{
+	case scope.changed <- struct{{}}{{}}:
+	default:
+	}}
+}}
+
+// Accepts connections and reads each in its own goroutine, holding at most
+// min(connections, 128) read or waiting requests and accepting no more than
+// the connection budget.
+func _ksServeAcceptLoop(scope *_ksServeScope) {{
+	for {{
+		scope.slots <- struct{{}}{{}}
+		scope.mu.Lock()
+		if scope.closed || scope.accepted >= scope.connections {{
+			<-scope.slots
+			scope.mu.Unlock()
+			_ksServeSignal(scope)
+			return
+		}}
+		scope.mu.Unlock()
+		conn, err := scope.listener.Accept()
+		scope.mu.Lock()
+		if err != nil {{
+			if scope.closed {{
+				<-scope.slots
+			}} else {{
+				// The Error value holds the slot until accept() takes it.
+				scope.ready = append(scope.ready, _ksServeReady{{sequence: scope.accepted + 1, message: _ksIOError("accept failed: " + _ksSocketCode(err))}})
+			}}
+			scope.mu.Unlock()
+			_ksServeSignal(scope)
+			return
+		}}
+		if scope.closed {{
+			conn.Close()
+			<-scope.slots
+			scope.mu.Unlock()
+			return
+		}}
+		scope.accepted++
+		sequence := scope.accepted
+		scope.reading++
+		scope.open[conn] = true
+		scope.mu.Unlock()
+		go _ksServeReadOne(scope, sequence, conn)
+	}}
+}}
+
+func _ksServeReadOne(scope *_ksServeScope, sequence int, conn net.Conn) {{
+	deadline := time.Now().Add(scope.deadline)
+	fields, status, message := _ksServeRead(conn, scope, deadline)
+	if status != 0 {{
+		_ksServeClose(conn, status, deadline)
+	}}
+	scope.mu.Lock()
+	scope.reading--
+	switch {{
+	case status != 0:
+		delete(scope.open, conn)
+		if scope.closed {{
+			<-scope.slots
+		}} else {{
+			scope.ready = append(scope.ready, _ksServeReady{{sequence: sequence, message: message}})
+		}}
+	case scope.closed:
+		delete(scope.open, conn)
+		conn.Close()
+		<-scope.slots
+	default:
+		scope.ready = append(scope.ready, _ksServeReady{{sequence: sequence, conn: conn, fields: fields}})
+	}}
+	scope.mu.Unlock()
+	_ksServeSignal(scope)
+}}
+
+// serve_knowhere_v1._Server.close
+func _ksServeShutdown(scope *_ksServeScope) {{
+	scope.mu.Lock()
+	if scope.closed {{
+		scope.mu.Unlock()
+		return
+	}}
+	scope.closed = true
+	var conns []net.Conn
+	for conn := range scope.open {{
+		conns = append(conns, conn)
+	}}
+	scope.open = map[net.Conn]bool{{}}
+	for range scope.ready {{
+		<-scope.slots
+	}}
+	scope.ready = nil
+	scope.mu.Unlock()
+	if scope.listener != nil {{
+		scope.listener.Close()
+	}}
+	for _, conn := range conns {{
+		conn.Close()
+	}}
+	if scope.pending != nil {{
+		scope.pending.Close()
+		scope.pending = nil
+	}}
 }}
 
 var _ksServeScopes = []*_ksServeScope{{nil}}
@@ -669,32 +791,59 @@ func _ksServeAcceptBroker(scope *_ksServeScope, retry bool) []string {{
 			}}
 			return []string{{"err", _ksIOError("listener failed: " + _ksSocketCode(err))}}
 		}}
+		backlog := scope.connections
+		if backlog > 128 {{
+			backlog = 128
+		}}
+		scope.slots = make(chan struct{{}}, backlog)
+		scope.changed = make(chan struct{{}}, 1)
+		scope.open = map[net.Conn]bool{{}}
+		go _ksServeAcceptLoop(scope)
 	}}
 	if scope.pending != nil {{
 		_ksServeClose(scope.pending, 500, time.Time{{}})
 		scope.pending = nil
 		return []string{{"err", {pending}}}
 	}}
-	if scope.accepted >= scope.connections {{
-		return []string{{"err", {budget_prefix} + strconv.Itoa(scope.connections) + {budget_suffix}}}
-	}}
 	deadline := time.Now().Add(scope.deadline)
-	scope.listener.(*net.TCPListener).SetDeadline(deadline)
-	conn, err := scope.listener.Accept()
-	if err != nil {{
-		if errors.Is(err, os.ErrDeadlineExceeded) {{
+	for {{
+		scope.mu.Lock()
+		if len(scope.ready) > 0 {{
+			earliest := 0
+			for index, item := range scope.ready {{
+				if item.sequence < scope.ready[earliest].sequence {{
+					earliest = index
+				}}
+			}}
+			item := scope.ready[earliest]
+			scope.ready = append(scope.ready[:earliest], scope.ready[earliest+1:]...)
+			<-scope.slots
+			if item.conn != nil {{
+				delete(scope.open, item.conn)
+			}}
+			scope.mu.Unlock()
+			if item.conn == nil {{
+				return []string{{"err", item.message}}
+			}}
+			scope.pending = item.conn
+			return append([]string{{"ok"}}, item.fields...)
+		}}
+		exhausted := scope.accepted >= scope.connections && scope.reading == 0
+		scope.mu.Unlock()
+		if exhausted {{
+			return []string{{"err", {budget_prefix} + strconv.Itoa(scope.connections) + {budget_suffix}}}
+		}}
+		remaining := time.Until(deadline)
+		if remaining <= 0 {{
 			return []string{{"err", _ksIOError("accept exceeded the I/O deadline")}}
 		}}
-		return []string{{"err", _ksIOError("accept failed: " + _ksSocketCode(err))}}
+		timer := time.NewTimer(remaining)
+		select {{
+		case <-scope.changed:
+		case <-timer.C:
+		}}
+		timer.Stop()
 	}}
-	scope.accepted++
-	fields, status, message := _ksServeRead(conn, scope, deadline)
-	if status != 0 {{
-		_ksServeClose(conn, status, deadline)
-		return []string{{"err", message}}
-	}}
-	scope.pending = conn
-	return append([]string{{"ok"}}, fields...)
 }}
 
 var _ksReservedResponseHeaders = map[string]bool{{{reserved_headers}}}
@@ -816,12 +965,7 @@ func _ksBrokerServeServe(request []string) ([]string, bool) {{
 			// serve_knowhere_v1: a dropped server's sockets close, the
 			// listener first (_Server's slot order); an unanswered client
 			// sees its connection close.
-			if scope.listener != nil {{
-				scope.listener.Close()
-			}}
-			if scope.pending != nil {{
-				scope.pending.Close()
-			}}
+			_ksServeShutdown(scope)
 			_ksServeScopes[index] = nil
 			answer = []string{{"ok"}}
 		}}

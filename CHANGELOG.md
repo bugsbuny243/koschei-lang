@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Read server requests beside the program, under `ks run` and in native binaries: once the listener is open, connections are accepted and their requests read concurrently (up to `min(max_connections, 128)`), and `accept()` returns the earliest-accepted request that has arrived in full. A client that connected and sent nothing held the whole server for its deadline: three idle connections delayed every other request by 30 s with a 10 s deadline. Each now occupies one reader instead. Ordering among requests that arrive in full, the Knowhere rules, `max_connections` and every Error text are unchanged; a dropped server closes the connections it accepted but did not hand over. See `docs/SERVE_KNOWHERE_V1.md`.
+
 ## 0.14.0 — 2026-11-13
 
 - Fix generic structs under `ks run`: an annotation such as `let page: Page<Int> = Page { ... }` was refused (`KS1301`, "found Page") because the compatibility checker sees generic structs erased, and a generic function that built an instance with its own parameters swapped (`swap<A, B>(p: Pair<A, B>) -> Pair<B, A>`) stopped with `KS3401`/`KS3106` on the canonical MIR executor. Type mismatches now print source types (`Expected Pair<Int, Int>, found Pair<Int, String>`) instead of internal nodes. Native builds still refuse generic structs.
