@@ -506,6 +506,27 @@ def emit_go_from_mir(mir: MirGraph) -> str:
     return generate_go_mir_native(mir)
 
 
+def generate_go_mir_wasi_pure(mir: MirGraph) -> str:
+    """Project sealed MIR into Go for ``GOOS=wasip1``; pure programs only.
+
+    The source is the same projection ``ks build`` uses. A program that touches
+    any authority domain (input, clock, random, disk, env, net, serve) is
+    refused: its native runtime is Linux-specific and no reviewed WASI host
+    import set exists for it. Never fall back to a weaker implementation.
+    """
+
+    reasons, plans = _plan(mir)
+    if reasons:
+        raise MirGoUnsupported("; ".join(dict.fromkeys(reasons)))
+    domains = _used_domains(plans)
+    if domains:
+        raise MirGoUnsupported(
+            "WASI pure target admits no authority domain; program uses: "
+            + ", ".join(sorted(domains))
+        )
+    return generate_go_mir_native(mir)
+
+
 # ---- admission and static resolution ---------------------------------------
 
 
@@ -1385,5 +1406,6 @@ __all__ = [
     "MirGoUnsupported",
     "emit_go_from_mir",
     "generate_go_mir_native",
+    "generate_go_mir_wasi_pure",
     "inspect_mir_go_support",
 ]
