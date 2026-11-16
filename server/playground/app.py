@@ -19,9 +19,7 @@ from __future__ import annotations
 
 import json
 import os
-import re
-import subprocess
-from decimal import Decimal
+import socket
 import sys
 import threading
 import time
@@ -30,6 +28,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from koschei import untrusted
+from koschei.playground_remote import RemoteEvaluator
 from koschei.untrusted import MAX_OUTPUT_BYTES, MAX_SOURCE_BYTES, SIDE_EFFECT_DOMAINS, outcome
 from koschei.untrusted import truncate as _truncate
 
@@ -76,12 +75,19 @@ CANONICAL_HOST = os.environ.get("KOSCHEI_CANONICAL_HOST", "")
 
 def playground_mode() -> str:
     mode = os.environ.get("KOSCHEI_PLAYGROUND_MODE", "enabled")
-    if mode not in ("enabled", "disabled"):
-        raise ValueError("KOSCHEI_PLAYGROUND_MODE must be enabled or disabled")
+    if mode not in ("enabled", "disabled", "remote"):
+        raise ValueError("KOSCHEI_PLAYGROUND_MODE must be enabled, disabled or remote")
     return mode
 
 
 PLAYGROUND_MODE = playground_mode()
+REMOTE_WORKER: RemoteEvaluator | None = None
+
+
+def evaluation_enabled() -> bool:
+    return PLAYGROUND_MODE == "enabled" or (PLAYGROUND_MODE == "remote" and REMOTE_WORKER is not None)
+
+
 UNAVAILABLE_HTML = b"""<!doctype html>
 <html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width">
 <title>Playground temporarily unavailable - Koschei</title>
@@ -103,6 +109,10 @@ DENIED_DOMAINS = SIDE_EFFECT_DOMAINS
 
 def evaluate(source: str, action: str, lang: str = "en") -> dict:
     """Check, and for action == "run" also execute, one Koschei program."""
+    if PLAYGROUND_MODE == "remote":
+        if REMOTE_WORKER is None:
+            raise untrusted.SandboxUnavailable("Remote evaluation service unavailable")
+        return REMOTE_WORKER.evaluate(source, action, lang)
     if PLAYGROUND_MODE != "enabled":
         raise untrusted.SandboxUnavailable("Online code execution is disabled")
     return untrusted.evaluate(source, action, lang, DENIED_DOMAINS)
@@ -269,8 +279,44 @@ def _business_run(mode: str, source: str, count: int) -> dict:
 
 
 
+# A client has this long to deliver its request line, headers and body. The
+# per-operation socket timeout alone resets on every byte, so a client that
+# drips one byte at a time could otherwise hold a server thread for hours.
+REQUEST_READ_DEADLINE_SECONDS = 15
+SOCKET_TIMEOUT_SECONDS = 10
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "KoscheiPlayground/1"
+    # The public site rate-limits per client address. A private worker has a
+    # single peer (the frontend), which already limits per end user.
+    rate_limited = True
+
+    def setup(self) -> None:
+        super().setup()
+        self.connection.settimeout(SOCKET_TIMEOUT_SECONDS)
+        self._read_deadline = threading.Timer(REQUEST_READ_DEADLINE_SECONDS, self._expire_read)
+        self._read_deadline.daemon = True
+        self._read_deadline.start()
+
+    def _expire_read(self) -> None:
+        try:
+            self.connection.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+
+    def _request_read(self) -> None:
+        """The whole request has arrived; evaluation time is bounded elsewhere."""
+        self._read_deadline.cancel()
+
+    def finish(self) -> None:
+        self._read_deadline.cancel()
+        super().finish()
+
+    def _read_body(self, length: int) -> bytes:
+        body = self.rfile.read(length)
+        self._request_read()
+        return body
 
     def _send(self, status: int, body: bytes, content_type: str, csp: str | None = None) -> None:
         self.send_response(status)
@@ -296,13 +342,14 @@ class Handler(BaseHTTPRequestHandler):
         return self.client_address[0]
 
     def _playground_page(self) -> None:
-        if PLAYGROUND_MODE != "enabled":
+        if not evaluation_enabled():
             self._send(HTTPStatus.SERVICE_UNAVAILABLE, UNAVAILABLE_HTML,
                        "text/html; charset=utf-8", SITE_CSP)
             return
         self._send(HTTPStatus.OK, INDEX_HTML.read_bytes(), "text/html; charset=utf-8", PLAY_CSP)
 
     def do_GET(self) -> None:  # noqa: N802
+        self._request_read()
         path = self.path.split("?", 1)[0]
         host = self.headers.get("Host", "").split(":")[0].lower()
         if CANONICAL_HOST and host.endswith(".up.railway.app") and path != "/health":
@@ -330,7 +377,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Cache-Control", "public, max-age=86400")
             self.end_headers()
         elif path == "/health":
-            self._json(HTTPStatus.OK, {"ok": True, "evaluation_enabled": PLAYGROUND_MODE == "enabled"})
+            self._json(HTTPStatus.OK, {"ok": True, "evaluation_enabled": evaluation_enabled()})
         else:
             self._json(HTTPStatus.NOT_FOUND, {"error": "not_found"})
 
@@ -382,7 +429,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.path != "/api/evaluate":
             self._json(HTTPStatus.NOT_FOUND, {"error": "not_found"})
             return
-        if PLAYGROUND_MODE != "enabled":
+        if not evaluation_enabled():
             # Reject before reading the body or invoking any compiler path.
             self.close_connection = True
             self._json(HTTPStatus.SERVICE_UNAVAILABLE, {
@@ -390,7 +437,7 @@ class Handler(BaseHTTPRequestHandler):
                 "message": "Online code execution is temporarily unavailable.",
             })
             return
-        if not LIMITER.allow(self._client()):
+        if self.rate_limited and not LIMITER.allow(self._client()):
             self._json(HTTPStatus.TOO_MANY_REQUESTS, {"error": "rate_limited", "message": "Too many requests; wait a minute and try again."})
             return
         try:
@@ -401,7 +448,7 @@ class Handler(BaseHTTPRequestHandler):
             self._json(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, {"error": "too_large", "message": f"Programs are limited to {MAX_SOURCE_BYTES // 1024} KB."})
             return
         try:
-            payload = json.loads(self.rfile.read(length) or b"{}")
+            payload = json.loads(self._read_body(length) or b"{}")
             source = payload["source"]
             action = payload.get("action", "run")
             lang = payload.get("lang", "en")
@@ -439,11 +486,47 @@ def log_event(result: dict) -> None:
     sys.stdout.flush()
 
 
+REMOTE_READINESS_RETRY_SECONDS = 30
+
+
+def watch_remote_worker(candidate: RemoteEvaluator, stop: threading.Event | None = None) -> None:
+    """Enable remote evaluation once the worker proves readiness.
+
+    Until then the website stays up and /play and /api/evaluate answer 503.
+    Execution never falls back to this process.
+    """
+    global REMOTE_WORKER
+    stop = stop or threading.Event()
+    while not stop.is_set():
+        try:
+            candidate.require_ready()
+        except untrusted.SandboxUnavailable:
+            sys.stdout.write("PLAYGROUND remote worker not ready; evaluation stays disabled\n")
+            sys.stdout.flush()
+            stop.wait(REMOTE_READINESS_RETRY_SECONDS)
+            continue
+        REMOTE_WORKER = candidate
+        sys.stdout.write("PLAYGROUND remote worker ready; evaluation enabled\n")
+        sys.stdout.flush()
+        return
+
+
 def main() -> None:
+    global REMOTE_WORKER
     # Fail closed on hosts that disallow required user/mount/network namespaces.
     # Do not expose the playground with a silently weakened sandbox.
-    if PLAYGROUND_MODE not in ("enabled", "disabled"):
+    if PLAYGROUND_MODE not in ("enabled", "disabled", "remote"):
         raise ValueError("Invalid Playground mode")
+    if PLAYGROUND_MODE == "remote":
+        # Bad configuration (URL, token, CA file) stops startup. An offline
+        # worker does not take the website down: evaluation stays disabled
+        # until the worker answers an authenticated readiness check.
+        candidate = RemoteEvaluator.from_environment()
+        try:
+            candidate.require_ready()
+            REMOTE_WORKER = candidate
+        except untrusted.SandboxUnavailable:
+            threading.Thread(target=watch_remote_worker, args=(candidate,), daemon=True).start()
     if PLAYGROUND_MODE == "enabled":
         untrusted.require_container_limits()
         untrusted.require_sandbox_ready()

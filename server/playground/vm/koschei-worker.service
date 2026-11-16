@@ -1,0 +1,80 @@
+# Koschei Playground execution worker on a dedicated Linux VM (systemd, cgroup v2).
+# Installed by install.sh. Every limit below is re-checked by the worker on the
+# live process (Seccomp=2, NoNewPrivs=1, finite memory/cpu/pids on its own
+# cgroup) and the isolation probe must pass before the worker listens.
+[Unit]
+Description=Koschei Playground execution worker
+After=network-online.target apparmor.service koschei-worker.socket
+Wants=network-online.target
+Requires=koschei-worker.socket
+
+[Service]
+Type=simple
+User=koschei-worker
+Group=koschei-worker
+WorkingDirectory=/opt/koschei-worker/playground
+Environment=PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+Environment=KOSCHEI_PLAYGROUND_MODE=enabled
+Environment=KOSCHEI_UNTRUSTED_SANDBOX=bwrap
+Environment=KOSCHEI_REQUIRE_CONTAINER_LIMITS=1
+Environment=KOSCHEI_BWRAP=/opt/koschei-worker/bin/bwrap
+Environment=KOSCHEI_MAX_CONCURRENT_EVALUATIONS=2
+EnvironmentFile=-/etc/koschei-worker/worker.env
+# Secrets stay out of the environment: systemd hands them over in a private,
+# per-service directory ($CREDENTIALS_DIRECTORY) that sandboxes never see.
+LoadCredential=worker-token:/etc/koschei-worker/worker-token
+LoadCredential=tls-cert:/etc/koschei-worker/tls-cert.pem
+LoadCredential=tls-key:/etc/koschei-worker/tls-key.pem
+# The isolation probe runs with exactly this unit's confinement. If it fails,
+# the worker does not start.
+ExecStartPre=/opt/koschei-worker/venv/bin/python /opt/koschei-worker/playground/runtime_security_probe.py
+ExecStart=/opt/koschei-worker/venv/bin/python /opt/koschei-worker/playground/worker.py
+Restart=on-failure
+RestartSec=10
+
+# Aggregate resource ceilings for all evaluations together.
+MemoryMax=1G
+MemorySwapMax=0
+CPUQuota=100%
+TasksMax=96
+LimitCORE=0
+
+# Privileges and syscalls.
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+SystemCallFilter=@system-service @mount
+SystemCallFilter=~@swap @reboot @raw-io @module @debug @cpu-emulation @obsolete @clock
+SystemCallErrorNumber=EPERM
+RestrictNamespaces=user mnt pid net ipc uts
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+RemoveIPC=yes
+
+# Filesystem: read-only system, private /tmp, no homes, no devices.
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+# Not set on purpose: ProtectKernelTunables, ProtectKernelLogs, ProtectProc,
+# ProtectHostname. Each puts locked mounts over parts of /proc, and the kernel
+# then refuses the fresh procfs every sandbox needs for its own PID namespace
+# ("Can't mount proc"). The worker runs unprivileged, so /proc/sys stays
+# read-only; bubblewrap gives each sandbox its own UTS namespace.
+UMask=0077
+
+# Network. The listening socket comes from koschei-worker.socket, whose own
+# IP filter admits the frontend. Here the worker process may open nothing
+# beyond loopback: no Internet, no private networks, no metadata endpoint.
+# Never widen this to reach the frontend; that is the socket unit's job.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+IPAddressDeny=any
+IPAddressAllow=localhost
+
+[Install]
+WantedBy=multi-user.target
