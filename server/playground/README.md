@@ -167,7 +167,7 @@ Re-enabling execution requires the existing live isolation release gates.
 The frontend supports `KOSCHEI_PLAYGROUND_MODE=remote`. It sends evaluations to
 one operator-configured HTTPS origin (`KOSCHEI_WORKER_URL`), authenticated with
 `KOSCHEI_WORKER_TOKEN` (64 hex characters) and verified against
-`KOSCHEI_WORKER_CA_FILE` (the worker's private CA; hostname checked). There is
+`KOSCHEI_WORKER_CA_FILE` or, on platforms that only offer variables, `KOSCHEI_WORKER_CA_PEM` (the worker's private CA; hostname checked). There is
 no redirect following, no proxy discovery, no retry and **no local execution
 fallback**. One deadline (25 s) covers DNS, connection, TLS, sending and the
 whole response; DNS and connection setup run on a bounded pool of four.

@@ -464,3 +464,30 @@ def test_stalled_tls_handshake_does_not_block_the_worker(monkeypatch, tmp_path):
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_ca_can_be_passed_as_pem_text(monkeypatch, tmp_path):
+    cert, key = _tls_files(tmp_path)
+    pem = cert.read_text()
+    monkeypatch.setattr(worker, "WORKER_TOKEN", TOKEN)
+    monkeypatch.setattr(app, "PLAYGROUND_MODE", "enabled")
+    import ssl
+    server = ThreadingHTTPServer(("127.0.0.1", 0), worker.WorkerHandler)
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(cert, key)
+    server.socket = context.wrap_socket(server.socket, server_side=True, do_handshake_on_connect=False)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        monkeypatch.setenv("KOSCHEI_WORKER_URL", f"https://localhost:{server.server_port}")
+        monkeypatch.setenv("KOSCHEI_WORKER_TOKEN", TOKEN)
+        monkeypatch.delenv("KOSCHEI_WORKER_CA_FILE", raising=False)
+        monkeypatch.setenv("KOSCHEI_WORKER_CA_PEM", pem)
+        remote.RemoteEvaluator.from_environment().require_ready()
+    finally:
+        server.shutdown()
+        server.server_close()
+    with pytest.raises(ValueError):
+        remote.RemoteEvaluator("https://worker", TOKEN, ca_pem="not a certificate")
+    with pytest.raises(ValueError):
+        remote.RemoteEvaluator("https://worker", TOKEN, ca_file=str(cert), ca_pem=pem)

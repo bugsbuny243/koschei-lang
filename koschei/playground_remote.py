@@ -79,7 +79,7 @@ def validate_result(result: object, action: str) -> dict:
 
 
 class RemoteEvaluator:
-    def __init__(self, endpoint: str, token: str, ca_file: str = ""):
+    def __init__(self, endpoint: str, token: str, ca_file: str = "", ca_pem: str = ""):
         url = urlsplit(endpoint)
         if (url.scheme != "https" or not url.hostname or url.username is not None
                 or url.password is not None or url.path not in ("", "/")
@@ -90,8 +90,15 @@ class RemoteEvaluator:
         # A private worker usually has a certificate from a private CA. When a
         # CA file is given it is the *only* trust anchor (public CAs are not
         # consulted); hostname verification stays on either way.
+        if ca_file and ca_pem:
+            raise ValueError("Set KOSCHEI_WORKER_CA_FILE or KOSCHEI_WORKER_CA_PEM, not both")
         if ca_file:
             self.context = ssl.create_default_context(cafile=ca_file)
+        elif ca_pem:
+            # Platforms that only offer variables (Railway) pass the CA itself.
+            if "-----BEGIN CERTIFICATE-----" not in ca_pem:
+                raise ValueError("KOSCHEI_WORKER_CA_PEM must contain a PEM certificate")
+            self.context = ssl.create_default_context(cadata=ca_pem)
         else:
             self.context = ssl.create_default_context()
         self.context.minimum_version = ssl.TLSVersion.TLSv1_2
@@ -102,7 +109,8 @@ class RemoteEvaluator:
     def from_environment(cls) -> RemoteEvaluator:
         return cls(os.environ.get("KOSCHEI_WORKER_URL", ""),
                    os.environ.get("KOSCHEI_WORKER_TOKEN", ""),
-                   os.environ.get("KOSCHEI_WORKER_CA_FILE", ""))
+                   os.environ.get("KOSCHEI_WORKER_CA_FILE", ""),
+                   os.environ.get("KOSCHEI_WORKER_CA_PEM", ""))
 
     def _request(self, path: str, payload: dict | None = None) -> dict:
         deadline = time.monotonic() + REQUEST_DEADLINE_SECONDS
