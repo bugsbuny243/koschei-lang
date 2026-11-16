@@ -147,3 +147,13 @@ def test_business_api_rejects_fake_source_and_cross_origin(http_server):
     with pytest.raises(urllib.error.HTTPError) as err:
         urllib.request.urlopen(req, timeout=8)
     assert err.value.code == 403
+
+
+def test_touch_browser_uses_stack_and_reveals_result():
+    html = SITE.read_text(encoding="utf-8")
+    # Some Android embedded browsers present a desktop-width viewport despite touch input.
+    assert "@media (max-width:1200px), (hover:none) and (pointer:coarse)" in html
+    assert ".workarea{grid-template-columns:minmax(0,1fr);gap:18px}" in html
+    assert ".receipt{position:static;min-height:320px}" in html
+    assert "scrollIntoView({" in html
+    assert "prefers-reduced-motion:reduce" in html
