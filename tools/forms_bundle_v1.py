@@ -12,7 +12,7 @@ import zipfile
 ROOT = Path(__file__).resolve().parent.parent
 PRODUCT = ROOT / "products" / "forms"
 VERSION = "1.0.0"
-FILES = ("README.md", "LICENSE.md", "Dockerfile", "main.ks", "rules.ks", "pages.ks", "csv.ks")
+FILES = ("README.md", "LICENSE.md", "Dockerfile", "main.ks", "rules.ks", "pages.ks", "csv.ks", "store.ks")
 _TIMESTAMP = (2026, 1, 1, 0, 0, 0)
 
 
