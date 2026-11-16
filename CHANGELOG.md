@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- `ks build` produces statically linked binaries: it builds with `CGO_ENABLED=0` whatever the caller's environment says. A binary that used the network or a server linked glibc for Go's C resolver, so it needed the host's dynamic loader and did not start on musl hosts or in an image holding only the binary. `tests/test_native_static_build_v1.py` reads the ELF program headers of a pure, a brokered and a network binary.
+
 ## 0.14.0 — 2026-11-13
 
 - Fix generic structs under `ks run`: an annotation such as `let page: Page<Int> = Page { ... }` was refused (`KS1301`, "found Page") because the compatibility checker sees generic structs erased, and a generic function that built an instance with its own parameters swapped (`swap<A, B>(p: Pair<A, B>) -> Pair<B, A>`) stopped with `KS3401`/`KS3106` on the canonical MIR executor. Type mismatches now print source types (`Expected Pair<Int, Int>, found Pair<Int, String>`) instead of internal nodes. Native builds still refuse generic structs.
