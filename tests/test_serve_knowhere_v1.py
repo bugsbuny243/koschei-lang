@@ -77,6 +77,10 @@ class ServeKnowhereTests(unittest.TestCase):
         while time.monotonic() < deadline:
             try:
                 socket.create_connection(("127.0.0.1", port), timeout=0.2).close()
+                # Requests are read concurrently and handed over in the order
+                # they were accepted among those read in full; let the probe's
+                # read finish before a test sends the next one.
+                time.sleep(0.2)
                 return process, port
             except OSError:
                 time.sleep(0.05)
@@ -208,6 +212,21 @@ fn main(caps: SystemCaps) {
             with self.assertRaises(SemanticError) as caught:
                 check_graph(graph)
         return caught.exception.code
+
+    def test_idle_connections_do_not_hold_the_server(self) -> None:
+        # Three clients connect and send nothing. Requests are read
+        # concurrently, so a fourth client is answered at once instead of
+        # after three 3 s deadlines; the idle ones end with their deadline.
+        process, port = self.start(SERVER.replace("ROUNDS", "5"))
+        idle = [socket.create_connection(("127.0.0.1", port), timeout=10) for _ in range(3)]
+        try:
+            started = time.monotonic()
+            self.assertEqual(self.http(port, "GET", "/now"), (200, "GET /now name=- body= bytes=0"))
+            self.assertLess(time.monotonic() - started, 2.0)
+        finally:
+            for client in idle:
+                client.close()
+        self.finish(process)
 
     def test_the_checker_and_the_native_gate(self) -> None:
         head = 'fn main(caps: SystemCaps) {\n    let s = caps.serve.allow("127.0.0.1:9", 1, 64, 64, 10)\n'

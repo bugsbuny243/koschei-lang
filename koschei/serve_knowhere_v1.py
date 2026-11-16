@@ -36,12 +36,20 @@ max_response_bytes, deadline_ms)``: ``max_connections`` requests in total
 (then ``KS3471``), request and response bytes per request, and
 ``deadline_ms`` per request, applied to waiting in ``accept()`` and to the
 whole read of one request.
+
+**Reads run beside the program.** Once the listener is open, connections are
+accepted and their requests read concurrently, up to
+``min(max_connections, 128)`` at a time; ``accept()`` returns the next request
+that has arrived in full, the earliest-accepted first. A client that
+connects and sends nothing occupies one reader until its deadline instead of
+the server: the program still answers one request at a time.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 import socket
+import threading
 import time
 from typing import Any
 
@@ -165,12 +173,141 @@ class HttpRequest:
 
 
 class _Server:
-    __slots__ = ("listener", "pending", "accepted")
+    """The listener, the one pending request and the requests read so far.
 
-    def __init__(self, listener: socket.socket) -> None:
+    A background thread accepts connections and starts one reader per
+    connection; at most ``slots`` connections are being read or waiting in
+    ``ready`` at once, and no more than ``max_connections`` are ever accepted.
+    """
+
+    __slots__ = (
+        "listener", "pending", "accepted", "ready", "reading", "condition",
+        "slots", "closed", "connections", "caps_policy",
+    )
+
+    def __init__(self, listener: socket.socket, policy) -> None:
         self.listener = listener
         self.pending: socket.socket | None = None
         self.accepted = 0
+        # (sequence, connection, HttpRequest) or (sequence, None, KsError).
+        self.ready: list = []
+        self.reading = 0
+        self.condition = threading.Condition()
+        self.slots = threading.BoundedSemaphore(min(policy.max_connections, MAX_CONCURRENT_READS))
+        self.closed = False
+        self.connections: set[socket.socket] = set()
+        self.caps_policy = policy
+
+    def start(self) -> None:
+        threading.Thread(target=self._accept_loop, name="koschei-serve-accept", daemon=True).start()
+
+    def _accept_loop(self) -> None:
+        policy = self.caps_policy
+        while True:
+            self.slots.acquire()
+            with self.condition:
+                if self.closed or self.accepted >= policy.max_connections:
+                    self.slots.release()
+                    self.condition.notify_all()
+                    return
+            try:
+                connection, _peer = self.listener.accept()
+            except OSError as error:
+                with self.condition:
+                    if self.closed:
+                        self.slots.release()
+                        return
+                    # The Error value holds the slot until accept() takes it.
+                    self.ready.append((self.accepted + 1, None, _exchange._io_error(f"accept failed: {_exchange.socket_code(error)}")))
+                    self.condition.notify_all()
+                # A listener that cannot accept will not recover.
+                return
+            with self.condition:
+                if self.closed:
+                    _close(connection)
+                    self.slots.release()
+                    return
+                self.accepted += 1
+                sequence = self.accepted
+                self.reading += 1
+                self.connections.add(connection)
+            threading.Thread(target=self._read, args=(sequence, connection), name="koschei-serve-read", daemon=True).start()
+
+    def _read(self, sequence: int, connection: socket.socket) -> None:
+        deadline = time.monotonic() + self.caps_policy.deadline_ms / 1000.0
+        request, failure = _read_request(connection, self.caps_policy, deadline)
+        if failure is not None:
+            status, error = failure
+            _close(connection, status, deadline)
+        with self.condition:
+            self.reading -= 1
+            if failure is not None:
+                # The client was answered; its Error value holds the slot
+                # until accept() hands it to the program.
+                self.connections.discard(connection)
+                if self.closed:
+                    self.slots.release()
+                else:
+                    self.ready.append((sequence, None, error))
+            elif self.closed:
+                self.connections.discard(connection)
+                self.slots.release()
+                _close(connection)
+            else:
+                self.ready.append((sequence, connection, request))
+            self.condition.notify_all()
+
+    def take(self, wait_seconds: float):
+        """The next read request, or None after waiting at most wait_seconds."""
+        deadline = time.monotonic() + wait_seconds
+        with self.condition:
+            while not self.ready:
+                exhausted = self.accepted >= self.caps_policy.max_connections and self.reading == 0
+                if exhausted:
+                    return BUDGET
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return None
+                self.condition.wait(remaining)
+            earliest = min(range(len(self.ready)), key=lambda index: self.ready[index][0])
+            _sequence, connection, item = self.ready.pop(earliest)
+            if connection is not None:
+                self.connections.discard(connection)
+            self.slots.release()
+            return connection, item
+
+    def close(self) -> None:
+        with self.condition:
+            if self.closed:
+                return
+            self.closed = True
+            open_connections = list(self.connections)
+            self.connections.clear()
+            queued = [connection for _, connection, _ in self.ready if connection is not None]
+            for _ in self.ready:
+                self.slots.release()
+            self.ready.clear()
+            self.condition.notify_all()
+        try:
+            # close() alone does not wake a thread blocked in accept(), and
+            # the kernel keeps listening for it; shutdown() does.
+            self.listener.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+        try:
+            self.listener.close()
+        except OSError:
+            pass
+        for connection in open_connections + queued:
+            _close(connection)
+        if self.pending is not None:
+            _close(self.pending)
+            self.pending = None
+
+
+# Requests read at once, per server; also the most that wait for accept().
+MAX_CONCURRENT_READS = 128
+BUDGET = object()
 
 
 def _wire(
@@ -214,7 +351,9 @@ def _open(caps: ServeCaps) -> _Server | _runtime.KsError:
     except OSError as error:
         listener.close()
         return _exchange._io_error(f"listener failed: {_exchange.socket_code(error)}")
-    return _Server(listener)
+    server = _Server(listener, caps.policy)
+    server.start()
+    return server
 
 
 def _parse_headers(raw_head: bytes) -> tuple[str, str, tuple[tuple[str, str], ...]]:
@@ -227,10 +366,9 @@ def _parse_headers(raw_head: bytes) -> tuple[str, str, tuple[tuple[str, str], ..
     return method, target, tuple(headers)
 
 
-def _read_request(connection: socket.socket, caps: ServeCaps, deadline: float):
+def _read_request(connection: socket.socket, policy, deadline: float):
     """(HttpRequest, None) or (None, (status, KsError))."""
 
-    policy = caps.policy
     buffer = bytearray()
     header_limit = min(policy.max_request_bytes, _exchange._MAX_HEADER_BYTES)
     try:
@@ -281,24 +419,16 @@ def _accept(self: ServeCaps):
         _close(server.pending, 500)
         server.pending = None
         return _runtime.KsError(PENDING_MESSAGE)
-    if server.accepted >= self.policy.max_connections:
+    taken = server.take(self.policy.deadline_ms / 1000.0)
+    if taken is BUDGET:
         return _runtime.KsError(BUDGET_MESSAGE.format(count=self.policy.max_connections))
-    deadline = time.monotonic() + self.policy.deadline_ms / 1000.0
-    try:
-        _exchange._apply_deadline(server.listener, deadline)
-        connection, _peer = server.listener.accept()
-    except (socket.timeout, TimeoutError):
+    if taken is None:
         return _exchange._io_error("accept exceeded the I/O deadline")
-    except OSError as error:
-        return _exchange._io_error(f"accept failed: {_exchange.socket_code(error)}")
-    server.accepted += 1
-    request, failure = _read_request(connection, self, deadline)
-    if failure is not None:
-        status, error = failure
-        _close(connection, status, deadline)
-        return error
+    connection, item = taken
+    if connection is None:
+        return item
     server.pending = connection
-    return request
+    return item
 
 
 def _reply(self: ServeCaps, status: Any, body: Any):

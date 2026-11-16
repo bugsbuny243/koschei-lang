@@ -304,6 +304,44 @@ class NativeServeParityTests(unittest.TestCase):
             + "KS3411: listener failed: EADDRINUSE\n",
         )
 
+    def test_idle_connections_do_not_hold_the_server(self) -> None:
+        # Three clients connect and send nothing; a fourth is answered at
+        # once under both executors instead of after three 4 s deadlines.
+        port = free_port()
+        source = SERVER.replace("PORT", str(port)).replace("CONNECTIONS", "8").replace("ROUNDS", "4")
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            (base / "main.ks").write_text(source, encoding="utf-8")
+            build = subprocess.run(
+                [sys.executable, "-m", "koschei", "build", "main.ks", "-o", "app"], cwd=base,
+                env=dict(os.environ, PYTHONPATH=str(ROOT)), capture_output=True, timeout=300, check=False,
+            )
+            self.assertEqual(build.returncode, 0, build.stderr.decode())
+            for command in ([sys.executable, "-m", "koschei", "run", "main.ks"], [str(base / "app")]):
+                with self.subTest(command=command[-1]):
+                    process = subprocess.Popen(
+                        command, cwd=base, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                        env=dict(os.environ, PYTHONPATH=str(ROOT)),
+                    )
+                    idle: list[socket.socket] = []
+                    try:
+                        for _ in range(200):
+                            try:
+                                idle.append(socket.create_connection(("127.0.0.1", port), timeout=10))
+                                break
+                            except OSError:
+                                time.sleep(0.05)
+                        idle += [socket.create_connection(("127.0.0.1", port), timeout=10) for _ in range(2)]
+                        started = time.monotonic()
+                        reply = _exchange(port, b"GET /ok HTTP/1.1\r\n" + HOST + b"\r\n", 0)
+                        self.assertLess(time.monotonic() - started, 2.0)
+                        self.assertTrue(reply.startswith(b"HTTP/1.1 200 OK\r\n"), reply)
+                    finally:
+                        for client in idle:
+                            client.close()
+                        process.kill()
+                        process.communicate(timeout=30)
+
     def test_the_worker_holds_no_listener(self) -> None:
         port = free_port()
         source = SERVER.replace("PORT", str(port)).replace("CONNECTIONS", "1").replace("ROUNDS", "1")
