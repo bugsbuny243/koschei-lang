@@ -71,6 +71,7 @@ const idb=fakeIdb(),sandbox=vm.createContext({
   console
 });
 vm.runInContext([
+  'const PROJECT_SCHEMA="koschei.business-tools/project/v1";',
   'const savedCurrencies=["TRY","USD","EUR"];',
   'const maxRows={quote:24,stock:40,cash:40};',
   'const moneyPattern=/^(?:0|[1-9]\\d{0,8})(?:\\.\\d{1,2})?$/;',
@@ -120,6 +121,7 @@ const unavailable=vm.createContext({
   crypto:webcrypto,
 });
 vm.runInContext([
+  'const PROJECT_SCHEMA="koschei.business-tools/project/v1";',
   'const savedCurrencies=["TRY","USD","EUR"];',
   'const maxRows={quote:24,stock:40,cash:40};',
   'const moneyPattern=/^(?:0|[1-9]\\d{0,8})(?:\\.\\d{1,2})?$/;',
