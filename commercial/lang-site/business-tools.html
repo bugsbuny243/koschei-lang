@@ -207,6 +207,164 @@ input:focus,select:focus{outline:2px solid #5ce8b8;outline-offset:1px}input::pla
     if(kind==="stock")return {names,payload:{kind,items:rows.map(row=>({quantity:whole(input(row,".quantity"),100000),minimum:whole(input(row,".minimum"),100000),cost:validAmount(input(row,".cost"))}))}};
     return {names,payload:{kind,opening:validAmount($("opening").value,1000000000000),items:rows.map(row=>({type:input(row,".type"),amount:validAmount(input(row,".amount"),100000000000)}))}};
   }
+  // Project files are intentionally explicit local downloads. No browser storage,
+  // hidden account or file upload is used. Imported data is assigned through
+  // .value/textContent only; it never becomes executable HTML or Koschei source.
+  const PROJECT_SCHEMA="koschei.business-tools/project/v1";
+  const savedCurrencies=["TRY","USD","EUR"];
+
+  function todayString(){
+    const now=new Date();
+    return new Date(now.getTime()-now.getTimezoneOffset()*60000).toISOString().slice(0,10);
+  }
+
+  function downloadLocal(filename,content,mime){
+    const blob=new Blob([content],{type:mime});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");
+    a.href=url;
+    a.download=filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),5000);
+  }
+
+  function saveProject(){
+    try{
+      const {names,payload}=getRequest(active);
+      const doc={
+        schema:PROJECT_SCHEMA,tool:active,currency:currency(),
+        names,payload
+      };
+      if(active==="quote"){
+        doc.details={
+          title:$("quote-title-input").value.trim(),
+          company:$("company-name").value.trim(),
+          customer:$("customer-name").value.trim(),
+          reference:$("quote-ref").value.trim(),
+          date:$("quote-date").value
+        };
+      }
+      if(!savedCurrencies.includes(doc.currency))throw Error("Para birimi geçersiz.");
+      const json=JSON.stringify(doc,null,2);
+      if(json.length>24000)throw Error("Dosya kaydedilemeyecek kadar büyük.");
+      downloadLocal("koschei-"+active+"-"+todayString()+".json",json+"\n","application/json;charset=utf-8");
+      $("engine-status").textContent="Proje indirildi";
+      $("error").style.display="none";
+    }catch(e){showError(e.message||"Proje dosyası indirilemedi.");}
+  }
+
+  function validateSavedProject(doc){
+    if(!doc||typeof doc!=="object"||Array.isArray(doc)||doc.schema!==PROJECT_SCHEMA)
+      throw Error("Bu dosya Koschei Business Tools proje dosyası değil.");
+    if(!["quote","stock","cash"].includes(doc.tool)||!savedCurrencies.includes(doc.currency))
+      throw Error("Dosyada desteklenmeyen araç veya para birimi var.");
+    const data=doc.payload, max=maxRows[doc.tool];
+    if(!data||typeof data!=="object"||data.kind!==doc.tool||
+       !Array.isArray(data.items)||data.items.length<1||data.items.length>max)
+      throw Error("Dosyanın işlem listesi geçersiz.");
+    if(!Array.isArray(doc.names)||doc.names.length!==data.items.length||
+       !doc.names.every(n=>typeof n==="string"&&n.length<=60))
+      throw Error("Dosyada geçersiz ürün açıklaması var.");
+    const integer=(x,upper,positive=false)=>
+      Number.isSafeInteger(x)&&x>= (positive?1:0)&&x<=upper;
+    const validMoney=(x,maxCents)=>{
+      if(typeof x!=="string"||!moneyPattern.test(x)||
+         Math.round(Number(x)*100)>maxCents)
+        throw Error("Dosyada geçersiz tutar var.");
+    };
+    if(doc.tool==="quote"){
+      if(!integer(data.discount,100)||!integer(data.vat,100))
+        throw Error("Dosyadaki KDV veya indirim geçersiz.");
+      for(const item of data.items){
+        if(!item||!integer(item.quantity,1000,true))
+          throw Error("Geçersiz teklif adedi.");
+        validMoney(item.price,100000000);
+      }
+      const d=doc.details;
+      if(!d||typeof d!=="object"||
+         !["title","company","customer","reference","date"].every(k=>typeof d[k]==="string"))
+        throw Error("Teklif bilgileri eksik.");
+      for(const k of ["title","company","customer"]){
+        if(d[k].length>80)throw Error("Teklif bilgisi çok uzun.");
+      }
+      if(d.reference.length>40||
+         (d.date&&!/^\d{4}-\d{2}-\d{2}$/.test(d.date)))
+        throw Error("Teklif numarası veya tarihi geçersiz.");
+    }else if(doc.tool==="stock"){
+      for(const item of data.items){
+        if(!item||!integer(item.quantity,100000)||!integer(item.minimum,100000))
+          throw Error("Geçersiz stok miktarı.");
+        validMoney(item.cost,100000000);
+      }
+    }else{
+      validMoney(data.opening,1000000000000);
+      for(const item of data.items){
+        if(!item||!["income","expense"].includes(item.type))
+          throw Error("Geçersiz işlem türü.");
+        validMoney(item.amount,100000000000);
+        if(Math.round(Number(item.amount)*100)===0)
+          throw Error("Sıfır tutarlı işlem olamaz.");
+      }
+    }
+    return doc;
+  }
+
+  function restoreProject(doc){
+    validateSavedProject(doc); // validate fully before changing any existing form
+    useTool(doc.tool);
+    $(doc.tool+"-panel").querySelector(".currency").value=doc.currency;
+    const wrap=$(doc.tool+"-rows");
+    wrap.replaceChildren();
+    for(let i=0;i<doc.payload.items.length;i++){
+      addRow(doc.tool);
+      const row=wrap.lastElementChild, item=doc.payload.items[i];
+      qs(row,".name").value=doc.names[i];
+      if(doc.tool==="quote"){
+        qs(row,".quantity").value=String(item.quantity);
+        qs(row,".price").value=item.price;
+      }else if(doc.tool==="stock"){
+        qs(row,".quantity").value=String(item.quantity);
+        qs(row,".minimum").value=String(item.minimum);
+        qs(row,".cost").value=item.cost;
+      }else{
+        qs(row,".type").value=item.type;
+        qs(row,".amount").value=item.amount;
+      }
+    }
+    if(doc.tool==="quote"){
+      $("discount").value=String(doc.payload.discount);
+      $("vat").value=String(doc.payload.vat);
+      $("quote-title-input").value=doc.details.title;
+      $("company-name").value=doc.details.company;
+      $("customer-name").value=doc.details.customer;
+      $("quote-ref").value=doc.details.reference;
+      $("quote-date").value=doc.details.date;
+    }
+    if(doc.tool==="cash")$("opening").value=doc.payload.opening;
+    cleanResult();
+    $("engine-status").textContent="Proje açıldı · Hesapla";
+    window.scrollTo({top:0,behavior:"instant"});
+  }
+
+  function csvEscape(value){
+    let v=String(value);
+    // Prevent spreadsheet formula execution from user-entered names.
+    if(/^\s*[=+\-@]/.test(v))v="'"+v;
+    return '"'+v.replace(/"/g,'""')+'"';
+  }
+
+  function downloadCsv(){
+    if(!lastReport||lastReport.tool!==active){
+      showError("Önce güncel bilgileri hesapla.");
+      return;
+    }
+    const lines=[lastReport.columns,...lastReport.rows].map(row=>row.map(csvEscape).join(";"));
+    downloadLocal("koschei-"+active+"-"+todayString()+".csv",
+      "\ufeff"+lines.join("\r\n")+"\r\n","text/csv;charset=utf-8");
+  }
+
   function metrics(rows){
     const box=$("metrics");box.replaceChildren();
     for(const row of rows){const el=document.createElement("div");el.className="metric"+(row.big?" big":"");
@@ -299,6 +457,23 @@ input:focus,select:focus{outline:2px solid #5ce8b8;outline-offset:1px}input::pla
   });
   document.querySelectorAll("[data-add]").forEach(b=>b.addEventListener("click",()=>addRow(b.dataset.add)));
   document.querySelectorAll("[data-calc]").forEach(b=>b.addEventListener("click",()=>calculate(b.dataset.calc)));
+  $("save-project").addEventListener("click",saveProject);
+  $("open-project").addEventListener("click",()=>$("project-file").click());
+  $("project-file").addEventListener("change",async function(){
+    const file=this.files&&this.files[0];
+    this.value="";
+    if(!file)return;
+    if(file.size>24576 || !/\.json$/i.test(file.name)){
+      showError("Yalnızca en fazla 24 KB boyutunda .json proje dosyası açılabilir.");
+      return;
+    }
+    try{
+      const text=await file.text();
+      if(text.length>24576)throw Error("Proje dosyası boyut sınırını aşıyor.");
+      restoreProject(JSON.parse(text));
+    }catch(e){showError(e instanceof SyntaxError?"Dosya geçerli JSON değil.":e.message||"Dosya açılamadı.");}
+  });
+  $("download-csv").addEventListener("click",downloadCsv);
   $("print").addEventListener("click",()=>window.print());
   $("reset-report").addEventListener("click",cleanResult);
   $("quote-date").value=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
