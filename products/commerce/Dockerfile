@@ -8,7 +8,8 @@ COPY koschei ./koschei
 COPY native/datajson ./native/datajson
 RUN pip install --no-cache-dir . && rm -rf /opt/koschei
 COPY products/commerce /opt/commerce
-RUN useradd --system --no-create-home --shell /usr/sbin/nologin commerce \
+RUN groupadd --system commerce \
+    && useradd --system --gid commerce --no-create-home --shell /usr/sbin/nologin commerce \
     && mkdir -p /data \
     && chown commerce:commerce /data
 USER commerce
