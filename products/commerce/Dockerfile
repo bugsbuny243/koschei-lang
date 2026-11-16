@@ -14,7 +14,7 @@ RUN groupadd --system commerce \
     && chown commerce:commerce /data
 USER commerce
 WORKDIR /opt/commerce
-VOLUME ["/data"]
+# /data is mounted using the Railway service volume configuration; no Docker VOLUME.
 ENV COMMERCE_DB_PATH=/data/commerce.db COMMERCE_ACCEPT_ORDERS=0
 EXPOSE 8080
 CMD ["python","server.py"]
