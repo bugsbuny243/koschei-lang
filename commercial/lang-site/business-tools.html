@@ -385,6 +385,215 @@ input:focus,select:focus{outline:2px solid #5ce8b8;outline-offset:1px}input::pla
     window.scrollTo({top:0,behavior:"instant"});
   }
 
+  /* DEVICE WORKSPACE STORAGE: pure browser IndexedDB, never a server login. */
+  const WORKSPACE_DB="koschei-business-device/v1";
+  const WORKSPACE_STORE="projects";
+  const WORKSPACE_LIMIT=30;
+  const WORKSPACE_MAX_BYTES=24576;
+
+  function workspaceDisplayName(input){
+    if(typeof input!=="string")throw Error("Kayıt adı metin olmalı.");
+    const clean=input.replace(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g,"").trim();
+    if(!clean||clean.length>80)throw Error("Kayıt adı 1–80 karakter olmalı.");
+    return clean;
+  }
+
+  function workspaceNewRecord(doc,name){
+    validateSavedProject(doc);
+    if(JSON.stringify(doc).length>WORKSPACE_MAX_BYTES)throw Error("Proje kaydı 24 KB sınırını aşıyor.");
+    const bytes=new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+    const id=Array.from(bytes,b=>b.toString(16).padStart(2,"0")).join("");
+    return {id,name:workspaceDisplayName(name),tool:doc.tool,savedAt:new Date().toISOString(),doc};
+  }
+
+  function workspaceValidateRecord(record){
+    if(!record||typeof record!=="object"||
+       typeof record.id!=="string"||!/^[a-f0-9]{32}$/.test(record.id)||
+       typeof record.savedAt!=="string"||!Number.isFinite(Date.parse(record.savedAt))||
+       record.tool!==record.doc?.tool)
+      throw Error("Kayıt bozuk.");
+    workspaceDisplayName(record.name);
+    validateSavedProject(record.doc);
+    if(JSON.stringify(record.doc).length>WORKSPACE_MAX_BYTES)throw Error("Kayıt çok büyük.");
+    return record;
+  }
+
+  function workspaceOpenDb(){
+    return new Promise((resolve,reject)=>{
+      if(!("indexedDB" in window)||!window.indexedDB){
+        reject(Error("Bu tarayıcı cihaz içi kayıtları desteklemiyor. JSON yedeğini kullan."));
+        return;
+      }
+      let request;
+      try{request=indexedDB.open(WORKSPACE_DB,1);}
+      catch(_){reject(Error("Tarayıcının cihaz içi kayıt alanı kullanılamıyor."));return;}
+      request.onblocked=()=>reject(Error("Diğer açık sekmeyi kapatıp tekrar dene."));
+      request.onerror=()=>reject(Error("Cihaz içi kayıt alanı açılamıyor."));
+      request.onupgradeneeded=()=>{
+        if(!request.result.objectStoreNames.contains(WORKSPACE_STORE)){
+          request.result.createObjectStore(WORKSPACE_STORE,{keyPath:"id"});
+        }
+      };
+      request.onsuccess=()=>resolve(request.result);
+    });
+  }
+
+  async function workspaceTransaction(mode,operation){
+    const db=await workspaceOpenDb();
+    return new Promise((resolve,reject)=>{
+      let transaction,request,result;
+      try{
+        transaction=db.transaction(WORKSPACE_STORE,mode);
+        request=operation(transaction.objectStore(WORKSPACE_STORE));
+        request.onsuccess=()=>{result=request.result;};
+        transaction.oncomplete=()=>{db.close();resolve(result);};
+        transaction.onabort=()=>{db.close();reject(Error("Proje kaydı tamamlanamadı. JSON yedeğini dene."));};
+        transaction.onerror=()=>{}; // onabort reports the transaction failure
+      }catch(_){
+        db.close();
+        reject(Error("Proje kaydı açılamadı."));
+      }
+    });
+  }
+
+  async function workspaceAll(){
+    const records=await workspaceTransaction("readonly",store=>store.getAll());
+    if(!Array.isArray(records))throw Error("Kayıt listesi okunamadı.");
+    return records.filter(record=>{
+      try{workspaceValidateRecord(record);return true;}
+      catch(_){return false;}
+    }).sort((a,b)=>b.savedAt.localeCompare(a.savedAt));
+  }
+
+  async function workspaceRead(id){
+    if(!/^[a-f0-9]{32}$/.test(id))throw Error("Geçersiz proje kimliği.");
+    const result=await workspaceTransaction("readonly",store=>store.get(id));
+    if(!result)throw Error("Proje bulunamadı.");
+    return workspaceValidateRecord(result);
+  }
+
+  async function workspaceWrite(record){
+    workspaceValidateRecord(record);
+    await workspaceTransaction("readwrite",store=>store.put(record));
+  }
+
+  async function workspaceRemove(id){
+    if(!/^[a-f0-9]{32}$/.test(id))throw Error("Geçersiz proje kimliği.");
+    await workspaceTransaction("readwrite",store=>store.delete(id));
+  }
+  /* END DEVICE WORKSPACE STORAGE */
+
+  let workspaceBusy=false;
+  function workspaceNotice(message,isError=false){
+    $("workspace-feedback").textContent=message;
+    $("workspace-feedback").classList.toggle("is-error",isError);
+  }
+
+  async function workspaceRefresh(){
+    const list=$("workspace-list");
+    try{
+      const rows=await workspaceAll();
+      $("workspace-count").textContent=String(rows.length);
+      list.replaceChildren();
+      if(rows.length===0){
+        const empty=document.createElement("div");
+        empty.className="workspace-empty";
+        empty.textContent="Henüz kayıt yok. Bir araçta bilgileri doldurup 'Bu cihazda kaydet' düğmesine bas.";
+        list.appendChild(empty);
+        return;
+      }
+      for(const record of rows){
+        const row=document.createElement("article");row.className="workspace-row";
+        const description=document.createElement("div");description.className="workspace-row-main";
+        const name=document.createElement("div");name.className="workspace-row-name";
+        name.textContent=record.name;
+        const meta=document.createElement("div");meta.className="workspace-row-meta";
+        meta.textContent=labels[record.tool]+" · "+new Date(record.savedAt).toLocaleString("tr-TR");
+        description.append(name,meta);
+        const actions=document.createElement("div");actions.className="workspace-row-actions";
+        const makeButton=(label,action,className="btn")=>{
+          const button=document.createElement("button");
+          button.type="button";button.className=className;button.textContent=label;
+          button.addEventListener("click",()=>{void action(record);});
+          actions.appendChild(button);
+        };
+        makeButton("Aç",workspaceOpen);
+        makeButton("Yeniden adlandır",workspaceRename);
+        makeButton("Sil",workspaceDelete,"btn danger");
+        row.append(description,actions);list.appendChild(row);
+      }
+    }catch(e){
+      $("workspace-count").textContent="—";
+      list.replaceChildren();
+      workspaceNotice(e.message||"Cihazdaki kayıtlar okunamadı. JSON yedeğini kullan.",true);
+    }
+  }
+
+  async function workspaceSave(){
+    if(workspaceBusy)return;
+    workspaceBusy=true;
+    try{
+      const doc=currentProjectDocument();
+      const all=await workspaceAll();
+      if(all.length>=WORKSPACE_LIMIT)throw Error("En fazla 30 kayıt saklanabilir. Eski kayıtları sil veya JSON olarak yedekle.");
+      const title=doc.tool==="quote"
+        ?(doc.details.title||doc.details.customer||"Fiyat teklifi")
+        :(doc.names[0]||labels[doc.tool]);
+      const record=workspaceNewRecord(doc,title);
+      await workspaceWrite(record);
+      $("workspace-panel").hidden=false;
+      $("toggle-workspace").setAttribute("aria-expanded","true");
+      await workspaceRefresh();
+      workspaceNotice("Kaydedildi: "+record.name+" · Yalnızca bu tarayıcıda saklanır.");
+    }catch(e){
+      $("workspace-panel").hidden=false;
+      $("toggle-workspace").setAttribute("aria-expanded","true");
+      workspaceNotice(e.message||"Cihazda kaydedilemedi. JSON dosyasına kaydetmeyi dene.",true);
+    }finally{workspaceBusy=false;}
+  }
+
+  async function workspaceOpen(record){
+    if(workspaceBusy)return;
+    if(!window.confirm("Mevcut formdaki kaydedilmemiş değişiklikler kaybolabilir. Bu projeyi açmak istiyor musun?"))return;
+    workspaceBusy=true;
+    try{
+      const stored=await workspaceRead(record.id);
+      restoreProject(stored.doc);
+      $("workspace-panel").hidden=true;
+      $("toggle-workspace").setAttribute("aria-expanded","false");
+      $("engine-status").textContent="Proje açıldı · Hesapla";
+    }catch(e){workspaceNotice(e.message||"Proje açılamadı.",true);}
+    finally{workspaceBusy=false;}
+  }
+
+  async function workspaceRename(record){
+    if(workspaceBusy)return;
+    const inputName=window.prompt("Bu kaydın yeni adı:",record.name);
+    if(inputName===null)return;
+    workspaceBusy=true;
+    try{
+      const name=workspaceDisplayName(inputName);
+      const stored=await workspaceRead(record.id);
+      await workspaceWrite({...stored,name});
+      await workspaceRefresh();
+      workspaceNotice("Kayıt adı güncellendi.");
+    }catch(e){workspaceNotice(e.message||"Kayıt yeniden adlandırılamadı.",true);}
+    finally{workspaceBusy=false;}
+  }
+
+  async function workspaceDelete(record){
+    if(workspaceBusy)return;
+    if(!window.confirm("'"+record.name+"' kaydını bu tarayıcıdan kalıcı olarak silmek istiyor musun?"))return;
+    workspaceBusy=true;
+    try{
+      await workspaceRemove(record.id);
+      await workspaceRefresh();
+      workspaceNotice("Cihazdaki kayıt silindi. Bu işlem JSON yedeklerini silmez.");
+    }catch(e){workspaceNotice(e.message||"Kayıt silinemedi.",true);}
+    finally{workspaceBusy=false;}
+  }
+
   function csvEscape(value){
     let v=String(value);
     // Prevent spreadsheet formula execution from user-entered names.
@@ -494,6 +703,17 @@ input:focus,select:focus{outline:2px solid #5ce8b8;outline-offset:1px}input::pla
   });
   document.querySelectorAll("[data-add]").forEach(b=>b.addEventListener("click",()=>addRow(b.dataset.add)));
   document.querySelectorAll("[data-calc]").forEach(b=>b.addEventListener("click",()=>calculate(b.dataset.calc)));
+  $("save-device").addEventListener("click",()=>{void workspaceSave();});
+  $("toggle-workspace").addEventListener("click",()=>{
+    const showing=$("workspace-panel").hidden;
+    $("workspace-panel").hidden=!showing;
+    $("toggle-workspace").setAttribute("aria-expanded",String(showing));
+    if(showing){workspaceNotice("");void workspaceRefresh();}
+  });
+  $("close-workspace").addEventListener("click",()=>{
+    $("workspace-panel").hidden=true;
+    $("toggle-workspace").setAttribute("aria-expanded","false");
+  });
   $("save-project").addEventListener("click",saveProject);
   $("open-project").addEventListener("click",()=>$("project-file").click());
   $("project-file").addEventListener("change",async function(){
