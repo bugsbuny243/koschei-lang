@@ -19,6 +19,9 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import subprocess
+from decimal import Decimal
 import sys
 import threading
 import time
@@ -38,6 +41,7 @@ SITE_DIR = Path(os.environ.get("KOSCHEI_SITE_DIR", HERE.parent.parent / "commerc
 SITE_FILES = {
     "/": ("index.html", "text/html; charset=utf-8"),
     "/index.html": ("index.html", "text/html; charset=utf-8"),
+    "/tools": ("business-tools.html", "text/html; charset=utf-8"),
     "/agents": ("agents.html", "text/html; charset=utf-8"),
     "/security-guide.html": ("security-guide.html", "text/html; charset=utf-8"),
     "/security-guide.tr.html": ("security-guide.tr.html", "text/html; charset=utf-8"),
@@ -58,9 +62,35 @@ SITE_CSP = (
     "font-src 'self'; connect-src 'none'; form-action 'none'; frame-ancestors 'none'; base-uri 'none'"
 )
 PLAY_CSP = SITE_CSP.replace("connect-src 'none'", "connect-src 'self'")
+BUSINESS_CSP = SITE_CSP.replace("connect-src 'none'", "connect-src 'self'")
+BUSINESS_ENGINE = Path(os.environ.get(
+    "KOSCHEI_BUSINESS_ENGINE", HERE.parent.parent / "products" / "business_web" / "engine.ks"
+))
+BUSINESS_MAX_BYTES = 8192
+BUSINESS_SLOTS = threading.BoundedSemaphore(2)
+
 # When set, page requests arriving on a platform hostname (*.up.railway.app)
 # are redirected to this canonical host so one address is shared and indexed.
 CANONICAL_HOST = os.environ.get("KOSCHEI_CANONICAL_HOST", "")
+
+
+def playground_mode() -> str:
+    mode = os.environ.get("KOSCHEI_PLAYGROUND_MODE", "enabled")
+    if mode not in ("enabled", "disabled"):
+        raise ValueError("KOSCHEI_PLAYGROUND_MODE must be enabled or disabled")
+    return mode
+
+
+PLAYGROUND_MODE = playground_mode()
+UNAVAILABLE_HTML = b"""<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<title>Playground temporarily unavailable - Koschei</title>
+<style>body{margin:0;background:#0d1215;color:#dde6e2;font:16px/1.6 system-ui,sans-serif}
+main{max-width:640px;margin:12vh auto;padding:24px}h1{font-size:28px}
+p{color:#a7b4ae}a{color:#9fd9bd}</style>
+<main><h1>Playground temporarily unavailable</h1>
+<p>Online code execution is paused. You can still browse the Koschei website.</p>
+<p><a href="/">Back to Koschei</a></p></main></html>"""
 
 RATE_LIMIT_REQUESTS = 30
 RATE_LIMIT_WINDOW_SECONDS = 60
@@ -73,6 +103,8 @@ DENIED_DOMAINS = SIDE_EFFECT_DOMAINS
 
 def evaluate(source: str, action: str, lang: str = "en") -> dict:
     """Check, and for action == "run" also execute, one Koschei program."""
+    if PLAYGROUND_MODE != "enabled":
+        raise untrusted.SandboxUnavailable("Online code execution is disabled")
     return untrusted.evaluate(source, action, lang, DENIED_DOMAINS)
 
 
@@ -97,6 +129,144 @@ class RateLimiter:
 
 
 LIMITER = RateLimiter(RATE_LIMIT_REQUESTS, RATE_LIMIT_WINDOW_SECONDS)
+BUSINESS_LIMITER = RateLimiter(15, 60.0)
+
+
+# The website passes numeric data to a single, committed Koschei source file.
+# The caller never supplies source code, paths, capabilities, executable names,
+# or CLI arguments. Neither the runtime nor this bridge stores input.
+_MONEY = re.compile(r"(?:0|[1-9][0-9]{0,8})(?:\.[0-9]{1,2})?\Z", re.ASCII)
+
+
+def _whole(value: object, maximum: int) -> int:
+    if type(value) is not int or not 0 <= value <= maximum:
+        raise ValueError("invalid bounded integer")
+    return value
+
+
+def _cents(value: object, maximum: int = 100_000_000) -> int:
+    if not isinstance(value, str) or not _MONEY.fullmatch(value):
+        raise ValueError("amount must be a positive decimal string with up to 2 digits")
+    cents = int(Decimal(value) * 100)
+    if cents > maximum:
+        raise ValueError("amount too large")
+    return cents
+
+
+def _nonempty_rows(data: object, limit: int) -> list[dict]:
+    if not isinstance(data, list) or not 1 <= len(data) <= limit:
+        raise ValueError("expected a bounded nonempty list")
+    if not all(isinstance(row, dict) for row in data):
+        raise ValueError("invalid row")
+    return data
+
+
+def _business_request(payload: object) -> tuple[str, str, int]:
+    """Validate UI JSON, discard descriptions and build numeric-only Koschei input."""
+    if not isinstance(payload, dict):
+        raise ValueError("request must be an object")
+    mode = payload.get("kind")
+    if mode == "quote":
+        discount = _whole(payload.get("discount"), 100)
+        vat = _whole(payload.get("vat"), 100)
+        rows = _nonempty_rows(payload.get("items"), 24)
+        lines = [f"QUOTE|{discount}|{vat}"]
+        for row in rows:
+            qty = _whole(row.get("quantity"), 1000)
+            if qty == 0:
+                raise ValueError("zero quantity")
+            lines.append(f"ROW|{qty}|{_cents(row.get('price'))}")
+    elif mode == "stock":
+        rows = _nonempty_rows(payload.get("items"), 40)
+        lines = ["STOCK"]
+        for row in rows:
+            qty = _whole(row.get("quantity"), 100_000)
+            threshold = _whole(row.get("minimum"), 100_000)
+            cost = _cents(row.get("cost"))
+            lines.append(f"ROW|{qty}|{threshold}|{cost}")
+    elif mode == "cash":
+        opening = _cents(payload.get("opening"), 1_000_000_000_000)
+        rows = _nonempty_rows(payload.get("items"), 40)
+        lines = [f"CASH|{opening}"]
+        for row in rows:
+            kind = row.get("type")
+            if kind not in ("income", "expense"):
+                raise ValueError("invalid cash transaction")
+            amount = _cents(row.get("amount"), 100_000_000_000)
+            if amount == 0:
+                raise ValueError("zero transaction")
+            lines.append(f"{'IN' if kind == 'income' else 'OUT'}|{amount}")
+    else:
+        raise ValueError("unknown tool")
+    source = "\n".join(lines)
+    if len(source.encode("ascii")) > BUSINESS_MAX_BYTES:
+        raise ValueError("too many items")
+    return mode, source, len(rows)
+
+
+def _integer(raw: str) -> int:
+    if not re.fullmatch(r"-?[0-9]{1,16}", raw, re.ASCII):
+        raise ValueError("bad engine output")
+    return int(raw)
+
+
+def _business_result(mode: str, output: str, count: int) -> dict:
+    """Parse the stable numeric protocol; no reported totals come from Python."""
+    rows = [line.strip() for line in output.splitlines() if line.strip()]
+    if not rows:
+        raise ValueError("empty engine output")
+    header = rows[-1].split("|")
+    if mode == "quote":
+        if len(rows) != 1 or len(header) != 7 or header[:2] != ["OK", "QUOTE"]:
+            raise ValueError("quote protocol mismatch")
+        subtotal, discount, vat, total, seen = map(_integer, header[2:])
+        if seen != count or subtotal < 0 or discount < 0 or vat < 0 or total < 0:
+            raise ValueError("quote result invalid")
+        return {"kind": mode, "subtotal": subtotal, "discount": discount, "vat": vat, "total": total, "count": seen}
+    if mode == "cash":
+        if len(rows) != 1 or len(header) != 8 or header[:2] != ["OK", "CASH"]:
+            raise ValueError("cash protocol mismatch")
+        opening, income, expenses, closing, incoming, outgoing = map(_integer, header[2:])
+        if incoming + outgoing != count:
+            raise ValueError("cash count mismatch")
+        return {"kind": mode, "opening": opening, "income": income, "expenses": expenses,
+                "closing": closing, "income_count": incoming, "expense_count": outgoing}
+    if mode == "stock":
+        if len(header) != 5 or header[:2] != ["OK", "STOCK"] or len(rows) != count + 1:
+            raise ValueError("stock protocol mismatch")
+        seen, alerts, value = map(_integer, header[2:])
+        if seen != count or not 0 <= alerts <= seen:
+            raise ValueError("stock count mismatch")
+        items = []
+        for idx, line in enumerate(rows[:-1], 1):
+            parts = line.split("|")
+            if len(parts) != 4 or parts[0] != "ROW" or _integer(parts[1]) != idx or parts[2] not in ("LOW", "OK"):
+                raise ValueError("stock row mismatch")
+            reorder = _integer(parts[3])
+            if reorder < 0:
+                raise ValueError("negative order")
+            items.append({"low": parts[2] == "LOW", "reorder": reorder})
+        return {"kind": mode, "count": seen, "alerts": alerts, "inventory_value": value, "items": items}
+    raise ValueError("unknown engine mode")
+
+
+def _business_run(mode: str, source: str, count: int) -> dict:
+    if not BUSINESS_ENGINE.is_file():
+        raise RuntimeError("business engine missing")
+    completed = subprocess.run(
+        [sys.executable, "-m", "koschei", "run", str(BUSINESS_ENGINE), "--max-steps", "150000"],
+        input=source,
+        text=True,
+        capture_output=True,
+        encoding="utf-8",
+        timeout=8,
+        cwd=HERE,
+        check=False,
+    )
+    if completed.returncode != 0 or len(completed.stdout) > 8192:
+        raise RuntimeError("business engine failed")
+    return _business_result(mode, completed.stdout, count)
+
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -125,6 +295,13 @@ class Handler(BaseHTTPRequestHandler):
         # deployment-specific mechanism; the direct peer is the safe default.
         return self.client_address[0]
 
+    def _playground_page(self) -> None:
+        if PLAYGROUND_MODE != "enabled":
+            self._send(HTTPStatus.SERVICE_UNAVAILABLE, UNAVAILABLE_HTML,
+                       "text/html; charset=utf-8", SITE_CSP)
+            return
+        self._send(HTTPStatus.OK, INDEX_HTML.read_bytes(), "text/html; charset=utf-8", PLAY_CSP)
+
     def do_GET(self) -> None:  # noqa: N802
         path = self.path.split("?", 1)[0]
         host = self.headers.get("Host", "").split(":")[0].lower()
@@ -142,26 +319,76 @@ class Handler(BaseHTTPRequestHandler):
             return
         site = SITE_FILES.get(path)
         if path in ("/play", "/play/"):
-            self._send(HTTPStatus.OK, INDEX_HTML.read_bytes(), "text/html; charset=utf-8", PLAY_CSP)
+            self._playground_page()
         elif site and (SITE_DIR / site[0]).is_file():
-            self._send(HTTPStatus.OK, (SITE_DIR / site[0]).read_bytes(), site[1], SITE_CSP)
+            self._send(HTTPStatus.OK, (SITE_DIR / site[0]).read_bytes(), site[1], BUSINESS_CSP if path == "/tools" else SITE_CSP)
         elif path in ("/", "/index.html"):
             # No product site bundled: the playground is the home page.
-            self._send(HTTPStatus.OK, INDEX_HTML.read_bytes(), "text/html; charset=utf-8", PLAY_CSP)
+            self._playground_page()
         elif path == "/favicon.ico":
             self.send_response(HTTPStatus.NO_CONTENT)
             self.send_header("Cache-Control", "public, max-age=86400")
             self.end_headers()
         elif path == "/health":
-            self._json(HTTPStatus.OK, {"ok": True})
+            self._json(HTTPStatus.OK, {"ok": True, "evaluation_enabled": PLAYGROUND_MODE == "enabled"})
         else:
             self._json(HTTPStatus.NOT_FOUND, {"error": "not_found"})
 
     do_HEAD = do_GET
 
+    def _business_calculate(self) -> None:
+        # Strictly separate trusted fixed-function products from /api/evaluate.
+        origin = self.headers.get("Origin", "")
+        if origin and origin != "https://koschei.dev":
+            self._json(HTTPStatus.FORBIDDEN, {"error": "origin_denied"})
+            return
+        if self.headers.get("Transfer-Encoding") or self.headers.get("Content-Type", "").split(";")[0].strip().lower() != "application/json":
+            self._json(HTTPStatus.BAD_REQUEST, {"error": "invalid_content_type"})
+            return
+        if not BUSINESS_LIMITER.allow(self._client()):
+            self._json(HTTPStatus.TOO_MANY_REQUESTS, {"error": "rate_limited"})
+            return
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            length = -1
+        if not 1 <= length <= BUSINESS_MAX_BYTES:
+            self.close_connection = True
+            self._json(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, {"error": "invalid_size"})
+            return
+        try:
+            raw = self.rfile.read(length)
+            mode, source, count = _business_request(json.loads(raw))
+        except (ValueError, TypeError, json.JSONDecodeError, UnicodeDecodeError):
+            self._json(HTTPStatus.BAD_REQUEST, {"error": "invalid_input", "message": "Check quantities and amounts."})
+            return
+        if not BUSINESS_SLOTS.acquire(blocking=False):
+            self._json(HTTPStatus.SERVICE_UNAVAILABLE, {"error": "busy"})
+            return
+        try:
+            result = _business_run(mode, source, count)
+        except (RuntimeError, OSError, ValueError, subprocess.TimeoutExpired):
+            # Deliberately never send stderr or source to a browser or access log.
+            self._json(HTTPStatus.SERVICE_UNAVAILABLE, {"error": "service_unavailable"})
+            return
+        finally:
+            BUSINESS_SLOTS.release()
+        self._json(HTTPStatus.OK, result)
+
     def do_POST(self) -> None:  # noqa: N802
+        if self.path == "/api/business/calculate":
+            self._business_calculate()
+            return
         if self.path != "/api/evaluate":
             self._json(HTTPStatus.NOT_FOUND, {"error": "not_found"})
+            return
+        if PLAYGROUND_MODE != "enabled":
+            # Reject before reading the body or invoking any compiler path.
+            self.close_connection = True
+            self._json(HTTPStatus.SERVICE_UNAVAILABLE, {
+                "error": "evaluation_disabled",
+                "message": "Online code execution is temporarily unavailable.",
+            })
             return
         if not LIMITER.allow(self._client()):
             self._json(HTTPStatus.TOO_MANY_REQUESTS, {"error": "rate_limited", "message": "Too many requests; wait a minute and try again."})
@@ -215,8 +442,11 @@ def log_event(result: dict) -> None:
 def main() -> None:
     # Fail closed on hosts that disallow required user/mount/network namespaces.
     # Do not expose the playground with a silently weakened sandbox.
-    untrusted.require_container_limits()
-    untrusted.require_sandbox_ready()
+    if PLAYGROUND_MODE not in ("enabled", "disabled"):
+        raise ValueError("Invalid Playground mode")
+    if PLAYGROUND_MODE == "enabled":
+        untrusted.require_container_limits()
+        untrusted.require_sandbox_ready()
     port = int(os.environ.get("PORT", "8080"))
     ThreadingHTTPServer(("0.0.0.0", port), Handler).serve_forever()
 
