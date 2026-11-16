@@ -215,6 +215,7 @@ def log_event(result: dict) -> None:
 def main() -> None:
     # Fail closed on hosts that disallow required user/mount/network namespaces.
     # Do not expose the playground with a silently weakened sandbox.
+    untrusted.require_container_limits()
     untrusted.require_sandbox_ready()
     port = int(os.environ.get("PORT", "8080"))
     ThreadingHTTPServer(("0.0.0.0", port), Handler).serve_forever()

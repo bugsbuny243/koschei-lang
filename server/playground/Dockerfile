@@ -17,7 +17,8 @@ COPY server/playground /opt/playground
 # Public product site, served at / by the same process; the playground is /play.
 COPY commercial/lang-site /opt/site
 ENV KOSCHEI_SITE_DIR=/opt/site KOSCHEI_CANONICAL_HOST=koschei.dev \
-    KOSCHEI_UNTRUSTED_SANDBOX=bwrap
+    KOSCHEI_UNTRUSTED_SANDBOX=bwrap \
+    KOSCHEI_REQUIRE_CONTAINER_LIMITS=1
 RUN useradd --system --no-create-home --shell /usr/sbin/nologin playground
 USER playground
 WORKDIR /opt/playground

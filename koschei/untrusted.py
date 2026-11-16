@@ -107,6 +107,64 @@ def _sandbox_command(command: list[str], workdir: str) -> list[str]:
     return args
 
 
+# Deployment-wide limits for the public Docker service. These are aggregate
+# cgroup ceilings, independent of each interpreter's RLIMIT_* controls.
+MAX_SERVICE_MEMORY_BYTES = 1536 * 1024 * 1024
+MAX_SERVICE_PIDS = 128
+MAX_SERVICE_CPU_CORES = 2
+
+
+def require_container_limits(
+    *,
+    status_path: Path = Path("/proc/self/status"),
+    cgroup_root: Path = Path("/sys/fs/cgroup"),
+) -> None:
+    """Require an actually confined service when the hosted mode is enabled.
+
+    Docker/Compose settings are declarations, not proof that the host applied
+    them. Refuse to serve if the live process lacks syscall filtering,
+    no-new-privileges, or finite cgroup-v2 CPU/memory/PID ceilings.
+    """
+    mode = os.environ.get("KOSCHEI_REQUIRE_CONTAINER_LIMITS", "0")
+    if mode == "0":
+        return  # Explicit local-development compatibility mode.
+    if mode != "1":
+        raise SandboxUnavailable("Invalid container limits configuration")
+
+    try:
+        entries = dict(
+            line.split(":", 1)
+            for line in status_path.read_text(encoding="ascii").splitlines()
+            if ":" in line
+        )
+        if entries["Seccomp"].strip() != "2":
+            raise ValueError("seccomp filter is inactive")
+        if entries["NoNewPrivs"].strip() != "1":
+            raise ValueError("no_new_privs is inactive")
+
+        def positive_bounded(path: str, maximum: int) -> int:
+            value = (cgroup_root / path).read_text(encoding="ascii").strip()
+            if not value.isdecimal():
+                raise ValueError(f"{path} must be a finite integer")
+            parsed = int(value)
+            if not 0 < parsed <= maximum:
+                raise ValueError(f"{path} is above the deployment limit")
+            return parsed
+
+        positive_bounded("memory.max", MAX_SERVICE_MEMORY_BYTES)
+        positive_bounded("pids.max", MAX_SERVICE_PIDS)
+        cpu = (cgroup_root / "cpu.max").read_text(encoding="ascii").split()
+        if len(cpu) != 2 or not all(part.isdecimal() for part in cpu):
+            raise ValueError("cpu.max must contain a finite quota and period")
+        quota, period = (int(item) for item in cpu)
+        if period <= 0 or quota <= 0 or quota > MAX_SERVICE_CPU_CORES * period:
+            raise ValueError("cpu.max exceeds the deployment CPU quota")
+    except (OSError, KeyError, ValueError) as error:
+        raise SandboxUnavailable(
+            "Required container seccomp/no-new-privileges/cgroup limits are unavailable"
+        ) from error
+
+
 def require_sandbox_ready() -> None:
     """Fail startup if the configured public-program sandbox cannot operate."""
     if os.environ.get("KOSCHEI_UNTRUSTED_SANDBOX", "off") == "off":
