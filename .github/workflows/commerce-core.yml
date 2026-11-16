@@ -34,7 +34,7 @@ jobs:
           ks caps products/commerce/pricing.ks
       - name: Verify Python syntax and browser JavaScript syntax
         run: |
-          python -m py_compile products/commerce/storage.py products/commerce/server.py
+          python -m py_compile products/commerce/storage.py products/commerce/server.py products/commerce/entrypoint.py
           node -e 'const fs=require("fs"),vm=require("vm");let s=fs.readFileSync("products/commerce/storefront.html","utf8");const m=s.match(/<script nonce="__NONCE__">([\s\S]*?)<\/script>/);if(!m)throw Error("Script missing");new vm.Script(m[1]);console.log("Storefront JS syntax OK")'
       - name: Build container and test startup with durable SQLite volume
         run: |
@@ -52,5 +52,6 @@ jobs:
             sleep 1
           done
           curl -fsS http://127.0.0.1:18123/api/config | python -c "import sys,json; d=json.load(sys.stdin); assert d['orders_enabled'] is False and d['payments_enabled'] is False"
+          docker exec koschei-commerce-ci python -c 'from pathlib import Path; p=Path("/proc/1/status").read_text(); assert int(p.split("Uid:")[1].split()[0])!=0, "HTTP server must run without root privileges"; assert Path("/data/commerce.db").is_file()'
           docker rm -f koschei-commerce-ci
           docker volume rm koschei-commerce-ci-data
