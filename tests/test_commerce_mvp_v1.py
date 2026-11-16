@@ -199,7 +199,7 @@ class CommerceTests(unittest.TestCase):
             self.assertIn("style-src 'nonce-",csp)
             self.assertIn('id="order-form"',html)
             self.assertIn('id="merchant-orders"',html)
-            self.assertIn("Kart",html.capitalize() if "kart" not in html else html)
+            self.assertIn("kredi kartı",html)
             self.assertNotIn("https://cdn.",html)
         restricted=make_handler(self.db,Config(ORIGIN,SECRET,accept_orders=False))
         alt=ThreadingHTTPServer(("127.0.0.1",0),restricted)
