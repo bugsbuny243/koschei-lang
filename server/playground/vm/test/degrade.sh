@@ -3,10 +3,12 @@
 # refuses to start. Restores every change. Run as root on the test VM.
 set -u
 D=/etc/systemd/system/koschei-worker.service.d
+mkdir -p "$D"
 fail=0
 try() {
   name=$1; shift
-  printf '[Service]\n%s\n' "$*" > "$D/zz-degrade.conf"
+  printf '[Service]\n%s\n' "$*" > "$D/zz-degrade.conf" \
+    || { echo "{\"degrade\":\"$name\",\"harness_error\":true}"; fail=1; return; }
   systemctl daemon-reload
   systemctl reset-failed koschei-worker.service koschei-worker.socket >/dev/null 2>&1
   systemctl start koschei-worker.socket >/dev/null 2>&1
