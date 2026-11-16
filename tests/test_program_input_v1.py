@@ -178,7 +178,7 @@ class ProgramInputTests(unittest.TestCase):
         path = self.write(REPORT)
         stdout = io.StringIO()
         with redirect_stdout(stdout), redirect_stderr(io.StringIO()):
-            self.assertEqual(cli_main(["caps", str(path)]), 0)
+            self.assertEqual(cli_main(["--lang", "tr", "caps", str(path)]), 0)
         manifest = stdout.getvalue()
         self.assertIn("PROGRAM GİRDİSİ:", manifest)
         self.assertIn("stdin_bytes=8", manifest)

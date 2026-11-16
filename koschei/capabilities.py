@@ -353,62 +353,124 @@ def _literal_text(expression: Expression) -> str:
     return DYNAMIC
 
 
-def render(manifest: Manifest, source_name: str) -> str:
-    lines = [f"KOSCHEI YETKİ MANİFESTOSU: {source_name}", ""]
+DOMAIN_TITLES_EN = {
+    "disk": "DISK",
+    "net": "NETWORK",
+    "env": "ENVIRONMENT",
+    "process": "PROCESS",
+    "serve": "HTTP SERVER",
+    "persist": "PERSISTENT STATE",
+    "input": "PROGRAM INPUT",
+    "clock": "CLOCK",
+    "random": "RANDOM",
+    "db": "DATABASE",
+}
+
+_TEXT = {
+    "tr": {
+        "header": "KOSCHEI YETKİ MANİFESTOSU: {source}",
+        "pure": "Bu program hiçbir yan etki yeteneği taşımıyor.",
+        "pure_detail": "Disk, ağ, ortam değişkeni ve süreç erişimi YOKTUR — saf hesaplama.",
+        "dynamic": DYNAMIC,
+        "caller": "(capability çağıran tarafından sağlanmalıdır)",
+        "none": "yok",
+        "read_only": "salt-okunur",
+        "read_write": "okuma/yazma",
+        "line": "satır",
+        "operations": "kullanılan işlemler",
+        "holders": "YETKİ TAŞIYAN FONKSİYONLAR:",
+        "exact": "Bu program yukarıda listelenen kapsamların DIŞINDA hiçbir şeye erişemez.",
+        "inexact": (
+            "UYARI: en az bir kapsam statik olarak çözülemedi (dinamik değer). "
+            "Manifesto KESİN DEĞİLDİR; kapsamları sabit metinlerle yazmak, "
+            "programın erişim yüzeyini denetlenebilir kılar."
+        ),
+    },
+    "en": {
+        "header": "KOSCHEI CAPABILITY MANIFEST: {source}",
+        "pure": "This program carries no side-effect capability.",
+        "pure_detail": "No disk, network, environment, or process access — pure computation.",
+        "dynamic": "<DYNAMIC — not resolved statically>",
+        "caller": "(the capability must be supplied by the caller)",
+        "none": "none",
+        "read_only": "read-only",
+        "read_write": "read/write",
+        "line": "line",
+        "operations": "operations used",
+        "holders": "FUNCTIONS THAT HOLD CAPABILITIES:",
+        "exact": "This program can reach nothing OUTSIDE the scopes listed above.",
+        "inexact": (
+            "WARNING: at least one scope could not be resolved statically (a dynamic value). "
+            "The manifest is NOT EXACT; writing scopes as literal text makes the "
+            "program's reach auditable."
+        ),
+    },
+}
+
+# Scope descriptions the analysis writes in Turkish; their English text.
+_SCOPE_EN = (
+    ("duvar saati + monoton saat", "wall clock + monotonic clock"),
+    ("işletim sistemi güvenli kaynağı", "operating system secure source"),
+    ("argümanlar + standart girdi", "arguments + standard input"),
+)
+
+
+def _scope_text(scope: str, locale: str) -> str:
+    if locale != "en":
+        return scope
+    if scope == DYNAMIC:
+        return _TEXT["en"]["dynamic"]
+    for turkish, english in _SCOPE_EN:
+        scope = scope.replace(turkish, english)
+    return scope
+
+
+def render(manifest: Manifest, source_name: str, locale: str = "tr") -> str:
+    """The manifest as text, in Turkish (the default) or English."""
+    language = "en" if locale == "en" else "tr"
+    text = _TEXT[language]
+    titles = DOMAIN_TITLES_EN if language == "en" else DOMAIN_TITLES
+    lines = [text["header"].format(source=source_name), ""]
 
     if not manifest.has_any:
-        lines.append("Bu program hiçbir yan etki yeteneği taşımıyor.")
-        lines.append(
-            "Disk, ağ, ortam değişkeni ve süreç erişimi YOKTUR — saf hesaplama."
-        )
+        lines.append(text["pure"])
+        lines.append(text["pure_detail"])
         return "\n".join(lines) + "\n"
 
     for domain in DOMAIN_ORDER:
         grants = manifest.grants_for(domain)
-        title = DOMAIN_TITLES[domain]
+        title = titles[domain]
         if not grants:
             if domain in manifest.required_domains:
                 lines.append(f"{title}:")
-                lines.append(
-                    f"  - {DYNAMIC}  "
-                    "(capability çağıran tarafından sağlanmalıdır)"
-                )
+                lines.append(f"  - {text['dynamic']}  {text['caller']}")
             else:
-                lines.append(f"{title}: yok")
+                lines.append(f"{title}: {text['none']}")
             continue
 
         lines.append(f"{title}:")
         for grant in grants:
             if domain == "disk":
-                access = "salt-okunur" if grant.read_only else "okuma/yazma"
+                access = text["read_only"] if grant.read_only else text["read_write"]
                 label = f"  [{access}]"
             else:
                 label = ""
             lines.append(
-                f"  - {grant.scope}{label}  (satır {grant.location.line})"
+                f"  - {_scope_text(grant.scope, language)}{label}  ({text['line']} {grant.location.line})"
             )
         operations = manifest.operations.get(domain)
         if operations:
-            lines.append(f"  kullanılan işlemler: {', '.join(sorted(operations))}")
+            lines.append(f"  {text['operations']}: {', '.join(sorted(operations))}")
 
     if manifest.holder_functions:
         lines.append("")
-        lines.append("YETKİ TAŞIYAN FONKSİYONLAR:")
+        lines.append(text["holders"])
         for name in sorted(manifest.holder_functions):
             parameters = ", ".join(manifest.holder_functions[name])
             lines.append(f"  - {name}({parameters})")
 
     lines.append("")
-    if manifest.is_exact:
-        lines.append(
-            "Bu program yukarıda listelenen kapsamların DIŞINDA hiçbir şeye erişemez."
-        )
-    else:
-        lines.append(
-            "UYARI: en az bir kapsam statik olarak çözülemedi (dinamik değer). "
-            "Manifesto KESİN DEĞİLDİR; kapsamları sabit metinlerle yazmak, "
-            "programın erişim yüzeyini denetlenebilir kılar."
-        )
+    lines.append(text["exact"] if manifest.is_exact else text["inexact"])
     return "\n".join(lines) + "\n"
 
 

@@ -106,11 +106,24 @@ class CapsCommandTests(unittest.TestCase):
 
     def test_caps_prints_manifest(self) -> None:
         code, output, _ = self.run_cli(
-            ["caps", str(REPO_ROOT / "examples" / "showcase.ks")]
+            ["--lang", "tr", "caps", str(REPO_ROOT / "examples" / "showcase.ks")]
         )
         self.assertEqual(code, 0)
         self.assertIn("YETKİ MANİFESTOSU", output)
         self.assertIn("/etc/app/", output)
+
+    def test_caps_follows_the_language(self) -> None:
+        source = str(REPO_ROOT / "examples" / "showcase.ks")
+        for arguments in (["--lang", "en", "caps", source], ["caps", "--lang", "en", source]):
+            code, output, _ = self.run_cli(arguments)
+            self.assertEqual(code, 0)
+            self.assertIn("KOSCHEI CAPABILITY MANIFEST", output)
+            self.assertIn("NETWORK:", output)
+            self.assertNotIn("YETKİ", output)
+        code, output, _ = self.run_cli(["caps", "--lang", "tr", source])
+        self.assertIn("YETKİ MANİFESTOSU", output)
+        code, output, _ = self.run_cli(["--lang", "en", "caps", str(REPO_ROOT / "examples" / "app.ks")])
+        self.assertIn("This program carries no side-effect capability.", output)
 
     def test_caps_json_output(self) -> None:
         code, output, _ = self.run_cli(
