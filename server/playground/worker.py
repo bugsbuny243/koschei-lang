@@ -1,36 +1,70 @@
-"""Private execution worker. Terminate TLS at a private, trusted ingress.
+"""Private execution worker for the Koschei Playground.
 
-Start with `python worker.py`; authentication and real confinement are mandatory.
-Never expose the plain HTTP listener directly to the public Internet.
+Start with `python worker.py` under the systemd unit in server/playground/vm.
+Authentication and real confinement are mandatory: the worker refuses to listen
+unless the live process passes the seccomp/no-new-privileges/cgroup and
+namespace preflights. It serves HTTPS itself (certificate and key from the
+systemd credential directory or explicit paths); plain HTTP is only allowed on
+a loopback bind for local tests.
 """
 
 import hmac
+import ipaddress
 import os
+import socket
+import ssl
+import sys
 from http import HTTPStatus
 from http.server import ThreadingHTTPServer
+from pathlib import Path
 
 from koschei import untrusted
 from koschei.playground_remote import worker_token
 
 if __package__:
     from . import app
+    from . import runtime_security_probe as probe
 else:
     import app
+    import runtime_security_probe as probe
 
 
 WORKER_TOKEN = ""
 
 
+def _secret(name: str, env: str) -> str:
+    """An operator secret: systemd credential first, then the environment."""
+    directory = os.environ.get("CREDENTIALS_DIRECTORY", "")
+    if directory:
+        path = Path(directory) / name
+        if path.is_file():
+            return path.read_text(encoding="ascii").strip()
+    return os.environ.get(env, "")
+
+
+def _credential_path(name: str, env: str) -> str:
+    directory = os.environ.get("CREDENTIALS_DIRECTORY", "")
+    if directory and (Path(directory) / name).is_file():
+        return str(Path(directory) / name)
+    return os.environ.get(env, "")
+
+
 class WorkerHandler(app.Handler):
+    rate_limited = False
+
     def setup(self):
         super().setup()
-        self.connection.settimeout(5)
+        # The TLS handshake runs here, in the connection's own thread and
+        # under the request read deadline, never in the accept loop.
+        if isinstance(self.connection, ssl.SSLSocket):
+            self.connection.do_handshake()
 
     def _authenticated(self) -> bool:
         values = self.headers.get_all("Authorization", [])
         expected = ("Bearer " + WORKER_TOKEN).encode("ascii")
         if (not WORKER_TOKEN or len(values) != 1
                 or not hmac.compare_digest(values[0].encode("utf-8"), expected)):
+            self._request_read()
             self.close_connection = True
             self._json(HTTPStatus.UNAUTHORIZED, {"error": "unauthorized"})
             return False
@@ -39,6 +73,7 @@ class WorkerHandler(app.Handler):
     def do_GET(self):
         if not self._authenticated():
             return
+        self._request_read()
         if self.path == "/health":
             self._json(HTTPStatus.OK, {"ok": True, "evaluation_enabled": True, "protocol": 1})
         else:
@@ -55,17 +90,86 @@ class WorkerHandler(app.Handler):
         pass
 
 
+class WorkerServer(ThreadingHTTPServer):
+    daemon_threads = True
+
+    def handle_error(self, request, client_address):
+        # With ingress open to any address, scanners and clients that do not
+        # trust the certificate are routine: drop them without a traceback.
+        # Never log the peer's data; other errors keep the default report.
+        if isinstance(sys.exc_info()[1], (ssl.SSLError, ConnectionError, TimeoutError)):
+            return
+        super().handle_error(request, client_address)
+
+
+def tls_context() -> ssl.SSLContext | None:
+    cert = _credential_path("tls-cert", "KOSCHEI_WORKER_TLS_CERT")
+    key = _credential_path("tls-key", "KOSCHEI_WORKER_TLS_KEY")
+    if not cert and not key:
+        return None
+    if not cert or not key:
+        raise untrusted.SandboxUnavailable("Worker TLS needs both a certificate and a key")
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
+    context.load_cert_chain(cert, key)
+    return context
+
+
+SD_LISTEN_FDS_START = 3
+
+
+def activated_socket() -> socket.socket | None:
+    """The listening socket systemd passed in (koschei-worker.socket), if any.
+
+    Exactly one TCP stream socket is accepted; anything else stops startup.
+    """
+    if os.environ.get("LISTEN_PID") != str(os.getpid()):
+        return None
+    if os.environ.get("LISTEN_FDS") != "1":
+        raise untrusted.SandboxUnavailable("Expected exactly one activated socket")
+    listener = socket.socket(fileno=SD_LISTEN_FDS_START)
+    if listener.type != socket.SOCK_STREAM or listener.family not in (socket.AF_INET, socket.AF_INET6):
+        listener.detach()
+        raise untrusted.SandboxUnavailable("Activated socket is not a TCP listener")
+    # systemd hands the descriptor over inheritable; a submitted program
+    # must never receive it (subprocess also closes it, this is a second wall).
+    listener.set_inheritable(False)
+    for name in ("LISTEN_PID", "LISTEN_FDS", "LISTEN_FDNAMES"):
+        os.environ.pop(name, None)
+    return listener
+
+
 def main():
     global WORKER_TOKEN
-    WORKER_TOKEN = worker_token(os.environ.get("KOSCHEI_WORKER_TOKEN", ""))
+    WORKER_TOKEN = worker_token(_secret("worker-token", "KOSCHEI_WORKER_TOKEN"))
     if (app.PLAYGROUND_MODE != "enabled"
             or os.environ.get("KOSCHEI_UNTRUSTED_SANDBOX") != "bwrap"
             or os.environ.get("KOSCHEI_REQUIRE_CONTAINER_LIMITS") != "1"):
         raise untrusted.SandboxUnavailable("Worker requires enabled mode and mandatory confinement")
+    listener = activated_socket()
+    if listener is not None:
+        host = listener.getsockname()[0]
+    else:
+        host = os.environ.get("KOSCHEI_WORKER_BIND", "127.0.0.1")
+    context = tls_context()
+    if context is None and not ipaddress.ip_address(host).is_loopback:
+        raise untrusted.SandboxUnavailable("A non-loopback worker must serve TLS")
+    if listener is not None and context is None:
+        raise untrusted.SandboxUnavailable("A socket-activated worker must serve TLS")
     untrusted.require_container_limits()
     untrusted.require_sandbox_ready()
-    ThreadingHTTPServer((os.environ.get("KOSCHEI_WORKER_BIND", "127.0.0.1"),
-                         int(os.environ.get("PORT", "8081"))), WorkerHandler).serve_forever()
+    if listener is not None:
+        probe.require_listener_hidden()
+        server = WorkerServer(listener.getsockname()[:2], WorkerHandler, bind_and_activate=False)
+        server.socket.close()
+        server.socket = listener
+        server.server_name, server.server_port = "koschei-worker", listener.getsockname()[1]
+    else:
+        server = WorkerServer((host, int(os.environ.get("PORT", "8081"))), WorkerHandler)
+    if context is not None:
+        server.socket = context.wrap_socket(server.socket, server_side=True,
+                                            do_handshake_on_connect=False)
+    server.serve_forever()
 
 
 if __name__ == "__main__":

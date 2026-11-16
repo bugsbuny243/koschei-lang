@@ -95,25 +95,23 @@ Local `python server/playground/app.py` still defaults to resource-limited
 development mode without OS namespace/cgroup gates. **Use only with trusted
 local code**.
 
-### Verified incompatibility: GitHub-hosted Docker
+### Why not Docker (diagnosed, 16 November 2026)
 
-On 15 November 2026 the [live integration attempt](https://github.com/bugsbuny243/koschei-lang/actions/runs/43721126775) built the hardened Docker image and passed the cgroup/seccomp preflight, but refused startup at the bubblewrap namespace preflight:
+The namespace refusal seen on GitHub-hosted Docker was reproduced on a host
+**without AppArmor** (kernel 6.18, Docker 29, same bubblewrap flags, uid
+10001, `cap-drop ALL`, `no-new-privileges`):
 
-```text
-bwrap: No permissions to create new namespace, likely because the kernel
-does not allow non-privileged user namespaces.
-```
+| Configuration | Result |
+|---|---|
+| Docker default seccomp | `bwrap: No permissions to create new namespace` (identical) |
+| Same, seccomp disabled (diagnosis only) | `bwrap: Can't mount proc on /newroot/proc: Operation not permitted` |
+| Same host, no container, unprivileged user | works |
 
-**This is a real deployment compatibility blocker** for the tested Docker
-runner, not evidence that the Playground is safely executable there.
-The service correctly fails closed, and the positive live acceptance job
-remains red. Do not disable `no-new-privileges` / seccomp, run privileged,
-or switch `KOSCHEI_UNTRUSTED_SANDBOX=off` to make the job green.
-
-Use a dedicated host that supports the required isolation or a separately
-sandboxed worker. That host must rerun the **same positive acceptance
-checks** and provide a successful cgroup/namespace/API runtime receipt.
-The static test and image-build workflow passing alone is not sufficient.
+So the failure does not need AppArmor: Docker's default seccomp profile
+refuses unprivileged `CLONE_NEWUSER`, and even without it Docker's masked
+`/proc` prevents the fresh procfs a PID namespace needs. Making bubblewrap
+work in Docker means weakening the container. The supported deployment is
+therefore the VM worker below, not this Compose profile.
 
 ### Validation before enabling public access
 
@@ -164,55 +162,141 @@ hosting service. Do not claim deployment success solely from `/health`; also
 check the homepage, `/play` and an evaluation POST for the responses above.
 Re-enabling execution requires the existing live isolation release gates.
 
-### Proposed remote worker (not approved for production execution)
+### Remote worker on a dedicated VM
 
-The frontend now supports `KOSCHEI_PLAYGROUND_MODE=remote`. Requests go to one
-operator-configured `KOSCHEI_WORKER_URL` HTTPS origin, authenticated with
-`KOSCHEI_WORKER_TOKEN` (64 hexadecimal characters generated from 32 random bytes).
-The token belongs in the service secret store, never in HTML, URLs, source code
-or commits. Only the frontend and worker should possess it. Rotate by returning
-the frontend to disabled mode, replacing both secrets, checking readiness and
-then explicitly re-enabling remote mode.
+The frontend supports `KOSCHEI_PLAYGROUND_MODE=remote`. It sends evaluations to
+one operator-configured HTTPS origin (`KOSCHEI_WORKER_URL`), authenticated with
+`KOSCHEI_WORKER_TOKEN` (64 hex characters) and verified against
+`KOSCHEI_WORKER_CA_FILE` or, on platforms that only offer variables, `KOSCHEI_WORKER_CA_PEM` (the worker's private CA; hostname checked). There is
+no redirect following, no proxy discovery, no retry and **no local execution
+fallback**. One deadline (25 s) covers DNS, connection, TLS, sending and the
+whole response; DNS and connection setup run on a bounded pool of four.
+Responses are capped at 128 KiB and validated.
 
-Remote transport uses certificate and hostname verification, never follows
-redirects, does not discover HTTP proxies from the environment, caps responses
-at 128 KiB and validates result structure and per-stream output size. It uses a
-25-second socket timeout (not a guaranteed total DNS/request deadline). Errors
-produce the existing sanitized HTTP 503 sandbox response; there is no retry or
-local execution fallback. The frontend retains its request limits and bounded
-evaluation slots. An authenticated versioned worker health response is required
-before the remote frontend listens. Frontend `/health` reports whether execution
-is configured, not a continuously probed guarantee of worker availability.
+If the worker is unreachable when the frontend starts, the website still starts:
+`/health` reports `"evaluation_enabled": false`, `/play` and `/api/evaluate`
+answer 503, and a background check enables evaluation once the worker passes
+an authenticated readiness check (every 30 s). A bad URL, token or CA file
+still stops startup. Every request has a 15 s deadline to arrive in full.
 
-Run the worker entrypoint with `python server/playground/worker.py` (or
-`python worker.py` in the image). It requires all of:
+The worker (`server/playground/worker.py`) runs as a **systemd service directly
+on a Linux VM** (Ubuntu 24.04 tested), never in Docker:
 
-- `KOSCHEI_PLAYGROUND_MODE=enabled`
-- `KOSCHEI_UNTRUSTED_SANDBOX=bwrap`
-- `KOSCHEI_REQUIRE_CONTAINER_LIMITS=1`
-- the same secret `KOSCHEI_WORKER_TOKEN`
-- successful live cgroup and namespace startup admission
+```sh
+sudo server/playground/vm/install.sh /path/to/koschei-lang <worker-dns-name> 0.0.0.0:8443 <ingress>
+```
 
-The worker defaults to `127.0.0.1:8081`; `KOSCHEI_WORKER_BIND` and `PORT` control
-the listener. It offers only authenticated `/health` and `/api/evaluate`, with
-the same capability policy, output limits and evaluation concurrency controls
-as the local Playground. Unauthorized requests are rejected before body reads.
-Tokens are not forwarded into compiler subprocess environments.
+`<ingress>` is who may open a connection: one or more CIDRs, or the single
+word `any`. `install.sh` creates the `koschei-worker` account, a venv in
+`/opt/koschei-worker`, a private CA and server certificate (`vm/make-certs.sh`;
+the chain must pass `openssl verify -x509_strict`, because the frontend
+verifies with strict X.509 rules on every Python version), a random token,
+the units `vm/koschei-worker.socket` and `vm/koschei-worker.service`, and
+`/etc/koschei-worker/frontend.env` (root only) with the three values the
+frontend needs: `KOSCHEI_WORKER_URL`, `KOSCHEI_WORKER_TOKEN`,
+`KOSCHEI_WORKER_CA_PEM`.
 
-The worker's HTTP listener must remain behind a private TLS ingress. Binding it
-to `0.0.0.0` does **not** add TLS or network access control. A host operator must
-provide the reviewed isolation runtime, private routing/firewall and trusted
-TLS termination; restrict callers to the frontend, set ingress connection/body
-deadlines and request limits, and prevent direct public access to the listener.
-No cloud resources, TLS ingress or compatible worker host are provisioned by
-this patch. The existing reference Docker profile still has the known namespace
-blocker; moving this entrypoint into that profile does not fix it.
+#### Ingress and egress are separate
 
-Release gates: successful exact-release kernel isolation evidence, actual
-non-malicious Koschei execution and capability denial, end-to-end frontend/worker
-acceptance with deployment TLS and credentials, timeout/load testing and a
-review of host policy. Unit transport tests and local TLS tests mock evaluation;
-they prove neither a working production sandbox nor isolation from host data.
+systemd's `IPAddressAllow=` applies in both directions. Allowing the
+frontend's address on the service would also let the worker connect *to*
+that address, and allowing `any` would remove the egress block entirely.
+So the two directions live in different units:
+
+| Unit | Filter | Governs |
+| --- | --- | --- |
+| `koschei-worker.socket` | `IPAddressDeny=any` + `IPAddressAllow=<ingress>` | the listening socket and every accepted connection (they inherit its cgroup) |
+| `koschei-worker.service` | `IPAddressDeny=any` + `IPAddressAllow=localhost` | every socket the worker process opens itself |
+| each sandboxed program | own empty network namespace (`bwrap --unshare-net`) | only `lo` exists; nothing is routable |
+
+`install.sh` refuses to finish unless `systemctl show` reports a
+loopback-only allowlist and `IPAddressDeny=0.0.0.0/0 ::/0` for the service,
+and it deletes the `peer.conf` drop-in of older installs (which put the
+frontend range on the service).
+
+#### When Railway's outbound address changes
+
+Railway does not give a service a fixed outbound address unless static
+egress IPs are bought for it. Two supported settings:
+
+- **`any` (default for Railway today).** Anyone can reach the TLS port; that
+  is all they get. Every request must present the 256-bit token, the frontend
+  pins the worker's private CA and checks the hostname, and an unauthenticated
+  client is answered 401 before anything runs. The worker's own egress stays
+  blocked (verified by `connectivity.py` with ingress `any`). Only the TLS
+  port is exposed; nothing else on the VM listens publicly by this install.
+- **Static egress IPs**, when available: rerun `install.sh` with those
+  addresses, or change them live without restarting the worker:
+  `systemctl set-property koschei-worker.socket IPAddressAllow= IPAddressAllow=<cidr>...`
+
+A changing address never needs the service filter touched; never widen
+`IPAddressAllow` on the service to reach the frontend.
+
+The socket unit owns the port, so the port stays open while the worker
+restarts; connections wait in the backlog and the frontend's 25 s deadline
+turns a worker that does not come up into a 503. A worker that fails its
+preflight never serves a request (verified by `degrade.sh`). Not yet
+verified: how the socket unit behaves once the service hits systemd's start
+limit. Stopping the worker on purpose means stopping both:
+`systemctl stop koschei-worker.socket koschei-worker.service` (verified:
+the frontend then answers 503 in about 20 ms and the site stays up).
+
+The unit `vm/koschei-worker.service`:
+
+- **Limits**: `MemoryMax=1G`, `CPUQuota=100%`, `TasksMax=96` on the service's own
+  cgroup; per program 5 s CPU, 10 s wall, 512 MiB address space, 1 MiB files,
+  64 open files, 16 KiB output, 200 000 interpreter steps.
+- **Privileges**: `NoNewPrivileges`, empty capability sets, `SystemCallFilter=
+  @system-service @mount` minus swap/reboot/raw-io/module/debug/clock groups,
+  `RestrictNamespaces=user mnt pid net ipc uts`.
+- **Files**: `ProtectSystem=strict`, `ProtectHome`, `PrivateTmp`,
+  `PrivateDevices`. Each program sees only `/usr`, the read-only venv, a
+  private `/work` and a 16 MiB `/tmp`.
+- **Secrets**: the token and TLS key arrive through `LoadCredential=`, never in
+  the environment, and are invisible inside sandboxes.
+- **Network**: the worker serves TLS itself on the socket passed by
+  `koschei-worker.socket`; the service has `IPAddressDeny=any` with loopback
+  only, so it can make no outbound connection (see the table above).
+- **AppArmor** (Ubuntu 24.04 restricts unprivileged user namespaces):
+  `vm/koschei-bwrap.apparmor` grants `userns` to one copy of bubblewrap,
+  `/opt/koschei-worker/bin/bwrap`, executable only by the worker account. The
+  host-wide restriction stays on.
+- Not set, on purpose: `ProtectKernelTunables`, `ProtectKernelLogs`,
+  `ProtectProc`, `ProtectHostname`. They put locked mounts over `/proc`, and
+  the kernel then refuses each sandbox's procfs.
+
+The worker checks itself on the live process: `Seccomp=2`, `NoNewPrivs=1`, and
+finite `memory.max`, `pids.max` and `cpu.max` on **its own cgroup** (resolved
+from `/proc/self/cgroup`; on a VM that is
+`/system.slice/koschei-worker.service`, not the mount root). The unit's
+`ExecStartPre` runs `runtime_security_probe.py` with the same confinement, and
+the worker does not start unless all of these pass: namespaces, filesystem,
+loopback network, PID namespace, hidden credentials, memory, CPU and file-size
+limits, a real Koschei run and a capability denial. The network check runs a
+program inside the sandbox that must see only `lo` and fail to reach public
+IPv4/IPv6 addresses, UDP DNS, name resolution, `169.254.169.254`, RFC 1918 and
+CGNAT ranges, the VM's own address and its default gateway. After adopting
+the listening socket, the worker also proves that a sandboxed program inherits
+no open descriptor (so it cannot accept connections on the worker's port).
+
+Tests on a real VM (`vm/test/`, run by the `Playground Live Isolation
+Acceptance` workflow on a GitHub Ubuntu 24.04 runner):
+
+- `acceptance.py`: black-box over TLS: allowed program, disk/network denied before
+  running, output limit, runaway program, missing/wrong token, malformed
+  request, capacity (503).
+- `degrade.sh`: removing the PID, memory or CPU limit, user namespaces, seccomp
+  and no-new-privileges, or the AppArmor grant each stops the worker.
+- `connectivity.py`: the real frontend (`app.py`, remote mode) in its own
+  network namespace, reaching the worker from a non-loopback address:
+  authorized frontend runs a program; wrong token, a foreign CA, public CAs
+  only and a wrong hostname all give 503 while the site stays up; an address
+  outside the ingress list is dropped; with ingress `any` the worker's cgroup
+  still cannot reach a public IP, the frontend's private network, the gateway
+  or metadata; the worker stopped gives a fast 503 with the site up, and
+  evaluation recovers when it returns.
+- `emulation.conf` is for an emulated (QEMU/TCG) test VM only. It raises the
+  time limits by about 20x, so never install it on a real worker.
 
 ### Evaluation responses
 

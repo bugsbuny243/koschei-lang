@@ -4,6 +4,7 @@ import copy
 import http.client
 import json
 import threading
+from pathlib import Path
 from http.server import ThreadingHTTPServer
 
 import pytest
@@ -46,8 +47,12 @@ def transport(monkeypatch):
         response = Response()
         closed = False
         request_args = None
-        def __init__(self, host, port, timeout):
+        sock = None
+        def __init__(self, host, port, timeout, context):
             assert (host, port, timeout) == ("worker.example", 443, 25)
+            assert context.verify_mode == remote.ssl.CERT_REQUIRED and context.check_hostname
+        def connect(self):
+            pass
         def request(self, *args, **kwargs):
             Connection.request_args = (args, kwargs)
         def getresponse(self):
@@ -182,7 +187,7 @@ def test_worker_rejects_weakened_configuration_before_listening(monkeypatch, san
     monkeypatch.setenv("KOSCHEI_UNTRUSTED_SANDBOX", sandbox)
     monkeypatch.setenv("KOSCHEI_REQUIRE_CONTAINER_LIMITS", limits)
     monkeypatch.setattr(app, "PLAYGROUND_MODE", "enabled")
-    monkeypatch.setattr(worker, "ThreadingHTTPServer", lambda *a: pytest.fail("listener created"))
+    monkeypatch.setattr(worker, "WorkerServer", lambda *a, **k: pytest.fail("listener created"))
     with pytest.raises(untrusted.SandboxUnavailable):
         worker.main()
 
@@ -196,7 +201,7 @@ def test_worker_actual_admission_failure_prevents_listening(monkeypatch):
     def deny():
         raise untrusted.SandboxUnavailable("namespace denied")
     monkeypatch.setattr(untrusted, "require_sandbox_ready", deny)
-    monkeypatch.setattr(worker, "ThreadingHTTPServer", lambda *a: pytest.fail("listener created"))
+    monkeypatch.setattr(worker, "WorkerServer", lambda *a, **k: pytest.fail("listener created"))
     with pytest.raises(untrusted.SandboxUnavailable):
         worker.main()
 
@@ -238,9 +243,11 @@ def test_real_https_rejects_untrusted_cert_then_accepts_trusted_worker(monkeypat
         with pytest.raises(untrusted.SandboxUnavailable):
             client.require_ready()
         # Trust only this test certificate, retaining hostname verification.
-        verified = ssl.create_default_context(cafile=str(cert))
-        monkeypatch.setattr(ssl, "_create_default_https_context", lambda: verified)
+        client = remote.RemoteEvaluator(f"https://localhost:{server.server_port}", TOKEN, ca_file=str(cert))
         client.require_ready()
+        # The pinned certificate does not make another name acceptable.
+        with pytest.raises(untrusted.SandboxUnavailable):
+            remote.RemoteEvaluator(f"https://127.0.0.1:{server.server_port}", TOKEN, ca_file=str(cert)).require_ready()
         assert client.evaluate("fn main() {}", "run", "en") == RESULT
     finally:
         server.shutdown()
@@ -268,17 +275,288 @@ def test_frontend_remote_startup_waits_for_authenticated_readiness(monkeypatch):
     assert events == ["ready", "listen"]
 
 
-def test_frontend_offline_worker_prevents_startup(monkeypatch):
+def test_frontend_offline_worker_keeps_site_up_with_evaluation_disabled(monkeypatch):
+    """An offline worker must not take the website down, nor enable local runs."""
     monkeypatch.setattr(app, "PLAYGROUND_MODE", "remote")
     monkeypatch.setattr(app, "REMOTE_WORKER", None)
     class Client:
         def require_ready(self):
             raise untrusted.SandboxUnavailable("offline")
-    monkeypatch.setattr(app.RemoteEvaluator, "from_environment", lambda: Client())
-    monkeypatch.setattr(app, "ThreadingHTTPServer", lambda *a: pytest.fail("listener created"))
-    with pytest.raises(untrusted.SandboxUnavailable):
-        app.main()
-    assert app.REMOTE_WORKER is None
-    monkeypatch.setattr(app, "REMOTE_WORKER", None)
+    candidate = Client()
+    monkeypatch.setattr(app.RemoteEvaluator, "from_environment", lambda: candidate)
+    monkeypatch.setattr(untrusted, "evaluate", lambda *a: pytest.fail("local execution"))
+    watchers = []
+    class Thread:
+        def __init__(self, target, args, daemon):
+            assert target is app.watch_remote_worker and args == (candidate,) and daemon
+            watchers.append(self)
+        def start(self):
+            pass
+    monkeypatch.setattr(app.threading, "Thread", Thread)
+    listened = []
+    class Server:
+        def __init__(self, *args):
+            listened.append(args)
+        def serve_forever(self):
+            pass
+    monkeypatch.setattr(app, "ThreadingHTTPServer", Server)
+    app.main()
+    assert listened and len(watchers) == 1
+    assert app.REMOTE_WORKER is None and app.evaluation_enabled() is False
     with pytest.raises(untrusted.SandboxUnavailable):
         app.evaluate("", "run")
+
+
+def test_remote_watcher_enables_evaluation_only_after_readiness(monkeypatch):
+    monkeypatch.setattr(app, "PLAYGROUND_MODE", "remote")
+    monkeypatch.setattr(app, "REMOTE_WORKER", None)
+    monkeypatch.setattr(app, "REMOTE_READINESS_RETRY_SECONDS", 0)
+    attempts = []
+    class Client:
+        def require_ready(self):
+            attempts.append(1)
+            if len(attempts) < 3:
+                raise untrusted.SandboxUnavailable("not yet")
+    client = Client()
+    app.watch_remote_worker(client)
+    assert len(attempts) == 3 and app.REMOTE_WORKER is client and app.evaluation_enabled()
+
+
+def test_bad_remote_configuration_still_stops_startup(monkeypatch):
+    monkeypatch.setattr(app, "PLAYGROUND_MODE", "remote")
+    monkeypatch.setenv("KOSCHEI_WORKER_URL", "http://not-https")
+    monkeypatch.setenv("KOSCHEI_WORKER_TOKEN", TOKEN)
+    monkeypatch.setattr(app, "ThreadingHTTPServer", lambda *a: pytest.fail("listener created"))
+    with pytest.raises(ValueError):
+        app.main()
+
+
+def _tls_files(tmp_path):
+    import shutil
+    import subprocess
+    if shutil.which("openssl") is None:
+        pytest.skip("OpenSSL is required for the local TLS integration test")
+    cert, key = tmp_path / "cert.pem", tmp_path / "key.pem"
+    subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
+                    "-keyout", str(key), "-out", str(cert), "-days", "1",
+                    "-subj", "/CN=localhost", "-addext", "subjectAltName=DNS:localhost"],
+                   check=True, capture_output=True, timeout=15)
+    return cert, key
+
+
+def test_dripping_worker_is_cut_at_the_total_deadline(monkeypatch, tmp_path):
+    """Each byte arrives well inside the socket timeout; the total must still end."""
+    import socket
+    import ssl
+    import time
+    cert, key = _tls_files(tmp_path)
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(cert, key)
+    listener = socket.socket()
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(1)
+    stop = threading.Event()
+
+    def serve():
+        raw, _ = listener.accept()
+        with context.wrap_socket(raw, server_side=True) as tls:
+            tls.recv(65536)
+            head = b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 100000\r\n\r\n"
+            tls.sendall(head)
+            while not stop.is_set():
+                try:
+                    tls.sendall(b" ")
+                except OSError:
+                    return
+                time.sleep(0.2)
+
+    thread = threading.Thread(target=serve, daemon=True)
+    thread.start()
+    monkeypatch.setattr(remote, "REQUEST_DEADLINE_SECONDS", 1.5)
+    client = remote.RemoteEvaluator(f"https://localhost:{listener.getsockname()[1]}", TOKEN, ca_file=str(cert))
+    started = time.monotonic()
+    try:
+        with pytest.raises(untrusted.SandboxUnavailable):
+            client.require_ready()
+        assert time.monotonic() - started < 4
+    finally:
+        stop.set()
+        listener.close()
+
+
+def test_hanging_dns_is_cut_at_the_total_deadline(monkeypatch):
+    import socket
+    import time
+    release = threading.Event()
+
+    def stuck(*args, **kwargs):
+        release.wait(10)
+        raise socket.gaierror("released")
+
+    monkeypatch.setattr(socket, "getaddrinfo", stuck)
+    monkeypatch.setattr(remote, "REQUEST_DEADLINE_SECONDS", 1)
+    started = time.monotonic()
+    try:
+        with pytest.raises(untrusted.SandboxUnavailable):
+            remote.RemoteEvaluator("https://worker.invalid", TOKEN).require_ready()
+        assert time.monotonic() - started < 3
+    finally:
+        release.set()
+
+
+def test_slow_client_is_cut_at_the_read_deadline_and_others_are_served(monkeypatch):
+    import socket
+    import time
+    monkeypatch.setattr(app, "REQUEST_READ_DEADLINE_SECONDS", 1)
+    server = ThreadingHTTPServer(("127.0.0.1", 0), app.Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        slow = socket.create_connection(server.server_address, timeout=5)
+        slow.sendall(b"GET /health HTTP/1.1\r\n")
+        started = time.monotonic()
+        closed = False
+        while time.monotonic() - started < 4:
+            try:
+                slow.sendall(b"X-Drip: 1\r\n")
+            except OSError:
+                closed = True
+                break
+            # The healthy client is served while the slow one is pending.
+            connection = http.client.HTTPConnection(*server.server_address, timeout=2)
+            connection.request("GET", "/health")
+            assert connection.getresponse().status == 200
+            connection.close()
+            time.sleep(0.3)
+            try:
+                slow.settimeout(0.01)
+                if slow.recv(1) == b"":
+                    closed = True
+                    break
+            except (socket.timeout, BlockingIOError):
+                pass
+            except OSError:
+                closed = True
+                break
+        assert closed and time.monotonic() - started < 3
+        slow.close()
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_stalled_tls_handshake_does_not_block_the_worker(monkeypatch, tmp_path):
+    import socket
+    import ssl
+    cert, key = _tls_files(tmp_path)
+    monkeypatch.setattr(worker, "WORKER_TOKEN", TOKEN)
+    monkeypatch.setattr(app, "REQUEST_READ_DEADLINE_SECONDS", 2)
+    server = ThreadingHTTPServer(("127.0.0.1", 0), worker.WorkerHandler)
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(cert, key)
+    server.socket = context.wrap_socket(server.socket, server_side=True, do_handshake_on_connect=False)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        stalled = socket.create_connection(server.server_address, timeout=5)  # never says hello
+        client = remote.RemoteEvaluator(f"https://localhost:{server.server_port}", TOKEN, ca_file=str(cert))
+        client.require_ready()
+        stalled.close()
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_ca_can_be_passed_as_pem_text(monkeypatch, tmp_path):
+    cert, key = _tls_files(tmp_path)
+    pem = cert.read_text()
+    monkeypatch.setattr(worker, "WORKER_TOKEN", TOKEN)
+    monkeypatch.setattr(app, "PLAYGROUND_MODE", "enabled")
+    import ssl
+    server = ThreadingHTTPServer(("127.0.0.1", 0), worker.WorkerHandler)
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(cert, key)
+    server.socket = context.wrap_socket(server.socket, server_side=True, do_handshake_on_connect=False)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        monkeypatch.setenv("KOSCHEI_WORKER_URL", f"https://localhost:{server.server_port}")
+        monkeypatch.setenv("KOSCHEI_WORKER_TOKEN", TOKEN)
+        monkeypatch.delenv("KOSCHEI_WORKER_CA_FILE", raising=False)
+        monkeypatch.setenv("KOSCHEI_WORKER_CA_PEM", pem)
+        remote.RemoteEvaluator.from_environment().require_ready()
+    finally:
+        server.shutdown()
+        server.server_close()
+    with pytest.raises(ValueError):
+        remote.RemoteEvaluator("https://worker", TOKEN, ca_pem="not a certificate")
+    with pytest.raises(ValueError):
+        remote.RemoteEvaluator("https://worker", TOKEN, ca_file=str(cert), ca_pem=pem)
+
+
+def _serve_tls(monkeypatch, cert, key):
+    import ssl
+    monkeypatch.setattr(worker, "WORKER_TOKEN", TOKEN)
+    monkeypatch.setattr(app, "PLAYGROUND_MODE", "enabled")
+    server = ThreadingHTTPServer(("127.0.0.1", 0), worker.WorkerHandler)
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(cert, key)
+    server.socket = context.wrap_socket(server.socket, server_side=True)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server
+
+
+def test_installer_certificate_chain_passes_strict_verification(monkeypatch, tmp_path):
+    """The exact chain install.sh creates (make-certs.sh), over real TLS."""
+    import shutil
+    import subprocess
+    if shutil.which("openssl") is None:
+        pytest.skip("OpenSSL is required")
+    script = Path(__file__).resolve().parents[1] / "server/playground/vm/make-certs.sh"
+    # An older install's CA, without keyUsage: strict clients reject it ...
+    subprocess.run(["openssl", "req", "-x509", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:P-256",
+                    "-nodes", "-days", "1", "-subj", "/CN=Koschei worker CA",
+                    "-keyout", str(tmp_path / "ca-key.pem"), "-out", str(tmp_path / "ca-cert.pem")],
+                   check=True, capture_output=True, timeout=15)
+    subprocess.run(["openssl", "req", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:P-256", "-nodes",
+                    "-subj", "/CN=localhost", "-keyout", str(tmp_path / "tls-key.pem"),
+                    "-out", str(tmp_path / "tls.csr")], check=True, capture_output=True, timeout=15)
+    (tmp_path / "ext").write_text("subjectAltName=DNS:localhost\nextendedKeyUsage=serverAuth\n")
+    subprocess.run(["openssl", "x509", "-req", "-in", str(tmp_path / "tls.csr"), "-CA", str(tmp_path / "ca-cert.pem"),
+                    "-CAkey", str(tmp_path / "ca-key.pem"), "-CAcreateserial", "-days", "1",
+                    "-extfile", str(tmp_path / "ext"), "-out", str(tmp_path / "tls-cert.pem")],
+                   check=True, capture_output=True, timeout=15)
+    old_ca = (tmp_path / "ca-cert.pem").read_text()
+    server = _serve_tls(monkeypatch, tmp_path / "tls-cert.pem", tmp_path / "tls-key.pem")
+    try:
+        with pytest.raises(untrusted.SandboxUnavailable):
+            remote.RemoteEvaluator(f"https://localhost:{server.server_port}", TOKEN, ca_pem=old_ca).require_ready()
+    finally:
+        server.shutdown()
+        server.server_close()
+    # ... so the installer replaces it, and the new chain is accepted.
+    (tmp_path / "tls-names").write_text("DNS:localhost\n")
+    subprocess.run(["sh", str(script), str(tmp_path), "DNS:localhost", "localhost"],
+                   check=True, capture_output=True, timeout=60)
+    ca = (tmp_path / "ca-cert.pem").read_text()
+    assert ca != old_ca
+    server = _serve_tls(monkeypatch, tmp_path / "tls-cert.pem", tmp_path / "tls-key.pem")
+    try:
+        remote.RemoteEvaluator(f"https://localhost:{server.server_port}", TOKEN, ca_pem=ca).require_ready()
+        with pytest.raises(untrusted.SandboxUnavailable):  # name still checked
+            remote.RemoteEvaluator(f"https://127.0.0.1:{server.server_port}", TOKEN, ca_pem=ca).require_ready()
+        with pytest.raises(untrusted.SandboxUnavailable):  # public CAs do not vouch for it
+            remote.RemoteEvaluator(f"https://localhost:{server.server_port}", TOKEN).require_ready()
+    finally:
+        server.shutdown()
+        server.server_close()
+    # Rerunning keeps the same CA (the frontend's pinned value stays valid).
+    subprocess.run(["sh", str(script), str(tmp_path), "DNS:localhost", "localhost"],
+                   check=True, capture_output=True, timeout=60)
+    assert (tmp_path / "ca-cert.pem").read_text() == ca
+
+
+def test_strict_x509_is_enforced_on_every_python_version():
+    import ssl
+    client = remote.RemoteEvaluator("https://worker.example:8443", TOKEN)
+    assert client.context.verify_flags & ssl.VERIFY_X509_STRICT
