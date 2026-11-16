@@ -1,5 +1,5 @@
 // Koschei Forms: HTML pages. Pure. Every value from a submitter or from the
-// database passes through http.escape_html before it reaches a page.
+// disk passes through http.escape_html before it reaches a page.
 
 import http
 
@@ -32,23 +32,17 @@ fn nav() -> String {
     return "<nav><a href=\"/admin\">Forms</a> · <form method=\"POST\" action=\"/admin/logout\"><button type=\"submit\">Sign out</button></form></nav>"
 }
 
-// forms: [{slug, redirect_url, total}], origin: how visitors reach this server.
-fn dashboard(forms: Data, origin: String, error: String) -> String {
-    let items = json_items(forms) or []
+// One row per form: slugs[i] receives totals[i] submissions and sends its
+// visitor to redirects[i] ("" for the built-in thank-you page). origin is
+// how visitors reach this server.
+fn dashboard(slugs: List<String>, redirects: List<String>, totals: List<Int>, origin: String, error: String) -> String {
     let mut rows = ""
-    for item in items {
-        let slug_value = json_get(item, "slug") or {
-            continue
-        }
-        let slug = json_text(slug_value) or ""
-        let total_value = json_get(item, "total") or {
-            continue
-        }
-        let total = json_int(total_value) or 0
-        let redirect_value = json_get(item, "redirect_url") or {
-            continue
-        }
-        let redirect = json_text(redirect_value) or ""
+    let mut i = 0
+    while i < slugs.length() {
+        let slug = slugs.get(i) or ""
+        let redirect = redirects.get(i) or ""
+        let total = totals.get(i) or 0
+        i = i + 1
         let mut target = "<span class=\"muted\">built-in thank-you page</span>"
         if redirect.length() > 0 {
             target = http.escape_html(redirect)
@@ -68,36 +62,24 @@ fn dashboard(forms: Data, origin: String, error: String) -> String {
     return layout("Forms", body)
 }
 
-// rows: [{id, received, fields}] where fields is the stored JSON text.
-fn submissions(slug: String, rows: Data, shown: Int, total: Int) -> String {
-    let items = json_items(rows) or []
+// Submission numbers[i] arrived at whens[i] (UTC) with records[i].
+fn submissions(slug: String, numbers: List<Int>, whens: List<String>, records: List<Map<String, String>>, shown: Int, total: Int) -> String {
     let mut out = ""
-    for item in items {
-        let id_value = json_get(item, "id") or {
+    let mut i = 0
+    while i < numbers.length() {
+        let number = numbers.get(i) or 0
+        let when = whens.get(i) or ""
+        let fields: Map<String, String> = records.get(i) or {
+            i = i + 1
             continue
         }
-        let id = json_int(id_value) or 0
-        let when_value = json_get(item, "received") or {
-            continue
-        }
-        let when = json_text(when_value) or ""
-        let fields_value = json_get(item, "fields") or {
-            continue
-        }
-        let raw = json_text(fields_value) or ""
-        let fields = parse_json(raw) or {
-            continue
-        }
-        let keys = json_keys(fields) or []
+        i = i + 1
         let mut cells = ""
-        for key in keys {
-            let value = json_get(fields, key) or {
-                continue
-            }
-            let text = json_text(value) or ""
-            cells = cells + "<b>" + http.escape_html(key) + "</b>: " + http.escape_html(text) + "<br>"
+        for key in fields.keys() {
+            let value = fields.get(key) or ""
+            cells = cells + "<b>" + http.escape_html(key) + "</b>: " + http.escape_html(value) + "<br>"
         }
-        out = out + "<tr><td>{id}</td><td>" + http.escape_html(when) + "</td><td>" + cells + "</td></tr>"
+        out = out + "<tr><td>{number}</td><td>" + http.escape_html(when) + "</td><td>" + cells + "</td></tr>"
     }
     if out.length() == 0 {
         out = "<tr><td colspan=\"3\" class=\"muted\">No submissions yet.</td></tr>"
