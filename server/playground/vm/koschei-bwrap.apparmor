@@ -1,0 +1,13 @@
+# Ubuntu 24.04+ restricts unprivileged user namespaces with AppArmor
+# (kernel.apparmor_restrict_unprivileged_userns=1): an unconfined program that
+# creates one is moved to the "unprivileged_userns" profile, which denies the
+# capabilities bubblewrap needs inside its own namespace. This profile grants
+# user-namespace creation to ONE dedicated copy of bubblewrap, executable only
+# by the koschei-worker account (install.sh sets root:koschei-worker 0750).
+# The host-wide restriction stays on for every other program.
+abi <abi/4.0>,
+include <tunables/global>
+
+profile koschei-bwrap /opt/koschei-worker/bin/bwrap flags=(unconfined) {
+  userns,
+}

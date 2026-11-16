@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 import sys
 import threading
 import time
@@ -132,8 +133,44 @@ class RateLimiter:
 LIMITER = RateLimiter(RATE_LIMIT_REQUESTS, RATE_LIMIT_WINDOW_SECONDS)
 
 
+# A client has this long to deliver its request line, headers and body. The
+# per-operation socket timeout alone resets on every byte, so a client that
+# drips one byte at a time could otherwise hold a server thread for hours.
+REQUEST_READ_DEADLINE_SECONDS = 15
+SOCKET_TIMEOUT_SECONDS = 10
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "KoscheiPlayground/1"
+    # The public site rate-limits per client address. A private worker has a
+    # single peer (the frontend), which already limits per end user.
+    rate_limited = True
+
+    def setup(self) -> None:
+        super().setup()
+        self.connection.settimeout(SOCKET_TIMEOUT_SECONDS)
+        self._read_deadline = threading.Timer(REQUEST_READ_DEADLINE_SECONDS, self._expire_read)
+        self._read_deadline.daemon = True
+        self._read_deadline.start()
+
+    def _expire_read(self) -> None:
+        try:
+            self.connection.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+
+    def _request_read(self) -> None:
+        """The whole request has arrived; evaluation time is bounded elsewhere."""
+        self._read_deadline.cancel()
+
+    def finish(self) -> None:
+        self._read_deadline.cancel()
+        super().finish()
+
+    def _read_body(self, length: int) -> bytes:
+        body = self.rfile.read(length)
+        self._request_read()
+        return body
 
     def _send(self, status: int, body: bytes, content_type: str, csp: str | None = None) -> None:
         self.send_response(status)
@@ -166,6 +203,7 @@ class Handler(BaseHTTPRequestHandler):
         self._send(HTTPStatus.OK, INDEX_HTML.read_bytes(), "text/html; charset=utf-8", PLAY_CSP)
 
     def do_GET(self) -> None:  # noqa: N802
+        self._request_read()
         path = self.path.split("?", 1)[0]
         host = self.headers.get("Host", "").split(":")[0].lower()
         if CANONICAL_HOST and host.endswith(".up.railway.app") and path != "/health":
@@ -211,7 +249,7 @@ class Handler(BaseHTTPRequestHandler):
                 "message": "Online code execution is temporarily unavailable.",
             })
             return
-        if not LIMITER.allow(self._client()):
+        if self.rate_limited and not LIMITER.allow(self._client()):
             self._json(HTTPStatus.TOO_MANY_REQUESTS, {"error": "rate_limited", "message": "Too many requests; wait a minute and try again."})
             return
         try:
@@ -222,7 +260,7 @@ class Handler(BaseHTTPRequestHandler):
             self._json(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, {"error": "too_large", "message": f"Programs are limited to {MAX_SOURCE_BYTES // 1024} KB."})
             return
         try:
-            payload = json.loads(self.rfile.read(length) or b"{}")
+            payload = json.loads(self._read_body(length) or b"{}")
             source = payload["source"]
             action = payload.get("action", "run")
             lang = payload.get("lang", "en")
@@ -260,6 +298,31 @@ def log_event(result: dict) -> None:
     sys.stdout.flush()
 
 
+REMOTE_READINESS_RETRY_SECONDS = 30
+
+
+def watch_remote_worker(candidate: RemoteEvaluator, stop: threading.Event | None = None) -> None:
+    """Enable remote evaluation once the worker proves readiness.
+
+    Until then the website stays up and /play and /api/evaluate answer 503.
+    Execution never falls back to this process.
+    """
+    global REMOTE_WORKER
+    stop = stop or threading.Event()
+    while not stop.is_set():
+        try:
+            candidate.require_ready()
+        except untrusted.SandboxUnavailable:
+            sys.stdout.write("PLAYGROUND remote worker not ready; evaluation stays disabled\n")
+            sys.stdout.flush()
+            stop.wait(REMOTE_READINESS_RETRY_SECONDS)
+            continue
+        REMOTE_WORKER = candidate
+        sys.stdout.write("PLAYGROUND remote worker ready; evaluation enabled\n")
+        sys.stdout.flush()
+        return
+
+
 def main() -> None:
     global REMOTE_WORKER
     # Fail closed on hosts that disallow required user/mount/network namespaces.
@@ -267,9 +330,15 @@ def main() -> None:
     if PLAYGROUND_MODE not in ("enabled", "disabled", "remote"):
         raise ValueError("Invalid Playground mode")
     if PLAYGROUND_MODE == "remote":
+        # Bad configuration (URL, token, CA file) stops startup. An offline
+        # worker does not take the website down: evaluation stays disabled
+        # until the worker answers an authenticated readiness check.
         candidate = RemoteEvaluator.from_environment()
-        candidate.require_ready()
-        REMOTE_WORKER = candidate
+        try:
+            candidate.require_ready()
+            REMOTE_WORKER = candidate
+        except untrusted.SandboxUnavailable:
+            threading.Thread(target=watch_remote_worker, args=(candidate,), daemon=True).start()
     if PLAYGROUND_MODE == "enabled":
         untrusted.require_container_limits()
         untrusted.require_sandbox_ready()

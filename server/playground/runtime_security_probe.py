@@ -1,8 +1,8 @@
 """Live security probe for the hardened Playground container.
 
-Run only inside the explicitly locked-down Docker Compose service:
-    docker compose -f server/playground/compose.security.yaml run --rm \\
-        --no-deps -T playground python /opt/playground/runtime_security_probe.py
+On a VM it is the worker unit's ExecStartPre (server/playground/vm): it runs
+with exactly the service's confinement, and the worker does not start unless
+every check passes.
 
 This is a *deployment acceptance probe*, not a substitute for an audit.
 All checks fail closed. It does not access external networks or host secrets.
@@ -24,6 +24,13 @@ from koschei import untrusted
 def check(condition: bool, reason: str) -> None:
     if not condition:
         raise RuntimeError("PLAYGROUND ISOLATION DENIED: " + reason)
+
+
+def _own_cgroup(cgroup: Path) -> Path:
+    try:
+        return untrusted.own_cgroup_dir(cgroup_root=cgroup)
+    except (OSError, ValueError):
+        return cgroup
 
 
 def host_security_snapshot(proc: Path = Path("/proc"), cgroup: Path = Path("/sys/fs/cgroup")) -> dict:
@@ -51,7 +58,7 @@ def host_security_snapshot(proc: Path = Path("/proc"), cgroup: Path = Path("/sys
             "unprivileged_userns_clone": "sys/kernel/unprivileged_userns_clone",
             "apparmor_restrict_unprivileged_userns": "sys/kernel/apparmor_restrict_unprivileged_userns",
         }.items()},
-        "cgroup": {name: read(cgroup / name) for name in (
+        "cgroup": {name: read(_own_cgroup(cgroup) / name) for name in (
             "memory.max", "cpu.max", "pids.max",
         )},
         "denial_source": "undetermined: inspect effective seccomp and LSM policies on the host",
@@ -108,6 +115,9 @@ def isolated_probe() -> None:
 
     # A listening socket in the *parent* network namespace should be
     # unreachable from the child. Loopback avoids external network probes.
+    parent_pid_ns = os.readlink("/proc/self/ns/pid")
+    secrets_dir = os.environ.get("CREDENTIALS_DIRECTORY", "")
+    own_source = str(Path(__file__).resolve())
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
         listener.bind(("127.0.0.1", 0))
         listener.listen(1)
@@ -125,7 +135,15 @@ def isolated_probe() -> None:
                     "assert os.getcwd() == '/work';"
                     "assert not os.path.exists('/etc/passwd');"
                     "assert not os.path.exists('/opt/playground/app.py');"
+                    "assert not os.path.exists(" + repr(own_source) + ");"
                     "assert not os.path.exists(" + repr(str(secret)) + ");"
+                    # The worker's credentials never reach the program.
+                    "assert " + repr(secrets_dir) + " == '' or not os.path.exists(" + repr(secrets_dir) + ");"
+                    "assert not any('TOKEN' in k or 'CREDENTIAL' in k for k in os.environ);"
+                    # Own PID namespace: only the sandbox's processes exist.
+                    "assert os.readlink('/proc/self/ns/pid') != " + repr(parent_pid_ns) + ";"
+                    "pids=[d for d in os.listdir('/proc') if d.isdigit()];"
+                    "assert len(pids) <= 3, pids;"
                     "p=socket.socket(socket.AF_INET,socket.SOCK_STREAM);"
                     "p.settimeout(1);"
                     "blocked=False;"
@@ -148,9 +166,25 @@ def isolated_probe() -> None:
                 )
                 check(
                     result.returncode == 0 and result.stdout == b"ISOLATION_OK\n",
-                    "child filesystem/network isolation probe failed",
+                    "child filesystem/network/pid/secret isolation probe failed: "
+                    + result.stderr.decode("utf-8", "replace")[-300:],
                 )
 
+    # Per-program limits are enforced by the kernel, not just requested.
+    with tempfile.TemporaryDirectory(prefix="ks-limits-") as root:
+        def sandboxed(code: str) -> subprocess.CompletedProcess:
+            return subprocess.run(
+                untrusted._sandbox_command([sys.executable, "-c", code], root),
+                cwd=root, env=untrusted._child_env(), stdin=subprocess.DEVNULL,
+                capture_output=True, timeout=untrusted.WALL_TIMEOUT_SECONDS + 5,
+                preexec_fn=untrusted._limit_child,
+            )
+        memory = sandboxed("b=bytearray(%d); print('ALLOCATED')" % (untrusted.MEMORY_BYTES + 64 * 1024 * 1024))
+        check(b"ALLOCATED" not in memory.stdout and memory.returncode != 0, "memory limit not enforced")
+        cpu = sandboxed("while True: pass")
+        check(cpu.returncode != 0, "CPU limit not enforced")
+        big = sandboxed("open('big','wb').write(b'x' * %d); print('WROTE')" % (4 * 1024 * 1024))
+        check(b"WROTE" not in big.stdout, "file size limit not enforced")
     # Prove that both policy checking and actual .ks execution still work.
     allowed = untrusted.evaluate('fn main() { println("playground-ok") }\n', "run")
     check(
@@ -174,7 +208,9 @@ def isolated_probe() -> None:
     )
     print(json.dumps({"result": "PASS", "checks": [
         "cgroups", "seccomp", "no_new_privs", "namespace_preflight",
-        "child_filesystem", "child_loopback_network", "koschei_run", "capability_deny",
+        "child_filesystem", "child_loopback_network", "child_pid_namespace",
+        "worker_secrets_hidden", "memory_limit", "cpu_limit", "file_size_limit",
+        "koschei_run", "capability_deny",
     ]}, sort_keys=True))
 
 
