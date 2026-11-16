@@ -303,6 +303,8 @@ function drawMerchant(){
     }else if(o.status==="accepted"){
       actions.append(button("Teslim edildi",()=>transition(o.id,"fulfill"),"btn primary"));
       actions.append(button("İptal et / stoğu geri al",()=>transition(o.id,"cancel"),"btn danger"));
+    }else if((o.status==="cancelled"||o.status==="fulfilled")&&o.customer.email!=="redacted@invalid.example"){
+      actions.append(button("Kişisel bilgileri sil",()=>transition(o.id,"redact"),"btn danger"));
     }
     row.append(info,actions);orders.appendChild(row);
   }
@@ -344,7 +346,7 @@ async function saveProduct(event){
   }catch(e){message("product-message","Kaydedilemedi: "+e.message,true);}
 }
 async function transition(id,action){
-  const label=action==="accept"?"onaylayıp stoğu düşürmek":action==="fulfill"?"teslim edildi olarak işaretlemek":"iptal etmek";
+  const label=action==="accept"?"onaylayıp stoğu düşürmek":action==="fulfill"?"teslim edildi olarak işaretlemek":action==="redact"?"kişisel iletişim bilgilerini silmek":"iptal etmek";
   if(!confirm("Bu siparişi "+label+" istediğine emin misin?"))return;
   try{
     await api("/api/admin/orders/"+id,"PATCH",{action});
