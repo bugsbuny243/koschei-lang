@@ -231,6 +231,14 @@ class ServeCaps(_runtime._NarrowedCapability):
         self.policy = policy
         self._server = None
 
+    def __del__(self) -> None:
+        # The server's reader threads hold the server, not this token: when
+        # the program drops the token, its listener and every connection it
+        # accepted close at once.
+        server = getattr(self, "_server", None)
+        if server is not None:
+            server.close()
+
 
 class SystemCaps:
     __slots__ = ("net", "disk", "env", "process", "serve")

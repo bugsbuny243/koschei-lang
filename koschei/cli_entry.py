@@ -12,6 +12,7 @@ verification, reproducibility, release proof, and maturity-attestation commands.
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import subprocess
 import sys
@@ -267,6 +268,9 @@ def _compile_mir_go(go_source: str, target: Path, locale: str) -> int:
             cwd=directory,
             capture_output=True,
             text=True,
+            # Without cgo the binary is static: it starts on any linux/amd64
+            # host, glibc or musl, and links no C resolver into the broker.
+            env=dict(os.environ, CGO_ENABLED="0"),
         )
     if completed.returncode != 0:
         message = (
