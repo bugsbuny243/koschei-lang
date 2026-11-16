@@ -183,7 +183,7 @@ def command_fmt(path: str, write: bool, check_only: bool, locale: str) -> int:
     return 0
 
 
-def command_caps(path: str, as_json: bool, denied: list[str] | None) -> int:
+def command_caps(path: str, as_json: bool, denied: list[str] | None, locale: str = "tr") -> int:
     source = require_ks_extension(path)
     graph = load_graph(source)
     check_graph(graph)
@@ -198,7 +198,7 @@ def command_caps(path: str, as_json: bool, denied: list[str] | None) -> int:
             )
         )
     else:
-        print(render_manifest(manifest, str(source)), end="")
+        print(render_manifest(manifest, str(source), locale), end="")
 
     if not denied:
         return 0
@@ -450,7 +450,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "fmt":
             return command_fmt(args.source, args.write, args.check, locale)
         if args.command == "caps":
-            return command_caps(args.source, args.json, args.deny)
+            return command_caps(args.source, args.json, args.deny, locale)
         if args.command == "emit-go":
             return command_emit_go(args.source)
         if args.command == "build":

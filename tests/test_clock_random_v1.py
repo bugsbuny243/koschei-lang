@@ -163,7 +163,7 @@ class ClockRandomTests(unittest.TestCase):
     def test_the_manifest_shows_resolution_and_budget(self) -> None:
         stdout = io.StringIO()
         with redirect_stdout(stdout), redirect_stderr(io.StringIO()):
-            self.assertEqual(cli_main(["caps", str(self.write(FACTS))]), 0)
+            self.assertEqual(cli_main(["--lang", "tr", "caps", str(self.write(FACTS))]), 0)
         manifest = stdout.getvalue()
         self.assertIn("SAAT:", manifest)
         self.assertIn("resolution_ms=1000", manifest)

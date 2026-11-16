@@ -144,10 +144,11 @@ def _object_space_command_caps(
     path: str,
     as_json: bool,
     denied: list[str] | None,
+    locale: str = "tr",
 ) -> int:
     if not _looks_like_object_space(path):
         assert _ORIGINAL_COMMAND_CAPS is not None
-        return _ORIGINAL_COMMAND_CAPS(path, as_json, denied)
+        return _ORIGINAL_COMMAND_CAPS(path, as_json, denied, locale)
 
     project, graph = _checked(path)
     manifest = analyze_graph(graph)
@@ -162,7 +163,7 @@ def _object_space_command_caps(
         _reject_identity_leak(text, project, surface="capability manifest")
         print(text)
     else:
-        text = render_manifest(manifest, source_name)
+        text = render_manifest(manifest, source_name, locale)
         _reject_identity_leak(text, project, surface="capability manifest")
         print(text, end="")
 

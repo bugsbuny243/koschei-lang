@@ -308,7 +308,7 @@ class ExampleAppTests(unittest.TestCase):
         for app, granted in expected.items():
             stdout = io.StringIO()
             with redirect_stdout(stdout), redirect_stderr(io.StringIO()):
-                self.assertEqual(cli_main(["caps", str(ROOT / app / "main.ks")]), 0)
+                self.assertEqual(cli_main(["--lang", "tr", "caps", str(ROOT / app / "main.ks")]), 0)
             titles = {
                 line[:-1] for line in stdout.getvalue().splitlines()
                 if line.endswith(":") and not line.startswith(" ") and "MANİFESTO" not in line

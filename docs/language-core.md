@@ -263,7 +263,7 @@ birleştirmelere yol açacağı için denenmez.
 Bir programın neye erişebildiği, programı çalıştırmadan listelenebilir:
 
 ```bash
-ks caps program.ks           # okunabilir manifesto
+ks --lang tr caps program.ks # okunabilir manifesto (varsayılan dil: KOSCHEI_LANG ya da en)
 ks caps program.ks --json    # araçlar için JSON
 ks caps program.ks --deny net --deny process   # politika kapısı
 ```
