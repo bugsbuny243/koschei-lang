@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `ks build` produces statically linked binaries: it builds with `CGO_ENABLED=0` whatever the caller's environment says. A binary that used the network or a server linked glibc for Go's C resolver, so it needed the host's dynamic loader and did not start on musl hosts or in an image holding only the binary. `tests/test_native_static_build_v1.py` reads the ELF program headers of a pure, a brokered and a network binary.
 - Keep the type of a `Map` or `List` unwrapped with `or`: `let m = maps.get(i) or { ... }` followed by `m.get(key)` was refused as a missing capability (`KS2401`), because the compatibility checker sees collections erased and the element reached it untyped. The bridge from Typed HIR now passes the binding's `Map`/`List` type on; capability types are never added. Ambient authority (`disk.read` with no token) is still refused.
 - Name the imported module in a diagnostic: an error found in `helper.ks` while checking `main.ks` printed as if it were in `main.ks`. The text is now `KOSCHEI ERROR: helper.ks: KS…`, and `ks check --json` reports `"source": "helper.ks"`. An error in the file that was asked for prints as before.
 
