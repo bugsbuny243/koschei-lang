@@ -12,9 +12,10 @@ RUN groupadd --system commerce \
     && useradd --system --gid commerce --no-create-home --shell /usr/sbin/nologin commerce \
     && mkdir -p /data \
     && chown commerce:commerce /data
-USER commerce
 WORKDIR /opt/commerce
+# Entrypoint is root for one-time volume ownership only, then drops to commerce.
+USER root
 # /data is mounted using the Railway service volume configuration; no Docker VOLUME.
 ENV COMMERCE_DB_PATH=/data/commerce.db COMMERCE_ACCEPT_ORDERS=0
 EXPOSE 8080
-CMD ["python","server.py"]
+CMD ["python","entrypoint.py"]
