@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Keep the type of a `Map` or `List` unwrapped with `or`: `let m = maps.get(i) or { ... }` followed by `m.get(key)` was refused as a missing capability (`KS2401`), because the compatibility checker sees collections erased and the element reached it untyped. The bridge from Typed HIR now passes the binding's `Map`/`List` type on; capability types are never added. Ambient authority (`disk.read` with no token) is still refused.
+- Name the imported module in a diagnostic: an error found in `helper.ks` while checking `main.ks` printed as if it were in `main.ks`. The text is now `KOSCHEI ERROR: helper.ks: KS…`, and `ks check --json` reports `"source": "helper.ks"`. An error in the file that was asked for prints as before.
+
 ## 0.14.0 — 2026-11-13
 
 - Fix generic structs under `ks run`: an annotation such as `let page: Page<Int> = Page { ... }` was refused (`KS1301`, "found Page") because the compatibility checker sees generic structs erased, and a generic function that built an instance with its own parameters swapped (`swap<A, B>(p: Pair<A, B>) -> Pair<B, A>`) stopped with `KS3401`/`KS3106` on the canonical MIR executor. Type mismatches now print source types (`Expected Pair<Int, Int>, found Pair<Int, String>`) instead of internal nodes. Native builds still refuse generic structs.
