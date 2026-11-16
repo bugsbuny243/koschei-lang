@@ -1,18 +1,25 @@
-# Koschei Forms: build with `docker build -t koschei-forms .` in this directory.
-# Mount persistent storage at /data (docker run -v ..., or a Railway volume).
-FROM python:3.12-slim
+# Koschei Forms: built with `ks build` into one static binary.
+# CGO_ENABLED=0 keeps it static: without it Go links glibc for its resolver
+# and the binary cannot start in the distroless image.
+#
+# The binary runs as a broker that holds the server socket, the data
+# directory and one environment variable, and a worker that runs the program
+# under a seccomp allow list with no_new_privs and an empty environment.
+# linux/amd64 only: the worker's filter is written for that ABI.
 
-RUN pip install --no-cache-dir koschei-lang==0.14.0 \
-    && useradd --create-home --uid 10001 forms \
-    && mkdir -p /data /app \
-    && chown forms:forms /data
+FROM python:3.12-slim AS build
+COPY --from=golang:1.24-bookworm /usr/local/go /usr/local/go
+ENV PATH="/usr/local/go/bin:${PATH}" \
+    CGO_ENABLED=0
+RUN pip install --no-cache-dir koschei-lang==0.14.0
+WORKDIR /src
+COPY main.ks rules.ks pages.ks csv.ks store.ks ./
+RUN ks build main.ks -o /out/koschei-forms \
+    && mkdir -p /out/data/koschei-forms
 
-WORKDIR /app
-COPY main.ks rules.ks pages.ks csv.ks ./
-
-USER forms
+FROM gcr.io/distroless/static-debian12:nonroot
+COPY --from=build /out/koschei-forms /koschei-forms
+COPY --from=build --chown=nonroot:nonroot /out/data /data
+USER nonroot
 EXPOSE 8080
-
-# The server re-opens itself every 4096 requests, so it runs for as long as
-# the container does; the step budget only has to be large.
-CMD ["ks", "run", "--max-steps", "1000000000000000", "main.ks"]
+ENTRYPOINT ["/koschei-forms"]
