@@ -80,7 +80,7 @@ def test_bilingual_switch_and_all_site_anchors():
 def test_current_checkout_and_pricing_only():
     source, p = parsed()
     assert sum(x.get("href") == POLAR for x in p.links) >= 2
-    assert all(a.get("href") in (POLAR, *APP_CHECKOUTS.values(), "/security-guide.html", "/play", "/agents") or a.get("href", "").startswith("#") for a in p.links)
+    assert all(a.get("href") in (POLAR, *APP_CHECKOUTS.values(), "/security-guide.html", "/play", "/agents", "/tools") or a.get("href", "").startswith(("#", "/tools?tool=")) for a in p.links)
     for expected in ("$49", "49 USD", "One-time purchase", "12 months", "Perpetual", "Python 3.12+", "Go 1.24+"):
         assert expected in source
     for false_claim in ("49 EUR", "49€", "EVM-compatible", "hack-proof", "100x safer", "bank certified"):
@@ -163,8 +163,11 @@ def test_actual_utility_shop_links_and_honest_preview():
     hrefs = [a.get('href') for a in p.links]
     assert all(hrefs.count(url) == 1 for url in APP_CHECKOUTS.values())
     assert 'Illustrative report preview · not a live app' in source
-    assert 'No Android version or graphical desktop interface is included' in source
-    assert '15 native smoke and edge-case tests' in source
+    assert 'No ZIP or terminal needed' in source
+    assert 'The browser versions are free' in source
+    assert all(f"/tools?tool={tool}" in source for tool in ("quote", "stock", "cash"))
+    assert 'Çevrimdışı indirme · 4 USD' in source
+    assert 'Windows builds passed 15 native tests' in source
     assert 'Browser Playground: execution currently paused' in source
     assert 'Try it in your browser' not in source
     assert source.count('class="product-card"') == 3

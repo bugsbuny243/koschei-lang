@@ -138,6 +138,8 @@
     .app-tags{display:flex;flex-wrap:wrap;gap:7px}
     .app-tags span{border:1px solid #315564;border-radius:100px;padding:4px 9px;font-size:11px;font-weight:700;color:#b5d4d6;background:#102630}
     .product-info .btn{margin-top:auto;display:flex;text-align:center}
+    .product-info .btn.offline-link{margin-top:0;font-size:12px;padding:9px 12px;border-color:#31505e}
+    .app-price{font-size:13px;font-weight:800;color:#88f0c3}
     .portfolio-note{margin-top:20px;color:var(--muted);font-size:13px}
     .roadmap-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:15px}
     .roadmap-item{min-width:0;border:1px solid #31505b;border-radius:17px;background:linear-gradient(160deg,#112834,#101b25);padding:22px}
@@ -159,7 +161,7 @@
     <a class="brand" href="#home" aria-label="Koschei Lang home"><span class="brand-mark" aria-hidden="true">K</span><span>KOSCHEI <span style="color:var(--accent)">LANG</span></span></a>
     <nav aria-label="Primary navigation" class="navlinks">
       <a href="#features" data-en="Features" data-tr="Özellikler">Features</a>
-      <a class="apps-nav" href="#apps" data-en="Apps" data-tr="Uygulamalar">Apps</a>
+      <a class="apps-nav" href="/tools" data-en="Open apps" data-tr="Uygulamaları aç">Open apps</a>
       <a href="#roadmap" data-en="Roadmap" data-tr="Yol haritası">Roadmap</a>
       <a href="#demo" data-en="Demo" data-tr="Demo">Demo</a>
       <a href="#start" data-en="Get started" data-tr="Başlangıç">Get started</a>
@@ -175,7 +177,7 @@
         <p class="lead" data-en="A programming language that makes disk, network, environment and process permissions explicit. Inspect what your code can reach before it runs." data-tr="Disk, ağ, ortam ve işlem yetkilerini açıkça tanımlayan bir programlama dili. Kod çalışmadan önce hangi kaynaklara erişebileceğini denetleyin.">A programming language that makes disk, network, environment and process permissions explicit. Inspect what your code can reach before it runs.</p>
         <div class="buttons">
           <a class="btn primary" href="https://buy.polar.sh/polar_cl_H3mMbTpBdziezC3ooJARCQIMHqzVHEeM15E1v0C7XlR" target="_blank" rel="noopener noreferrer" data-en="Get Individual · $49 USD ↗" data-tr="Individual Satın Al · 49 USD ↗">Get Individual · $49 USD ↗</a>
-          <a class="btn secondary" href="#apps" data-en="Explore apps built with Koschei →" data-tr="Koschei ile yapılan uygulamalar →">Explore apps built with Koschei →</a>
+          <a class="btn secondary" href="/tools" data-en="Open browser apps →" data-tr="Web uygulamalarını aç →">Open browser apps →</a>
           <a class="btn secondary" href="/agents" data-en="For AI agents →" data-tr="Yapay zekâ ajanları için →">For AI agents →</a>
         </div>
         <p class="fine" data-en="One-time commercial license · One developer · 12 months of updates · Perpetual use of acquired versions" data-tr="Tek seferlik ticari lisans · Bir geliştirici · 12 ay güncelleme · Satın alınan sürümlerde süresiz kullanım">One-time commercial license · One developer · 12 months of updates · Perpetual use of acquired versions</p>
@@ -211,7 +213,7 @@ without being given a disk capability.</span>
       <div class="section-head">
         <div class="eyebrow" data-en="MADE WITH KOSCHEI · REAL DOWNLOADS" data-tr="KOSCHEI İLE ÜRETİLDİ · İNDİRİLEBİLİR PROGRAMLAR">MADE WITH KOSCHEI · REAL DOWNLOADS</div>
         <h2 data-en="Small tools. Actual results." data-tr="Küçük araçlar. Gerçek sonuçlar.">Small tools. Actual results.</h2>
-        <p data-en="Three independent offline command-line tools built with Koschei Lang. Each produces a text report from a supplied input file. Windows 64-bit builds passed 15 native smoke and edge-case tests in total." data-tr="Koschei Lang ile geliştirilmiş üç bağımsız çevrimdışı komut satırı aracı. Her biri verilen giriş dosyasından metin raporu üretir. Windows 64-bit sürümleri toplam 15 gerçek Windows testinden geçti.">Three independent offline command-line tools built with Koschei Lang. Each produces a text report from a supplied input file. Windows 64-bit builds passed 15 native smoke and edge-case tests in total.</p>
+        <p data-en="Browser apps powered by fixed Koschei Lang calculation logic. No ZIP or terminal needed. Optional offline Windows/Linux editions remain available; their Windows builds passed 15 native tests." data-tr="Sabit Koschei Lang hesaplama mantığıyla çalışan tarayıcı uygulamaları. ZIP veya terminal gerekmez. İsteğe bağlı çevrimdışı Windows/Linux sürümleri de bulunur; Windows sürümleri 15 testi geçti.">Three independent offline command-line tools built with Koschei Lang. Each produces a text report from a supplied input file. Windows 64-bit builds passed 15 native smoke and edge-case tests in total.</p>
       </div>
       <div class="product-grid">
         <article class="product-card" aria-labelledby="teklif-title">
@@ -229,10 +231,11 @@ without being given a disk capability.</span>
             </div>
           </div>
           <div class="product-info">
-            <div class="product-head"><h3 id="teklif-title" data-en="Quote Master" data-tr="Teklif Ustası">Quote Master</h3><span class="app-price">$4</span></div>
+            <div class="product-head"><h3 id="teklif-title" data-en="Quote Master" data-tr="Teklif Ustası">Quote Master</h3><span class="app-price" data-en="FREE WEB" data-tr="ÜCRETSİZ WEB">FREE WEB</span></div>
             <p data-en="Calculate item quantities, discounts and VAT. Get a readable quote summary. Not an invoice or accounting system." data-tr="Ürün adetlerini, indirimi ve KDV'yi hesaplayın. Okunabilir teklif özeti oluşturun. Fatura veya muhasebe programı değildir.">Calculate item quantities, discounts and VAT. Get a readable quote summary. Not an invoice or accounting system.</p>
             <div class="app-tags"><span>Windows 64-bit</span><span>Linux 64-bit</span><span>Offline / CLI</span></div>
-            <a class="btn primary" href="https://buy.polar.sh/polar_cl_0GXMXm9h2z6MWFlKSmlkb3QCQFEiWRJMxUKEt2uraYg" target="_blank" rel="noopener noreferrer" data-en="Get Quote Master · $4 ↗" data-tr="Teklif Ustası Satın Al · 4 USD ↗">Get Quote Master · $4 ↗</a>
+            <a class="btn primary" href="/tools?tool=quote" data-en="Open in browser →" data-tr="Tarayıcıda Aç →">Open in browser →</a>
+            <a class="btn secondary offline-link" href="https://buy.polar.sh/polar_cl_0GXMXm9h2z6MWFlKSmlkb3QCQFEiWRJMxUKEt2uraYg" target="_blank" rel="noopener noreferrer" data-en="Offline download · $4 ↗" data-tr="Çevrimdışı indirme · 4 USD ↗">Offline download · $4 ↗</a>
           </div>
         </article>
         <article class="product-card" aria-labelledby="stok-title">
@@ -250,10 +253,11 @@ without being given a disk capability.</span>
             </div>
           </div>
           <div class="product-info">
-            <div class="product-head"><h3 id="stok-title" data-en="Stock Alert" data-tr="Stok Alarm">Stock Alert</h3><span class="app-price">$4</span></div>
+            <div class="product-head"><h3 id="stok-title" data-en="Stock Alert" data-tr="Stok Alarm">Stock Alert</h3><span class="app-price" data-en="FREE WEB" data-tr="ÜCRETSİZ WEB">FREE WEB</span></div>
             <p data-en="Flag stock below the minimum and calculate suggested refill quantities. Accepts up to 200 products; it does not place orders." data-tr="Minimum düzeyin altındaki stokları işaretler, önerilen alım miktarını hesaplar. En fazla 200 ürün destekler; sipariş vermez.">Flag stock below the minimum and calculate suggested refill quantities. Accepts up to 200 products; it does not place orders.</p>
             <div class="app-tags"><span>Windows 64-bit</span><span>Linux 64-bit</span><span>Offline / CLI</span></div>
-            <a class="btn primary" href="https://buy.polar.sh/polar_cl_Tf9vTycS7F0sCG4KHJzSXZLcwrZtmv5p58H5s0Low3l" target="_blank" rel="noopener noreferrer" data-en="Get Stock Alert · $4 ↗" data-tr="Stok Alarm Satın Al · 4 USD ↗">Get Stock Alert · $4 ↗</a>
+            <a class="btn primary" href="/tools?tool=stock" data-en="Open in browser →" data-tr="Tarayıcıda Aç →">Open in browser →</a>
+            <a class="btn secondary offline-link" href="https://buy.polar.sh/polar_cl_Tf9vTycS7F0sCG4KHJzSXZLcwrZtmv5p58H5s0Low3l" target="_blank" rel="noopener noreferrer" data-en="Offline download · $4 ↗" data-tr="Çevrimdışı indirme · 4 USD ↗">Offline download · $4 ↗</a>
           </div>
         </article>
         <article class="product-card" aria-labelledby="kasa-title">
@@ -271,14 +275,15 @@ without being given a disk capability.</span>
             </div>
           </div>
           <div class="product-info">
-            <div class="product-head"><h3 id="kasa-title" data-en="Cash Summary" data-tr="Kasa Özet">Cash Summary</h3><span class="app-price">$4</span></div>
+            <div class="product-head"><h3 id="kasa-title" data-en="Cash Summary" data-tr="Kasa Özet">Cash Summary</h3><span class="app-price" data-en="FREE WEB" data-tr="ÜCRETSİZ WEB">FREE WEB</span></div>
             <p data-en="Calculate starting cash, income, expenses and closing balance, including negative-balance warnings. Not certified accounting software." data-tr="Açılış kasasını, gelirleri, giderleri ve kapanış bakiyesini hesaplar; eksi bakiye uyarısı verir. Resmî muhasebe yazılımı değildir.">Calculate starting cash, income, expenses and closing balance, including negative-balance warnings. Not certified accounting software.</p>
             <div class="app-tags"><span>Windows 64-bit</span><span>Linux 64-bit</span><span>Offline / CLI</span></div>
-            <a class="btn primary" href="https://buy.polar.sh/polar_cl_BTwD1snOesSEeHpJadL7IamxIjLVTQ1lpXjqw3Saxw1" target="_blank" rel="noopener noreferrer" data-en="Get Cash Summary · $4 ↗" data-tr="Kasa Özet Satın Al · 4 USD ↗">Get Cash Summary · $4 ↗</a>
+            <a class="btn primary" href="/tools?tool=cash" data-en="Open in browser →" data-tr="Tarayıcıda Aç →">Open in browser →</a>
+            <a class="btn secondary offline-link" href="https://buy.polar.sh/polar_cl_BTwD1snOesSEeHpJadL7IamxIjLVTQ1lpXjqw3Saxw1" target="_blank" rel="noopener noreferrer" data-en="Offline download · $4 ↗" data-tr="Çevrimdışı indirme · 4 USD ↗">Offline download · $4 ↗</a>
           </div>
         </article>
       </div>
-      <p class="portfolio-note" data-en="These are downloadable text-based Windows/Linux programs, not interactive web applications. No Android version or graphical desktop interface is included. The previews above are illustrative and do not process your data. Payments and downloads are handled by Polar." data-tr="Bunlar etkileşimli web uygulamaları değil, indirilebilir Windows/Linux metin tabanlı programlardır. Android sürümü veya grafik masaüstü arayüzü içermezler. Yukarıdaki görseller temsilidir ve verilerinizi işlemez. Ödeme ve dosya teslimi Polar üzerinden yapılır.">These are downloadable text-based Windows/Linux programs, not interactive web applications. No Android version or graphical desktop interface is included. The previews above are illustrative and do not process your data. Payments and downloads are handled by Polar.</p>
+      <p class="portfolio-note" data-en="The browser versions are free and run real fixed Koschei calculations on this service; no account or installation is required. Screenshots above are illustrative; offline ZIP editions remain optional purchases through Polar." data-tr="Tarayıcı sürümleri ücretsizdir ve bu sunucuda gerçek, sabit Koschei hesaplamaları yapar; hesap veya kurulum gerekmez. Yukarıdaki görseller temsilidir; çevrimdışı ZIP sürümleri isteğe bağlı Polar ürünleridir.">The browser versions are free and run real fixed Koschei calculations on this service; no account or installation is required. Screenshots above are illustrative; offline ZIP editions remain optional purchases through Polar.</p>
     </div></section>
     <section id="demo" class="section"><div class="wrap">
       <div class="section-head"><div class="eyebrow" data-en="REAL COMMANDS · EXPLANATORY PREVIEW" data-tr="GERÇEK KOMUTLAR · AÇIKLAYICI ÖN İZLEME">REAL COMMANDS · EXPLANATORY PREVIEW</div><h2 data-en="A denial you can reproduce." data-tr="Tekrar çalıştırabileceğiniz bir ret.">A denial you can reproduce.</h2><p data-en="These commands run locally after installing the official package. This website displays commands; it does not execute code in your browser." data-tr="Bu komutlar resmî paketi kurduktan sonra yerel ortamınızda çalışır. Bu site komutları gösterir; tarayıcınızda kod yürütmez.">These commands run locally after installing the official package. This website displays commands; it does not execute code in your browser.</p></div>
