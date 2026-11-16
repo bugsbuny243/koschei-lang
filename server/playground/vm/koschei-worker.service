@@ -4,8 +4,9 @@
 # cgroup) and the isolation probe must pass before the worker listens.
 [Unit]
 Description=Koschei Playground execution worker
-After=network-online.target apparmor.service
+After=network-online.target apparmor.service koschei-worker.socket
 Wants=network-online.target
+Requires=koschei-worker.socket
 
 [Service]
 Type=simple
@@ -18,7 +19,6 @@ Environment=KOSCHEI_UNTRUSTED_SANDBOX=bwrap
 Environment=KOSCHEI_REQUIRE_CONTAINER_LIMITS=1
 Environment=KOSCHEI_BWRAP=/opt/koschei-worker/bin/bwrap
 Environment=KOSCHEI_MAX_CONCURRENT_EVALUATIONS=2
-Environment=PORT=8443
 EnvironmentFile=-/etc/koschei-worker/worker.env
 # Secrets stay out of the environment: systemd hands them over in a private,
 # per-service directory ($CREDENTIALS_DIRECTORY) that sandboxes never see.
@@ -68,12 +68,13 @@ ProtectClock=yes
 # read-only; bubblewrap gives each sandbox its own UTS namespace.
 UMask=0077
 
-# Network: accept HTTPS from the private ingress only; no other traffic.
-# KOSCHEI_WORKER_BIND and the allowed peer range come from worker.env.
+# Network. The listening socket comes from koschei-worker.socket, whose own
+# IP filter admits the frontend. Here the worker process may open nothing
+# beyond loopback: no Internet, no private networks, no metadata endpoint.
+# Never widen this to reach the frontend; that is the socket unit's job.
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
 IPAddressDeny=any
 IPAddressAllow=localhost
-# install.sh adds: IPAddressAllow=<frontend private range> in a drop-in.
 
 [Install]
 WantedBy=multi-user.target

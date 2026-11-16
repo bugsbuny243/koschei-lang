@@ -69,7 +69,7 @@ def test_non_loopback_worker_requires_tls(monkeypatch, bind):
     monkeypatch.setenv("KOSCHEI_REQUIRE_CONTAINER_LIMITS", "1")
     monkeypatch.setenv("KOSCHEI_WORKER_BIND", bind)
     monkeypatch.setattr(app, "PLAYGROUND_MODE", "enabled")
-    monkeypatch.setattr(worker, "ThreadingHTTPServer", lambda *a: pytest.fail("listener created"))
+    monkeypatch.setattr(worker, "WorkerServer", lambda *a, **k: pytest.fail("listener created"))
     with pytest.raises(untrusted.SandboxUnavailable):
         worker.main()
 
@@ -94,3 +94,154 @@ def test_unit_keeps_mandatory_confinement():
         assert forbidden not in unit, forbidden
     profile = (ROOT / "server/playground/vm/koschei-bwrap.apparmor").read_text()
     assert "profile koschei-bwrap /opt/koschei-worker/bin/bwrap" in profile and "userns," in profile
+
+
+# --- Ingress / egress split (koschei-worker.socket) -------------------------
+
+def _service_network_lines():
+    unit = (ROOT / "server/playground/vm/koschei-worker.service").read_text()
+    return [l.strip() for l in unit.splitlines() if l.startswith(("IPAddressAllow", "IPAddressDeny"))]
+
+
+def test_service_egress_is_loopback_only_and_ingress_lives_on_the_socket():
+    assert _service_network_lines() == ["IPAddressDeny=any", "IPAddressAllow=localhost"]
+    unit = (ROOT / "server/playground/vm/koschei-worker.service").read_text()
+    assert "Requires=koschei-worker.socket" in unit
+    socket_unit = (ROOT / "server/playground/vm/koschei-worker.socket").read_text()
+    assert "IPAddressDeny=any" in socket_unit and "Accept=no" in socket_unit
+    # The default ingress is never written into a unit file shipped in the repo.
+    assert "IPAddressAllow=any" not in socket_unit
+
+
+def test_installer_never_widens_the_service_and_checks_it():
+    script = (ROOT / "server/playground/vm/install.sh").read_text()
+    assert "koschei-worker.service.d/peer.conf" in script and "rm -f" in script
+    assert "[Service]\\nIPAddressAllow" not in script
+    assert "koschei-worker.socket.d/ingress.conf" in script
+    assert "systemctl show -p IPAddressAllow --value koschei-worker.service" in script
+    assert "worker egress is not loopback-only; refusing" in script
+
+
+def test_activated_socket_absent_without_systemd(monkeypatch):
+    monkeypatch.delenv("LISTEN_PID", raising=False)
+    assert worker.activated_socket() is None
+    monkeypatch.setenv("LISTEN_PID", "1")  # someone else's descriptors
+    monkeypatch.setenv("LISTEN_FDS", "1")
+    assert worker.activated_socket() is None
+
+
+def test_activated_socket_must_be_exactly_one(monkeypatch):
+    monkeypatch.setenv("LISTEN_PID", str(os.getpid()))
+    monkeypatch.setenv("LISTEN_FDS", "2")
+    with pytest.raises(untrusted.SandboxUnavailable):
+        worker.activated_socket()
+
+
+def test_activated_tcp_listener_is_adopted_non_inheritable(monkeypatch):
+    import socket
+    listener = socket.socket()
+    listener.bind(("127.0.0.1", 0))
+    listener.listen()
+    saved = os.dup(worker.SD_LISTEN_FDS_START)
+    try:
+        os.dup2(listener.fileno(), worker.SD_LISTEN_FDS_START, inheritable=True)
+        monkeypatch.setenv("LISTEN_PID", str(os.getpid()))
+        monkeypatch.setenv("LISTEN_FDS", "1")
+        adopted = worker.activated_socket()
+        assert adopted.getsockname() == listener.getsockname()
+        assert not adopted.get_inheritable()
+        assert "LISTEN_FDS" not in os.environ and "LISTEN_PID" not in os.environ
+        adopted.detach()
+    finally:
+        os.dup2(saved, worker.SD_LISTEN_FDS_START)
+        os.close(saved)
+        listener.close()
+
+
+def test_activated_udp_socket_is_refused(monkeypatch):
+    import socket
+    udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    saved = os.dup(worker.SD_LISTEN_FDS_START)
+    try:
+        os.dup2(udp.fileno(), worker.SD_LISTEN_FDS_START)
+        monkeypatch.setenv("LISTEN_PID", str(os.getpid()))
+        monkeypatch.setenv("LISTEN_FDS", "1")
+        with pytest.raises(untrusted.SandboxUnavailable):
+            worker.activated_socket()
+    finally:
+        os.dup2(saved, worker.SD_LISTEN_FDS_START)
+        os.close(saved)
+        udp.close()
+
+
+def test_socket_activated_worker_without_tls_is_refused(monkeypatch):
+    import socket
+    monkeypatch.setenv("KOSCHEI_WORKER_TOKEN", TOKEN)
+    for name in ("CREDENTIALS_DIRECTORY", "KOSCHEI_WORKER_TLS_CERT", "KOSCHEI_WORKER_TLS_KEY"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("KOSCHEI_UNTRUSTED_SANDBOX", "bwrap")
+    monkeypatch.setenv("KOSCHEI_REQUIRE_CONTAINER_LIMITS", "1")
+    monkeypatch.setattr(app, "PLAYGROUND_MODE", "enabled")
+    loop = socket.socket()
+    loop.bind(("127.0.0.1", 0))  # even a loopback socket from systemd needs TLS
+    monkeypatch.setattr(worker, "activated_socket", lambda: loop)
+    monkeypatch.setattr(worker, "WorkerServer", lambda *a, **k: pytest.fail("listener served"))
+    try:
+        with pytest.raises(untrusted.SandboxUnavailable):
+            worker.main()
+    finally:
+        loop.close()
+
+
+# --- Probe: sandboxed programs have no network --------------------------------
+
+from server.playground import runtime_security_probe as probe  # noqa: E402
+
+
+def _run_probe_code(code):
+    import subprocess
+    return subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=60)
+
+
+def test_network_probe_detects_a_reachable_destination():
+    """Outside a sandbox the probe must fail: it really connects and checks."""
+    import socket
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        listener.listen()
+        result = _run_probe_code(probe.child_network_probe([listener.getsockname()]))
+    assert result.returncode != 0 and "NETWORK_OK" not in result.stdout
+
+
+def test_descriptor_probe_detects_an_inherited_descriptor():
+    import subprocess
+    r, w = os.pipe()
+    try:
+        result = subprocess.run([sys.executable, "-c", probe.CHILD_DESCRIPTOR_PROBE],
+                                pass_fds=(r,), capture_output=True, text=True, timeout=60)
+    finally:
+        os.close(r)
+        os.close(w)
+    assert result.returncode != 0 and "DESCRIPTORS_OK" not in result.stdout
+    clean = subprocess.run([sys.executable, "-c", probe.CHILD_DESCRIPTOR_PROBE],
+                           capture_output=True, text=True, timeout=60)
+    assert clean.stdout == "DESCRIPTORS_OK\n"
+
+
+def test_host_destinations_reads_the_default_gateway(tmp_path):
+    table = tmp_path / "route"
+    table.write_text(
+        "Iface\tDestination\tGateway \tFlags\n"
+        "eth0\t00000000\t0202000A\t0003\n"
+        "eth0\t0002000A\t00000000\t0001\n")
+    assert ("10.0.2.2", 80) in probe.host_destinations(table)
+
+
+def test_forbidden_destinations_cover_internet_metadata_and_private_ranges():
+    import ipaddress
+    hosts = [ipaddress.ip_address(h) for h, _ in probe.FORBIDDEN_DESTINATIONS]
+    assert any(h.version == 6 and h.is_global for h in hosts)
+    assert any(h.version == 4 and h.is_global for h in hosts)
+    assert ipaddress.ip_address("169.254.169.254") in hosts
+    for net in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10"):
+        assert any(h in ipaddress.ip_network(net) for h in hosts), net

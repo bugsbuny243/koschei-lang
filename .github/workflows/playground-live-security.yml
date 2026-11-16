@@ -39,9 +39,10 @@ jobs:
       - name: Install the worker unit (fails if the isolation probe fails)
         run: |
           sudo apt-get update -q
-          sudo sh server/playground/vm/install.sh "$GITHUB_WORKSPACE" localhost 127.0.0.1/32 127.0.0.1
-          for i in $(seq 1 120); do ss -Htln 'sport = :8443' | grep -q . && break; sleep 1; done
-          ss -Htln 'sport = :8443' | grep -q .
+          sudo sh server/playground/vm/install.sh "$GITHUB_WORKSPACE" localhost,worker.koschei.test \
+            0.0.0.0:8443 127.0.0.1/32 10.77.0.2/32
+          systemctl is-active koschei-worker.socket koschei-worker.service
+          systemctl show -p IPAddressAllow -p IPAddressDeny koschei-worker.service koschei-worker.socket
 
       - name: Black-box acceptance over TLS
         run: sudo /opt/koschei-worker/venv/bin/python server/playground/vm/test/acceptance.py https://localhost:8443
@@ -49,22 +50,21 @@ jobs:
       - name: Weakened isolation must stop the worker
         run: sudo sh server/playground/vm/test/degrade.sh
 
-      - name: Network isolation (egress denied, peer allowlist)
+      - name: Frontend to worker over a real network path, and isolation
         run: |
-          out=$(sudo sh server/playground/vm/test/network.sh)
-          echo "$out"
-          echo "$out" | grep -q '^egress_public_ip: BLOCKED'
-          echo "$out" | grep -q '^peer_not_allowed.*BLOCKED'
-          echo "$out" | grep -q '^peer_allowed.*TLS_HANDSHAKE_OK'
+          sudo python3 server/playground/vm/test/connectivity.py "$GITHUB_WORKSPACE" | tee connectivity.jsonl
+          grep -q '"result": "PASS"' connectivity.jsonl
 
       - name: Save worker journal
         if: always()
-        run: sudo journalctl -u koschei-worker --no-pager -o cat > worker-journal.log || true
+        run: sudo journalctl -u koschei-worker.socket -u koschei-worker --no-pager -o cat > worker-journal.log || true
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: playground-vm-worker-${{ github.sha }}
-          path: worker-journal.log
+          path: |
+            worker-journal.log
+            connectivity.jsonl
           if-no-files-found: warn
           retention-days: 14

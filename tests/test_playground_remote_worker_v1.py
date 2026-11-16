@@ -4,6 +4,7 @@ import copy
 import http.client
 import json
 import threading
+from pathlib import Path
 from http.server import ThreadingHTTPServer
 
 import pytest
@@ -186,7 +187,7 @@ def test_worker_rejects_weakened_configuration_before_listening(monkeypatch, san
     monkeypatch.setenv("KOSCHEI_UNTRUSTED_SANDBOX", sandbox)
     monkeypatch.setenv("KOSCHEI_REQUIRE_CONTAINER_LIMITS", limits)
     monkeypatch.setattr(app, "PLAYGROUND_MODE", "enabled")
-    monkeypatch.setattr(worker, "ThreadingHTTPServer", lambda *a: pytest.fail("listener created"))
+    monkeypatch.setattr(worker, "WorkerServer", lambda *a, **k: pytest.fail("listener created"))
     with pytest.raises(untrusted.SandboxUnavailable):
         worker.main()
 
@@ -200,7 +201,7 @@ def test_worker_actual_admission_failure_prevents_listening(monkeypatch):
     def deny():
         raise untrusted.SandboxUnavailable("namespace denied")
     monkeypatch.setattr(untrusted, "require_sandbox_ready", deny)
-    monkeypatch.setattr(worker, "ThreadingHTTPServer", lambda *a: pytest.fail("listener created"))
+    monkeypatch.setattr(worker, "WorkerServer", lambda *a, **k: pytest.fail("listener created"))
     with pytest.raises(untrusted.SandboxUnavailable):
         worker.main()
 
@@ -491,3 +492,71 @@ def test_ca_can_be_passed_as_pem_text(monkeypatch, tmp_path):
         remote.RemoteEvaluator("https://worker", TOKEN, ca_pem="not a certificate")
     with pytest.raises(ValueError):
         remote.RemoteEvaluator("https://worker", TOKEN, ca_file=str(cert), ca_pem=pem)
+
+
+def _serve_tls(monkeypatch, cert, key):
+    import ssl
+    monkeypatch.setattr(worker, "WORKER_TOKEN", TOKEN)
+    monkeypatch.setattr(app, "PLAYGROUND_MODE", "enabled")
+    server = ThreadingHTTPServer(("127.0.0.1", 0), worker.WorkerHandler)
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(cert, key)
+    server.socket = context.wrap_socket(server.socket, server_side=True)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server
+
+
+def test_installer_certificate_chain_passes_strict_verification(monkeypatch, tmp_path):
+    """The exact chain install.sh creates (make-certs.sh), over real TLS."""
+    import shutil
+    import subprocess
+    if shutil.which("openssl") is None:
+        pytest.skip("OpenSSL is required")
+    script = Path(__file__).resolve().parents[1] / "server/playground/vm/make-certs.sh"
+    # An older install's CA, without keyUsage: strict clients reject it ...
+    subprocess.run(["openssl", "req", "-x509", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:P-256",
+                    "-nodes", "-days", "1", "-subj", "/CN=Koschei worker CA",
+                    "-keyout", str(tmp_path / "ca-key.pem"), "-out", str(tmp_path / "ca-cert.pem")],
+                   check=True, capture_output=True, timeout=15)
+    subprocess.run(["openssl", "req", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:P-256", "-nodes",
+                    "-subj", "/CN=localhost", "-keyout", str(tmp_path / "tls-key.pem"),
+                    "-out", str(tmp_path / "tls.csr")], check=True, capture_output=True, timeout=15)
+    (tmp_path / "ext").write_text("subjectAltName=DNS:localhost\nextendedKeyUsage=serverAuth\n")
+    subprocess.run(["openssl", "x509", "-req", "-in", str(tmp_path / "tls.csr"), "-CA", str(tmp_path / "ca-cert.pem"),
+                    "-CAkey", str(tmp_path / "ca-key.pem"), "-CAcreateserial", "-days", "1",
+                    "-extfile", str(tmp_path / "ext"), "-out", str(tmp_path / "tls-cert.pem")],
+                   check=True, capture_output=True, timeout=15)
+    old_ca = (tmp_path / "ca-cert.pem").read_text()
+    server = _serve_tls(monkeypatch, tmp_path / "tls-cert.pem", tmp_path / "tls-key.pem")
+    try:
+        with pytest.raises(untrusted.SandboxUnavailable):
+            remote.RemoteEvaluator(f"https://localhost:{server.server_port}", TOKEN, ca_pem=old_ca).require_ready()
+    finally:
+        server.shutdown()
+        server.server_close()
+    # ... so the installer replaces it, and the new chain is accepted.
+    (tmp_path / "tls-names").write_text("DNS:localhost\n")
+    subprocess.run(["sh", str(script), str(tmp_path), "DNS:localhost", "localhost"],
+                   check=True, capture_output=True, timeout=60)
+    ca = (tmp_path / "ca-cert.pem").read_text()
+    assert ca != old_ca
+    server = _serve_tls(monkeypatch, tmp_path / "tls-cert.pem", tmp_path / "tls-key.pem")
+    try:
+        remote.RemoteEvaluator(f"https://localhost:{server.server_port}", TOKEN, ca_pem=ca).require_ready()
+        with pytest.raises(untrusted.SandboxUnavailable):  # name still checked
+            remote.RemoteEvaluator(f"https://127.0.0.1:{server.server_port}", TOKEN, ca_pem=ca).require_ready()
+        with pytest.raises(untrusted.SandboxUnavailable):  # public CAs do not vouch for it
+            remote.RemoteEvaluator(f"https://localhost:{server.server_port}", TOKEN).require_ready()
+    finally:
+        server.shutdown()
+        server.server_close()
+    # Rerunning keeps the same CA (the frontend's pinned value stays valid).
+    subprocess.run(["sh", str(script), str(tmp_path), "DNS:localhost", "localhost"],
+                   check=True, capture_output=True, timeout=60)
+    assert (tmp_path / "ca-cert.pem").read_text() == ca
+
+
+def test_strict_x509_is_enforced_on_every_python_version():
+    import ssl
+    client = remote.RemoteEvaluator("https://worker.example:8443", TOKEN)
+    assert client.context.verify_flags & ssl.VERIFY_X509_STRICT

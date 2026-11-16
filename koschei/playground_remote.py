@@ -104,6 +104,10 @@ class RemoteEvaluator:
         self.context.minimum_version = ssl.TLSVersion.TLSv1_2
         self.context.check_hostname = True
         self.context.verify_mode = ssl.CERT_REQUIRED
+        # Python 3.13 turns strict X.509 checks on by default; do it on every
+        # version so a non-conforming worker certificate fails in tests and
+        # not later, after a runtime upgrade of the frontend.
+        self.context.verify_flags |= ssl.VERIFY_X509_STRICT
 
     @classmethod
     def from_environment(cls) -> RemoteEvaluator:

@@ -183,12 +183,62 @@ The worker (`server/playground/worker.py`) runs as a **systemd service directly
 on a Linux VM** (Ubuntu 24.04 tested), never in Docker:
 
 ```sh
-sudo server/playground/vm/install.sh /path/to/koschei-lang <worker-hostname> <frontend-cidr> <bind-address>
+sudo server/playground/vm/install.sh /path/to/koschei-lang <worker-dns-name> 0.0.0.0:8443 <ingress>
 ```
 
-`install.sh` creates the `koschei-worker` account, a venv in
-`/opt/koschei-worker`, a private CA and server certificate, a random token,
-and the unit `vm/koschei-worker.service`:
+`<ingress>` is who may open a connection: one or more CIDRs, or the single
+word `any`. `install.sh` creates the `koschei-worker` account, a venv in
+`/opt/koschei-worker`, a private CA and server certificate (`vm/make-certs.sh`;
+the chain must pass `openssl verify -x509_strict`, because the frontend
+verifies with strict X.509 rules on every Python version), a random token,
+the units `vm/koschei-worker.socket` and `vm/koschei-worker.service`, and
+`/etc/koschei-worker/frontend.env` (root only) with the three values the
+frontend needs: `KOSCHEI_WORKER_URL`, `KOSCHEI_WORKER_TOKEN`,
+`KOSCHEI_WORKER_CA_PEM`.
+
+#### Ingress and egress are separate
+
+systemd's `IPAddressAllow=` applies in both directions. Allowing the
+frontend's address on the service would also let the worker connect *to*
+that address, and allowing `any` would remove the egress block entirely.
+So the two directions live in different units:
+
+| Unit | Filter | Governs |
+| --- | --- | --- |
+| `koschei-worker.socket` | `IPAddressDeny=any` + `IPAddressAllow=<ingress>` | the listening socket and every accepted connection (they inherit its cgroup) |
+| `koschei-worker.service` | `IPAddressDeny=any` + `IPAddressAllow=localhost` | every socket the worker process opens itself |
+| each sandboxed program | own empty network namespace (`bwrap --unshare-net`) | only `lo` exists; nothing is routable |
+
+`install.sh` refuses to finish unless `systemctl show` reports a
+loopback-only allowlist and `IPAddressDeny=0.0.0.0/0 ::/0` for the service,
+and it deletes the `peer.conf` drop-in of older installs (which put the
+frontend range on the service).
+
+#### When Railway's outbound address changes
+
+Railway does not give a service a fixed outbound address unless static
+egress IPs are bought for it. Two supported settings:
+
+- **`any` (default for Railway today).** Anyone can reach the TLS port; that
+  is all they get. Every request must present the 256-bit token, the frontend
+  pins the worker's private CA and checks the hostname, and an unauthenticated
+  client is answered 401 before anything runs. The worker's own egress stays
+  blocked (verified by `connectivity.py` with ingress `any`). Only the TLS
+  port is exposed; nothing else on the VM listens publicly by this install.
+- **Static egress IPs**, when available: rerun `install.sh` with those
+  addresses, or change them live without restarting the worker:
+  `systemctl set-property koschei-worker.socket IPAddressAllow= IPAddressAllow=<cidr>...`
+
+A changing address never needs the service filter touched; never widen
+`IPAddressAllow` on the service to reach the frontend.
+
+The socket unit owns the port, so a crashed worker is restarted on the next
+connection. If the worker fails its preflight five times, systemd's start
+limit fails the socket as well and the port closes: the frontend then gets a
+fast connection error and answers 503. Stopping the worker on purpose means
+stopping both: `systemctl stop koschei-worker.socket koschei-worker.service`.
+
+The unit `vm/koschei-worker.service`:
 
 - **Limits**: `MemoryMax=1G`, `CPUQuota=100%`, `TasksMax=96` on the service's own
   cgroup; per program 5 s CPU, 10 s wall, 512 MiB address space, 1 MiB files,
@@ -201,8 +251,9 @@ and the unit `vm/koschei-worker.service`:
   private `/work` and a 16 MiB `/tmp`.
 - **Secrets**: the token and TLS key arrive through `LoadCredential=`, never in
   the environment, and are invisible inside sandboxes.
-- **Network**: the worker serves TLS itself; `IPAddressDeny=any` with
-  `IPAddressAllow=` the frontend range, so it can make no outbound connection.
+- **Network**: the worker serves TLS itself on the socket passed by
+  `koschei-worker.socket`; the service has `IPAddressDeny=any` with loopback
+  only, so it can make no outbound connection (see the table above).
 - **AppArmor** (Ubuntu 24.04 restricts unprivileged user namespaces):
   `vm/koschei-bwrap.apparmor` grants `userns` to one copy of bubblewrap,
   `/opt/koschei-worker/bin/bwrap`, executable only by the worker account. The
@@ -218,7 +269,12 @@ from `/proc/self/cgroup`; on a VM that is
 `ExecStartPre` runs `runtime_security_probe.py` with the same confinement, and
 the worker does not start unless all of these pass: namespaces, filesystem,
 loopback network, PID namespace, hidden credentials, memory, CPU and file-size
-limits, a real Koschei run and a capability denial.
+limits, a real Koschei run and a capability denial. The network check runs a
+program inside the sandbox that must see only `lo` and fail to reach public
+IPv4/IPv6 addresses, UDP DNS, name resolution, `169.254.169.254`, RFC 1918 and
+CGNAT ranges, the VM's own address and its default gateway. After adopting
+the listening socket, the worker also proves that a sandboxed program inherits
+no open descriptor (so it cannot accept connections on the worker's port).
 
 Tests on a real VM (`vm/test/`, run by the `Playground Live Isolation
 Acceptance` workflow on a GitHub Ubuntu 24.04 runner):
@@ -228,7 +284,14 @@ Acceptance` workflow on a GitHub Ubuntu 24.04 runner):
   request, capacity (503).
 - `degrade.sh`: removing the PID, memory or CPU limit, user namespaces, seccomp
   and no-new-privileges, or the AppArmor grant each stops the worker.
-- `network.sh`: no egress from the worker's cgroup; only the allowed peer connects.
+- `connectivity.py`: the real frontend (`app.py`, remote mode) in its own
+  network namespace, reaching the worker from a non-loopback address:
+  authorized frontend runs a program; wrong token, a foreign CA, public CAs
+  only and a wrong hostname all give 503 while the site stays up; an address
+  outside the ingress list is dropped; with ingress `any` the worker's cgroup
+  still cannot reach a public IP, the frontend's private network, the gateway
+  or metadata; the worker stopped gives a fast 503 with the site up, and
+  evaluation recovers when it returns.
 - `emulation.conf` is for an emulated (QEMU/TCG) test VM only. It raises the
   time limits by about 20x, so never install it on a real worker.
 

@@ -8,7 +8,8 @@ try() {
   name=$1; shift
   printf '[Service]\n%s\n' "$*" > "$D/zz-degrade.conf"
   systemctl daemon-reload
-  systemctl reset-failed koschei-worker >/dev/null 2>&1
+  systemctl reset-failed koschei-worker.service koschei-worker.socket >/dev/null 2>&1
+  systemctl start koschei-worker.socket >/dev/null 2>&1
   timeout 1500 systemctl restart koschei-worker >/dev/null 2>&1
   state=$(systemctl is-active koschei-worker)
   reason=$(journalctl -u koschei-worker -n 40 -o cat --no-pager | grep -E "SandboxUnavailable|ISOLATION DENIED" | tail -1 | cut -c1-160)
@@ -36,7 +37,8 @@ apparmor_parser -R /etc/apparmor.d/koschei-bwrap
 try apparmor_grant_missing ""
 apparmor_parser -r /etc/apparmor.d/koschei-bwrap
 systemctl daemon-reload
-systemctl reset-failed koschei-worker >/dev/null 2>&1
+systemctl reset-failed koschei-worker.service koschei-worker.socket >/dev/null 2>&1
+systemctl start koschei-worker.socket
 timeout 1500 systemctl restart koschei-worker
 echo "{\"restored\":\"$(systemctl is-active koschei-worker)\"}"
 exit $fail
