@@ -156,7 +156,10 @@ class CommerceStore:
             db.close()
 
     def init_db(self) -> None:
-        with self.connection(write=True) as db:
+        # sqlite3.executescript commits any open transaction; initialize
+        # outside our write transaction and enable WAL for reliable readers.
+        with self.connection() as db:
+            db.execute("PRAGMA journal_mode=WAL")
             db.executescript("""
                 CREATE TABLE IF NOT EXISTS products (
                     sku TEXT PRIMARY KEY,
