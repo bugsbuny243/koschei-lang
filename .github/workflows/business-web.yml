@@ -6,6 +6,7 @@ on:
       - 'staging/lang-public-business-*'
       - 'feat/business-tools-project-files-*'
       - 'feat/business-workspace-device-*'
+      - 'fix/business-workspace-saved-edits-*'
   pull_request:
     branches:
       - main
