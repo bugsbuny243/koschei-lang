@@ -13,12 +13,13 @@ ENV PATH="/usr/local/go/bin:${PATH}" \
     CGO_ENABLED=0
 RUN pip install --no-cache-dir koschei-lang==0.14.0
 WORKDIR /src
-COPY main.ks rules.ks pages.ks csv.ks store.ks ./
+COPY main.ks rules.ks pages.ks csv.ks store.ks LICENSE.md ./
 RUN ks build main.ks -o /out/koschei-forms \
     && mkdir -p /out/data/koschei-forms
 
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/koschei-forms /koschei-forms
+COPY --from=build /src/LICENSE.md /LICENSE.md
 COPY --from=build --chown=nonroot:nonroot /out/data /data
 USER nonroot
 EXPOSE 8080

@@ -123,5 +123,6 @@ submission.
 
 ## License
 
-Koschei Forms is sold under the Koschei Lang License 1.0 commercial terms. See
-`LICENSE` in the Koschei Lang repository.
+One purchase (19 USD on [Polar](https://polar.sh)) lets one person or
+organisation run any number of copies, for itself and its clients, and
+includes the right to use Koschei Lang to run it. See `LICENSE.md`.
