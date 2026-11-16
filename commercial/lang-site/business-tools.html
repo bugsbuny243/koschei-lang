@@ -143,7 +143,7 @@ input:focus,select:focus{outline:2px solid #5ce8b8;outline-offset:1px}input::pla
 (function(){
   "use strict";
   const $=id=>document.getElementById(id),qs=(root,selector)=>root.querySelector(selector);
-  let active="quote",pending=false;
+  let active="quote",pending=false,revision=0,lastReport=null;
   const labels={quote:"Teklif Ustası",stock:"Stok Alarm",cash:"Kasa Özet"};
   const moneyPattern=/^(?:0|[1-9]\d{0,8})(?:\.\d{1,2})?$/;
   const fmt=(amount,code)=>new Intl.NumberFormat("tr-TR",{style:"currency",currency:code,minimumFractionDigits:2,maximumFractionDigits:2}).format(amount/100);
@@ -159,11 +159,13 @@ input:focus,select:focus{outline:2px solid #5ce8b8;outline-offset:1px}input::pla
     return input($(active+"-panel"),".currency");
   }
   function cleanResult(){
+    lastReport=null;
     $("empty").hidden=false;$("result").style.display="none";$("error").style.display="none";
     $("engine-status").textContent="Hazır";
   }
   function useTool(tool){
     if(!labels[tool])return;
+    revision++;
     active=tool;
     document.querySelectorAll(".tab").forEach(btn=>btn.setAttribute("aria-pressed",String(btn.dataset.tool===tool)));
     ["quote","stock","cash"].forEach(t=>$(t+"-panel").hidden=t!==tool);
@@ -182,18 +184,28 @@ input:focus,select:focus{outline:2px solid #5ce8b8;outline-offset:1px}input::pla
     if(wrap.children.length>=maxRows[kind]){showError("Bu araçta en fazla "+maxRows[kind]+" kayıt desteklenir.");return;}
     const div=document.createElement("div");div.className="entry "+kind+"-entry";
     div.innerHTML=templates[kind]+'<button type="button" class="remove" aria-label="Satırı sil" title="Satırı sil">×</button>';
-    qs(div,".remove").addEventListener("click",()=>{if(wrap.children.length>1)div.remove();else showError("En az bir satır gerekli.");});
+    qs(div,".remove").addEventListener("click",()=>{
+      if(wrap.children.length>1){div.remove();revision++;cleanResult();}
+      else showError("En az bir satır gerekli.");
+    });
     wrap.appendChild(div);
+    revision++;
+    cleanResult();
   }
   function showError(message){$("error").textContent=message;$("error").style.display="block";$("engine-status").textContent="Hata";}
   function getRequest(kind){
     const rows=Array.from($(kind+"-rows").children);
     if(!rows.length)throw Error("Önce bir satır ekle.");
     const names=rows.map((row,i)=>input(row,".name")||"Kalem "+(i+1));
-    const validAmount=value=>{const v=decimal(value);if(!moneyPattern.test(v))throw Error("Tutarları 100.00 gibi iki ondalık basamakla yaz.");return v;};
+    const validAmount=(value,limit=100000000)=>{
+      const v=decimal(value);
+      if(!moneyPattern.test(v))throw Error("Tutarları 100.00 gibi iki ondalık basamakla yaz.");
+      if(Math.round(Number(v)*100)>limit)throw Error("Tutar izin verilen aralığın dışında.");
+      return v;
+    };
     if(kind==="quote")return {names,payload:{kind,discount:whole($("discount").value,100),vat:whole($("vat").value,100),items:rows.map(row=>({quantity:whole(input(row,".quantity"),1000,false),price:validAmount(input(row,".price"))}))}};
     if(kind==="stock")return {names,payload:{kind,items:rows.map(row=>({quantity:whole(input(row,".quantity"),100000),minimum:whole(input(row,".minimum"),100000),cost:validAmount(input(row,".cost"))}))}};
-    return {names,payload:{kind,opening:validAmount($("opening").value),items:rows.map(row=>({type:input(row,".type"),amount:validAmount(input(row,".amount"))}))}};
+    return {names,payload:{kind,opening:validAmount($("opening").value,1000000000000),items:rows.map(row=>({type:input(row,".type"),amount:validAmount(input(row,".amount"),100000000000)}))}};
   }
   function metrics(rows){
     const box=$("metrics");box.replaceChildren();
@@ -202,6 +214,7 @@ input:focus,select:focus{outline:2px solid #5ce8b8;outline-offset:1px}input::pla
       const b=document.createElement("strong");b.textContent=row.value;el.append(s,b);box.appendChild(el);}
   }
   function table(columns,rows){
+    lastReport={tool:active,columns,rows};
     const el=document.createElement("table");el.className="report-table";
     const thead=document.createElement("thead"),head=document.createElement("tr");
     for(const h of columns){const th=document.createElement("th");th.textContent=h;head.appendChild(th)}
@@ -213,13 +226,40 @@ input:focus,select:focus{outline:2px solid #5ce8b8;outline-offset:1px}input::pla
   function render(data,request,names,code){
     $("empty").hidden=true;$("error").style.display="none";$("result").style.display="block";$("engine-status").textContent="Koschei · Tamam";
     $("result-heading").textContent=data.kind==="quote"?($("quote-title-input").value.trim()||"Fiyat teklifi"):labels[active]+" · Rapor";
+    const meta=$("report-meta");
+    meta.replaceChildren();
+    function addMeta(label,value){
+      if(!value)return;
+      const el=document.createElement("div");el.className="report-cell";
+      const labelNode=document.createElement("span");labelNode.textContent=label;
+      const valueNode=document.createElement("b");valueNode.textContent=value;
+      el.append(labelNode,valueNode);meta.appendChild(el);
+    }
     if(active==="quote"){
+      $("report-headline").textContent="FİYAT TEKLİFİ · KOSCHEI BUSINESS";
+      addMeta("İşletme", $("company-name").value.trim());
+      addMeta("Müşteri / firma", $("customer-name").value.trim());
+      addMeta("Teklif numarası", $("quote-ref").value.trim());
+      addMeta("Tarih", $("quote-date").value||"Belirtilmedi");
+      addMeta("Para birimi",code);
+      $("report-disclaimer").textContent="Bu belge bilgilendirme amaçlı fiyat teklifidir; resmî fatura, tahsilat makbuzu veya mali belge değildir.";
       metrics([{label:"Ara toplam",value:fmt(data.subtotal,code)},{label:"İndirim",value:"−"+fmt(data.discount,code)},{label:"KDV",value:"+"+fmt(data.vat,code)},{label:"Toplam teklif",value:fmt(data.total,code),big:true}]);
-      table(["Ürün / hizmet","Adet","Birim"],request.items.map((x,i)=>[names[i],x.quantity,fmt(Math.round(Number(x.price)*100),code)]));
+      table(["Ürün / hizmet","Adet","Birim","Satır toplamı"],request.items.map((x,i)=>{
+        const unitCents=Math.round(Number(x.price)*100);
+        return [names[i],x.quantity,fmt(unitCents,code),fmt(unitCents*x.quantity,code)];
+      }));
     }else if(active==="stock"){
+      $("report-headline").textContent="STOK DURUM RAPORU · KOSCHEI BUSINESS";
+      addMeta("Oluşturulma tarihi",new Date().toLocaleDateString("tr-TR"));
+      addMeta("Para birimi",code);
+      $("report-disclaimer").textContent="Stok uyarıları bilgi amaçlıdır; hiçbir satın alma siparişi oluşturulmaz veya otomatik gönderilmez.";
       metrics([{label:"Toplam ürün",value:data.count},{label:"Alım uyarısı",value:data.alerts},{label:"Stok maliyet değeri",value:fmt(data.inventory_value,code),big:true}]);
       table(["Ürün","Stok","Durum / Öneri"],request.items.map((x,i)=>[names[i],x.quantity,data.items[i].low?"Düşük · +"+data.items[i].reorder:"Normal"]));
     }else{
+      $("report-headline").textContent="GÜN SONU KASA ÖZETİ · KOSCHEI BUSINESS";
+      addMeta("Oluşturulma tarihi",new Date().toLocaleDateString("tr-TR"));
+      addMeta("Para birimi",code);
+      $("report-disclaimer").textContent="Bu rapor resmî muhasebe kaydı veya fatura yerine geçmez.";
       metrics([{label:"Açılış",value:fmt(data.opening,code)},{label:"Gelir",value:"+"+fmt(data.income,code)},{label:"Gider",value:"−"+fmt(data.expenses,code)},{label:"Kapanış",value:fmt(data.closing,code),big:true}]);
       table(["İşlem","Tür","Tutar"],request.items.map((x,i)=>[names[i],x.type==="income"?"Gelir":"Gider",fmt(Math.round(Number(x.amount)*100),code)]));
     }
@@ -230,6 +270,7 @@ input:focus,select:focus{outline:2px solid #5ce8b8;outline-offset:1px}input::pla
     let submitted;
     try{submitted=getRequest(kind);}catch(e){showError(e.message||"Geçersiz bilgi.");return;}
     pending=true;
+    const submittedRevision=revision;
     document.querySelectorAll("[data-calc]").forEach(b=>b.disabled=true);
     $("engine-status").textContent="Koschei hesaplıyor…";
     try{
@@ -237,6 +278,7 @@ input:focus,select:focus{outline:2px solid #5ce8b8;outline-offset:1px}input::pla
       let data;try{data=await resp.json();}catch(_){throw Error("Sunucudan geçersiz yanıt geldi.");}
       if(!resp.ok)throw Error(resp.status===429?"Çok fazla istek. Biraz sonra yeniden dene.":resp.status===400?"Lütfen tutarları ve miktarları kontrol et.":"Hesaplama servisi şu anda kullanılamıyor.");
       if(data.kind!==kind)throw Error("Hesaplama yanıtı hatalı.");
+      if(active!==kind || submittedRevision!==revision)return; // changed while calculating
       render(data,submitted.payload,submitted.names,currency());
       // On phones the report follows the form; reveal it after calculation.
       if(window.matchMedia("(max-width:1200px), (hover:none) and (pointer:coarse)").matches){
@@ -245,13 +287,21 @@ input:focus,select:focus{outline:2px solid #5ce8b8;outline-offset:1px}input::pla
           block:"start"
         });
       }
-    }catch(e){showError(e.message||"Ağ bağlantısını kontrol et.");}
+    }catch(e){if(active===kind&&submittedRevision===revision)showError(e.message||"Ağ bağlantısını kontrol et.");}
     finally{pending=false;document.querySelectorAll("[data-calc]").forEach(b=>b.disabled=false);}
   }
+  // A printed report must never silently contain totals from an older form state.
+  document.querySelector(".workarea").addEventListener("input",e=>{
+    if(e.target.matches("input,select")){revision++;cleanResult();}
+  });
+  document.querySelector(".workarea").addEventListener("change",e=>{
+    if(e.target.matches("input,select")){revision++;cleanResult();}
+  });
   document.querySelectorAll("[data-add]").forEach(b=>b.addEventListener("click",()=>addRow(b.dataset.add)));
   document.querySelectorAll("[data-calc]").forEach(b=>b.addEventListener("click",()=>calculate(b.dataset.calc)));
   $("print").addEventListener("click",()=>window.print());
   $("reset-report").addEventListener("click",cleanResult);
+  $("quote-date").value=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
   for(const kind of ["quote","stock","cash"]){addRow(kind);addRow(kind);}
   const initial=new URLSearchParams(location.search).get("tool");useTool(labels[initial]?initial:"quote");
 })();
