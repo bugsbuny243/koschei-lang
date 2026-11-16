@@ -4,6 +4,8 @@ This does NOT constitute an independent Koschei WASM backend or runtime sandbox.
 """
 from __future__ import annotations
 
+import contextlib
+import io
 import os
 import pathlib
 import shutil
@@ -11,9 +13,10 @@ import subprocess
 import tempfile
 import unittest
 
-from koschei.codegen_go import generate_go
-from koschei.parser import parse
-from koschei.semantic import check
+from koschei import cli as _cli
+from koschei.mir import require_mir
+from koschei.mir_go_native import generate_go_mir_wasi_pure
+from koschei.modules import check_graph
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -185,12 +188,15 @@ class P0WasiImportParserTests(unittest.TestCase):
 @unittest.skipUnless(GO, "Go toolchain is required for experimental WASI evidence")
 class P0WasiImportInventoryTests(unittest.TestCase):
     def test_pure_fixture_imports_are_audited_and_filesystem_denied(self) -> None:
-        source = (ROOT / "examples/hello.ks").read_text(encoding="utf-8")
-        program = parse(source)
-        check(program)
+        # The inventory inspects the artifact of the public MIR-Go projection
+        # (the generator ``ks build`` uses), not the legacy AST-Go backend.
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            graph = _cli.open_graph(str(ROOT / "examples/hello.ks"))
+            check_graph(graph)
+            mir = require_mir(graph)
         with tempfile.TemporaryDirectory(prefix="koschei-p0-wasi-") as tmp:
             work = pathlib.Path(tmp)
-            (work / "main.go").write_text(generate_go(program), encoding="utf-8")
+            (work / "main.go").write_text(generate_go_mir_wasi_pure(mir), encoding="utf-8")
             (work / "go.mod").write_text("module koscheiwasiinventory\n\ngo 1.21\n", encoding="utf-8")
             wasm = work / "main.wasm"
             env = dict(os.environ, GOOS="wasip1", GOARCH="wasm", CGO_ENABLED="0")
@@ -198,23 +204,8 @@ class P0WasiImportInventoryTests(unittest.TestCase):
                 [GO, "build", "-o", str(wasm), "."],
                 cwd=work, env=env, capture_output=True, text=True, timeout=240,
             )
-            if built.returncode != 0:
-                # The current generated Go runtime is platform-specific:
-                # syscall.SOCK_CLOEXEC/O_NONBLOCK/Unlinkat/Renameat and a
-                # WASI-specific uint64/int64 stat mismatch block compilation.
-                # This is an explicit UNSUPPORTED target, not a passing
-                # compiled-WASM security receipt.
-                blockers = (
-                    "syscall.SOCK_CLOEXEC", "syscall.O_NONBLOCK",
-                    "syscall.Unlinkat", "syscall.Renameat",
-                    "mismatched types uint64 and int64",
-                )
-                print("P0_WASI_COMPILE_BLOCKED " + built.stderr.strip())
-                self.assertTrue(
-                    any(blocker in built.stderr for blocker in blockers),
-                    "Unexpected WASI build failure: " + built.stderr,
-                )
-                self.skipTest("WASI backend unavailable: generated Go runtime is not portable")
+            # A failed cross-compile is a failure, never a skip: a skipped
+            # inventory would report an audit of a module that does not exist.
             self.assertEqual(built.returncode, 0, built.stderr)
             imports = _imports(wasm.read_bytes())
             print(f"P0_WASI_IMPORT_RECEIPT fixture='examples/hello.ks' imports={imports!r}")
