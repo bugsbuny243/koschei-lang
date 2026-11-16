@@ -18,6 +18,7 @@ const extract=(start,end)=>{
 const validation=extract("  function validateSavedProject(doc){","  function restoreProject(doc){");
 const storage=extract("  /* DEVICE WORKSPACE STORAGE:","  /* END DEVICE WORKSPACE STORAGE */")
               +"  /* END DEVICE WORKSPACE STORAGE */";
+const upsert=extract("  async function workspaceUpsert(doc,id){","  async function workspaceSave(){");
 
 function fakeIdb(){
   const memory=new Map();
@@ -75,9 +76,11 @@ vm.runInContext([
   'const savedCurrencies=["TRY","USD","EUR"];',
   'const maxRows={quote:24,stock:40,cash:40};',
   'const moneyPattern=/^(?:0|[1-9]\\d{0,8})(?:\\.\\d{1,2})?$/;',
+  'const labels={quote:"Teklif Ustası",stock:"Stok Alarm",cash:"Kasa Özet"};',
   validation,
   storage,
-  "this.api={workspaceAll,workspaceRead,workspaceWrite,workspaceRemove,workspaceNewRecord,workspaceDisplayName,workspaceValidateRecord,workspaceOpenDb};"
+  upsert,
+  "this.api={workspaceAll,workspaceRead,workspaceWrite,workspaceRemove,workspaceNewRecord,workspaceDisplayName,workspaceValidateRecord,workspaceOpenDb,workspaceUpsert};"
 ].join("\n"),sandbox);
 const api=sandbox.api;
 const quote={
@@ -104,6 +107,18 @@ assert.equal((await api.workspaceRead(q.id)).name,"Teklif güncellendi");
 await api.workspaceRemove(c.id);
 assert.equal((await api.workspaceAll()).length,1);
 assert.equal(idb.memory.size,1);
+const nextQuote={...quote,details:{...quote.details,title:"Updated project"}};
+const up=await api.workspaceUpsert(nextQuote,q.id);
+assert.equal(up.updated,true);
+assert.equal(up.record.id,q.id);
+assert.equal((await api.workspaceAll()).length,1,"editing a saved project must not duplicate it");
+assert.equal((await api.workspaceRead(q.id)).doc.details.title,"Updated project");
+const created=await api.workspaceUpsert(cash,null);
+assert.equal(created.updated,false);
+assert.notEqual(created.record.id,q.id);
+assert.equal((await api.workspaceAll()).length,2);
+await api.workspaceRemove(created.record.id);
+await assert.rejects(api.workspaceUpsert(quote,"b".repeat(32)),/bulunamadı/i);
 await assert.rejects(api.workspaceRead(c.id),/bulunamadı/i);
 await assert.rejects(api.workspaceRead("__proto__"),/kimliği/);
 assert.throws(()=>api.workspaceNewRecord({...quote,tool:"invalid"},"Bad"),/./);
@@ -131,6 +146,8 @@ vm.runInContext([
 await assert.rejects(unavailable.open(),/JSON yedeğini kullan/);
 for(const required of [
   'id="save-device"',
+  "Bu kaydı güncelle",
+  "setWorkspaceEditingId(stored.id)",
   'id="toggle-workspace"',
   'id="workspace-panel"',
   'id="workspace-feedback"',
@@ -146,4 +163,4 @@ for(const required of [
 assert.ok(!html.includes("localStorage"));
 assert.ok(!html.includes("sessionStorage"));
 assert.ok(!html.includes('fetch("/api/business/workspace'));
-console.log("IndexedDB workspace checks passed: add/list/read/rename/delete, invalid records, no storage fallback.");
+console.log("IndexedDB workspace checks passed: add/list/read/update-in-place/rename/delete, invalid records, no storage fallback.");
