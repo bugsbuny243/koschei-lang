@@ -44,6 +44,7 @@ from .legacy_types import erase_function, erase_imports, erase_program
 from .semantic import ImportedModule
 from .type_contracts import function_type, infer_function_mapping
 from .type_system import (
+    GenericType,
     TypeNode,
     UnionType,
     UnknownType,
@@ -122,7 +123,20 @@ class _Rewriter:
 
     def statement(self, statement):
         if isinstance(statement, LetStatement):
-            return replace(statement, value=self.expression(statement.value))
+            rewritten = replace(statement, value=self.expression(statement.value))
+            # The legacy checker sees collections erased, so `list.get(i)`
+            # has no element type there and an unwrapped `Map` element
+            # (`let m = maps.get(i) or ...`) reached it untyped: `m.get(k)`
+            # then read as a capability call (false KS2401). Typed HIR knows
+            # the binding's type; hand an unwrapped Map or List on as an
+            # explicit annotation. Capability types are never added here.
+            if statement.annotation is None and isinstance(
+                statement.value, (OrBlockExpression, OrElseExpression, OrReturnExpression)
+            ):
+                typed = self.types.get(id(statement.value))
+                if isinstance(typed, GenericType) and typed.name in {"Map", "List"}:
+                    rewritten = replace(rewritten, annotation=_type_ref(typed, statement.location))
+            return rewritten
         if isinstance(statement, ReturnStatement):
             return replace(
                 statement,

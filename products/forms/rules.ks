@@ -1,6 +1,5 @@
 // Koschei Forms: input rules. Pure: no capability reaches this module.
 
-import json
 import text
 
 // A form name: 1 to 40 lowercase letters, digits or '-'.
@@ -52,19 +51,6 @@ fn valid_redirect(url: String) -> Bool {
 fn is_spam(fields: Map<String, String>) -> Bool {
     let trap = fields.get("_gotcha") or ""
     return trap.length() > 0
-}
-
-// The fields worth keeping, as a JSON object. Names starting with '_' are
-// controls such as _gotcha and are dropped.
-fn submission_json(fields: Map<String, String>) -> String {
-    let mut members: Map<String, String> = {}
-    for key in fields.keys() {
-        if !text.starts_with(key, "_") {
-            let value = fields.get(key) or ""
-            members = members.set(key, json.string(value))
-        }
-    }
-    return json.object(members)
 }
 
 // Constant-shape comparison of two hex digests of equal length.

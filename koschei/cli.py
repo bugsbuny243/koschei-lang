@@ -53,6 +53,28 @@ def open_graph(path: str):
     return load_graph(source)
 
 
+
+def _error_module(error: BaseException, requested: str | None) -> str | None:
+    """The imported module an error was found in, when it is not the file asked for.
+
+    check_graph records the module's path on the error; without it a mistake
+    in an imported file was reported with the requested file's name.
+    """
+    found = getattr(error, "source_path", None)
+    if found is None or requested is None:
+        return None
+    try:
+        found_path = Path(found).resolve()
+        requested_path = Path(requested).resolve()
+    except (OSError, ValueError):
+        return None
+    if found_path == requested_path:
+        return None
+    try:
+        return str(found_path.relative_to(Path.cwd()))
+    except ValueError:
+        return str(found_path)
+
 def command_tokens(path: str) -> int:
     for token in tokenize(read_source(path)):
         print(token)
@@ -472,21 +494,24 @@ def main(argv: list[str] | None = None) -> int:
         MirIntegrityError,
         RuntimeBootError,
     ) as error:
+        requested = getattr(args, "source", None)
+        module = _error_module(error, requested)
         if args.command == "check" and getattr(args, "json", False):
             print(
                 json.dumps(
                     diagnostic_payload(
                         str(error),
                         locale=locale,
-                        source=getattr(args, "source", None),
+                        source=module or requested,
                         error=error,
                     ),
                     ensure_ascii=False,
                 )
             )
         else:
+            where = f"{module}: " if module else ""
             print(
-                f"KOSCHEI ERROR: "
+                f"KOSCHEI ERROR: {where}"
                 f"{render_error(str(error), locale=locale, error=error)}",
                 file=sys.stderr,
             )
