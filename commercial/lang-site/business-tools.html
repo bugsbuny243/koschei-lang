@@ -41,6 +41,21 @@ input:focus,select:focus{outline:2px solid #5ce8b8;outline-offset:1px}input::pla
 .report-table{width:100%;border-collapse:collapse;font-size:12px;margin-top:16px}.report-table th,.report-table td{border-bottom:1px solid #28505b;padding:10px 5px;text-align:left;overflow-wrap:anywhere}.report-table th{color:#a1bec4;font-weight:650}.report-table td:last-child{text-align:right}
 .error{display:none;border:1px solid #a65c56;color:#ffcbc1;background:#3c2429;padding:10px 13px;border-radius:11px;font-size:13px;margin-top:14px}
 .info{border-top:1px solid #28434e;padding:25px 0 45px;color:#9eb9c0;font-size:12px}.info a{color:#bcf8e0}
+.project-actions{display:flex;align-items:center;gap:11px;flex-wrap:wrap;padding:15px 18px;margin:0 0 22px;border:1px solid #315261;background:linear-gradient(120deg,#102c32,#0c202e);border-radius:14px}
+.project-actions strong{color:#dbfff0;font-size:14px}
+.project-actions p{margin:2px 12px 2px 0;color:#a6c5c6;font-size:12px}
+.project-actions .btn{padding:9px 14px;min-height:42px;font-size:13px}
+.project-actions .project-label{flex:1;min-width:200px}
+.quote-details{grid-template-columns:repeat(2,minmax(0,1fr))}
+.report-meta{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px;margin:13px 0 8px}
+.report-meta .report-cell{border-bottom:1px solid #325361;padding:7px 0;min-width:0;overflow-wrap:anywhere}
+.report-meta .report-cell span{display:block;color:#94b6b9;font-size:11px;letter-spacing:.04em;text-transform:uppercase}
+.report-meta .report-cell b{font-size:14px;font-weight:700}
+.report-disclaimer{margin:20px 0 0;padding:10px 13px;border-left:3px solid #50a98f;color:#a9c9ca;font-size:12px}
+.report-headline{font-size:12px;letter-spacing:.12em;color:#7be6c0;font-weight:850}
+@media(max-width:640px){.project-actions{padding:14px}.project-actions .btn{flex:1}.quote-details{grid-template-columns:1fr}.report-meta{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@page{size:A4;margin:15mm}
+
 [hidden]{display:none!important}
 /* A touch browser can request a desktop-sized CSS viewport. Stack forms on
    touch devices regardless of the reported width; this is an app, not a screenshot. */
@@ -60,7 +75,7 @@ input:focus,select:focus{outline:2px solid #5ce8b8;outline-offset:1px}input::pla
 }
 
 @media(max-width:640px){.hero{padding:33px 0 26px}.tabs{gap:7px}.tab{padding:11px 9px;gap:7px;font-size:12px}.tab svg{width:17px}.tab small{display:none}.panel,.receipt{padding:17px}.entry,.entry.stock-entry,.entry.cash-entry{grid-template-columns:repeat(2,minmax(0,1fr))}.entry label:first-child{grid-column:1/-1}.entry .remove{grid-column:2;justify-self:end}.options{grid-template-columns:repeat(2,minmax(0,1fr))}.nav-side{gap:9px}.nav-side a{font-size:11px}.metric strong{font-size:18px}.metric.big strong{font-size:25px}}
-@media print{body{background:white;color:#17212b}.top,.hero,.tabs,.panel,.info,.no-print{display:none!important}.wrap{width:100%}.workarea{display:block;margin:0}.receipt{border:0;box-shadow:none;padding:0;color:#17212b}.receipt *{color:#17212b!important}.metric,.metric.big{background:#fff;border:1px solid #bbb}.result{display:block!important}.empty{display:none!important}.report-table th,.report-table td{border-color:#bbb}}
+@media print{html,body{background:white;color:#17212b;font-size:11pt;line-height:1.4}main{max-width:none}.receipt h2{font-size:19pt}.report-meta{margin:13px 0}.report-meta .report-cell b{font-size:11pt}.metric{break-inside:avoid}.report-table{width:100%;font-size:10pt;break-inside:auto}.report-table tr{break-inside:avoid}.report-disclaimer{border-left:2px solid #555;font-size:9pt}.report-headline{color:#222}.top,.hero,.tabs,.panel,.info,.no-print{display:none!important}.wrap{width:100%}.workarea{display:block;margin:0}.receipt{border:0;box-shadow:none;padding:0;color:#17212b}.receipt *{color:#17212b!important}.metric,.metric.big{background:#fff;border:1px solid #bbb}.result{display:block!important}.empty{display:none!important}.report-table th,.report-table td{border-color:#bbb}}
 </style>
 </head>
 <body>
@@ -77,10 +92,22 @@ input:focus,select:focus{outline:2px solid #5ce8b8;outline-offset:1px}input::pla
     <button type="button" class="tab" data-tool="stock" aria-pressed="false"><svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m3 7 9-4 9 4-9 4-9-4Zm0 0v10l9 4 9-4V7M12 11v10"/></svg><span>Stok Alarm<small>Eksik stokları bul</small></span></button>
     <button type="button" class="tab" data-tool="cash" aria-pressed="false"><svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="2.5" y="5" width="19" height="14" rx="2"/><path d="M2.5 10h19M16 15h3"/></svg><span>Kasa Özet<small>Gün sonu raporu</small></span></button>
   </nav>
+  <div class="project-actions no-print" role="group" aria-label="Proje dosyaları">
+    <div class="project-label"><strong>Projeni kendi cihazında sakla</strong><p>JSON dosyasını indirip sonra tekrar açabilirsin. Otomatik kayıt veya sunucu kaydı yok.</p></div>
+    <button type="button" class="btn" id="save-project">Projeyi kaydet (.json)</button>
+    <button type="button" class="btn" id="open-project">Projeyi aç (.json)</button>
+    <input type="file" id="project-file" accept=".json,application/json" hidden aria-label="Önceden kaydedilmiş Koschei proje dosyası">
+  </div>
   <div class="workarea">
     <section class="panel" id="quote-panel" aria-labelledby="quote-title">
       <h2 id="quote-title">Teklif oluştur</h2><p class="desc">Ürün veya hizmet ekle; indirimi ve KDV'yi tek tek hesaplat.</p>
       <label>Teklif / müşteri başlığı <input id="quote-title-input" maxlength="80" placeholder="Örnek: Kasım ayı tasarım teklifi" value="Yeni fiyat teklifi"></label>
+      <div class="options quote-details">
+        <label>İşletme adı <input id="company-name" maxlength="80" autocomplete="organization" placeholder="Örnek: ABC Tasarım"></label>
+        <label>Müşteri / firma <input id="customer-name" maxlength="80" placeholder="Müşteri adı"></label>
+        <label>Teklif numarası <input id="quote-ref" maxlength="40" placeholder="Örnek: TKL-2026-001"></label>
+        <label>Teklif tarihi <input id="quote-date" type="date"></label>
+      </div>
       <div class="options">
         <label>İndirim (%) <input id="discount" type="number" min="0" max="100" step="1" value="0"></label>
         <label>KDV (%) <input id="vat" type="number" min="0" max="100" step="1" value="20"></label>
@@ -106,7 +133,7 @@ input:focus,select:focus{outline:2px solid #5ce8b8;outline-offset:1px}input::pla
     </section>
     <aside class="receipt" aria-live="polite" aria-atomic="false"><div class="receipt-top"><div><div class="eyebrow">KOSCHEI ENGINE · REPORT</div><h2>Hesaplama sonucu</h2></div><span class="status" id="engine-status">Hazır</span></div>
       <div id="empty" class="empty"><div><div class="circle">⌁</div><strong>Sonucun burada görünecek.</strong><p>Soldan bilgileri gir ve hesapla. Hesaplamayı Koschei Lang yapar.</p></div></div>
-      <div id="result" class="result"><h3 id="result-heading"></h3><div id="metrics" class="metric-row"></div><div id="result-details"></div><div class="actions no-print"><button type="button" class="btn" id="print">Yazdır / PDF kaydet</button><button type="button" class="btn" id="reset-report">Sonucu temizle</button></div></div>
+      <div id="result" class="result"><div class="report-headline" id="report-headline">KOSCHEI BUSINESS · RAPOR</div><h3 id="result-heading"></h3><div id="report-meta" class="report-meta"></div><div id="metrics" class="metric-row"></div><div id="result-details"></div><p id="report-disclaimer" class="report-disclaimer"></p><div class="actions no-print"><button type="button" class="btn" id="print">Yazdır / PDF kaydet</button><button type="button" class="btn" id="download-csv">Tabloyu CSV indir</button><button type="button" class="btn" id="reset-report">Sonucu temizle</button></div></div>
       <div id="error" class="error" role="alert"></div>
     </aside>
   </div>
@@ -116,7 +143,7 @@ input:focus,select:focus{outline:2px solid #5ce8b8;outline-offset:1px}input::pla
 (function(){
   "use strict";
   const $=id=>document.getElementById(id),qs=(root,selector)=>root.querySelector(selector);
-  let active="quote",pending=false;
+  let active="quote",pending=false,revision=0,lastReport=null;
   const labels={quote:"Teklif Ustası",stock:"Stok Alarm",cash:"Kasa Özet"};
   const moneyPattern=/^(?:0|[1-9]\d{0,8})(?:\.\d{1,2})?$/;
   const fmt=(amount,code)=>new Intl.NumberFormat("tr-TR",{style:"currency",currency:code,minimumFractionDigits:2,maximumFractionDigits:2}).format(amount/100);
@@ -132,11 +159,13 @@ input:focus,select:focus{outline:2px solid #5ce8b8;outline-offset:1px}input::pla
     return input($(active+"-panel"),".currency");
   }
   function cleanResult(){
+    lastReport=null;
     $("empty").hidden=false;$("result").style.display="none";$("error").style.display="none";
     $("engine-status").textContent="Hazır";
   }
   function useTool(tool){
     if(!labels[tool])return;
+    revision++;
     active=tool;
     document.querySelectorAll(".tab").forEach(btn=>btn.setAttribute("aria-pressed",String(btn.dataset.tool===tool)));
     ["quote","stock","cash"].forEach(t=>$(t+"-panel").hidden=t!==tool);
@@ -155,19 +184,187 @@ input:focus,select:focus{outline:2px solid #5ce8b8;outline-offset:1px}input::pla
     if(wrap.children.length>=maxRows[kind]){showError("Bu araçta en fazla "+maxRows[kind]+" kayıt desteklenir.");return;}
     const div=document.createElement("div");div.className="entry "+kind+"-entry";
     div.innerHTML=templates[kind]+'<button type="button" class="remove" aria-label="Satırı sil" title="Satırı sil">×</button>';
-    qs(div,".remove").addEventListener("click",()=>{if(wrap.children.length>1)div.remove();else showError("En az bir satır gerekli.");});
+    qs(div,".remove").addEventListener("click",()=>{
+      if(wrap.children.length>1){div.remove();revision++;cleanResult();}
+      else showError("En az bir satır gerekli.");
+    });
     wrap.appendChild(div);
+    revision++;
+    cleanResult();
   }
   function showError(message){$("error").textContent=message;$("error").style.display="block";$("engine-status").textContent="Hata";}
   function getRequest(kind){
     const rows=Array.from($(kind+"-rows").children);
     if(!rows.length)throw Error("Önce bir satır ekle.");
     const names=rows.map((row,i)=>input(row,".name")||"Kalem "+(i+1));
-    const validAmount=value=>{const v=decimal(value);if(!moneyPattern.test(v))throw Error("Tutarları 100.00 gibi iki ondalık basamakla yaz.");return v;};
+    const validAmount=(value,limit=100000000)=>{
+      const v=decimal(value);
+      if(!moneyPattern.test(v))throw Error("Tutarları 100.00 gibi iki ondalık basamakla yaz.");
+      if(Math.round(Number(v)*100)>limit)throw Error("Tutar izin verilen aralığın dışında.");
+      return v;
+    };
     if(kind==="quote")return {names,payload:{kind,discount:whole($("discount").value,100),vat:whole($("vat").value,100),items:rows.map(row=>({quantity:whole(input(row,".quantity"),1000,false),price:validAmount(input(row,".price"))}))}};
     if(kind==="stock")return {names,payload:{kind,items:rows.map(row=>({quantity:whole(input(row,".quantity"),100000),minimum:whole(input(row,".minimum"),100000),cost:validAmount(input(row,".cost"))}))}};
-    return {names,payload:{kind,opening:validAmount($("opening").value),items:rows.map(row=>({type:input(row,".type"),amount:validAmount(input(row,".amount"))}))}};
+    return {names,payload:{kind,opening:validAmount($("opening").value,1000000000000),items:rows.map(row=>({type:input(row,".type"),amount:validAmount(input(row,".amount"),100000000000)}))}};
   }
+  // Project files are intentionally explicit local downloads. No browser storage,
+  // hidden account or file upload is used. Imported data is assigned through
+  // .value/textContent only; it never becomes executable HTML or Koschei source.
+  const PROJECT_SCHEMA="koschei.business-tools/project/v1";
+  const savedCurrencies=["TRY","USD","EUR"];
+
+  function todayString(){
+    const now=new Date();
+    return new Date(now.getTime()-now.getTimezoneOffset()*60000).toISOString().slice(0,10);
+  }
+
+  function downloadLocal(filename,content,mime){
+    const blob=new Blob([content],{type:mime});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");
+    a.href=url;
+    a.download=filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),5000);
+  }
+
+  function saveProject(){
+    try{
+      const {names,payload}=getRequest(active);
+      const doc={
+        schema:PROJECT_SCHEMA,tool:active,currency:currency(),
+        names,payload
+      };
+      if(active==="quote"){
+        doc.details={
+          title:$("quote-title-input").value.trim(),
+          company:$("company-name").value.trim(),
+          customer:$("customer-name").value.trim(),
+          reference:$("quote-ref").value.trim(),
+          date:$("quote-date").value
+        };
+      }
+      if(!savedCurrencies.includes(doc.currency))throw Error("Para birimi geçersiz.");
+      const json=JSON.stringify(doc,null,2);
+      if(json.length>24000)throw Error("Dosya kaydedilemeyecek kadar büyük.");
+      downloadLocal("koschei-"+active+"-"+todayString()+".json",json+"\n","application/json;charset=utf-8");
+      $("engine-status").textContent="Proje indirildi";
+      $("error").style.display="none";
+    }catch(e){showError(e.message||"Proje dosyası indirilemedi.");}
+  }
+
+  function validateSavedProject(doc){
+    if(!doc||typeof doc!=="object"||Array.isArray(doc)||doc.schema!==PROJECT_SCHEMA)
+      throw Error("Bu dosya Koschei Business Tools proje dosyası değil.");
+    if(!["quote","stock","cash"].includes(doc.tool)||!savedCurrencies.includes(doc.currency))
+      throw Error("Dosyada desteklenmeyen araç veya para birimi var.");
+    const data=doc.payload, max=maxRows[doc.tool];
+    if(!data||typeof data!=="object"||data.kind!==doc.tool||
+       !Array.isArray(data.items)||data.items.length<1||data.items.length>max)
+      throw Error("Dosyanın işlem listesi geçersiz.");
+    if(!Array.isArray(doc.names)||doc.names.length!==data.items.length||
+       !doc.names.every(n=>typeof n==="string"&&n.length<=60))
+      throw Error("Dosyada geçersiz ürün açıklaması var.");
+    const integer=(x,upper,positive=false)=>
+      Number.isSafeInteger(x)&&x>= (positive?1:0)&&x<=upper;
+    const validMoney=(x,maxCents)=>{
+      if(typeof x!=="string"||!moneyPattern.test(x)||
+         Math.round(Number(x)*100)>maxCents)
+        throw Error("Dosyada geçersiz tutar var.");
+    };
+    if(doc.tool==="quote"){
+      if(!integer(data.discount,100)||!integer(data.vat,100))
+        throw Error("Dosyadaki KDV veya indirim geçersiz.");
+      for(const item of data.items){
+        if(!item||!integer(item.quantity,1000,true))
+          throw Error("Geçersiz teklif adedi.");
+        validMoney(item.price,100000000);
+      }
+      const d=doc.details;
+      if(!d||typeof d!=="object"||
+         !["title","company","customer","reference","date"].every(k=>typeof d[k]==="string"))
+        throw Error("Teklif bilgileri eksik.");
+      for(const k of ["title","company","customer"]){
+        if(d[k].length>80)throw Error("Teklif bilgisi çok uzun.");
+      }
+      if(d.reference.length>40||
+         (d.date&&!/^\d{4}-\d{2}-\d{2}$/.test(d.date)))
+        throw Error("Teklif numarası veya tarihi geçersiz.");
+    }else if(doc.tool==="stock"){
+      for(const item of data.items){
+        if(!item||!integer(item.quantity,100000)||!integer(item.minimum,100000))
+          throw Error("Geçersiz stok miktarı.");
+        validMoney(item.cost,100000000);
+      }
+    }else{
+      validMoney(data.opening,1000000000000);
+      for(const item of data.items){
+        if(!item||!["income","expense"].includes(item.type))
+          throw Error("Geçersiz işlem türü.");
+        validMoney(item.amount,100000000000);
+        if(Math.round(Number(item.amount)*100)===0)
+          throw Error("Sıfır tutarlı işlem olamaz.");
+      }
+    }
+    return doc;
+  }
+
+  function restoreProject(doc){
+    validateSavedProject(doc); // validate fully before changing any existing form
+    useTool(doc.tool);
+    $(doc.tool+"-panel").querySelector(".currency").value=doc.currency;
+    const wrap=$(doc.tool+"-rows");
+    wrap.replaceChildren();
+    for(let i=0;i<doc.payload.items.length;i++){
+      addRow(doc.tool);
+      const row=wrap.lastElementChild, item=doc.payload.items[i];
+      qs(row,".name").value=doc.names[i];
+      if(doc.tool==="quote"){
+        qs(row,".quantity").value=String(item.quantity);
+        qs(row,".price").value=item.price;
+      }else if(doc.tool==="stock"){
+        qs(row,".quantity").value=String(item.quantity);
+        qs(row,".minimum").value=String(item.minimum);
+        qs(row,".cost").value=item.cost;
+      }else{
+        qs(row,".type").value=item.type;
+        qs(row,".amount").value=item.amount;
+      }
+    }
+    if(doc.tool==="quote"){
+      $("discount").value=String(doc.payload.discount);
+      $("vat").value=String(doc.payload.vat);
+      $("quote-title-input").value=doc.details.title;
+      $("company-name").value=doc.details.company;
+      $("customer-name").value=doc.details.customer;
+      $("quote-ref").value=doc.details.reference;
+      $("quote-date").value=doc.details.date;
+    }
+    if(doc.tool==="cash")$("opening").value=doc.payload.opening;
+    cleanResult();
+    $("engine-status").textContent="Proje açıldı · Hesapla";
+    window.scrollTo({top:0,behavior:"instant"});
+  }
+
+  function csvEscape(value){
+    let v=String(value);
+    // Prevent spreadsheet formula execution from user-entered names.
+    if(/^\s*[=+\-@]/.test(v))v="'"+v;
+    return '"'+v.replace(/"/g,'""')+'"';
+  }
+
+  function downloadCsv(){
+    if(!lastReport||lastReport.tool!==active){
+      showError("Önce güncel bilgileri hesapla.");
+      return;
+    }
+    const lines=[lastReport.columns,...lastReport.rows].map(row=>row.map(csvEscape).join(";"));
+    downloadLocal("koschei-"+active+"-"+todayString()+".csv",
+      "\ufeff"+lines.join("\r\n")+"\r\n","text/csv;charset=utf-8");
+  }
+
   function metrics(rows){
     const box=$("metrics");box.replaceChildren();
     for(const row of rows){const el=document.createElement("div");el.className="metric"+(row.big?" big":"");
@@ -175,6 +372,7 @@ input:focus,select:focus{outline:2px solid #5ce8b8;outline-offset:1px}input::pla
       const b=document.createElement("strong");b.textContent=row.value;el.append(s,b);box.appendChild(el);}
   }
   function table(columns,rows){
+    lastReport={tool:active,columns,rows};
     const el=document.createElement("table");el.className="report-table";
     const thead=document.createElement("thead"),head=document.createElement("tr");
     for(const h of columns){const th=document.createElement("th");th.textContent=h;head.appendChild(th)}
@@ -186,13 +384,40 @@ input:focus,select:focus{outline:2px solid #5ce8b8;outline-offset:1px}input::pla
   function render(data,request,names,code){
     $("empty").hidden=true;$("error").style.display="none";$("result").style.display="block";$("engine-status").textContent="Koschei · Tamam";
     $("result-heading").textContent=data.kind==="quote"?($("quote-title-input").value.trim()||"Fiyat teklifi"):labels[active]+" · Rapor";
+    const meta=$("report-meta");
+    meta.replaceChildren();
+    function addMeta(label,value){
+      if(!value)return;
+      const el=document.createElement("div");el.className="report-cell";
+      const labelNode=document.createElement("span");labelNode.textContent=label;
+      const valueNode=document.createElement("b");valueNode.textContent=value;
+      el.append(labelNode,valueNode);meta.appendChild(el);
+    }
     if(active==="quote"){
+      $("report-headline").textContent="FİYAT TEKLİFİ · KOSCHEI BUSINESS";
+      addMeta("İşletme", $("company-name").value.trim());
+      addMeta("Müşteri / firma", $("customer-name").value.trim());
+      addMeta("Teklif numarası", $("quote-ref").value.trim());
+      addMeta("Tarih", $("quote-date").value||"Belirtilmedi");
+      addMeta("Para birimi",code);
+      $("report-disclaimer").textContent="Bu belge bilgilendirme amaçlı fiyat teklifidir; resmî fatura, tahsilat makbuzu veya mali belge değildir.";
       metrics([{label:"Ara toplam",value:fmt(data.subtotal,code)},{label:"İndirim",value:"−"+fmt(data.discount,code)},{label:"KDV",value:"+"+fmt(data.vat,code)},{label:"Toplam teklif",value:fmt(data.total,code),big:true}]);
-      table(["Ürün / hizmet","Adet","Birim"],request.items.map((x,i)=>[names[i],x.quantity,fmt(Math.round(Number(x.price)*100),code)]));
+      table(["Ürün / hizmet","Adet","Birim","Satır toplamı"],request.items.map((x,i)=>{
+        const unitCents=Math.round(Number(x.price)*100);
+        return [names[i],x.quantity,fmt(unitCents,code),fmt(unitCents*x.quantity,code)];
+      }));
     }else if(active==="stock"){
+      $("report-headline").textContent="STOK DURUM RAPORU · KOSCHEI BUSINESS";
+      addMeta("Oluşturulma tarihi",new Date().toLocaleDateString("tr-TR"));
+      addMeta("Para birimi",code);
+      $("report-disclaimer").textContent="Stok uyarıları bilgi amaçlıdır; hiçbir satın alma siparişi oluşturulmaz veya otomatik gönderilmez.";
       metrics([{label:"Toplam ürün",value:data.count},{label:"Alım uyarısı",value:data.alerts},{label:"Stok maliyet değeri",value:fmt(data.inventory_value,code),big:true}]);
       table(["Ürün","Stok","Durum / Öneri"],request.items.map((x,i)=>[names[i],x.quantity,data.items[i].low?"Düşük · +"+data.items[i].reorder:"Normal"]));
     }else{
+      $("report-headline").textContent="GÜN SONU KASA ÖZETİ · KOSCHEI BUSINESS";
+      addMeta("Oluşturulma tarihi",new Date().toLocaleDateString("tr-TR"));
+      addMeta("Para birimi",code);
+      $("report-disclaimer").textContent="Bu rapor resmî muhasebe kaydı veya fatura yerine geçmez.";
       metrics([{label:"Açılış",value:fmt(data.opening,code)},{label:"Gelir",value:"+"+fmt(data.income,code)},{label:"Gider",value:"−"+fmt(data.expenses,code)},{label:"Kapanış",value:fmt(data.closing,code),big:true}]);
       table(["İşlem","Tür","Tutar"],request.items.map((x,i)=>[names[i],x.type==="income"?"Gelir":"Gider",fmt(Math.round(Number(x.amount)*100),code)]));
     }
@@ -203,6 +428,7 @@ input:focus,select:focus{outline:2px solid #5ce8b8;outline-offset:1px}input::pla
     let submitted;
     try{submitted=getRequest(kind);}catch(e){showError(e.message||"Geçersiz bilgi.");return;}
     pending=true;
+    const submittedRevision=revision;
     document.querySelectorAll("[data-calc]").forEach(b=>b.disabled=true);
     $("engine-status").textContent="Koschei hesaplıyor…";
     try{
@@ -210,6 +436,7 @@ input:focus,select:focus{outline:2px solid #5ce8b8;outline-offset:1px}input::pla
       let data;try{data=await resp.json();}catch(_){throw Error("Sunucudan geçersiz yanıt geldi.");}
       if(!resp.ok)throw Error(resp.status===429?"Çok fazla istek. Biraz sonra yeniden dene.":resp.status===400?"Lütfen tutarları ve miktarları kontrol et.":"Hesaplama servisi şu anda kullanılamıyor.");
       if(data.kind!==kind)throw Error("Hesaplama yanıtı hatalı.");
+      if(active!==kind || submittedRevision!==revision)return; // changed while calculating
       render(data,submitted.payload,submitted.names,currency());
       // On phones the report follows the form; reveal it after calculation.
       if(window.matchMedia("(max-width:1200px), (hover:none) and (pointer:coarse)").matches){
@@ -218,13 +445,38 @@ input:focus,select:focus{outline:2px solid #5ce8b8;outline-offset:1px}input::pla
           block:"start"
         });
       }
-    }catch(e){showError(e.message||"Ağ bağlantısını kontrol et.");}
+    }catch(e){if(active===kind&&submittedRevision===revision)showError(e.message||"Ağ bağlantısını kontrol et.");}
     finally{pending=false;document.querySelectorAll("[data-calc]").forEach(b=>b.disabled=false);}
   }
+  // A printed report must never silently contain totals from an older form state.
+  document.querySelector(".workarea").addEventListener("input",e=>{
+    if(e.target.matches("input,select")){revision++;cleanResult();}
+  });
+  document.querySelector(".workarea").addEventListener("change",e=>{
+    if(e.target.matches("input,select")){revision++;cleanResult();}
+  });
   document.querySelectorAll("[data-add]").forEach(b=>b.addEventListener("click",()=>addRow(b.dataset.add)));
   document.querySelectorAll("[data-calc]").forEach(b=>b.addEventListener("click",()=>calculate(b.dataset.calc)));
+  $("save-project").addEventListener("click",saveProject);
+  $("open-project").addEventListener("click",()=>$("project-file").click());
+  $("project-file").addEventListener("change",async function(){
+    const file=this.files&&this.files[0];
+    this.value="";
+    if(!file)return;
+    if(file.size>24576 || !/\.json$/i.test(file.name)){
+      showError("Yalnızca en fazla 24 KB boyutunda .json proje dosyası açılabilir.");
+      return;
+    }
+    try{
+      const text=await file.text();
+      if(text.length>24576)throw Error("Proje dosyası boyut sınırını aşıyor.");
+      restoreProject(JSON.parse(text));
+    }catch(e){showError(e instanceof SyntaxError?"Dosya geçerli JSON değil.":e.message||"Dosya açılamadı.");}
+  });
+  $("download-csv").addEventListener("click",downloadCsv);
   $("print").addEventListener("click",()=>window.print());
   $("reset-report").addEventListener("click",cleanResult);
+  $("quote-date").value=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
   for(const kind of ["quote","stock","cash"]){addRow(kind);addRow(kind);}
   const initial=new URLSearchParams(location.search).get("tool");useTool(labels[initial]?initial:"quote");
 })();
