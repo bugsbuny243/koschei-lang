@@ -27,6 +27,25 @@
 - Optional images still count toward Railway volume storage. Backup the SQLite database and check usage if many products are added. Image uploads are restricted to a merchant session and exact allowed origin.
 - **Public order acceptance remains off by default** and no card information is processed.
 
+## Merchant operations: CSV, audit history and SQLite backup
+
+The existing merchant dashboard at \`/admin\` includes three additional operations:
+
+1. **Bulk CSV product creation.** Download the blank UTF-8 template and fill its semicolon-separated columns:
+   \`sku;name;category;description;price_try;stock;active\`.
+   Example product data: \`stok-alarm;Stok Alarm;Yazılım;Stok kontrolü;2800.00;12;1\`.
+   \`price_try\` is a **TRY amount**, with dot or comma decimals; \`active\` must be \`1\` (visible) or \`0\` (hidden).
+   A file may contain **1–100 products** and must be **no larger than 64 KiB**.
+   Select the CSV, click **Dosyayı kontrol et**, and only then explicitly confirm **Kontrol edilen ürünleri ekle**.
+   Existing SKUs are **never overwritten**. The entire import rejects if any SKU already exists, any input row is invalid, or the 1,000-product catalog limit would be exceeded. Either every new item is committed or none is; preview does not modify stock.
+   Photos are uploaded per product separately via the existing merchant editor.
+2. **Stock movement timeline.** Manual edits, newly created products, CSV imports and accepted/cancelled orders are recorded in the same SQLite transaction as their stock changes. The merchant sees the last 200 changes with timestamp, SKU, delta, resulting stock and a referenced order ID (when applicable). An order failure rolls back its history entries too. Existing historical transactions are **not fabricated** on migration.
+3. **Manual database backup.** Click **Veritabanını indir (.sqlite3)** to generate a consistent SQLite backup through the built-in \`sqlite3.backup\` API. It is downloaded over the authenticated, same-origin merchant session. Active merchant session rows are removed from **the downloaded copy only**, not from the live database. The downloaded database includes product images, stock history and any guest name/email/order notes already stored. Keep backups private and protected; this feature is **not automated cloud backup**. Files over 64 MiB are rejected to avoid exhausting Hobby memory; use managed volume backups when the store grows. The temporary server snapshot is written in \`/tmp\`, not to the limited Railway \`/data\` volume, and is removed after download.
+
+**Restore:** There is intentionally no public or browser-upload "restore database" endpoint. Restoring a snapshot must be done in a maintenance window by an authorized administrator, with the service stopped, a new verified volume backup, and a test restore before replacing any live file. Never overwrite a live SQLite WAL database directly.
+
+The storefront remains unchanged for guests. These operations require merchant authentication. They do not enable payment or guest order acceptance.
+
 ## Files
 
 | File | Responsibility |
@@ -93,7 +112,7 @@ After configuring and testing merchant access, HTTPS, persistence, backups, priv
 
 \`\`\`sh
 python -m pip install -e . pytest "Pillow>=11.0,<13.0"
-python -m pytest -q tests/test_commerce_mvp_v1.py tests/test_commerce_media_v1.py
+python -m pytest -q tests/test_commerce_mvp_v1.py tests/test_commerce_media_v1.py tests/test_commerce_merchant_ops_v1.py
 ks check products/commerce/pricing.ks
 ks caps products/commerce/pricing.ks
 \`\`\`

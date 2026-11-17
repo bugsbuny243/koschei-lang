@@ -6,7 +6,7 @@ authentication. There is no pricing fallback if Koschei is unavailable.
 """
 from __future__ import annotations
 
-from contextlib import contextmanager
+from contextlib import contextmanager, closing
 import hashlib
 import hmac
 import json
@@ -16,6 +16,7 @@ import secrets
 import sqlite3
 import subprocess
 import sys
+import tempfile
 import time
 from typing import Callable, Iterator
 
@@ -203,6 +204,20 @@ class CommerceStore:
                 );
                 CREATE INDEX IF NOT EXISTS orders_created ON orders(created_at DESC);
                 CREATE INDEX IF NOT EXISTS sessions_expiry ON admin_sessions(expires_at);
+                CREATE TABLE IF NOT EXISTS stock_movements (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    sku TEXT NOT NULL,
+                    delta INTEGER NOT NULL,
+                    stock_after INTEGER NOT NULL CHECK(stock_after BETWEEN 0 AND 100000),
+                    reason TEXT NOT NULL CHECK(reason IN
+                        ('created','import','manual_edit','order_accept','order_cancel')),
+                    order_id TEXT,
+                    happened_at INTEGER NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS stock_movements_recent
+                    ON stock_movements(happened_at DESC,id DESC);
+                CREATE INDEX IF NOT EXISTS stock_movements_by_sku
+                    ON stock_movements(sku,id DESC);
             """)
             # Existing Hobby volumes must migrate without deleting older products.
             columns = {x["name"] for x in db.execute("PRAGMA table_info(products)")}
@@ -227,6 +242,91 @@ class CommerceStore:
                    "ORDER BY p.name COLLATE NOCASE,p.sku LIMIT 1000")
             return [self._product_row(row) for row in db.execute(sql)]
 
+    @staticmethod
+    def _stock_event(db: sqlite3.Connection, sku: str, delta: int,
+                     stock_after: int, reason: str,
+                     order_id: str | None = None) -> None:
+        db.execute(
+            "INSERT INTO stock_movements (sku,delta,stock_after,reason,order_id,happened_at) "
+            "VALUES(?,?,?,?,?,?)",
+            (sku,delta,stock_after,reason,order_id,int(time.time()))
+        )
+
+    def stock_history(self, sku: str | None = None) -> list[dict]:
+        if sku is not None and (not isinstance(sku,str) or not SKU_RE.fullmatch(sku)):
+            raise CommerceError("invalid_sku")
+        with self.connection() as db:
+            if sku is None:
+                events=db.execute(
+                    "SELECT * FROM stock_movements ORDER BY id DESC LIMIT 200"
+                ).fetchall()
+            else:
+                events=db.execute(
+                    "SELECT * FROM stock_movements WHERE sku=? ORDER BY id DESC LIMIT 200",
+                    (sku,)
+                ).fetchall()
+        return [
+            {"id":x["id"],"sku":x["sku"],"delta":x["delta"],
+             "stock_after":x["stock_after"],"reason":x["reason"],
+             "order_id":x["order_id"],"happened_at":x["happened_at"]}
+            for x in events
+        ]
+
+    def bulk_create_products(self, products: list[dict], dry_run: bool = True) -> dict:
+        # Parse/validate before this method; never modify existing products via CSV.
+        if not isinstance(products,list) or not 1 <= len(products) <= 100:
+            raise CommerceError("invalid_import_count")
+        rows=[validate_product(p) for p in products]
+        skus=[p["sku"] for p in rows]
+        if len(set(skus)) != len(skus):
+            raise CommerceError("import_duplicate_sku",409)
+        with self.connection(write=not dry_run) as db:
+            existing_count=db.execute("SELECT COUNT(*) FROM products").fetchone()[0]
+            if existing_count + len(rows)>1000:
+                raise CommerceError("catalog_limit",409)
+            placeholders=",".join("?" for _ in rows)
+            existing=db.execute(
+                "SELECT sku FROM products WHERE sku IN ("+placeholders+")",skus
+            ).fetchall()
+            if existing:
+                raise CommerceError("import_sku_exists",409)
+            if not dry_run:
+                now=int(time.time())
+                for row in rows:
+                    db.execute(
+                        "INSERT INTO products"
+                        "(sku,name,description,category,price_cents,stock,active,changed_at)"
+                        " VALUES(?,?,?,?,?,?,?,?)",
+                        (row["sku"],row["name"],row["description"],row["category"],
+                         row["price_cents"],row["stock"],row["active"],now)
+                    )
+                    self._stock_event(db,row["sku"],row["stock"],row["stock"],"import")
+        return {"count":len(rows),"dry_run":dry_run,"created":0 if dry_run else len(rows),
+                "sample":[{"sku":r["sku"],"name":r["name"],"stock":r["stock"]} for r in rows[:10]]}
+
+    @contextmanager
+    def backup_copy(self) -> Iterator[Path]:
+        """Consistent SQLite snapshot with administrative sessions removed.
+
+        Backup is created in ephemeral /tmp, not on the 512MB live volume.
+        Users must keep downloaded snapshots securely: they contain customer PII.
+        """
+        with tempfile.TemporaryDirectory(prefix="koschei-commerce-backup-") as folder:
+            destination=Path(folder)/"commerce.sqlite3"
+            with self.connection() as source:
+                with closing(sqlite3.connect(destination)) as target:
+                    source.backup(target,pages=128,sleep=0.05)
+                    # Ensure a self-contained backup file (no .sqlite3-wal needed).
+                    target.execute("PRAGMA journal_mode=DELETE")
+                    target.execute("DELETE FROM admin_sessions")
+                    target.commit()
+                    check=target.execute("PRAGMA quick_check").fetchone()[0]
+                    if check!="ok":
+                        raise CommerceError("backup_integrity_failed",503)
+            if destination.stat().st_size>64*1024*1024:
+                raise CommerceError("backup_too_large",413)
+            yield destination
+
     def set_product(self, data: object, sku: str | None = None) -> dict:
         row = validate_product(data, existing_sku=sku)
         now = int(time.time())
@@ -242,7 +342,13 @@ class CommerceStore:
                     )
                 except sqlite3.IntegrityError as exc:
                     raise CommerceError("sku_exists", 409) from exc
+                self._stock_event(db,row["sku"],row["stock"],row["stock"],"created")
             else:
+                previous=db.execute(
+                    "SELECT stock FROM products WHERE sku=?",(sku,)
+                ).fetchone()
+                if previous is None:
+                    raise CommerceError("product_not_found",404)
                 result = db.execute(
                     "UPDATE products SET name=?,description=?,category=?,price_cents=?,stock=?,active=?,changed_at=? WHERE sku=?",
                     (row["name"],row["description"],row["category"],
@@ -250,6 +356,9 @@ class CommerceStore:
                 )
                 if result.rowcount != 1:
                     raise CommerceError("product_not_found",404)
+                delta=row["stock"]-previous["stock"]
+                if delta:
+                    self._stock_event(db,row["sku"],delta,row["stock"],"manual_edit")
         with self.connection() as db:
             saved = db.execute(
                 "SELECT p.*, i.digest AS image_digest FROM products p "
@@ -387,6 +496,12 @@ class CommerceStore:
                         (item["quantity"],int(time.time()),item["sku"],item["quantity"]))
                     if r.rowcount!=1:
                         raise CommerceError("insufficient_stock",409)
+                    after=db.execute(
+                        "SELECT stock FROM products WHERE sku=?",(item["sku"],)
+                    ).fetchone()["stock"]
+                    self._stock_event(
+                        db,item["sku"],-item["quantity"],after,"order_accept",oid
+                    )
                 target="accepted"
             elif action=="fulfill" and previous=="accepted":
                 target="fulfilled"
@@ -399,6 +514,12 @@ class CommerceStore:
                             (item["quantity"],int(time.time()),item["sku"],item["quantity"],MAX_STOCK))
                         if r.rowcount!=1:
                             raise CommerceError("stock_restoration_failed",409)
+                        after=db.execute(
+                            "SELECT stock FROM products WHERE sku=?",(item["sku"],)
+                        ).fetchone()["stock"]
+                        self._stock_event(
+                            db,item["sku"],item["quantity"],after,"order_cancel",oid
+                        )
                 target="cancelled"
             elif action=="redact" and previous in ("cancelled","fulfilled"):
                 db.execute(
