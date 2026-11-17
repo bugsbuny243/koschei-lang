@@ -44,7 +44,17 @@ p{margin:0}
 .section-heading p{color:var(--muted)}
 .grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:17px}
 .product{display:flex;flex-direction:column;overflow:hidden;min-width:0;border:1px solid var(--line);border-radius:19px;background:linear-gradient(155deg,#153449,#0d1e2d)}
-.product-art{height:155px;background:radial-gradient(ellipse at 80% 20%,#65dfb34d,transparent 66%),#14303d;display:grid;place-items:center;font-size:58px;border-bottom:1px solid #31546a}
+.product-art{height:155px;background:radial-gradient(ellipse at 80% 20%,#65dfb34d,transparent 66%),#14303d;display:grid;place-items:center;font-size:58px;border-bottom:1px solid #31546a;overflow:hidden}
+.product-art img{width:100%;height:100%;object-fit:cover;display:block}
+.product-category{color:#a1ebc8;font-size:11px;letter-spacing:.06em;font-weight:790;text-transform:uppercase}
+.catalog-filters{display:grid;grid-template-columns:2fr 1fr 1fr;gap:13px;margin:-2px 0 22px}
+.merchant-photo{width:55px;height:55px;object-fit:cover;border-radius:9px;border:1px solid #416578;flex:none}
+.merchant-product{display:flex;align-items:center;gap:11px;min-width:0}
+.merchant-product div{min-width:0;overflow-wrap:anywhere}
+.field input[type=file]{padding:9px;cursor:pointer}
+.field input[type=file]::file-selector-button{background:#214b4b;border:1px solid #4b8e81;color:#b5ffe3;border-radius:7px;padding:7px 11px;margin-right:10px;cursor:pointer}
+@media(max-width:750px){.catalog-filters{grid-template-columns:1fr 1fr}.catalog-filters label:first-child{grid-column:1/-1}}
+
 .product-info{padding:19px;display:flex;flex:1;flex-direction:column;gap:12px}
 .product-info h3{margin:0}.product-info p{color:#aec4cb;font-size:14px;min-height:43px}
 .price{font-size:26px;letter-spacing:-.035em;font-weight:850;color:#8af5c9}
@@ -61,7 +71,7 @@ p{margin:0}
 .cart-total{display:flex;justify-content:space-between;gap:12px;padding:18px 0;margin-top:8px;font-weight:850;font-size:22px}
 .cart-total b{color:var(--green)}
 .field{display:block;font-size:13px;font-weight:750;color:#c5dfdf;margin:11px 0}
-.field input,.field textarea{width:100%;display:block;margin-top:6px;padding:11px 12px;background:#091d2a;border:1px solid #426574;border-radius:10px;color:#eefdfb;min-height:46px;font-size:16px}
+.field input,.field textarea,.field select{width:100%;display:block;margin-top:6px;padding:11px 12px;background:#091d2a;border:1px solid #426574;border-radius:10px;color:#eefdfb;min-height:46px;font-size:16px}
 .field textarea{min-height:80px;resize:vertical}
 .notice{border-left:3px solid #58cba6;background:#112e30;padding:13px 15px;border-radius:0 9px 9px 0;font-size:13px;color:#b9d7d4;margin:15px 0}
 .state{margin:13px 0;min-height:18px;color:#94f0c5;font-size:13px;white-space:pre-wrap;overflow-wrap:anywhere}
@@ -93,7 +103,12 @@ footer{border-top:1px solid #284a56;padding:25px 0 38px;color:#92acb4;font-size:
     <div><div class="eyebrow">KOSCHEI COMMERCE · GERÇEK MAĞAZA ALTYAPISI</div><h1>Mağazan. Ürünlerin.<br>Kontrol sende.</h1><p class="lead">Ürünleri incele, sepete ekle ve mağazaya teslim alma talebi gönder. Siparişler satıcının onayından sonra işleme alınır.</p><div class="tags"><span class="tag">Koschei fiyat motoru</span><span class="tag">Stok kontrollü</span><span class="tag">Teslim alma talepleri</span></div></div>
     <div class="hero-graphic" aria-hidden="true"><div class="graphic-top"><b>COMMERCE / MERCHANT</b><span class="online-status">● ONLINE</span></div><div class="mock-item"><div class="mock-art">▣</div><div class="mock-lines"><strong>Ürün kataloğu</strong><small>Fiyat · Stok · Durum</small></div><span>↗</span></div><div class="mock-item"><div class="mock-art">≡</div><div class="mock-lines"><strong>Sipariş yönetimi</strong><small>Onay · Teslim · İptal</small></div><span>↗</span></div><div class="mock-total"><span>POWERED BY</span><b>KOSCHEI</b></div></div>
   </div>
-  <section class="section" aria-labelledby="products-title"><div class="section-heading"><div><div class="eyebrow">KATALOG</div><h2 id="products-title">Ürünler</h2><p>Fiyatlar TRY cinsinden, vergi dâhil girilen satış fiyatlarıdır.</p></div><button class="btn" id="refresh-products">Yenile</button></div><div id="products" class="grid"></div><p class="state" id="store-message" role="status"></p></section>
+  <section class="section" aria-labelledby="products-title"><div class="section-heading"><div><div class="eyebrow">KATALOG</div><h2 id="products-title">Ürünler</h2><p>Fiyatlar TRY cinsinden, vergi dâhil girilen satış fiyatlarıdır.</p></div><button class="btn" id="refresh-products">Yenile</button></div><div class="catalog-filters">
+      <label class="field">Ürün ara<input id="catalog-search" type="search" maxlength="80" placeholder="Ad, açıklama veya kod"></label>
+      <label class="field">Kategori<select id="catalog-category"><option value="">Tüm kategoriler</option></select></label>
+      <label class="field">Sıralama<select id="catalog-sort"><option value="name">Ürün adı</option><option value="price-asc">Fiyat ↑</option><option value="price-desc">Fiyat ↓</option></select></label>
+    </div>
+    <div id="products" class="grid"></div><p class="state" id="store-message" role="status"></p></section>
   <section class="section" id="cart-section"><div class="drawer-layout">
     <div class="panel"><div class="eyebrow">SİPARİŞ TALEBİ</div><h2>Sepet ve teslim alma</h2><p class="lead small-lead">Bu sürümde yalnızca mağazadan teslim alma talebi oluşturulur. Online ödeme alınmaz; kart bilgisi girmeyin.</p><div class="divider"></div>
       <div id="cart-lines"></div><div class="cart-total"><span>Toplam</span><b id="cart-total">₺0,00</b></div><button class="btn" id="recalculate">Koschei ile toplamı doğrula</button>
@@ -115,8 +130,11 @@ footer{border-top:1px solid #284a56;padding:25px 0 38px;color:#92acb4;font-size:
     <section class="panel"><div class="eyebrow">KATALOG YÖNETİMİ</div><h3 id="editor-title">Yeni ürün ekle</h3><form id="product-form">
       <label class="field">Ürün kodu (a-z, 0-9, -)<input name="sku" minlength="3" maxlength="32" pattern="[a-z][a-z0-9-]{2,31}" required placeholder="ornek-urun"></label>
       <label class="field">Ürün adı<input name="name" maxlength="100" required placeholder="Ürün adı"></label>
+      <label class="field">Kategori<input name="category" maxlength="48" value="Genel" required placeholder="Örnek: Elektronik"></label>
       <label class="field">Açıklama<textarea name="description" maxlength="1000"></textarea></label>
       <div class="admin-form-grid"><label class="field">Fiyat (TRY, KDV dâhil)<input name="price" inputmode="decimal" required placeholder="199.90"></label><label class="field">Mevcut stok<input name="stock" type="number" min="0" max="100000" value="0" required></label></div>
+      <label class="field">Ürün fotoğrafı (isteğe bağlı, JPG / PNG / WebP, en fazla 2 MB)<input name="photo" type="file" accept="image/jpeg,image/png,image/webp"></label>
+      <p class="notice">Önce ürün bilgilerini kaydet. Fotoğraf seçersen aynı işlemde yüklenir ve boyutu küçültülür. Mevcut fotoğrafı değiştirmek için ürünü düzenle.</p>
       <label class="toggle"><input name="active" type="checkbox" checked> Katalogda göster</label>
       <div class="nav-actions"><button class="btn primary" id="save-product" type="submit">Ürünü kaydet</button><button class="btn" id="new-product" type="button">Yeni ürün</button></div>
     </form><p class="state" id="product-message" role="status"></p></section>
@@ -181,16 +199,44 @@ function updateCartQty(sku,diff){
   state.key=null;
   drawCart();
 }
+function productArt(product,merchant=false){
+  if(!product.has_image){
+    if(merchant)return text("span","▣","merchant-photo");
+    const art=text("div","▣","product-art");art.setAttribute("aria-hidden","true");return art;
+  }
+  const img=document.createElement("img");
+  img.src="/api/images/"+encodeURIComponent(product.sku)+"?v="+encodeURIComponent(product.image_version||"1");
+  img.alt=product.name+" fotoğrafı";
+  img.loading="lazy";img.decoding="async";
+  if(merchant){img.className="merchant-photo";return img;}
+  const art=document.createElement("div");art.className="product-art";art.appendChild(img);return art;
+}
 function drawCatalog(){
   const region=$("products");region.replaceChildren();
   if(!state.products.length){
     region.appendChild(text("div","Henüz yayında ürün yok. Satıcı panelinden katalog oluşturulabilir.","empty"));
     return;
   }
-  for(const product of state.products){
+  const query=$("catalog-search").value.trim().toLocaleLowerCase("tr-TR");
+  const category=$("catalog-category").value;
+  const sort=$("catalog-sort").value;
+  const matching=state.products.filter(p=>
+    (!category||p.category===category)&&
+    (!query||[p.name,p.description,p.sku,p.category].some(value=>
+      String(value||"").toLocaleLowerCase("tr-TR").includes(query)))
+  );
+  if(sort==="price-asc")matching.sort((a,b)=>a.price_cents-b.price_cents);
+  else if(sort==="price-desc")matching.sort((a,b)=>b.price_cents-a.price_cents);
+  else matching.sort((a,b)=>a.name.localeCompare(b.name,"tr-TR"));
+  if(!matching.length){
+    region.appendChild(text("div","Bu aramaya uygun ürün bulunamadı.","empty"));
+    return;
+  }
+  for(const product of matching){
     const card=document.createElement("article");card.className="product";
-    const art=text("div","▣","product-art");art.setAttribute("aria-hidden","true");
+    const art=productArt(product);
     const info=document.createElement("div");info.className="product-info";
+    info.append(text("span",product.category||"Genel","product-category"));
     info.append(text("h3",product.name),text("p",product.description||"Ürün açıklaması henüz eklenmedi."));
     info.append(text("strong",price(product.price_cents),"price"));
     info.append(text("span",product.stock>0?"Stokta: "+product.stock:"Stokta yok",product.stock>0?"stock":"stock low"));
@@ -223,6 +269,12 @@ async function loadStore(){
   try{
     const [config,list]=await Promise.all([api("/api/config"),api("/api/products")]);
     state.config=config;state.products=list.products;
+    const selector=$("catalog-category"),before=selector.value;
+    const categories=[...new Set(state.products.map(p=>p.category||"Genel"))].sort((a,b)=>a.localeCompare(b,"tr-TR"));
+    selector.replaceChildren();
+    const all=document.createElement("option");all.value="";all.textContent="Tüm kategoriler";selector.appendChild(all);
+    for(const category of categories){const option=document.createElement("option");option.value=category;option.textContent=category;selector.appendChild(option);}
+    selector.value=categories.includes(before)?before:"";
     $("brand").textContent=config.name;
     $("store-status").textContent=config.orders_enabled?
       "Sipariş talebi alımı açık · Yalnızca mağazadan teslim · Ödeme alınmaz":
@@ -282,8 +334,14 @@ function drawMerchant(){
   for(const p of state.merchantProducts){
     const row=document.createElement("div");row.className="admin-item";
     const info=document.createElement("div");
-    info.append(text("b",p.name),text("small",p.sku+" · "+price(p.price_cents)+" · Stok: "+p.stock+(p.active?"":" · Gizli")));
-    row.append(info,button("Düzenle",()=>editProduct(p)));
+    const description=document.createElement("div");
+    description.append(text("b",p.name),text("small",(p.category||"Genel")+" · "+p.sku+" · "+price(p.price_cents)+" · Stok: "+p.stock+(p.active?"":" · Gizli")));
+    const visual=document.createElement("div");visual.className="merchant-product";visual.append(productArt(p,true),description);
+    info.appendChild(visual);
+    const actions=document.createElement("div");actions.className="admin-actions";
+    actions.append(button("Düzenle",()=>editProduct(p)));
+    if(p.has_image)actions.append(button("Fotoğrafı kaldır",()=>removeProductPhoto(p),"btn danger"));
+    row.append(info,actions);
     products.appendChild(row);
   }
   const orders=$("merchant-orders");orders.replaceChildren();
@@ -319,30 +377,60 @@ function editProduct(p){
   const form=$("product-form"),f=form.elements;
   f.sku.value=p.sku;f.sku.disabled=true;
   f.name.value=p.name;f.description.value=p.description;
+  f.category.value=p.category||"Genel";f.photo.value="";
   f.price.value=(p.price_cents/100).toFixed(2);
   f.stock.value=String(p.stock);f.active.checked=p.active;
   $("editor-title").textContent="Ürünü düzenle · "+p.sku;
   $("save-product").textContent="Değişiklikleri kaydet";
   scrollTo({top:0,behavior:"smooth"});
 }
+async function photoUpload(sku,file){
+  const response=await fetch("/api/admin/products/"+encodeURIComponent(sku)+"/image",{
+    method:"POST",credentials:"same-origin",cache:"no-store",
+    headers:{"Content-Type":file.type},body:file
+  });
+  let payload;
+  try{payload=await response.json();}catch(_){throw Error("Fotoğraf sunucusu geçersiz yanıt verdi.");}
+  if(!response.ok)throw Error(payload.error||"Fotoğraf yüklenemedi.");
+}
+async function removeProductPhoto(p){
+  if(!confirm(p.name+" ürününün fotoğrafını kaldırmak istiyor musun?"))return;
+  try{
+    await api("/api/admin/products/"+encodeURIComponent(p.sku)+"/image","DELETE");
+    message("product-message","Ürün fotoğrafı kaldırıldı.",false);
+    await loadMerchant();await loadStore();
+  }catch(e){message("product-message","Fotoğraf silinemedi: "+e.message,true);}
+}
 async function saveProduct(event){
   event.preventDefault();
   const form=event.target,f=form.elements;
-  const product={
-    sku:state.editing||String(f.sku.value).trim(),
-    name:String(f.name.value).trim(),
-    description:String(f.description.value).trim(),
-    price_cents:cents(f.price.value),
-    stock:Number(f.stock.value),
-    active:f.active.checked
-  };
+  const file=f.photo.files&&f.photo.files[0];
   try{
+    if(file && (!["image/jpeg","image/png","image/webp"].includes(file.type)||file.size>2000000))
+      throw Error("Yalnızca 2 MB altındaki JPG, PNG ve WebP dosyaları yüklenebilir.");
+    const product={
+      sku:state.editing||String(f.sku.value).trim(),
+      name:String(f.name.value).trim(),
+      category:String(f.category.value).trim(),
+      description:String(f.description.value).trim(),
+      price_cents:cents(f.price.value),
+      stock:Number(f.stock.value),
+      active:f.active.checked
+    };
     if(!Number.isSafeInteger(product.stock)||product.stock<0||product.stock>100000)
       throw Error("Stok 0 ile 100000 arasında olmalı.");
-    const path=state.editing?"/api/admin/products/"+state.editing:"/api/admin/products";
-    await api(path,state.editing?"PATCH":"POST",product);
-    message("product-message","Ürün kaydedildi.",false);resetEditor();
+    const path=state.editing?"/api/admin/products/"+encodeURIComponent(state.editing):"/api/admin/products";
+    const saved=await api(path,state.editing?"PATCH":"POST",product);
+    let photoError=null;
+    if(file){
+      try{await photoUpload(saved.product.sku,file);}
+      catch(e){photoError=e.message||"Fotoğraf yüklenemedi.";}
+    }
+    resetEditor();
     await loadMerchant();await loadStore();
+    message("product-message",photoError
+      ?"Ürün kaydedildi ancak fotoğraf yüklenemedi: "+photoError
+      :"Ürün ve bilgiler kaydedildi.",!!photoError);
   }catch(e){message("product-message","Kaydedilemedi: "+e.message,true);}
 }
 async function transition(id,action){
@@ -370,6 +458,9 @@ $("nav-store").addEventListener("click",()=>view("store"));
 $("nav-cart").addEventListener("click",()=>{view("store");$("cart-section").scrollIntoView({behavior:"smooth"});});
 $("nav-admin").addEventListener("click",()=>view("admin"));
 $("refresh-products").addEventListener("click",loadStore);
+$("catalog-search").addEventListener("input",drawCatalog);
+$("catalog-category").addEventListener("change",drawCatalog);
+$("catalog-sort").addEventListener("change",drawCatalog);
 $("recalculate").addEventListener("click",refreshQuote);
 $("order-form").addEventListener("submit",placeOrder);
 $("order-form").addEventListener("input",()=>{state.key=null;});
