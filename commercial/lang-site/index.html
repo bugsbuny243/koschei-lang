@@ -141,6 +141,19 @@
     .product-info .btn.offline-link{margin-top:0;font-size:12px;padding:9px 12px;border-color:#31505e}
     .app-price{font-size:13px;font-weight:800;color:#88f0c3}
     .portfolio-note{margin-top:20px;color:var(--muted);font-size:13px}
+    /* Koschei Forms product: source package sold separately via Polar. */
+    .forms-panel{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(250px,.8fr);gap:30px;align-items:start;border:1px solid #3b766c;background:radial-gradient(ellipse at 100% 0%,#1a796644,transparent 63%),linear-gradient(135deg,#122f30,#0c1f2c);border-radius:22px;padding:clamp(22px,4vw,44px);box-shadow:0 20px 50px #0004}
+    .forms-panel h2{font-size:clamp(29px,4vw,43px);line-height:1.14;letter-spacing:-.044em;margin:10px 0 15px;max-width:700px}
+    .forms-panel p{color:#bbd6d5;font-size:15px;line-height:1.7}
+    .forms-feature-list{display:flex;flex-wrap:wrap;gap:8px;margin:21px 0}
+    .forms-feature-list span{border:1px solid #427a73;background:#123b3a;border-radius:22px;color:#cbf4e8;padding:6px 10px;font-size:12px}
+    .forms-offer{background:#0a1e28c9;border:1px solid #4b867b;border-radius:18px;padding:25px;min-width:0}
+    .forms-offer .price{font-size:50px}
+    .forms-offer .price-sub{margin:4px 0 19px}
+    .forms-offer .btn{display:flex;justify-content:center;text-align:center}
+    .forms-offer .fine{margin:15px 0 0;font-size:12px;color:#aaccca}
+    @media(max-width:800px){.forms-panel{grid-template-columns:1fr}.forms-offer{max-width:540px}}
+
     .roadmap-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:15px}
     .roadmap-item{min-width:0;border:1px solid #31505b;border-radius:17px;background:linear-gradient(160deg,#112834,#101b25);padding:22px}
     .roadmap-item.is-now{border-color:#4ebf98;background:linear-gradient(150deg,#143a33,#122531)}
@@ -162,6 +175,7 @@
     <nav aria-label="Primary navigation" class="navlinks">
       <a href="#features" data-en="Features" data-tr="Özellikler">Features</a>
       <a class="apps-nav" href="/tools" data-en="Open apps" data-tr="Uygulamaları aç">Open apps</a>
+      <a href="#forms" data-en="Forms" data-tr="Formlar">Forms</a>
       <a href="#roadmap" data-en="Roadmap" data-tr="Yol haritası">Roadmap</a>
       <a href="#demo" data-en="Demo" data-tr="Demo">Demo</a>
       <a href="#start" data-en="Get started" data-tr="Başlangıç">Get started</a>
@@ -284,6 +298,30 @@ without being given a disk capability.</span>
         </article>
       </div>
       <p class="portfolio-note" data-en="The browser versions are free and run real fixed Koschei calculations on this service; no account or installation is required. Screenshots above are illustrative; offline ZIP editions remain optional purchases through Polar." data-tr="Tarayıcı sürümleri ücretsizdir ve bu sunucuda gerçek, sabit Koschei hesaplamaları yapar; hesap veya kurulum gerekmez. Yukarıdaki görseller temsilidir; çevrimdışı ZIP sürümleri isteğe bağlı Polar ürünleridir.">The browser versions are free and run real fixed Koschei calculations on this service; no account or installation is required. Screenshots above are illustrative; offline ZIP editions remain optional purchases through Polar.</p>
+    </div></section>
+
+    <section id="forms" class="section"><div class="wrap">
+      <div class="forms-panel">
+        <div>
+          <div class="eyebrow">KOSCHEI FORMS · SELF-HOSTED · v1.0.0</div>
+          <h2 data-en="Your website's forms, on your own server. Provably nowhere else." data-tr="Web sitenizin formları, kendi sunucunuzda. Başka hiçbir yere gitmediği kanıtlı.">Your website's forms, on your own server. Provably nowhere else.</h2>
+          <p data-en="A self-hosted form backend for contact forms, applications and waiting lists. Store submissions on your own server, review them in a protected panel and export to CSV. Inspect the Koschei capability permissions yourself." data-tr="İletişim, başvuru ve bekleme listesi formları için kendi sunucunuzda çalışan arka uç. Gönderimleri kendi sunucunuzda saklayın, korumalı panelde inceleyin ve CSV olarak dışa aktarın. Koschei yetkilerini kendiniz denetleyin.">A self-hosted form backend for contact forms, applications and waiting lists. Store submissions on your own server, review them in a protected panel and export to CSV. Inspect the Koschei capability permissions yourself.</p>
+          <div class="forms-feature-list">
+            <span data-en="Your server · no outgoing network" data-tr="Kendi sunucunuz · dışarı ağ erişimi yok">Your server · no outgoing network</span>
+            <span data-en="CSV export" data-tr="CSV dışa aktarma">CSV export</span>
+            <span data-en="Password-protected admin" data-tr="Şifre korumalı yönetim">Password-protected admin</span>
+            <span data-en="12 months of updates" data-tr="12 ay güncelleme">12 months of updates</span>
+          </div>
+          <p class="fine" data-en="For modest traffic, behind an HTTPS reverse proxy. Source-code ZIP and Dockerfile are delivered; you build and self-host the application. No precompiled binary or hosted Forms account is included." data-tr="Düşük/orta trafik için HTTPS ters proxy arkasında kullanılır. Kaynak kod ZIP'i ve Dockerfile teslim edilir; uygulamayı kendiniz derleyip barındırırsınız. Derlenmiş binary veya barındırılan Forms hesabı dahil değildir.">For modest traffic, behind an HTTPS reverse proxy. Source-code ZIP and Dockerfile are delivered; you build and self-host the application. No precompiled binary or hosted Forms account is included.</p>
+        </div>
+        <aside class="forms-offer" aria-label="Koschei Forms one-time purchase">
+          <div class="eyebrow" data-en="ONE-TIME PURCHASE" data-tr="TEK SEFERLİK SATIN ALMA">ONE-TIME PURCHASE</div>
+          <div class="price-row"><span class="price">$19</span><span class="currency">USD</span></div>
+          <p class="price-sub" data-en="No subscription · ZIP delivered through Polar" data-tr="Abonelik yok · ZIP Polar üzerinden teslim edilir">No subscription · ZIP delivered through Polar</p>
+          <a class="btn primary" href="https://buy.polar.sh/polar_cl_9Lp5oi0qAmp3anHLNym6W6WqKuFc3SGnogy1Q3i2Yht" target="_blank" rel="noopener noreferrer" data-en="Get Koschei Forms · $19 ↗" data-tr="Koschei Forms Satın Al · 19 USD ↗">Get Koschei Forms · $19 ↗</a>
+          <p class="fine" data-en="14-day no-questions-asked refund policy. Security reports: koscheiweb3@gmail.com. Taxes, if applicable, are calculated at Polar checkout." data-tr="14 gün koşulsuz iade politikası. Güvenlik bildirimleri: koscheiweb3@gmail.com. Uygulanabilir vergiler Polar ödeme ekranında hesaplanır.">14-day no-questions-asked refund policy. Security reports: koscheiweb3@gmail.com. Taxes, if applicable, are calculated at Polar checkout.</p>
+        </aside>
+      </div>
     </div></section>
     <section id="demo" class="section"><div class="wrap">
       <div class="section-head"><div class="eyebrow" data-en="REAL COMMANDS · EXPLANATORY PREVIEW" data-tr="GERÇEK KOMUTLAR · AÇIKLAYICI ÖN İZLEME">REAL COMMANDS · EXPLANATORY PREVIEW</div><h2 data-en="A denial you can reproduce." data-tr="Tekrar çalıştırabileceğiniz bir ret.">A denial you can reproduce.</h2><p data-en="These commands run locally after installing the official package. This website displays commands; it does not execute code in your browser." data-tr="Bu komutlar resmî paketi kurduktan sonra yerel ortamınızda çalışır. Bu site komutları gösterir; tarayıcınızda kod yürütmez.">These commands run locally after installing the official package. This website displays commands; it does not execute code in your browser.</p></div>

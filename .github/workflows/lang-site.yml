@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - 'staging/lang-public-*'
+      - 'feat/site-koschei-forms-*'
   pull_request:
     branches:
       - main
