@@ -1,6 +1,13 @@
 """Merchant CSV import, stock audit and consistent SQLite backup integration tests."""
 from __future__ import annotations
 
+import unittest
+
+try:
+    import PIL  # noqa: F401  (Koschei Commerce needs Pillow for photos)
+except ImportError:  # the core CI does not install it; commerce-core.yml does
+    raise unittest.SkipTest("Pillow is not installed")
+
 from io import BytesIO
 import json
 from pathlib import Path

@@ -1,6 +1,13 @@
 """Commerce catalog v1.1: photos, categories, SQLite migration, HTTP security."""
 from __future__ import annotations
 
+import unittest
+
+try:
+    import PIL  # noqa: F401  (Koschei Commerce needs Pillow for photos)
+except ImportError:  # the core CI does not install it; commerce-core.yml does
+    raise unittest.SkipTest("Pillow is not installed")
+
 from io import BytesIO
 from http.server import ThreadingHTTPServer
 from pathlib import Path

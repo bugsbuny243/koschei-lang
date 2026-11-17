@@ -5,6 +5,13 @@ Each test uses a real isolated SQLite database; prices run in Koschei Lang.
 """
 from __future__ import annotations
 
+import unittest
+
+try:
+    import PIL  # noqa: F401  (Koschei Commerce needs Pillow for photos)
+except ImportError:  # the core CI does not install it; commerce-core.yml does
+    raise unittest.SkipTest("Pillow is not installed")
+
 import importlib.util
 import json
 from pathlib import Path
