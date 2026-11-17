@@ -1002,7 +1002,7 @@ func _ksMemberOf(receiver any, name string) any {
 		}
 	case []any:
 		switch name {
-		case "length", "get", "push", "contains", "take":
+		case "length", "get", "push", "contains", "take", "sort", "filter", "find", "map", "any":
 			return _ksMember{receiver: receiver, name: name}
 		}
 	}
@@ -1172,10 +1172,166 @@ func _ksInvokeMember(callee any, arguments ...any) any {
 			items := make([]any, count)
 			copy(items, receiver[:count])
 			return items
+		case "sort":
+			_ksArity("sort", arguments, 0)
+			return _ksListSort(receiver)
+		case "filter", "find", "map", "any":
+			_ksArity(member.name, arguments, 1)
+			callback, ok := arguments[0].(_ksCallback)
+			if !ok {
+				return _ksError{message: "List." + member.name + "() yerel, adlandırılmış Koschei fonksiyonu bekler"}
+			}
+			return _ksListCallback(member.name, receiver, callback)
 		}
 	}
 	_ksAbort("KS3101", "unsupported member call '"+member.name+"'")
 	return nil
+}
+
+// ---- list callbacks and sorting: runtime_primitive_facade_v1 ------------
+
+// A named Koschei function passed to filter/find/map/any. The projection
+// only builds one around a top-level function of one parameter; it is never
+// stored in a value, so no other helper ever sees it.
+type _ksCallback func(any) any
+
+func _ksListCallback(name string, receiver []any, callback _ksCallback) any {
+	switch name {
+	case "filter":
+		out := []any{}
+		for _, item := range receiver {
+			decision := callback(item)
+			if failure, ok := decision.(_ksError); ok {
+				return failure
+			}
+			keep, ok := decision.(bool)
+			if !ok {
+				return _ksError{message: "List.filter() predicate'i Bool döndürmelidir"}
+			}
+			if keep {
+				out = append(out, item)
+			}
+		}
+		return out
+	case "find":
+		for _, item := range receiver {
+			decision := callback(item)
+			if failure, ok := decision.(_ksError); ok {
+				return failure
+			}
+			found, ok := decision.(bool)
+			if !ok {
+				return _ksError{message: "List.find() predicate'i Bool döndürmelidir"}
+			}
+			if found {
+				return _ksEnumValue{owner: "Option", variant: "Some", hasPayload: true, payload: item}
+			}
+		}
+		return _ksEnumValue{owner: "Option", variant: "None"}
+	case "map":
+		out := make([]any, 0, len(receiver))
+		for _, item := range receiver {
+			mapped := callback(item)
+			if failure, ok := mapped.(_ksError); ok {
+				return failure
+			}
+			out = append(out, mapped)
+		}
+		return out
+	default: // "any"
+		for _, item := range receiver {
+			decision := callback(item)
+			if failure, ok := decision.(_ksError); ok {
+				return failure
+			}
+			hit, ok := decision.(bool)
+			if !ok {
+				return _ksError{message: "List.any() predicate'i Bool döndürmelidir"}
+			}
+			if hit {
+				return true
+			}
+		}
+		return false
+	}
+}
+
+// Python's sorted() on a homogeneous numeric or String list: stable, and
+// exact between Int and Float. Strings compare by code point, which for
+// valid UTF-8 is byte order.
+func _ksListSort(receiver []any) any {
+	if len(receiver) == 0 {
+		return []any{}
+	}
+	numeric, text := true, true
+	for _, item := range receiver {
+		switch item.(type) {
+		case int64, float64:
+			text = false
+		case string:
+			numeric = false
+		default:
+			numeric, text = false, false
+		}
+	}
+	if !numeric && !text {
+		return _ksError{message: "List.sort() yalnızca homojen String veya sayısal öğeleri sıralar"}
+	}
+	items := make([]any, len(receiver))
+	copy(items, receiver)
+	scratch := make([]any, len(items))
+	_ksMergeSort(items, scratch, numeric)
+	return items
+}
+
+func _ksLess(left, right any, numeric bool) bool {
+	if !numeric {
+		return left.(string) < right.(string)
+	}
+	a, aInt := left.(int64)
+	b, bInt := right.(int64)
+	if aInt && bInt {
+		return a < b
+	}
+	return _ksAsFloat(left) < _ksAsFloat(right)
+}
+
+func _ksAsFloat(value any) float64 {
+	if number, ok := value.(int64); ok {
+		return float64(number)
+	}
+	return value.(float64)
+}
+
+func _ksMergeSort(items, scratch []any, numeric bool) {
+	if len(items) < 2 {
+		return
+	}
+	middle := len(items) / 2
+	_ksMergeSort(items[:middle], scratch[:middle], numeric)
+	_ksMergeSort(items[middle:], scratch[middle:], numeric)
+	copy(scratch, items)
+	left, right, out := 0, middle, 0
+	for left < middle && right < len(items) {
+		if _ksLess(scratch[right], scratch[left], numeric) {
+			items[out] = scratch[right]
+			right++
+		} else {
+			items[out] = scratch[left]
+			left++
+		}
+		out++
+	}
+	for left < middle {
+		items[out] = scratch[left]
+		left++
+		out++
+	}
+	for right < len(items) {
+		items[out] = scratch[right]
+		right++
+		out++
+	}
 }
 
 // ---- runtime type evidence: Interpreter._runtime_matches_type -----------

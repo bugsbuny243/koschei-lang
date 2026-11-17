@@ -711,8 +711,8 @@ class MirGoNativeParityTests(unittest.TestCase):
         cases = {
             "generic struct": "struct Box<T> {\n    value: T,\n}\n\nfn main() {\n"
             "    let b = Box { value: 1 }\n    println(b.value)\n}\n",
-            "callback": "fn keep(value: Int) -> Bool {\n    return value > 1\n}\n\n"
-            "fn main() {\n    let kept = [1, 2].filter(keep) or []\n    println(kept)\n}\n",
+            "stored function value": "fn keep(value: Int) -> Bool {\n    return value > 1\n}\n\n"
+            "fn main() {\n    let chosen = keep\n    println(chosen(2))\n}\n",
             "conversion": 'fn main() {\n    let n = "1.5".to_float() or 0.0\n    println(n)\n}\n',
         }
         for name, source in cases.items():

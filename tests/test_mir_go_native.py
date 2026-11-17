@@ -131,7 +131,27 @@ fn main() {
             self.assertEqual(completed.stdout, "1\n2\n3\n")
 
     def test_unsupported_program_fails_closed_instead_of_legacy_ast_codegen(self) -> None:
-        # Callback members are still outside MIR-Go (maps compiled since).
+        # A stored function value is still outside MIR-Go (list callbacks
+        # and maps compile since).
+        _, mir = self.checked_mir(
+            """
+fn positive(value: Int) -> Bool {
+    return value > 0
+}
+
+fn main() {
+    let chosen = positive
+    println(chosen(2))
+}
+"""
+        )
+        support = inspect_mir_go_support(mir)
+        self.assertFalse(support.supported)
+        self.assertEqual(native_build_mode(mir), "blocked_ambient_ast_go_v1")
+        self.assertFalse(any("AST fallback" in reason for reason in support.reasons))
+        self.assertTrue(support.reasons)
+
+    def test_list_callbacks_compile_through_mir_go(self) -> None:
         _, mir = self.checked_mir(
             """
 fn positive(value: Int) -> Bool {
@@ -140,16 +160,11 @@ fn positive(value: Int) -> Bool {
 
 fn main() {
     println([1, -2, 3].filter(positive))
+    println([3, 1, 2].sort())
 }
 """
         )
-        support = inspect_mir_go_support(mir)
-        self.assertFalse(support.supported)
-        self.assertEqual(native_build_mode(mir), "blocked_ambient_ast_go_v1")
-        self.assertFalse(any("AST fallback" in reason for reason in support.reasons))
-        self.assertTrue(
-            any("'filter' is not MIR-Go yet" in reason for reason in support.reasons), support.reasons
-        )
+        self.assertTrue(inspect_mir_go_support(mir).supported)
 
     def test_map_programs_compile_through_mir_go(self) -> None:
         _, mir = self.checked_mir(

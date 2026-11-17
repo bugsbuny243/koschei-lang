@@ -109,7 +109,11 @@ _BUILTINS = {
     "sha3_256_bytes": "_ksSha3_256Bytes",
 }
 _STRING_METHODS = frozenset({"length", "contains", "trim", "split", "join", "to_int", "to_bytes"})
-_LIST_METHODS = frozenset({"length", "get", "push", "contains", "take"})
+_LIST_METHODS = frozenset(
+    {"length", "get", "push", "contains", "take", "sort", "filter", "find", "map", "any"}
+)
+# List methods whose one argument is a named, one-parameter Koschei function.
+_CALLBACK_METHODS = frozenset({"filter", "find", "map", "any"})
 _BYTES_METHODS = frozenset({"length", "hex", "to_text", "slice", "get"})
 _RESPONSE_METHODS = frozenset({"text", "status"})
 _REQUEST_METHODS = frozenset({"method", "path", "header", "body", "body_bytes"})
@@ -834,6 +838,23 @@ def _use_reasons(instruction: Any, refs: dict[int, _Ref], mir: MirGraph, label: 
         elif callee.kind == "builtin" and len(instruction.arguments) != 1:
             reasons.append(f"{label}: {callee.name} requires one argument")
         operands = instruction.arguments
+        if callee is not None and callee.kind == "member" and callee.name in _CALLBACK_METHODS:
+            # The callback may be a named top-level function of one
+            # parameter; it is passed, never stored. Anything else fails
+            # closed below as a function value.
+            callbacks = [slot for slot in operands if slot in refs]
+            for slot in callbacks:
+                ref = refs[slot]
+                if ref.kind != "function":
+                    continue
+                target = next(
+                    item for item in mir.module_of(ref.module_key).functions if item.name == ref.name
+                )
+                if len(target.parameters) != 1:
+                    reasons.append(f"{label}: {callee.name}() callback must take one parameter")
+            operands = tuple(
+                slot for slot in operands if not (slot in refs and refs[slot].kind == "function")
+            )
     elif isinstance(instruction, MirMember):
         target = refs.get(instruction.object)
         operands = () if target is not None and target.kind == "module" else (instruction.object,)
@@ -1211,7 +1232,14 @@ def _emit_instruction(
     if isinstance(instruction, MirIterNext):
         return [f"{prefix}{value(instruction.target)} = _ksIterNext({value(instruction.iterator)})"]
     if isinstance(instruction, MirCall):
-        arguments = ", ".join(value(item) for item in instruction.arguments)
+        def argument(item: int) -> str:
+            ref = refs.get(item)
+            if ref is not None and ref.kind == "function":
+                symbol = symbols[(ref.module_key, ref.name)]
+                return f"_ksCallback(func(item any) any {{ return {symbol}(item) }})"
+            return value(item)
+
+        arguments = ", ".join(argument(item) for item in instruction.arguments)
         callee = refs[instruction.callee]
         if callee.kind == "function":
             call = f"{symbols[(callee.module_key, callee.name)]}({arguments})"
