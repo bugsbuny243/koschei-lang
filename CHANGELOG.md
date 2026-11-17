@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.15.0 — 2026-11-17
 
 - `ks caps` prints the manifest in the CLI's language: `--lang en` / `--lang tr` (before or after `caps`) or `KOSCHEI_LANG`, English by default as for diagnostics. It always printed Turkish, while the README showed the English text. `--json` is unchanged.
 - `ks build` produces statically linked binaries: it builds with `CGO_ENABLED=0` whatever the caller's environment says. A binary that used the network or a server linked glibc for Go's C resolver, so it needed the host's dynamic loader and did not start on musl hosts or in an image holding only the binary. `tests/test_native_static_build_v1.py` reads the ELF program headers of a pure, a brokered and a network binary.
