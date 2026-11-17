@@ -1,0 +1,92 @@
+name: Playground Live Isolation Acceptance
+
+on:
+  push:
+    branches:
+      - 'security/playground-*'
+    paths:
+      - 'koschei/untrusted.py'
+      - 'server/playground/**'
+      - '.github/workflows/playground-live-security.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live-isolation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout candidate
+        uses: actions/checkout@v4
+
+      - name: Build hardened container
+        run: docker compose -f server/playground/compose.security.yaml build
+
+      - name: Prove real Linux namespace and cgroup isolation
+        run: |
+          set -o pipefail
+          docker compose -f server/playground/compose.security.yaml \
+            run --rm --no-deps -T playground \
+            python /opt/playground/runtime_security_probe.py 2>&1 | tee playground-isolation.log
+
+      - name: Save exact-candidate isolation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playground-isolation-${{ github.sha }}
+          path: playground-isolation.log
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Start hardened HTTP server
+        run: docker compose -f server/playground/compose.security.yaml up -d --no-build
+
+      - name: Verify HTTP health and sandboxed Koschei execution
+        run: |
+          python - <<'PY'
+          import json
+          import time
+          import urllib.request
+          from urllib.error import URLError
+
+          base = "http://127.0.0.1:8080"
+          deadline = time.monotonic() + 25
+          while True:
+              try:
+                  with urllib.request.urlopen(base + "/health", timeout=2) as response:
+                      assert response.status == 200
+                      assert json.load(response)["ok"] is True
+                  break
+              except (URLError, TimeoutError, ConnectionError):
+                  if time.monotonic() >= deadline:
+                      raise
+                  time.sleep(1)
+
+          payload = json.dumps({
+              "action": "run",
+              "source": 'fn main() { println("live-container-ok") }\n',
+          }).encode("utf-8")
+          request = urllib.request.Request(
+              base + "/api/evaluate", data=payload,
+              headers={"Content-Type": "application/json"},
+          )
+          with urllib.request.urlopen(request, timeout=30) as response:
+              result = json.load(response)
+          assert result["stage"] == "run", result
+          assert result["ran"] is True, result
+          assert result["run"]["exit_code"] == 0, result
+          assert result["run"]["stdout"].strip() == "live-container-ok", result
+          print("LIVE_PLAYGROUND_HTTP_PASS")
+          PY
+
+      - name: Preserve container diagnostics
+        if: always()
+        run: |
+          docker compose -f server/playground/compose.security.yaml ps -a || true
+          docker compose -f server/playground/compose.security.yaml logs --no-color --tail=200 || true
+          docker compose -f server/playground/compose.security.yaml down --remove-orphans || true
+
+# No elevated Docker privileges, seccomp relaxation, or skipped namespace
+# checks. Incompatible CI hosts fail the job and block promotion.
