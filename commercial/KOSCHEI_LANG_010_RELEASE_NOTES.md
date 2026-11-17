@@ -1,8 +1,21 @@
-# Koschei Lang 0.14.0 — Release Notes
+# Koschei Lang 0.15.0 — Release Notes
 
 **Product:** Koschei Lang (independent of Koschei Sentinel and Web3 Hub)  
-**Version:** 0.14.0  
+**Version:** 0.15.0  
 **Release line:** commercially licensed, pre-1.0 language/toolchain
+
+## New in 0.15.0
+
+- Servers no longer stall behind idle clients. Requests are read beside
+  the program (up to 128 at a time per server); a client that connects and
+  sends nothing occupies one reader, not the server. Three idle connections
+  used to delay every other request by 30 s.
+- `ks build` always produces a static binary, so it starts on any
+  linux/amd64 host, including Alpine and images that hold only the binary.
+- `ks caps` prints the manifest in your language (`--lang en|tr`, English
+  by default); `--json` is unchanged.
+- Fixes: a `Map` taken out of a `List` with `or` no longer triggers a false
+  KS2401, and errors in an imported module name that module.
 
 ## New in 0.14.0
 

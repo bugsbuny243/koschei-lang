@@ -1,8 +1,21 @@
-# Koschei Lang 0.14.0 — Sürüm Notları
+# Koschei Lang 0.15.0 — Sürüm Notları
 
 **Ürün:** Koschei Lang (Koschei Sentinel ve Web3 Hub'dan bağımsız)  
-**Sürüm:** 0.14.0  
+**Sürüm:** 0.15.0  
 **Ürün hattı:** ticari lisanslı, 1.0 öncesi programlama dili ve araç zinciri
+
+## 0.15.0'da yeni
+
+- Sunucular boşta bekleyen istemcilerin arkasında kilitlenmiyor. İstekler
+  programın yanında okunuyor (sunucu başına aynı anda 128'e kadar); bağlanıp
+  hiçbir şey göndermeyen bir istemci sunucuyu değil yalnızca bir okuyucuyu
+  meşgul ediyor. Önceden üç boşta bağlantı diğer her isteği 30 sn bekletiyordu.
+- `ks build` her zaman statik binary üretiyor; Alpine dahil her linux/amd64
+  sistemde ve yalnızca binary içeren imajlarda çalışıyor.
+- `ks caps` manifestoyu seçtiğiniz dilde basıyor (`--lang en|tr`, varsayılan
+  İngilizce); `--json` değişmedi.
+- Düzeltmeler: `or` ile bir `List`'ten alınan `Map` artık yanlış KS2401
+  vermiyor; içe aktarılan bir modüldeki hata o modülün adıyla raporlanıyor.
 
 ## 0.14.0'da yeni
 
