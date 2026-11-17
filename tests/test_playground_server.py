@@ -259,3 +259,89 @@ def test_concurrent_evaluation_limit(server, monkeypatch):
         assert data["error"] == "busy"
     finally:
         app.EVALUATION_SLOTS.release()
+
+
+def test_required_sandbox_failure_returns_503(server, monkeypatch):
+    """Unexpected sandbox loss must not fall back to unrestricted execution."""
+    def unavailable(*args, **kwargs):
+        raise app.untrusted.SandboxUnavailable("no user namespaces")
+
+    monkeypatch.setattr(app, "evaluate", unavailable)
+    status, data = _post(
+        server + "/api/evaluate",
+        json.dumps({"source": HELLO, "action": "run"}).encode(),
+    )
+    assert status == 503
+    assert data["error"] == "sandbox_unavailable"
+    assert "no user namespaces" not in json.dumps(data)
+
+
+@pytest.mark.parametrize("body", [b"not json", b'{"source":"hello","action":"run"}',
+                                  b'{"source":"hello","action":"check"}'])
+def test_site_only_rejects_evaluation_without_calling_compiler(server, monkeypatch, body):
+    monkeypatch.setattr(app, "PLAYGROUND_MODE", "disabled")
+    def forbidden(*args, **kwargs):
+        pytest.fail("Disabled service must never invoke the compiler")
+    monkeypatch.setattr(app, "evaluate", forbidden)
+    status, data = _post(server + "/api/evaluate", body)
+    assert status == 503 and data["error"] == "evaluation_disabled"
+
+
+def test_site_only_does_not_wait_for_request_body(server, monkeypatch):
+    import socket
+    from urllib.parse import urlsplit
+    monkeypatch.setattr(app, "PLAYGROUND_MODE", "disabled")
+    address = urlsplit(server)
+    with socket.create_connection((address.hostname, address.port), timeout=2) as client:
+        client.sendall(b"POST /api/evaluate HTTP/1.1\r\nHost: localhost\r\nContent-Length: 100\r\n\r\n")
+        assert b"503" in client.recv(4096).split(b"\r\n", 1)[0]
+
+
+def test_site_only_preserves_site_and_reports_execution_unavailable(server, monkeypatch):
+    monkeypatch.setattr(app, "PLAYGROUND_MODE", "disabled")
+    with urllib.request.urlopen(server + "/") as response:
+        assert response.status == 200 and b"buy.polar.sh" in response.read()
+    with urllib.request.urlopen(server + "/health") as response:
+        assert json.load(response) == {"ok": True, "evaluation_enabled": False}
+    for path in ("/play", "/play/"):
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            urllib.request.urlopen(server + path)
+        assert caught.value.code == 503
+        assert b"Online code execution is paused" in caught.value.read()
+
+
+def test_site_only_direct_evaluate_is_also_blocked(monkeypatch):
+    monkeypatch.setattr(app, "PLAYGROUND_MODE", "disabled")
+    with pytest.raises(app.untrusted.SandboxUnavailable):
+        app.evaluate(HELLO, "run")
+
+
+@pytest.mark.parametrize("mode", ["", "off", "disable", "DISABLED"])
+def test_unknown_playground_mode_is_rejected(monkeypatch, mode):
+    monkeypatch.setenv("KOSCHEI_PLAYGROUND_MODE", mode)
+    with pytest.raises(ValueError, match="KOSCHEI_PLAYGROUND_MODE"):
+        app.playground_mode()
+
+
+@pytest.mark.parametrize("mode", ["enabled", "disabled"])
+def test_site_only_startup_does_not_require_execution_sandbox(monkeypatch, mode):
+    monkeypatch.setattr(app, "PLAYGROUND_MODE", mode)
+    events = []
+    def unavailable():
+        events.append("gate")
+        raise app.untrusted.SandboxUnavailable("namespace denied")
+    monkeypatch.setattr(app.untrusted, "require_container_limits", unavailable)
+    monkeypatch.setattr(app.untrusted, "require_sandbox_ready", unavailable)
+    class Server:
+        def __init__(self, *args):
+            events.append("listen")
+        def serve_forever(self):
+            events.append("serve")
+    monkeypatch.setattr(app, "ThreadingHTTPServer", Server)
+    if mode == "enabled":
+        with pytest.raises(app.untrusted.SandboxUnavailable):
+            app.main()
+        assert events == ["gate"]
+    else:
+        app.main()
+        assert events == ["listen", "serve"]
