@@ -7,6 +7,7 @@ No payment credentials, payment links or card data are accepted.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from email.utils import formatdate
 import hmac
 from http import HTTPStatus
@@ -23,6 +24,7 @@ import time
 from urllib.parse import urlsplit
 
 from storage import CommerceError, CommerceStore
+from catalog_csv import MAX_CSV_BYTES, parse_product_csv
 from image_codec import MAX_UPLOAD, normalize_product_photo
 
 HERE = Path(__file__).resolve().parent
@@ -76,6 +78,8 @@ def make_handler(store: CommerceStore, config: Config):
     orders_limit=WindowLimit(15,3600)
     public_quote_limit=WindowLimit(120,3600)
     photo_limit=WindowLimit(30,3600)
+    import_limit=WindowLimit(15,3600)
+    backup_limit=WindowLimit(5,3600)
 
     class Handler(BaseHTTPRequestHandler):
         server_version = "KoscheiCommerce/0.1"
@@ -147,6 +151,42 @@ def make_handler(store: CommerceStore, config: Config):
                 raise CommerceError("image_size_invalid",413)
             return self.rfile.read(length)
 
+        def _csv_body(self) -> bytes:
+            if self.headers.get("Transfer-Encoding") or (
+                self.headers.get("Content-Type","").split(";")[0].strip().lower()
+                not in ("text/csv","application/csv")
+            ):
+                raise CommerceError("invalid_csv_content_type",415)
+            try:
+                length=int(self.headers.get("Content-Length","0"))
+            except ValueError:
+                length=-1
+            if not 1<=length<=MAX_CSV_BYTES:
+                self.close_connection=True
+                raise CommerceError("csv_size_invalid",413)
+            return self.rfile.read(length)
+
+        def _stream_backup(self):
+            # Back up a consistent database snapshot. Never serve the live WAL file
+            # and never expose hashed active merchant sessions in a downloadable copy.
+            with store.backup_copy() as path:
+                size=path.stat().st_size
+                filename="koschei-commerce-"+datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")+".sqlite3"
+                self.send_response(200)
+                self.send_header("Content-Type","application/octet-stream")
+                self.send_header("Content-Disposition",'attachment; filename="'+filename+'"')
+                self.send_header("Content-Length",str(size))
+                self.send_header("Cache-Control","no-store, private")
+                self.send_header("Pragma","no-cache")
+                self.send_header("X-Content-Type-Options","nosniff")
+                self.send_header("X-Frame-Options","DENY")
+                self.send_header("Referrer-Policy","no-referrer")
+                self.send_header("Content-Security-Policy","default-src 'none'; frame-ancestors 'none'")
+                self.end_headers()
+                with path.open("rb") as source:
+                    while part:=source.read(65536):
+                        self.wfile.write(part)
+
         def _origin(self):
             origin=self.headers.get("Origin")
             if origin!=config.public_origin:
@@ -205,6 +245,13 @@ def make_handler(store: CommerceStore, config: Config):
                 elif path=="/api/admin/orders":
                     self._admin()
                     self._json(200,{"orders":store.orders()})
+                elif path=="/api/admin/stock-movements":
+                    self._admin()
+                    query=urlsplit(self.path).query
+                    if query and (not query.startswith("sku=") or len(query)>40):
+                        raise CommerceError("invalid_filter")
+                    sku=query[4:] if query else None
+                    self._json(200,{"movements":store.stock_history(sku)})
                 else:
                     self._json(404,{"error":"not_found"})
             except CommerceError as err:
@@ -252,6 +299,24 @@ def make_handler(store: CommerceStore, config: Config):
                     )
                     digest=store.set_product_image(sku,image)
                     self._json(200,{"sku":sku,"image_version":digest[:12],"has_image":True})
+                elif path=="/api/admin/products/import":
+                    self._admin()
+                    if not import_limit.allow(self.client_address[0]):
+                        raise CommerceError("import_rate_limited",429)
+                    query=urlsplit(self.path).query
+                    if query not in ("","dry_run=1"):
+                        raise CommerceError("invalid_import_mode")
+                    rows=parse_product_csv(self._csv_body())
+                    result=store.bulk_create_products(rows,dry_run=query=="dry_run=1")
+                    self._json(200,result)
+                elif path=="/api/admin/backup":
+                    self._admin()
+                    if not backup_limit.allow(self.client_address[0]):
+                        raise CommerceError("backup_rate_limited",429)
+                    body=self._body()
+                    if body != {}:
+                        raise CommerceError("invalid_backup_request")
+                    self._stream_backup()
                 elif path=="/api/admin/products":
                     self._admin()
                     self._json(201,{"product":store.set_product(self._body())})
