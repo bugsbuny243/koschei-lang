@@ -11,6 +11,8 @@ Koschei Lang is an independent programming language and library ecosystem for cy
 > **Source-available, not open source.** Koschei Lang is free to download, use and modify for personal, non-commercial purposes. Commercial use needs a perpetual commercial license (see [`LICENSING.md`](https://github.com/bugsbuny243/koschei-lang/blob/main/LICENSING.md)). Redistribution of the toolchain is not permitted. See [`LICENSE`](https://github.com/bugsbuny243/koschei-lang/blob/main/LICENSE).
 >
 > **Try it without installing:** [koschei.dev/play](https://koschei.dev/play)
+>
+> **Built with Koschei:** [Koschei Forms](https://github.com/bugsbuny243/koschei-lang/tree/main/products/forms), a self-hosted form backend that runs confined by its own capability manifest. [Buy it for $19](https://buy.polar.sh/polar_cl_9Lp5oi0qAmp3anHLNym6W6WqKuFc3SGnogy1Q3i2Yht).
 
 **A capability-secure programming language. An imported package cannot touch your disk, network, or environment unless you hand it a token.**
 
