@@ -6,11 +6,13 @@ on:
       - 'feat/koschei-commerce-*'
       - 'feat/commerce-real-catalog-*'
       - 'fix/commerce-sku-ux-*'
+      - 'feat/commerce-merchant-ops-*'
   pull_request:
     paths:
       - 'products/commerce/**'
       - 'tests/test_commerce_mvp_v1.py'
       - 'tests/test_commerce_media_v1.py'
+      - 'tests/test_commerce_merchant_ops_v1.py'
       - 'tests/commerce_sku_ui_contract.mjs'
       - '.github/workflows/commerce-core.yml'
 
@@ -31,14 +33,14 @@ jobs:
       - name: Install Koschei runtime and tests
         run: python -m pip install -e . pytest "Pillow>=11.0,<13.0"
       - name: Run commerce integration tests with actual Koschei pricing engine
-        run: python -m pytest -q tests/test_commerce_mvp_v1.py tests/test_commerce_media_v1.py
+        run: python -m pytest -q tests/test_commerce_mvp_v1.py tests/test_commerce_media_v1.py tests/test_commerce_merchant_ops_v1.py
       - name: Check Koschei pricing source and restricted capabilities
         run: |
           ks check products/commerce/pricing.ks
           ks caps products/commerce/pricing.ks
       - name: Verify Python syntax and browser JavaScript syntax
         run: |
-          python -m py_compile products/commerce/storage.py products/commerce/server.py products/commerce/entrypoint.py products/commerce/image_codec.py
+          python -m py_compile products/commerce/storage.py products/commerce/server.py products/commerce/entrypoint.py products/commerce/image_codec.py products/commerce/catalog_csv.py
           node -e 'const fs=require("fs"),vm=require("vm");let s=fs.readFileSync("products/commerce/storefront.html","utf8");const m=s.match(/<script nonce="__NONCE__">([\s\S]*?)<\/script>/);if(!m)throw Error("Script missing");new vm.Script(m[1]);console.log("Storefront JS syntax OK")'
       - name: Check Turkish SKU auto-generation and merchant validation
         run: node tests/commerce_sku_ui_contract.mjs
