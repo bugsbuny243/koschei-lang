@@ -60,13 +60,14 @@ def validate_product(data: object, existing_sku: str | None = None) -> dict:
         raise CommerceError("invalid_sku")
     name = clean_text(data.get("name"), 100)
     description = clean_text(data.get("description", ""), 1000, required=False)
+    category = clean_text(data.get("category", "Genel"), 48)
     price = whole(data.get("price_cents"), 1, MAX_CENTS)
     stock = whole(data.get("stock"), 0, MAX_STOCK)
     active = data.get("active", True)
     if type(active) is not bool:
         raise CommerceError("invalid_active")
     return {"sku": sku, "name": name, "description": description,
-            "price_cents": price, "stock": stock, "active": int(active)}
+            "category":category, "price_cents": price, "stock": stock, "active": int(active)}
 
 
 def validate_lines(payload: object) -> list[tuple[str, int]]:
@@ -164,6 +165,7 @@ class CommerceStore:
                 CREATE TABLE IF NOT EXISTS products (
                     sku TEXT PRIMARY KEY,
                     name TEXT NOT NULL, description TEXT NOT NULL,
+                    category TEXT NOT NULL DEFAULT 'Genel',
                     price_cents INTEGER NOT NULL CHECK(price_cents BETWEEN 1 AND 100000000),
                     stock INTEGER NOT NULL CHECK(stock BETWEEN 0 AND 100000),
                     active INTEGER NOT NULL CHECK(active IN (0,1)),
@@ -193,20 +195,36 @@ class CommerceStore:
                     token_hash TEXT PRIMARY KEY,
                     expires_at INTEGER NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS product_images (
+                    sku TEXT PRIMARY KEY REFERENCES products(sku) ON DELETE CASCADE,
+                    data BLOB NOT NULL,
+                    digest TEXT NOT NULL,
+                    changed_at INTEGER NOT NULL
+                );
                 CREATE INDEX IF NOT EXISTS orders_created ON orders(created_at DESC);
                 CREATE INDEX IF NOT EXISTS sessions_expiry ON admin_sessions(expires_at);
             """)
+            # Existing Hobby volumes must migrate without deleting older products.
+            columns = {x["name"] for x in db.execute("PRAGMA table_info(products)")}
+            if "category" not in columns:
+                db.execute("ALTER TABLE products ADD COLUMN category TEXT NOT NULL DEFAULT 'Genel'")
+            db.execute("CREATE INDEX IF NOT EXISTS products_category ON products(category)")
 
     @staticmethod
     def _product_row(row: sqlite3.Row) -> dict:
         return {"sku": row["sku"], "name": row["name"],
-                "description": row["description"],
+                "description": row["description"], "category": row["category"],
                 "price_cents": row["price_cents"], "stock": row["stock"],
-                "active": bool(row["active"])}
+                "active": bool(row["active"]),
+                "has_image": row["image_digest"] is not None,
+                "image_version": (row["image_digest"][:12] if row["image_digest"] else None)}
 
     def products(self, public: bool = True) -> list[dict]:
         with self.connection() as db:
-            sql = "SELECT * FROM products " + ("WHERE active=1 " if public else "") + "ORDER BY name COLLATE NOCASE,sku LIMIT 1000"
+            sql = ("SELECT p.*, i.digest AS image_digest FROM products p "
+                   "LEFT JOIN product_images i ON i.sku=p.sku " +
+                   ("WHERE p.active=1 " if public else "") +
+                   "ORDER BY p.name COLLATE NOCASE,p.sku LIMIT 1000")
             return [self._product_row(row) for row in db.execute(sql)]
 
     def set_product(self, data: object, sku: str | None = None) -> dict:
@@ -215,19 +233,65 @@ class CommerceStore:
         with self.connection(write=True) as db:
             if sku is None:
                 try:
-                    db.execute("INSERT INTO products VALUES(?,?,?,?,?,?,?)",
-                               (row["sku"], row["name"], row["description"], row["price_cents"],
-                                row["stock"], row["active"], now))
+                    db.execute(
+                        "INSERT INTO products "
+                        "(sku,name,description,category,price_cents,stock,active,changed_at) "
+                        "VALUES(?,?,?,?,?,?,?,?)",
+                        (row["sku"],row["name"],row["description"],row["category"],
+                         row["price_cents"],row["stock"],row["active"],now)
+                    )
                 except sqlite3.IntegrityError as exc:
                     raise CommerceError("sku_exists", 409) from exc
             else:
                 result = db.execute(
-                    "UPDATE products SET name=?,description=?,price_cents=?,stock=?,active=?,changed_at=? WHERE sku=?",
-                    (row["name"],row["description"],row["price_cents"],row["stock"],row["active"],now,sku)
+                    "UPDATE products SET name=?,description=?,category=?,price_cents=?,stock=?,active=?,changed_at=? WHERE sku=?",
+                    (row["name"],row["description"],row["category"],
+                     row["price_cents"],row["stock"],row["active"],now,sku)
                 )
                 if result.rowcount != 1:
                     raise CommerceError("product_not_found",404)
-        return {**row, "active": bool(row["active"])}
+        with self.connection() as db:
+            saved = db.execute(
+                "SELECT p.*, i.digest AS image_digest FROM products p "
+                "LEFT JOIN product_images i ON i.sku=p.sku WHERE p.sku=?",
+                (row["sku"],)
+            ).fetchone()
+        return self._product_row(saved)
+
+    def product_image(self, sku: str) -> tuple[bytes,str]:
+        if not isinstance(sku,str) or not SKU_RE.fullmatch(sku):
+            raise CommerceError("invalid_sku")
+        with self.connection() as db:
+            row = db.execute("SELECT data,digest FROM product_images WHERE sku=?",(sku,)).fetchone()
+        if row is None:
+            raise CommerceError("image_not_found",404)
+        return row["data"],row["digest"]
+
+    def set_product_image(self, sku: str, data: bytes) -> str:
+        if not isinstance(sku,str) or not SKU_RE.fullmatch(sku):
+            raise CommerceError("invalid_sku")
+        if not isinstance(data,bytes) or not 1 <= len(data) <= 500000:
+            raise CommerceError("invalid_product_image")
+        digest = hashlib.sha256(data).hexdigest()
+        with self.connection(write=True) as db:
+            if db.execute("SELECT 1 FROM products WHERE sku=?",(sku,)).fetchone() is None:
+                raise CommerceError("product_not_found",404)
+            db.execute(
+                "INSERT INTO product_images(sku,data,digest,changed_at) VALUES(?,?,?,?) "
+                "ON CONFLICT(sku) DO UPDATE SET data=excluded.data,"
+                "digest=excluded.digest,changed_at=excluded.changed_at",
+                (sku,data,digest,int(time.time()))
+            )
+        return digest
+
+    def delete_product_image(self, sku: str) -> None:
+        if not isinstance(sku,str) or not SKU_RE.fullmatch(sku):
+            raise CommerceError("invalid_sku")
+        with self.connection(write=True) as db:
+            if db.execute("SELECT 1 FROM products WHERE sku=?",(sku,)).fetchone() is None:
+                raise CommerceError("product_not_found",404)
+            db.execute("DELETE FROM product_images WHERE sku=?",(sku,))
+
 
     def _checked_cart(self, db: sqlite3.Connection, lines: list[tuple[str, int]]) -> list[dict]:
         cart = []
