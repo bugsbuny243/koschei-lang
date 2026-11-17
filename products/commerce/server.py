@@ -23,6 +23,7 @@ import time
 from urllib.parse import urlsplit
 
 from storage import CommerceError, CommerceStore
+from image_codec import MAX_UPLOAD, normalize_product_photo
 
 HERE = Path(__file__).resolve().parent
 STORE_HTML = HERE / "storefront.html"
@@ -74,6 +75,7 @@ def make_handler(store: CommerceStore, config: Config):
     login_limit=WindowLimit(5,900)
     orders_limit=WindowLimit(15,3600)
     public_quote_limit=WindowLimit(120,3600)
+    photo_limit=WindowLimit(30,3600)
 
     class Handler(BaseHTTPRequestHandler):
         server_version = "KoscheiCommerce/0.1"
@@ -133,6 +135,18 @@ def make_handler(store: CommerceStore, config: Config):
             except (ValueError,UnicodeDecodeError) as exc:
                 raise CommerceError("invalid_json") from exc
 
+        def _image_body(self) -> bytes:
+            if self.headers.get("Transfer-Encoding"):
+                raise CommerceError("invalid_transfer_encoding",415)
+            try:
+                length=int(self.headers.get("Content-Length","0"))
+            except ValueError:
+                length=-1
+            if not 1<=length<=MAX_UPLOAD:
+                self.close_connection=True
+                raise CommerceError("image_size_invalid",413)
+            return self.rfile.read(length)
+
         def _origin(self):
             origin=self.headers.get("Origin")
             if origin!=config.public_origin:
@@ -179,6 +193,10 @@ def make_handler(store: CommerceStore, config: Config):
                                     "payments_enabled":False})
                 elif path=="/api/products":
                     self._json(200,{"products":store.products(public=True),"currency":"TRY"})
+                elif path.startswith("/api/images/"):
+                    sku=path.removeprefix("/api/images/")
+                    data,digest=store.product_image(sku)
+                    self._send(200,data,"image/jpeg",{"ETag":'"'+digest+'"',"Content-Disposition":"inline"})
                 elif path=="/api/admin/session":
                     self._json(200,{"authenticated":store.is_admin(self._token())})
                 elif path=="/api/admin/products":
@@ -224,6 +242,16 @@ def make_handler(store: CommerceStore, config: Config):
                     if not orders_limit.allow(self.client_address[0]):
                         raise CommerceError("rate_limited",429)
                     self._json(201,{"order":store.create_order(self._body())})
+                elif path.startswith("/api/admin/products/") and path.endswith("/image"):
+                    self._admin()
+                    if not photo_limit.allow(self.client_address[0]):
+                        raise CommerceError("image_rate_limited",429)
+                    sku=path.removeprefix("/api/admin/products/").removesuffix("/image").strip("/")
+                    image=normalize_product_photo(
+                        self._image_body(),self.headers.get("Content-Type","").split(";")[0].strip().lower()
+                    )
+                    digest=store.set_product_image(sku,image)
+                    self._json(200,{"sku":sku,"image_version":digest[:12],"has_image":True})
                 elif path=="/api/admin/products":
                     self._admin()
                     self._json(201,{"product":store.set_product(self._body())})
@@ -247,6 +275,22 @@ def make_handler(store: CommerceStore, config: Config):
                     body=self._body()
                     action=body.get("action") if isinstance(body,dict) else None
                     self._json(200,{"order":store.change_order(oid,action)})
+                else:
+                    self._json(404,{"error":"not_found"})
+            except CommerceError as err:
+                self._err(err)
+            except Exception:
+                self._json(503,{"error":"service_unavailable"})
+
+        def do_DELETE(self):
+            path=self._route()
+            try:
+                self._origin()
+                self._admin()
+                if path.startswith("/api/admin/products/") and path.endswith("/image"):
+                    sku=path.removeprefix("/api/admin/products/").removesuffix("/image").strip("/")
+                    store.delete_product_image(sku)
+                    self._json(200,{"sku":sku,"has_image":False})
                 else:
                     self._json(404,{"error":"not_found"})
             except CommerceError as err:
