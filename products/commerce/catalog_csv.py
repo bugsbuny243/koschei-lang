@@ -64,6 +64,9 @@ def parse_product_csv(raw: bytes) -> list[dict]:
                 "stock":int(stock),
                 "active":active=="1"
             })
+            # validate_product normalizes bool -> SQLite int. The store's
+            # boundary independently validates a typed boolean again.
+            entry["active"] = (active == "1")
             if entry["sku"] in skus:
                 raise CommerceError("import_duplicate_sku",409)
             skus.add(entry["sku"])
