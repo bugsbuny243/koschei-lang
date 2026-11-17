@@ -6,7 +6,7 @@ authentication. There is no pricing fallback if Koschei is unavailable.
 """
 from __future__ import annotations
 
-from contextlib import contextmanager
+from contextlib import contextmanager, closing
 import hashlib
 import hmac
 import json
@@ -314,8 +314,10 @@ class CommerceStore:
         with tempfile.TemporaryDirectory(prefix="koschei-commerce-backup-") as folder:
             destination=Path(folder)/"commerce.sqlite3"
             with self.connection() as source:
-                with sqlite3.connect(destination) as target:
+                with closing(sqlite3.connect(destination)) as target:
                     source.backup(target,pages=128,sleep=0.05)
+                    # Ensure a self-contained backup file (no .sqlite3-wal needed).
+                    target.execute("PRAGMA journal_mode=DELETE")
                     target.execute("DELETE FROM admin_sessions")
                     target.commit()
                     check=target.execute("PRAGMA quick_check").fetchone()[0]
