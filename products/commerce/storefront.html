@@ -93,6 +93,20 @@ footer{border-top:1px solid #284a56;padding:25px 0 38px;color:#92acb4;font-size:
 .online-status{color:#76f2c3}.small-lead{font-size:14px}.store-status{color:#b1cfce}
 .privacy-copy{color:#a2c5c5;font-size:13px}.admin-title{font-size:40px}.admin-lead{margin-bottom:25px}
 .admin-login{max-width:500px}.admin-toolbar{justify-content:space-between;margin-bottom:20px}
+.merchant-operations{margin-top:22px}
+.merchant-ops-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}
+.merchant-ops-grid .ops-column{min-width:0}
+.csv-actionbar{display:flex;gap:9px;flex-wrap:wrap;margin:13px 0}
+.csv-actionbar .btn{flex:1;min-width:120px}
+.csv-preview{border:1px solid #426a74;background:#0a2730;padding:12px;border-radius:10px;color:#c8eae4;font-size:13px;margin-top:12px}
+.history-list{display:grid;gap:7px;max-height:430px;overflow:auto;margin-top:13px}
+.history-item{display:flex;align-items:center;justify-content:space-between;gap:14px;border-bottom:1px solid #2e5161;padding:10px 5px;font-size:13px}
+.history-item b{color:#e5f9ed;overflow-wrap:anywhere}
+.history-item small{display:block;color:#a2c1cc}
+.history-item .positive{color:#75efb8}.history-item .negative{color:#ffbdad}
+.backup-warning{font-size:13px;color:#ffdfbc;border-left:3px solid #e7b475;background:#292b2b;padding:12px 14px;margin:13px 0;border-radius:0 9px 9px 0}
+@media(max-width:800px){.merchant-ops-grid{grid-template-columns:1fr}}
+
 .orders-title{margin-top:8px}.footer-link{color:#b2ffe0}
 </style>
 </head>
@@ -141,7 +155,46 @@ footer{border-top:1px solid #284a56;padding:25px 0 38px;color:#92acb4;font-size:
       <div class="nav-actions"><button class="btn primary" id="save-product" type="submit">Ürünü kaydet</button><button class="btn" id="new-product" type="button">Yeni ürün</button></div>
     </form><p class="state" id="product-message" role="status"></p></section>
     <section class="panel"><div class="eyebrow">ÜRÜNLER</div><h3>Ürün ve stok kontrolü</h3><div id="merchant-products"></div><div class="divider"></div><div class="eyebrow">SİPARİŞLER</div><h3 class="orders-title">Teslim alma talepleri</h3><div id="merchant-orders"></div><p class="state" id="order-admin-message" role="status"></p></section>
-  </div></div>
+  </div>
+  <section id="merchant-ops" class="panel merchant-operations" aria-label="Toplu ürün aktarımı ve güvenli veritabanı işlemleri">
+    <div class="eyebrow">MERCHANT DATA OPERATIONS</div>
+    <h2>Ürün aktarımı ve güvenli kayıtlar</h2>
+    <p class="lead small-lead">Mevcut ürünler değişmeden yeni ürünleri topluca ekle, stok hareketlerini incele ve mağaza veritabanını yedekle.</p>
+    <div class="divider"></div>
+    <div class="merchant-ops-grid">
+      <section class="ops-column" aria-labelledby="csv-title">
+        <h3 id="csv-title">CSV ile toplu ürün ekle</h3>
+        <p class="field-hint">UTF-8 CSV, noktalı virgülle ayrılmış, en fazla 100 yeni ürün / 64 KB. Önce önizle, sonra onayla. Mevcut SKU üzerine yazılmaz.</p>
+        <label class="field">Ürün CSV dosyası
+          <input type="file" id="import-file" accept=".csv,text/csv">
+        </label>
+        <div class="csv-actionbar">
+          <button type="button" class="btn" id="download-csv-template">Boş şablon indir</button>
+          <button type="button" class="btn" id="preview-csv">Dosyayı kontrol et</button>
+        </div>
+        <div id="csv-preview" class="csv-preview" hidden aria-live="polite"></div>
+        <button type="button" class="btn primary" id="commit-csv" disabled>Kontrol edilen ürünleri ekle</button>
+        <p id="import-message" class="state" role="status"></p>
+      </section>
+      <section class="ops-column" aria-labelledby="backup-title">
+        <h3 id="backup-title">Mağaza yedeği</h3>
+        <p class="field-hint">Ürünler, fotoğraflar, stok hareketleri ve siparişler içeren tutarlı SQLite veritabanı kopyasını indir. Aktif yönetici oturumları yedeğe eklenmez.</p>
+        <div class="backup-warning"><strong>Dikkat:</strong> Yedek müşteri ad ve e-postalarını içerebilir. Güvenli bir yerde sakla; kimseyle paylaşma. Bu işlem otomatik bulut yedeği değildir.</div>
+        <button type="button" class="btn" id="download-db-backup">Veritabanını indir (.sqlite3)</button>
+        <p id="backup-message" class="state" role="status"></p>
+      </section>
+    </div>
+    <div class="divider"></div>
+    <section aria-labelledby="history-title">
+      <div class="section-heading">
+        <div><h3 id="history-title">Stok hareketleri</h3><p class="field-hint">Yeni ürün, manuel stok düzeltmesi, sipariş onayı ve iptal hareketleri. Özellik eklenmeden önceki işlemler geçmişe dönük oluşturulmaz.</p></div>
+        <button type="button" class="btn" id="refresh-history">Hareketleri yenile</button>
+      </div>
+      <div id="stock-history" class="history-list" aria-live="polite"></div>
+      <p id="history-message" class="state" role="status"></p>
+    </section>
+  </section>
+  </div>
 </section>
 </main>
 <footer><div class="wrap">Koschei Commerce · Tek mağazalı ilk sürüm · Stok yönetimi ve fiyatlandırma Koschei Lang ile doğrulanır. Sipariş alımı yalnızca kalıcı veritabanı ve satıcı ayarları yapılandırıldığında açılır. Ödeme ve kart bilgisi alınmaz. <a href="https://koschei.dev" class="footer-link">Koschei Lang</a></div></footer>
@@ -149,7 +202,7 @@ footer{border-top:1px solid #284a56;padding:25px 0 38px;color:#92acb4;font-size:
 (function(){
 "use strict";
 const $=id=>document.getElementById(id);
-const state={products:[],cart:new Map(),config:null,merchantProducts:[],merchantOrders:[],editing:null,key:null};
+const state={products:[],cart:new Map(),config:null,merchantProducts:[],merchantOrders:[],movements:[],editing:null,key:null,importBytes:null,importReady:false,importBusy:false};
 const price=cents=>new Intl.NumberFormat("tr-TR",{style:"currency",currency:"TRY"}).format(cents/100);
 const text=(tag,value,className)=>{
   const node=document.createElement(tag);node.textContent=String(value);
@@ -319,15 +372,19 @@ async function loadAdmin(){
     $("admin-login").hidden=check.authenticated;
     $("admin-workspace").hidden=!check.authenticated;
     if(check.authenticated)await loadMerchant();
+    else{resetImportPreview();$("stock-history").replaceChildren();state.movements=[];}
   }catch(e){message("login-message",e.message,true);}
 }
 async function loadMerchant(){
   try{
-    const [products,orders]=await Promise.all([
-      api("/api/admin/products"),api("/api/admin/orders")
+    const [products,orders,history]=await Promise.all([
+      api("/api/admin/products"),api("/api/admin/orders"),
+      api("/api/admin/stock-movements")
     ]);
     state.merchantProducts=products.products;state.merchantOrders=orders.orders;
+    state.movements=history.movements;
     drawMerchant();
+    drawStockHistory();
   }catch(e){message("order-admin-message","Veriler okunamadı: "+e.message,true);}
 }
 function drawMerchant(){
@@ -368,6 +425,132 @@ function drawMerchant(){
     }
     row.append(info,actions);orders.appendChild(row);
   }
+}
+function drawStockHistory(){
+  const target=$("stock-history");target.replaceChildren();
+  const reasons={created:"Yeni ürün",import:"CSV ile eklendi",manual_edit:"Elle stok düzeltildi",
+    order_accept:"Sipariş onayı",order_cancel:"Sipariş iptali"};
+  if(!state.movements.length){
+    target.appendChild(text("p","Henüz kaydedilmiş stok hareketi yok.","empty"));
+    return;
+  }
+  for(const entry of state.movements){
+    const row=document.createElement("div");row.className="history-item";
+    const left=document.createElement("div");
+    const title=text("b",entry.sku+" · "+(reasons[entry.reason]||"Stok hareketi"));
+    const when=new Date(entry.happened_at*1000).toLocaleString("tr-TR");
+    left.append(title,text("small",when+(entry.order_id?" · Sipariş: "+entry.order_id:"")));
+    const right=document.createElement("div");right.className=entry.delta<0?"negative":"positive";
+    right.append(text("b",(entry.delta>0?"+":"")+entry.delta),text("small","Son stok: "+entry.stock_after));
+    row.append(left,right);target.appendChild(row);
+  }
+}
+function saveLocalFile(content,filename,mime){
+  const url=URL.createObjectURL(new Blob([content],{type:mime}));
+  const element=document.createElement("a");
+  element.href=url;element.download=filename;
+  document.body.appendChild(element);element.click();element.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),30000);
+}
+function makeCsvTemplate(){
+  const header="sku;name;category;description;price_try;stock;active\n";
+  saveLocalFile("\ufeff"+header,"koschei-commerce-urun-sablonu.csv","text/csv;charset=utf-8");
+  message("import-message","Boş şablon indirildi. Fiyat TRY cinsinden, active alanı 1 veya 0.");
+}
+function importError(error){
+  const names={
+    csv_header_invalid:"CSV sütunları şablonla uyuşmuyor. Boş şablonu indirerek yeniden dene.",
+    csv_encoding_invalid:"Dosya UTF-8 kodlamasıyla kaydedilmeli.",
+    csv_row_columns_invalid:"CSV satırındaki sütun sayısı yanlış. Noktalı virgül kullan.",
+    csv_price_invalid:"Fiyatlar 2800 veya 2800.50 biçiminde olmalı.",
+    csv_stock_invalid:"Stok adedi 0–100000 arasında tam sayı olmalı.",
+    csv_active_invalid:"active sütununda 1 (görünür) veya 0 (gizli) yaz.",
+    csv_row_limit:"Bir dosyada en fazla 100 ürün olabilir.",
+    import_duplicate_sku:"Dosyada aynı ürün kodu tekrarlanıyor.",
+    import_sku_exists:"Dosyadaki bir ürün kodu mağazada zaten var. Hiçbir ürün değiştirilmedi.",
+    catalog_limit:"Mağazada en fazla 1000 ürün olabilir.",
+    invalid_sku:"Ürün kodu küçük harfle başlamalı; boşluk ve Türkçe karakter içermemeli.",
+    invalid_text:"Ürün adı, açıklama veya kategori çok uzun ya da geçersiz.",
+    import_rate_limited:"Çok fazla aktarım denemesi. Bir süre sonra yeniden dene."
+  };
+  return names[error?.message]||error?.message||"İşlem başarısız.";
+}
+function resetImportPreview(){
+  state.importReady=false;state.importBytes=null;
+  $("commit-csv").disabled=true;
+  $("csv-preview").hidden=true;
+  $("csv-preview").replaceChildren();
+}
+async function uploadCsv(dry){
+  if(state.importBusy)return;
+  if(!dry&&!state.importReady)return;
+  let bytes=state.importBytes;
+  const file=$("import-file").files?.[0];
+  if(dry){
+    resetImportPreview();
+    if(!file) {message("import-message","Önce CSV dosyasını seç.",true);return;}
+    if(file.size<1||file.size>65536){
+      message("import-message","CSV dosyası 64 KB sınırını aşamaz.",true);return;
+    }
+    if(!/\.csv$/i.test(file.name)){
+      message("import-message","Lütfen .csv uzantılı bir dosya seç.",true);return;
+    }
+    try{bytes=new Uint8Array(await file.arrayBuffer());}
+    catch(_){message("import-message","Dosya okunamadı.",true);return;}
+    state.importBytes=bytes;
+  }
+  if(!dry&&!confirm("Önizlenen dosyadaki YENİ ürünleri mağazaya kalıcı olarak eklemek istediğine emin misin? Mevcut ürünler değişmeyecek."))return;
+  state.importBusy=true;
+  $("preview-csv").disabled=true;$("commit-csv").disabled=true;
+  try{
+    const response=await fetch("/api/admin/products/import"+(dry?"?dry_run=1":""),{
+      method:"POST",credentials:"same-origin",cache:"no-store",
+      headers:{"Content-Type":"text/csv"},body:bytes
+    });
+    let result;
+    try{result=await response.json();}catch(_){throw Error("Aktarım servisi geçersiz yanıt verdi.");}
+    if(!response.ok)throw Error(result.error||"CSV aktarılamadı.");
+    if(dry){
+      state.importReady=true;
+      const preview=$("csv-preview");preview.replaceChildren();
+      preview.append(text("b",result.count+" ürün içe aktarmaya hazır."));
+      const summary=result.sample.map(p=>p.name+" ("+p.sku+")").join(" · ");
+      preview.append(text("p",summary+(result.count>result.sample.length?" …":"")));
+      preview.hidden=false;
+      message("import-message","Kontrol başarılı. Eklemek için aşağıdaki düğmeyi onayla.");
+    }else{
+      resetImportPreview();$("import-file").value="";
+      message("import-message",result.created+" yeni ürün eklendi. Mevcut ürünlere dokunulmadı.");
+      await loadMerchant();await loadStore();
+    }
+  }catch(e){
+    resetImportPreview();
+    message("import-message",importError(e),true);
+  }finally{
+    state.importBusy=false;$("preview-csv").disabled=false;
+    $("commit-csv").disabled=!state.importReady;
+  }
+}
+async function backupDatabase(){
+  if(!confirm("Mağaza yedeği müşteri iletişim bilgilerini içerebilir. Dosyayı güvenli saklayacağını onaylıyor musun?"))return;
+  const btn=$("download-db-backup");btn.disabled=true;
+  message("backup-message","Veritabanı kopyası hazırlanıyor…");
+  try{
+    const response=await fetch("/api/admin/backup",{
+      method:"POST",credentials:"same-origin",cache:"no-store",
+      headers:{"Content-Type":"application/json"},body:"{}"
+    });
+    if(!response.ok){
+      let error;try{error=(await response.json()).error;}catch(_){}
+      throw Error(error||"Yedekleme başarısız.");
+    }
+    const file=await response.blob();
+    if(file.size<100||file.size>64*1024*1024)throw Error("Yedek dosyası beklenen boyutta değil.");
+    const date=new Date().toISOString().slice(0,10);
+    saveLocalFile(file,"koschei-commerce-"+date+".sqlite3","application/octet-stream");
+    message("backup-message","SQLite yedeği indirildi. Dosyada müşteri bilgileri olabilir; özel olarak sakla.");
+  }catch(e){message("backup-message","Yedek indirilemedi: "+(e.message||"Ağ hatası"),true);}
+  finally{btn.disabled=false;}
 }
 const SKU_PATTERN=/^[a-z][a-z0-9-]{2,31}$/;
 function skuFromProductName(name){
@@ -490,7 +673,7 @@ async function login(event){
   }catch(e){message("login-message","Giriş başarısız: "+e.message,true);}
 }
 async function logout(){
-  try{await api("/api/admin/logout","POST",{});state.merchantOrders=[];state.merchantProducts=[];resetEditor();await loadAdmin();}
+  try{await api("/api/admin/logout","POST",{});state.merchantOrders=[];state.merchantProducts=[];state.movements=[];resetEditor();resetImportPreview();await loadAdmin();}
   catch(e){message("order-admin-message","Çıkış başarısız: "+e.message,true);}
 }
 $("nav-store").addEventListener("click",()=>view("store"));
@@ -518,6 +701,18 @@ $("product-form").elements.sku.addEventListener("invalid",()=>{
   message("product-message","Ürün kodu hatalı. 'Stok Alarm' adlı ürün için stok-alarm kullanabilirsin.",true);
 });
 $("new-product").addEventListener("click",resetEditor);
+$("download-csv-template").addEventListener("click",makeCsvTemplate);
+$("import-file").addEventListener("change",()=>{resetImportPreview();message("import-message","");});
+$("preview-csv").addEventListener("click",()=>{void uploadCsv(true);});
+$("commit-csv").addEventListener("click",()=>{void uploadCsv(false);});
+$("download-db-backup").addEventListener("click",()=>{void backupDatabase();});
+$("refresh-history").addEventListener("click",async()=>{
+  try{
+    const history=await api("/api/admin/stock-movements");
+    state.movements=history.movements;drawStockHistory();
+    message("history-message","Stok hareketleri güncellendi.");
+  }catch(e){message("history-message","Geçmiş yüklenemedi: "+(e.message||"Ağ hatası"),true);}
+});
 $("logout").addEventListener("click",logout);
 void loadStore();
 if(location.pathname==="/admin")view("admin");
