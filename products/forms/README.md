@@ -5,6 +5,8 @@ applications, waiting lists. Your static site posts to it, submissions are
 kept as small files in one directory on your server, and you read them in a
 password-protected panel or download them as CSV.
 
+**[Buy Koschei Forms — $19, one-time](https://buy.polar.sh/polar_cl_9Lp5oi0qAmp3anHLNym6W6WqKuFc3SGnogy1Q3i2Yht)**
+
 Written in [Koschei](https://koschei.dev). Before it runs, `ks caps main.ks`
 prints everything it can reach, and the compiler refuses a program that
 reaches for anything else:
