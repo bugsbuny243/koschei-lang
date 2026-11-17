@@ -6,7 +6,7 @@ WORKDIR /opt/koschei
 COPY pyproject.toml README.md LICENSE ./
 COPY koschei ./koschei
 COPY native/datajson ./native/datajson
-RUN pip install --no-cache-dir . && rm -rf /opt/koschei
+RUN pip install --no-cache-dir . "Pillow>=11.0,<13.0" && rm -rf /opt/koschei
 COPY products/commerce /opt/commerce
 RUN groupadd --system commerce \
     && useradd --system --gid commerce --no-create-home --shell /usr/sbin/nologin commerce \
