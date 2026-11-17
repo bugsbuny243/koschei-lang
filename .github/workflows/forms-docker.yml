@@ -1,0 +1,83 @@
+name: Koschei Forms Docker image
+
+# Builds products/forms/Dockerfile exactly as a buyer would, runs the image
+# as it ships (distroless, non-root, a named volume for /data) and checks the
+# product over HTTP and the worker's confinement through /proc.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - products/forms/**
+      - tools/forms_docker_smoke_v1.py
+      - .github/workflows/forms-docker.yml
+  push:
+    branches: [main]
+    paths:
+      - products/forms/**
+      - tools/forms_docker_smoke_v1.py
+      - .github/workflows/forms-docker.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PASSWORD: ci-forms-password-0123456789
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build the image
+        run: docker build --platform linux/amd64 -t koschei-forms products/forms
+
+      - name: Report image size and contents
+        run: |
+          docker image inspect koschei-forms --format 'image size: {{.Size}} bytes'
+          docker create --name forms-files koschei-forms
+          docker export forms-files | tar -t | grep -E '^(koschei-forms|LICENSE.md|data/)'
+          docker rm forms-files
+
+      - name: Run the image
+        run: |
+          docker volume create forms-data
+          docker run -d --name forms -p 8080:8080 -v forms-data:/data \
+            -e KOSCHEI_FORMS_PASSWORD="$PASSWORD" koschei-forms
+          sleep 2
+          docker ps --filter name=forms
+
+      - name: Smoke test
+        run: |
+          pid=$(docker inspect --format '{{.State.Pid}}' forms)
+          python3 tools/forms_docker_smoke_v1.py http://127.0.0.1:8080 "$pid" "$PASSWORD"
+
+      - name: Data survives a restart
+        run: |
+          docker restart forms
+          sleep 2
+          python3 - <<'PY'
+          import http.client, os, urllib.parse
+          def request(method, path, body=None, cookie=None):
+              c = http.client.HTTPConnection("127.0.0.1", 8080, timeout=30)
+              headers = {"Host": "forms.example"}
+              if body is not None:
+                  headers["Content-Type"] = "application/x-www-form-urlencoded"
+                  body = urllib.parse.urlencode(body)
+              if cookie:
+                  headers["Cookie"] = cookie
+              c.request(method, path, body=body, headers=headers)
+              r = c.getresponse()
+              return r.status, dict(r.getheaders()), r.read().decode()
+          status, headers, _ = request("POST", "/admin/login", {"password": os.environ["PASSWORD"]})
+          cookie = headers["Set-Cookie"].split(";")[0]
+          status, _, body = request("GET", "/admin/f/contact", cookie=cookie)
+          assert status == 200 and "Ayşe Öz" in body, (status, body[:300])
+          print("PASS submission kept across restart")
+          PY
+
+      - name: Container logs
+        if: always()
+        run: docker logs forms || true
