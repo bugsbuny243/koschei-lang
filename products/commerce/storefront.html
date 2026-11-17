@@ -51,6 +51,7 @@ p{margin:0}
 .merchant-photo{width:55px;height:55px;object-fit:cover;border-radius:9px;border:1px solid #416578;flex:none}
 .merchant-product{display:flex;align-items:center;gap:11px;min-width:0}
 .merchant-product div{min-width:0;overflow-wrap:anywhere}
+.field-hint{font-size:12px;color:#9cc2c3;margin:-4px 0 13px}
 .field input[type=file]{padding:9px;cursor:pointer}
 .field input[type=file]::file-selector-button{background:#214b4b;border:1px solid #4b8e81;color:#b5ffe3;border-radius:7px;padding:7px 11px;margin-right:10px;cursor:pointer}
 @media(max-width:750px){.catalog-filters{grid-template-columns:1fr 1fr}.catalog-filters label:first-child{grid-column:1/-1}}
@@ -128,7 +129,8 @@ footer{border-top:1px solid #284a56;padding:25px 0 38px;color:#92acb4;font-size:
   <div id="admin-login" class="panel admin-login"><h2>Güvenli giriş</h2><form id="login-form"><label class="field">Satıcı parolası<input type="password" name="password" autocomplete="current-password" minlength="16" required></label><button class="btn primary" type="submit">Giriş yap</button></form><p id="login-message" class="state" role="status"></p></div>
   <div id="admin-workspace" hidden><div class="nav-actions admin-toolbar"><h2>Mağaza yönetimi</h2><button class="btn" id="logout">Çıkış</button></div><div class="admin-grid">
     <section class="panel"><div class="eyebrow">KATALOG YÖNETİMİ</div><h3 id="editor-title">Yeni ürün ekle</h3><form id="product-form">
-      <label class="field">Ürün kodu (a-z, 0-9, -)<input name="sku" minlength="3" maxlength="32" pattern="[a-z][a-z0-9-]{2,31}" required placeholder="ornek-urun"></label>
+      <label class="field">Ürün kodu (otomatik oluşturulur)<input name="sku" minlength="3" maxlength="32" pattern="[a-z][a-z0-9-]{2,31}" required placeholder="ornek-urun" autocapitalize="none" spellcheck="false"></label>
+      <p class="field-hint">Örnek: “Stok Alarm” → <code>stok-alarm</code>. Bu kod değiştirilebilir; boşluk ve Türkçe karakter kullanma.</p>
       <label class="field">Ürün adı<input name="name" maxlength="100" required placeholder="Ürün adı"></label>
       <label class="field">Kategori<input name="category" maxlength="48" value="Genel" required placeholder="Örnek: Elektronik"></label>
       <label class="field">Açıklama<textarea name="description" maxlength="1000"></textarea></label>
@@ -367,13 +369,46 @@ function drawMerchant(){
     row.append(info,actions);orders.appendChild(row);
   }
 }
+const SKU_PATTERN=/^[a-z][a-z0-9-]{2,31}$/;
+function skuFromProductName(name){
+  const turkish={"ç":"c","ğ":"g","ı":"i","ö":"o","ş":"s","ü":"u"};
+  let slug=String(name||"").toLocaleLowerCase("tr-TR")
+    .replace(/[çğıöşü]/g,c=>turkish[c])
+    .normalize("NFD").replace(/[\u0300-\u036f]/g,"")
+    .replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"");
+  if(!/^[a-z]/.test(slug))slug="urun-"+slug;
+  slug=slug.slice(0,32).replace(/-+$/,"");
+  return slug.length<3?"urun":slug;
+}
+let skuEditedByMerchant=false;
+function fillSkuFromName(){
+  if(state.editing||skuEditedByMerchant)return;
+  const f=$("product-form").elements;
+  const name=String(f.name.value||"").trim();
+  f.sku.value=name?skuFromProductName(name):"";
+}
+function humanProductError(error){
+  const reasons={
+    invalid_sku:"Ürün kodu geçersiz. Örneğin Stok Alarm için stok-alarm yaz.",
+    sku_exists:"Bu ürün kodu zaten kullanılıyor. Farklı bir kod belirle.",
+    invalid_integer:"Fiyat veya stok miktarını kontrol et.",
+    invalid_product:"Ürün bilgileri eksik veya hatalı.",
+    invalid_text:"Ürün adı, kategori veya açıklama geçersiz.",
+    invalid_active:"Ürün görünürlük alanı hatalı."
+  };
+  const message=error&&typeof error.message==="string"?error.message:"Bilinmeyen hata";
+  return reasons[message]||message;
+}
 function resetEditor(){
   state.editing=null;
+  skuEditedByMerchant=false;
   $("product-form").reset();$("product-form").elements.sku.disabled=false;
+  $("product-form").elements.sku.setCustomValidity("");
   $("editor-title").textContent="Yeni ürün ekle";$("save-product").textContent="Ürünü kaydet";
 }
 function editProduct(p){
   state.editing=p.sku;
+  skuEditedByMerchant=true;
   const form=$("product-form"),f=form.elements;
   f.sku.value=p.sku;f.sku.disabled=true;
   f.name.value=p.name;f.description.value=p.description;
@@ -409,7 +444,7 @@ async function saveProduct(event){
     if(file && (!["image/jpeg","image/png","image/webp"].includes(file.type)||file.size>2000000))
       throw Error("Yalnızca 2 MB altındaki JPG, PNG ve WebP dosyaları yüklenebilir.");
     const product={
-      sku:state.editing||String(f.sku.value).trim(),
+      sku:state.editing||String(f.sku.value).trim()||skuFromProductName(f.name.value),
       name:String(f.name.value).trim(),
       category:String(f.category.value).trim(),
       description:String(f.description.value).trim(),
@@ -417,6 +452,10 @@ async function saveProduct(event){
       stock:Number(f.stock.value),
       active:f.active.checked
     };
+    if(!SKU_PATTERN.test(product.sku)){
+      f.sku.focus();
+      throw Error("Ürün kodu geçersiz. Örneğin Stok Alarm için stok-alarm yaz.");
+    }
     if(!Number.isSafeInteger(product.stock)||product.stock<0||product.stock>100000)
       throw Error("Stok 0 ile 100000 arasında olmalı.");
     const path=state.editing?"/api/admin/products/"+encodeURIComponent(state.editing):"/api/admin/products";
@@ -431,7 +470,7 @@ async function saveProduct(event){
     message("product-message",photoError
       ?"Ürün kaydedildi ancak fotoğraf yüklenemedi: "+photoError
       :"Ürün ve bilgiler kaydedildi.",!!photoError);
-  }catch(e){message("product-message","Kaydedilemedi: "+e.message,true);}
+  }catch(e){message("product-message","Kaydedilemedi: "+humanProductError(e),true);}
 }
 async function transition(id,action){
   const label=action==="accept"?"onaylayıp stoğu düşürmek":action==="fulfill"?"teslim edildi olarak işaretlemek":action==="redact"?"kişisel iletişim bilgilerini silmek":"iptal etmek";
@@ -466,6 +505,18 @@ $("order-form").addEventListener("submit",placeOrder);
 $("order-form").addEventListener("input",()=>{state.key=null;});
 $("login-form").addEventListener("submit",login);
 $("product-form").addEventListener("submit",saveProduct);
+$("product-form").elements.name.addEventListener("input",fillSkuFromName);
+$("product-form").elements.sku.addEventListener("input",event=>{
+  skuEditedByMerchant=event.target.value.trim().length>0;
+  event.target.setCustomValidity("");
+  const value=event.target.value.trim();
+  if(value&&!SKU_PATTERN.test(value))
+    message("product-message","Ürün kodu yalnızca küçük harf, rakam ve - içermeli. Örnek: stok-alarm",true);
+  else message("product-message","");
+});
+$("product-form").elements.sku.addEventListener("invalid",()=>{
+  message("product-message","Ürün kodu hatalı. 'Stok Alarm' adlı ürün için stok-alarm kullanabilirsin.",true);
+});
 $("new-product").addEventListener("click",resetEditor);
 $("logout").addEventListener("click",logout);
 void loadStore();

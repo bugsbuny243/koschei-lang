@@ -5,11 +5,13 @@ on:
     branches:
       - 'feat/koschei-commerce-*'
       - 'feat/commerce-real-catalog-*'
+      - 'fix/commerce-sku-ux-*'
   pull_request:
     paths:
       - 'products/commerce/**'
       - 'tests/test_commerce_mvp_v1.py'
       - 'tests/test_commerce_media_v1.py'
+      - 'tests/commerce_sku_ui_contract.mjs'
       - '.github/workflows/commerce-core.yml'
 
 permissions:
@@ -38,6 +40,8 @@ jobs:
         run: |
           python -m py_compile products/commerce/storage.py products/commerce/server.py products/commerce/entrypoint.py products/commerce/image_codec.py
           node -e 'const fs=require("fs"),vm=require("vm");let s=fs.readFileSync("products/commerce/storefront.html","utf8");const m=s.match(/<script nonce="__NONCE__">([\s\S]*?)<\/script>/);if(!m)throw Error("Script missing");new vm.Script(m[1]);console.log("Storefront JS syntax OK")'
+      - name: Check Turkish SKU auto-generation and merchant validation
+        run: node tests/commerce_sku_ui_contract.mjs
       - name: Build container and test startup with durable SQLite volume
         run: |
           docker build -f products/commerce/Dockerfile -t koschei-commerce-ci .
