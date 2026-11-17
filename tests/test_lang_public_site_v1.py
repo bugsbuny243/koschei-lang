@@ -6,6 +6,7 @@ import re
 
 SITE = Path(__file__).resolve().parents[1] / "commercial" / "lang-site" / "index.html"
 POLAR = "https://buy.polar.sh/polar_cl_H3mMbTpBdziezC3ooJARCQIMHqzVHEeM15E1v0C7XlR"
+FORMS_CHECKOUT = "https://buy.polar.sh/polar_cl_9Lp5oi0qAmp3anHLNym6W6WqKuFc3SGnogy1Q3i2Yht"
 APP_CHECKOUTS = {
     "apps/quote": "https://buy.polar.sh/polar_cl_0GXMXm9h2z6MWFlKSmlkb3QCQFEiWRJMxUKEt2uraYg",
     "apps/stock": "https://buy.polar.sh/polar_cl_Tf9vTycS7F0sCG4KHJzSXZLcwrZtmv5p58H5s0Low3l",
@@ -80,11 +81,27 @@ def test_bilingual_switch_and_all_site_anchors():
 def test_current_checkout_and_pricing_only():
     source, p = parsed()
     assert sum(x.get("href") == POLAR for x in p.links) >= 2
-    assert all(a.get("href") in (POLAR, *APP_CHECKOUTS.values(), "/security-guide.html", "/play", "/agents", "/tools") or a.get("href", "").startswith(("#", "/tools?tool=")) for a in p.links)
+    assert all(a.get("href") in (POLAR, FORMS_CHECKOUT, *APP_CHECKOUTS.values(), "/security-guide.html", "/play", "/agents", "/tools") or a.get("href", "").startswith(("#", "/tools?tool=")) for a in p.links)
     for expected in ("$49", "49 USD", "One-time purchase", "12 months", "Perpetual", "Python 3.12+", "Go 1.24+"):
         assert expected in source
     for false_claim in ("49 EUR", "49€", "EVM-compatible", "hack-proof", "100x safer", "bank certified"):
         assert false_claim not in source
+
+
+def test_forms_product_checkout_is_bilingual_and_truthful():
+    source, p = parsed()
+    assert 'forms' in p.ids
+    assert sum(a.get("href") == FORMS_CHECKOUT for a in p.links) == 1
+    assert 'Your website\'s forms, on your own server. Provably nowhere else.' in source
+    for phrase in (
+        '$19', '19 USD', 'No subscription',
+        'Source-code ZIP and Dockerfile', 'No precompiled binary',
+        '14-day no-questions-asked refund policy',
+        'koscheiweb3@gmail.com',
+        'id="forms"',
+    ):
+        assert phrase in source
+    assert any(a.get("href") == "#forms" for a in p.links)
 
 
 def test_bundled_real_security_demo_and_examples():
