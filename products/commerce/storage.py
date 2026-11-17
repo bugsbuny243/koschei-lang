@@ -7,7 +7,6 @@ authentication. There is no pricing fallback if Koschei is unavailable.
 from __future__ import annotations
 
 from contextlib import contextmanager
-from datetime import datetime, timezone
 import hashlib
 import hmac
 import json
@@ -302,7 +301,8 @@ class CommerceStore:
                          row["price_cents"],row["stock"],row["active"],now)
                     )
                     self._stock_event(db,row["sku"],row["stock"],row["stock"],"import")
-        return {"count":len(rows),"dry_run":dry_run,"created":0 if dry_run else len(rows)}
+        return {"count":len(rows),"dry_run":dry_run,"created":0 if dry_run else len(rows),
+                "sample":[{"sku":r["sku"],"name":r["name"],"stock":r["stock"]} for r in rows[:10]]}
 
     @contextmanager
     def backup_copy(self) -> Iterator[Path]:
