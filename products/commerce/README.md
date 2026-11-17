@@ -17,6 +17,16 @@
 - Product/sale amounts are **minor currency units (integer kuruş)** end-to-end.
 - The original Koschei Lang site and disabled \`/play\` are separate and unchanged.
 
+## Merchant catalog photos and categories (v1.1)
+
+- Open the existing **/admin** merchant panel, create a product with SKU, name, category, tax-inclusive TRY price, stock and visibility.
+- Select a phone photo (**JPEG, PNG or WebP**, maximum **2 MB**) in the product form and save. The backend validates and completely decodes the file, applies the EXIF orientation, resizes to a maximum of 960 px and re-encodes it as a JPEG with the original metadata removed.
+- The photo is stored as a bounded BLOB in the **existing /data/commerce.db SQLite volume**. It does not require a paid object storage service, external image host or user-uploaded URL. Product display image URLs are generated internally; only an authenticated merchant can upload or remove photos.
+- The storefront supports live product-name/description/SKU search, category selection, and price sorting. Missing photos show neutral placeholders rather than fabricated merchandise.
+- Existing databases are **migrated in place** by adding a `category` field with `Genel` as default. Existing orders and product SKUs are preserved.
+- Optional images still count toward Railway volume storage. Backup the SQLite database and check usage if many products are added. Image uploads are restricted to a merchant session and exact allowed origin.
+- **Public order acceptance remains off by default** and no card information is processed.
+
 ## Files
 
 | File | Responsibility |
@@ -82,8 +92,8 @@ After configuring and testing merchant access, HTTPS, persistence, backups, priv
 ## Verification
 
 \`\`\`sh
-python -m pip install -e . pytest
-python -m pytest -q tests/test_commerce_mvp_v1.py
+python -m pip install -e . pytest "Pillow>=11.0,<13.0"
+python -m pytest -q tests/test_commerce_mvp_v1.py tests/test_commerce_media_v1.py
 ks check products/commerce/pricing.ks
 ks caps products/commerce/pricing.ks
 \`\`\`
