@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Fix the intermittent repository-truth failure: `test_native_serve_v1`'s parity test sent a half-written `/slow` request whose read deadline and the program's `accept()` deadline are both 4 s. On a loaded machine `ks run` could reach `accept()` after the connection arrived, so the two deadline errors came out in the other order and the outputs of `ks run` and the binary differed. The client now connects 1 s after the previous reply, so `accept()` always times out first. The servers were right; the test was not deterministic.
+
 ## 0.16.0 — 2026-11-18
 
 - Compile `List.sort()`, `filter`, `find`, `map` and `any` into native binaries. `ks build` used to refuse any program that called them (`KS4004`), so `examples/daily.ks` ran under `ks run` but did not build. A callback is a top-level function of one parameter or a lambda, the same rule as `ks run`; the binary gives the same results and errors, including the stable sort order and the error for a mixed or non-sortable list. Storing a function value in a variable still fails closed.

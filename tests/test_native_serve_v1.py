@@ -116,7 +116,9 @@ fn main(caps: SystemCaps) {
 """
 
 HOST = b"Host: a\r\n"
-REQUESTS: list[tuple[bytes, float]] = [
+# (raw request, pause before reading the reply[, delay before connecting]);
+# a negative pause half-closes the connection instead.
+REQUESTS: list[tuple] = [
     (b"GET /ok?a=%41 HTTP/1.1\r\nHost: x\r\nX-Name: Ada\r\n\r\n", 0),
     (b"GET /h HTTP/1.1\r\nHost: \r\n\r\n", 0),
     (b"GET /h HTTP/1.1\r\nHost: a\r\nHost: b\r\n\r\n", 0),
@@ -136,7 +138,12 @@ REQUESTS: list[tuple[bytes, float]] = [
     (b"GET /" + b"a" * 400 + b" HTTP/1.1\r\n" + HOST + b"\r\n", 0),
     # Past the 4 s deadline with room to spare; the deadline itself leaves a
     # slow (CI) machine time to serve every other request under ks run.
-    (b"GET /slow HTTP/1.1\r\n", 6.0),
+    # Its reader's deadline and the program's accept() deadline are both
+    # 4 s: the client connects 1 s after the previous reply, so accept()
+    # always times out first. Connecting at once let a slow ks run reach
+    # accept() after the connection on a loaded machine, which swapped the
+    # two errors and broke parity with the binary now and then.
+    (b"GET /slow HTTP/1.1\r\n", 6.0, 1.0),
     (b"POST /cut HTTP/1.1\r\n" + HOST + b"Content-Length: 9\r\n\r\nabc", -1),
     (b"GET /teapot HTTP/1.1\r\n" + HOST + b"\r\n", 0),
     (b"GET /empty HTTP/1.1\r\n" + HOST + b"\r\n", 0),
@@ -169,7 +176,8 @@ def free_port() -> int:
         return probe.getsockname()[1]
 
 
-def _exchange(port: int, raw: bytes, pause: float) -> bytes:
+def _exchange(port: int, raw: bytes, pause: float, connect_delay: float = 0.0) -> bytes:
+    time.sleep(connect_delay)
     for _ in range(200):
         try:
             client = socket.create_connection(("127.0.0.1", port), timeout=10)
@@ -196,20 +204,20 @@ def _exchange(port: int, raw: bytes, pause: float) -> bytes:
 
 @unittest.skipUnless(SUPPORTED, "the broker is linux/amd64")
 class NativeServeParityTests(unittest.TestCase):
-    def serve(self, command: list[str], cwd: Path, port: int, requests: list[tuple[bytes, float]]) -> tuple[list[bytes], bytes, int]:
+    def serve(self, command: list[str], cwd: Path, port: int, requests: list[tuple]) -> tuple[list[bytes], bytes, int]:
         process = subprocess.Popen(
             command, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             env=dict(os.environ, PYTHONPATH=str(ROOT)),
         )
         try:
-            replies = [_exchange(port, raw, pause) for raw, pause in requests]
+            replies = [_exchange(port, *request) for request in requests]
             stdout, stderr = process.communicate(timeout=120)
         finally:
             process.kill()
         self.assertEqual(stderr, b"")
         return replies, stdout, process.returncode
 
-    def both(self, source: str, port: int, requests: list[tuple[bytes, float]]) -> tuple[list[bytes], str]:
+    def both(self, source: str, port: int, requests: list[tuple]) -> tuple[list[bytes], str]:
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)
             (base / "main.ks").write_text(source, encoding="utf-8")
