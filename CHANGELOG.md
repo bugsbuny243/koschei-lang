@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Compile more List and Map methods into native binaries: `sum`, `min`, `max`, `unique`, `flatten`, `chunks`, `first_difference`, `partition`, `scan` (its reducer takes the accumulator and the item) and `Map.merge`, `Map.add`, `Map.keys_sorted_by_value`. `ks build` refused any program that called one (`KS4004`); the binary now gives the same values, `Result`/`Option` shapes and error texts as `ks run`. Of the repository's programs that `ks build` refused, 21 drop to 11, and all 20 ceremony benchmark tasks but the JSON one now build.
+
 - Fix the intermittent repository-truth failure: `test_native_serve_v1`'s parity test sent a half-written `/slow` request whose read deadline and the program's `accept()` deadline are both 4 s. On a loaded machine `ks run` could reach `accept()` after the connection arrived, so the two deadline errors came out in the other order and the outputs of `ks run` and the binary differed. The client now connects 1 s after the previous reply, so `accept()` always times out first. The servers were right; the test was not deterministic.
 
 ## 0.16.0 — 2026-11-18

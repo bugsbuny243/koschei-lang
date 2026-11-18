@@ -1002,7 +1002,13 @@ func _ksMemberOf(receiver any, name string) any {
 		}
 	case []any:
 		switch name {
-		case "length", "get", "push", "contains", "take", "sort", "filter", "find", "map", "any":
+		case "length", "get", "push", "contains", "take", "sort", "filter", "find", "map", "any",
+			"partition", "scan", "sum", "min", "max", "unique", "flatten", "chunks", "first_difference":
+			return _ksMember{receiver: receiver, name: name}
+		}
+	case _ksMap:
+		switch name {
+		case "merge", "add", "keys_sorted_by_value":
 			return _ksMember{receiver: receiver, name: name}
 		}
 	}
@@ -1175,13 +1181,114 @@ func _ksInvokeMember(callee any, arguments ...any) any {
 		case "sort":
 			_ksArity("sort", arguments, 0)
 			return _ksListSort(receiver)
-		case "filter", "find", "map", "any":
+		case "filter", "find", "map", "any", "partition":
 			_ksArity(member.name, arguments, 1)
 			callback, ok := arguments[0].(_ksCallback)
 			if !ok {
 				return _ksError{message: "List." + member.name + "() yerel, adlandırılmış Koschei fonksiyonu bekler"}
 			}
 			return _ksListCallback(member.name, receiver, callback)
+		case "scan":
+			_ksArity("scan", arguments, 2)
+			reducer, ok := arguments[1].(_ksCallback)
+			if !ok {
+				return _ksError{message: "List.scan() yerel, adlandırılmış Koschei fonksiyonu bekler"}
+			}
+			return _ksListScan(receiver, arguments[0], reducer)
+		case "sum", "min", "max":
+			_ksArity(member.name, arguments, 0)
+			return _ksListReduce(member.name, receiver)
+		case "unique":
+			_ksArity("unique", arguments, 0)
+			out := []any{}
+			for _, candidate := range receiver {
+				seen := false
+				for _, existing := range out {
+					if _ksEqual(existing, candidate) {
+						seen = true
+						break
+					}
+				}
+				if !seen {
+					out = append(out, candidate)
+				}
+			}
+			return out
+		case "flatten":
+			_ksArity("flatten", arguments, 0)
+			out := []any{}
+			for _, group := range receiver {
+				items, ok := group.([]any)
+				if !ok {
+					return _ksError{message: "List.flatten() tüm öğelerin List olmasını bekler"}
+				}
+				if len(out)+len(items) > _ksMaxListItems {
+					return _ksListBudgetError
+				}
+				out = append(out, items...)
+			}
+			return out
+		case "chunks":
+			_ksArity("chunks", arguments, 1)
+			size, ok := arguments[0].(int64)
+			if !ok {
+				return _ksResultErr("List.chunks() parça boyutu Int olmalıdır")
+			}
+			if size <= 0 {
+				return _ksResultErr("List.chunks() parça boyutu sıfırdan büyük olmalıdır")
+			}
+			out := []any{}
+			for start := int64(0); start < int64(len(receiver)); start += size {
+				end := start + size
+				if end > int64(len(receiver)) {
+					end = int64(len(receiver))
+				}
+				out = append(out, append([]any{}, receiver[start:end]...))
+			}
+			return _ksEnumValue{owner: "Result", variant: "Ok", hasPayload: true, payload: out}
+		case "first_difference":
+			_ksArity("first_difference", arguments, 1)
+			other, ok := arguments[0].([]any)
+			if !ok {
+				return _ksError{message: "List.first_difference() bir List bekler"}
+			}
+			limit := len(receiver)
+			if len(other) < limit {
+				limit = len(other)
+			}
+			for index := 0; index < limit; index++ {
+				if !_ksEqual(receiver[index], other[index]) {
+					return _ksEnumValue{owner: "Option", variant: "Some", hasPayload: true, payload: int64(index)}
+				}
+			}
+			if len(receiver) != len(other) {
+				return _ksEnumValue{owner: "Option", variant: "Some", hasPayload: true, payload: int64(limit)}
+			}
+			return _ksEnumValue{owner: "Option", variant: "None"}
+		}
+	case _ksMap:
+		switch member.name {
+		case "merge":
+			_ksArity("merge", arguments, 1)
+			other, ok := arguments[0].(_ksMap)
+			if !ok {
+				return _ksError{message: "Map.merge() bir Map bekler"}
+			}
+			var merged any = receiver
+			for index, key := range other.keys {
+				merged = _ksMapSet(merged, key, other.values[index])
+			}
+			return merged
+		case "add":
+			_ksArity("add", arguments, 2)
+			return _ksMapAdd(receiver, arguments[0], arguments[1])
+		case "keys_sorted_by_value":
+			_ksArity("keys_sorted_by_value", arguments, 1)
+			descending, ok := arguments[0].(bool)
+			if !ok {
+				return _ksError{message: "Map.keys_sorted_by_value() descending argümanı Bool olmalıdır"}
+			}
+			return _ksMapKeysByValue(receiver, descending)
 		}
 	}
 	_ksAbort("KS3101", "unsupported member call '"+member.name+"'")
@@ -1193,7 +1300,194 @@ func _ksInvokeMember(callee any, arguments ...any) any {
 // A named Koschei function passed to filter/find/map/any. The projection
 // only builds one around a top-level function of one parameter; it is never
 // stored in a value, so no other helper ever sees it.
-type _ksCallback func(any) any
+type _ksCallback func(...any) any
+
+func _ksResultErr(message string) any {
+	return _ksEnumValue{owner: "Result", variant: "Err", hasPayload: true, payload: _ksError{message: message}}
+}
+
+// List.scan(initial, reducer): every running accumulator, in order.
+func _ksListScan(receiver []any, initial any, reducer _ksCallback) any {
+	accumulator := initial
+	out := make([]any, 0, len(receiver))
+	for _, item := range receiver {
+		accumulator = reducer(accumulator, item)
+		if failure, ok := accumulator.(_ksError); ok {
+			return failure
+		}
+		out = append(out, accumulator)
+	}
+	return out
+}
+
+// List.sum/min/max (ergonomics_numeric_reductions_v0105): a Result over a
+// non-empty, homogeneous Int or Float list.
+func _ksListReduce(name string, receiver []any) any {
+	if len(receiver) == 0 {
+		return _ksResultErr("List." + name + "() boş List üzerinde tanımlı değildir")
+	}
+	ok := func(value any) any {
+		return _ksEnumValue{owner: "Result", variant: "Ok", hasPayload: true, payload: value}
+	}
+	if _, isInt := receiver[0].(int64); isInt {
+		values := make([]int64, len(receiver))
+		for index, item := range receiver {
+			number, isInt := item.(int64)
+			if !isInt {
+				return _ksResultErr("List." + name + "() homojen Int veya Float öğeler bekler")
+			}
+			values[index] = number
+		}
+		result := values[0]
+		if name == "sum" {
+			result = 0
+			for _, number := range values {
+				if (number > 0 && result > math.MaxInt64-number) || (number < 0 && result < math.MinInt64-number) {
+					return _ksResultErr("KS3501: List.sum() işaretli 64-bit Int aralığını aştı")
+				}
+				result += number
+			}
+			return ok(result)
+		}
+		for _, number := range values[1:] {
+			if (name == "min" && number < result) || (name == "max" && number > result) {
+				result = number
+			}
+		}
+		return ok(result)
+	}
+	values := make([]float64, len(receiver))
+	for index, item := range receiver {
+		number, isFloat := item.(float64)
+		if !isFloat {
+			return _ksResultErr("List." + name + "() homojen Int veya Float öğeler bekler")
+		}
+		values[index] = number
+	}
+	for _, number := range values {
+		if math.IsNaN(number) || math.IsInf(number, 0) {
+			return _ksResultErr("List." + name + "() NaN veya Infinity kabul etmez")
+		}
+	}
+	result := values[0]
+	if name == "sum" {
+		result = 0
+		for _, number := range values {
+			result += number
+			if math.IsInf(result, 0) {
+				return _ksResultErr("List.sum() sonlu Float aralığının dışına çıktı")
+			}
+		}
+		return ok(result)
+	}
+	for _, number := range values[1:] {
+		if (name == "min" && number < result) || (name == "max" && number > result) {
+			result = number
+		}
+	}
+	return ok(result)
+}
+
+// Map.add(key, delta) (ergonomics_map_add_v0113): a new map with delta added
+// to the key's number, or the key set to delta.
+func _ksMapAdd(receiver _ksMap, key any, delta any) any {
+	text, ok := key.(string)
+	if !ok {
+		return _ksError{message: "Map.add() anahtarı String olmalıdır"}
+	}
+	_, deltaInt := delta.(int64)
+	_, deltaFloat := delta.(float64)
+	if !deltaInt && !deltaFloat {
+		return _ksError{message: "Map.add() delta değeri Int veya Float olmalıdır"}
+	}
+	for index, existing := range receiver.keys {
+		if existing != text {
+			continue
+		}
+		switch current := receiver.values[index].(type) {
+		case int64:
+			step, ok := delta.(int64)
+			if !ok {
+				break
+			}
+			if (step > 0 && current > math.MaxInt64-step) || (step < 0 && current < math.MinInt64-step) {
+				return _ksIntOverflow("+")
+			}
+			return _ksMapSet(receiver, text, current+step)
+		case float64:
+			step, ok := delta.(float64)
+			if !ok {
+				break
+			}
+			return _ksMapSet(receiver, text, current+step)
+		}
+		return _ksError{message: "Map.add() mevcut değer ile delta aynı sayısal tipte olmalıdır"}
+	}
+	return _ksMapSet(receiver, text, delta)
+}
+
+// Map.keys_sorted_by_value(descending) (ergonomics_collections_v0101): keys
+// by homogeneous Int, Float or String value, ties broken by ascending key.
+func _ksMapKeysByValue(receiver _ksMap, descending bool) any {
+	count := len(receiver.keys)
+	if count == 0 {
+		return []any{}
+	}
+	kind := ""
+	for _, item := range receiver.values {
+		current := ""
+		switch item.(type) {
+		case int64:
+			current = "Int"
+		case float64:
+			current = "Float"
+		case string:
+			current = "String"
+		}
+		if current == "" || (kind != "" && current != kind) {
+			return _ksError{message: "Map.keys_sorted_by_value() yalnızca homojen Int, Float veya String değerleri sıralar"}
+		}
+		kind = current
+	}
+	order := make([]int, count)
+	for index := range order {
+		order[index] = index
+	}
+	compare := func(left, right int) int {
+		a, b := receiver.values[left], receiver.values[right]
+		result := 0
+		if _ksLess(a, b, kind != "String") {
+			result = -1
+		} else if _ksLess(b, a, kind != "String") {
+			result = 1
+		}
+		if result != 0 {
+			if descending {
+				return -result
+			}
+			return result
+		}
+		if receiver.keys[left] < receiver.keys[right] {
+			return -1
+		}
+		if receiver.keys[left] > receiver.keys[right] {
+			return 1
+		}
+		return 0
+	}
+	// Insertion sort keeps the dependency set (no "sort" import); the
+	// comparison is total, so the order is the one Python's sorted() gives.
+	for index := 1; index < count; index++ {
+		for position := index; position > 0 && compare(order[position-1], order[position]) > 0; position-- {
+			order[position-1], order[position] = order[position], order[position-1]
+		}
+	}
+	keys := make([]any, count)
+	for index, position := range order {
+		keys[index] = receiver.keys[position]
+	}
+	return keys
+}
 
 func _ksListCallback(name string, receiver []any, callback _ksCallback) any {
 	switch name {
@@ -1238,6 +1532,24 @@ func _ksListCallback(name string, receiver []any, callback _ksCallback) any {
 			out = append(out, mapped)
 		}
 		return out
+	case "partition":
+		matching, rejected := []any{}, []any{}
+		for _, item := range receiver {
+			decision := callback(item)
+			if failure, ok := decision.(_ksError); ok {
+				return failure
+			}
+			hit, ok := decision.(bool)
+			if !ok {
+				return _ksError{message: "List.partition() predicate'i Bool döndürmelidir"}
+			}
+			if hit {
+				matching = append(matching, item)
+			} else {
+				rejected = append(rejected, item)
+			}
+		}
+		return []any{matching, rejected}
 	default: // "any"
 		for _, item := range receiver {
 			decision := callback(item)
