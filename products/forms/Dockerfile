@@ -11,7 +11,7 @@ FROM python:3.12-slim AS build
 COPY --from=golang:1.24-bookworm /usr/local/go /usr/local/go
 ENV PATH="/usr/local/go/bin:${PATH}" \
     CGO_ENABLED=0
-RUN pip install --no-cache-dir koschei-lang==0.15.0
+RUN pip install --no-cache-dir koschei-lang==0.16.0
 WORKDIR /src
 COPY main.ks rules.ks pages.ks csv.ks store.ks LICENSE.md ./
 RUN ks build main.ks -o /out/koschei-forms \
