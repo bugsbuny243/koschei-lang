@@ -79,6 +79,7 @@ from .mir_ir import (
     MirUnary,
     MirUnreachable,
 )
+from .mir_go_decimal_v1 import DECIMAL_ARITY, DECIMAL_BUILTINS, DECIMAL_RUNTIME
 from .mir_go_json_v1 import JSON_ARITY, JSON_BUILTINS, JSON_IMPORTS, json_runtime
 from .native_broker_v1 import BROKER_IMPORTS, broker_runtime
 from .native_net_v1 import NET_IMPORTS, net_runtime
@@ -87,8 +88,16 @@ from .mir_variant_runtime_v1 import MirVariantRuntimeError, split_canonical_vari
 from .secure_hash_v1 import NAME as SECURE_HASH_NAME, SHA3_256_MAX_INPUT_BYTES
 from .semantic import INT_MAX, INT_MIN
 from .strange_build_representation_v1 import derive_strange_symbol
+from .container_runtime_v1 import _without_type_variables
 from .type_contracts import declaration_type
-from .type_system import GenericType, NamedType, TypeNode, alternatives, render_type
+from .type_system import (
+    GenericType,
+    NamedType,
+    TypeNode,
+    alternatives,
+    render_type,
+    substitute_type,
+)
 from .value_budget_v1 import (
     BYTES_MESSAGE,
     LIST_MESSAGE,
@@ -109,7 +118,9 @@ _BUILTINS = {
     "bytes_from_hex": "_ksBytesFromHex",
     "sha3_256_bytes": "_ksSha3_256Bytes",
     **JSON_BUILTINS,
+    **DECIMAL_BUILTINS,
 }
+_BUILTIN_ARITY = {**JSON_ARITY, **DECIMAL_ARITY}
 _STRING_METHODS = frozenset({"length", "contains", "trim", "split", "join", "to_int", "to_bytes"})
 _LIST_METHODS = frozenset(
     {
@@ -327,6 +338,7 @@ def generate_go_mir_native(
     uses_bytes_digest = "sha3_256_bytes" in builtins_used
     uses_digest = SECURE_HASH_NAME in builtins_used or uses_bytes_digest
     uses_json = bool(builtins_used & set(JSON_BUILTINS))
+    uses_decimal = bool(builtins_used & set(DECIMAL_BUILTINS))
     domains = _used_domains(plans)
     imports = sorted(
         {
@@ -365,6 +377,8 @@ def generate_go_mir_native(
         lines.append(MIR_GO_SHA3_RUNTIME_V2.format(max_bytes=SHA3_256_MAX_INPUT_BYTES))
     if uses_json:
         lines.append(json_runtime())
+    if uses_decimal:
+        lines.append(DECIMAL_RUNTIME)
     if uses_bytes_digest:
         from .bytes_v1 import SHA3_SIZE_MESSAGE, SHA3_TYPE_MESSAGE
 
@@ -641,8 +655,6 @@ def _capability_member_type(instruction: MirMember) -> str | None:
 
 def _struct_declaration_reasons(module: MirModule, declaration: Any) -> list[str]:
     label = f"{module.name}.{declaration.name}"
-    if tuple(getattr(declaration, "type_parameters", ()) or ()):
-        return [f"{label}: MIR-Go does not compile generic structs yet"]
     reasons: list[str] = []
     for field in declaration.fields:
         rendered = render_type(declaration_type(declaration, field.type_ref))
@@ -657,15 +669,42 @@ def _struct_declaration_reasons(module: MirModule, declaration: Any) -> list[str
 
 
 def _struct_field_names(declaration: Any, field_name: str) -> tuple[str, ...]:
-    """Runtime type names a struct field value is checked against.
-
-    Struct literals (``StructBuilderV1.set_field``) and field assignments
-    (``struct_field_set_v1``) both check the declared field type; generic
-    structs are not admitted, so no type argument is substituted.
-    """
+    """Runtime type names a struct field value is checked against: the
+    declared field type, type parameters unsubstituted."""
 
     field = next(item for item in declaration.fields if item.name == field_name)
     return _runtime_names(declaration_type(declaration, field.type_ref))
+
+
+def _struct_parameters(declaration: Any) -> tuple[str, ...]:
+    return tuple(getattr(declaration, "type_parameters", ()) or ())
+
+
+def _struct_arguments(declaration: Any, type_node: TypeNode) -> tuple[TypeNode, ...]:
+    """The instance's type arguments (StructBuilderV1.concrete_arguments)."""
+
+    (selected,) = [
+        option
+        for option in alternatives(type_node)
+        if isinstance(option, (NamedType, GenericType)) and option.name == declaration.name
+    ]
+    return selected.arguments if isinstance(selected, GenericType) else ()
+
+
+def _struct_literal_field_names(
+    declaration: Any, field_name: str, type_node: TypeNode
+) -> tuple[str, ...]:
+    """StructBuilderV1.set_field: a generic struct's field type with the
+    instance's arguments substituted; a type variable still left (inside a
+    generic function) accepts any value."""
+
+    parameters = _struct_parameters(declaration)
+    if not parameters:
+        return _struct_field_names(declaration, field_name)
+    field = next(item for item in declaration.fields if item.name == field_name)
+    mapping = dict(zip(parameters, _struct_arguments(declaration, type_node)))
+    expected = substitute_type(declaration_type(declaration, field.type_ref), mapping)
+    return _runtime_names(_without_type_variables(expected))
 
 
 def _struct_instance(declaration: Any, type_node: TypeNode) -> bool:
@@ -676,7 +715,12 @@ def _struct_instance(declaration: Any, type_node: TypeNode) -> bool:
         for option in alternatives(type_node)
         if isinstance(option, (NamedType, GenericType)) and option.name == declaration.name
     ]
-    return len(candidates) == 1 and isinstance(candidates[0], NamedType)
+    if len(candidates) != 1:
+        return False
+    arity = len(_struct_parameters(declaration))
+    if isinstance(candidates[0], GenericType):
+        return arity > 0 and len(candidates[0].arguments) == arity
+    return arity == 0
 
 
 def _signature_reasons(function: MirFunction, label: str) -> list[str]:
@@ -851,7 +895,7 @@ def _use_reasons(instruction: Any, refs: dict[int, _Ref], mir: MirGraph, label: 
             if len(target.parameters) != len(instruction.arguments):
                 reasons.append(f"{label}: call arity mismatch for {callee.name}")
         elif callee.kind == "builtin":
-            expected = JSON_ARITY.get(callee.name, 1)
+            expected = _BUILTIN_ARITY.get(callee.name, 1)
             if len(instruction.arguments) != expected:
                 reasons.append(
                     f"{label}: {callee.name} requires {expected} argument"
@@ -905,9 +949,9 @@ def _struct_reasons(instruction: Any, structs: dict[str, Any], label: str) -> li
     owners = [
         option.name
         for option in alternatives(instruction.type)
-        if isinstance(option, NamedType) and option.name in structs
+        if isinstance(option, (NamedType, GenericType)) and option.name in structs
     ]
-    if len(owners) != 1:
+    if len(owners) != 1 or not _struct_instance(structs[owners[0]], instruction.type):
         return [f"{label}: struct instruction type does not identify one struct"]
     declaration = structs[owners[0]]
     if isinstance(instruction, (MirStructSet, MirStructFieldSet)) and not any(
@@ -921,7 +965,7 @@ def _struct_owner(instruction: Any, structs: dict[str, Any]) -> Any:
     (owner,) = [
         option.name
         for option in alternatives(instruction.type)
-        if isinstance(option, NamedType) and option.name in structs
+        if isinstance(option, (NamedType, GenericType)) and option.name in structs
     ]
     return structs[owner]
 
@@ -1278,14 +1322,20 @@ def _emit_instruction(
         return [f"{prefix}{value(instruction.target)} = {call}"]
     if isinstance(instruction, MirStructNew):
         fields = _go_string_slice(tuple(instruction.required_fields))
+        declaration = plan.structs[instruction.type_name]
+        arguments = tuple(
+            render_type(_without_type_variables(item))
+            for item in _struct_arguments(declaration, instruction.type)
+        )
+        evidence = _go_string_slice(arguments) if arguments else "nil"
         return [
             f"{prefix}{value(instruction.target)} = "
-            f"_ksStructNew({_go_string(instruction.type_name)}, {fields})"
+            f"_ksStructNew({_go_string(instruction.type_name)}, {fields}, {evidence})"
         ]
     if isinstance(instruction, MirStructSet):
         declaration = _struct_owner(instruction, plan.structs)
         expected = _go_string_slice(
-            _struct_field_names(declaration, instruction.field)
+            _struct_literal_field_names(declaration, instruction.field, instruction.type)
         )
         return [
             f"{prefix}_ksStructSet({value(instruction.object)}, "
@@ -1298,10 +1348,13 @@ def _emit_instruction(
         expected = _go_string_slice(
             _struct_field_names(declaration, instruction.field)
         )
+        parameters = _struct_parameters(declaration)
+        evidence = _go_string_slice(parameters) if parameters else "nil"
         return [
             f"{prefix}{value(instruction.target)} = _ksStructWith("
             f"{value(instruction.object)}, {_go_string(declaration.name)}, "
-            f"{_go_string(instruction.field)}, {value(instruction.source)}, {expected})"
+            f"{_go_string(instruction.field)}, {value(instruction.source)}, {expected}, "
+            f"{evidence})"
         ]
     if isinstance(instruction, MirVariantConstruct):
         owner, variant = split_canonical_variant_v1(instruction.variant)

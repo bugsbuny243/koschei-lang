@@ -45,6 +45,7 @@ type _ksStructBuilder struct {
 	name     string
 	fields   []string
 	values   map[string]any
+	typeArgs []string
 	consumed bool
 }
 
@@ -285,6 +286,8 @@ func _ksToString(value any) string {
 		return "<RandomCaps>"
 	case _ksData:
 		return "<data>"
+	case _ksDecimal:
+		return _ksDecimalText(item)
 	}
 	_ksAbort("KS5002", "unrenderable runtime value")
 	return ""
@@ -349,6 +352,9 @@ func _ksEqual(left any, right any) bool {
 	switch a := left.(type) {
 	case string:
 		b, ok := right.(string)
+		return ok && a == b
+	case _ksDecimal:
+		b, ok := right.(_ksDecimal)
 		return ok && a == b
 	case []any:
 		b, ok := right.([]any)
@@ -738,8 +744,8 @@ func _ksAsEnum(value any) _ksEnumValue {
 
 // ---- structs: StructBuilderV1 and struct_field_set_v1 -------------------
 
-func _ksStructNew(name string, fields []string) any {
-	return &_ksStructBuilder{name: name, fields: fields, values: map[string]any{}}
+func _ksStructNew(name string, fields []string, typeArgs []string) any {
+	return &_ksStructBuilder{name: name, fields: fields, values: map[string]any{}, typeArgs: typeArgs}
 }
 
 func _ksAsStructBuilder(value any) *_ksStructBuilder {
@@ -787,11 +793,14 @@ func _ksStructFinish(value any) any {
 	for index, name := range builder.fields {
 		values[index] = builder.values[name]
 	}
-	return _ksStruct{name: builder.name, fields: builder.fields, values: values}
+	return _ksStruct{name: builder.name, fields: builder.fields, values: values, typeArgs: builder.typeArgs}
 }
 
 // A field assignment returns an updated copy; the receiver is never changed.
-func _ksStructWith(receiver any, owner string, field string, item any, expected []string) any {
+// parameters are a generic struct's type parameters: the field type is
+// checked against the receiver's own type arguments
+// (struct_field_set_v1).
+func _ksStructWith(receiver any, owner string, field string, item any, expected []string, parameters []string) any {
 	value, ok := receiver.(_ksStruct)
 	if !ok || value.name != owner {
 		_ksAbort("KS5002", "sealed MIR struct field assignment received a non-struct receiver")
@@ -806,7 +815,20 @@ func _ksStructWith(receiver any, owner string, field string, item any, expected 
 	if index < 0 {
 		_ksAbort("KS5002", "sealed MIR struct value is missing declared field '"+field+"'")
 	}
-	if !_ksMatchesType(item, expected, nil, nil) {
+	var parameterSet map[string]bool
+	var bindings map[string]string
+	if len(parameters) > 0 {
+		if len(value.typeArgs) != len(parameters) {
+			_ksAbort("KS5002", "sealed MIR struct runtime generic arity disagrees with checked declaration")
+		}
+		parameterSet = map[string]bool{}
+		bindings = map[string]string{}
+		for index, name := range parameters {
+			parameterSet[name] = true
+			bindings[name] = value.typeArgs[index]
+		}
+	}
+	if !_ksMatchesType(item, expected, parameterSet, bindings) {
 		_ksAbort("KS3401", "'"+owner+"."+field+"' field assignment received "+_ksTypeName(item))
 	}
 	values := make([]any, len(value.values))
@@ -1304,6 +1326,32 @@ func _ksInvokeMember(callee any, arguments ...any) any {
 // stored in a value, so no other helper ever sees it.
 type _ksCallback func(...any) any
 
+// An exact fixed-scale decimal (financial_decimal.DecimalValue): signed
+// int64 atoms at an explicit scale in 0..18.
+type _ksDecimal struct {
+	atoms int64
+	scale int64
+}
+
+func _ksDecimalText(value _ksDecimal) string {
+	digits := strconv.FormatInt(value.atoms, 10)
+	negative := value.atoms < 0
+	if negative {
+		digits = digits[1:]
+	}
+	if value.scale > 0 {
+		for int64(len(digits)) < value.scale+1 {
+			digits = "0" + digits
+		}
+		split := int64(len(digits)) - value.scale
+		digits = digits[:split] + "." + digits[split:]
+	}
+	if negative {
+		return "-" + digits
+	}
+	return digits
+}
+
 // An opaque Data value (data_language_v1.DataValue) holding a decoded
 // data-json/v1 value; only the json_* builtins look inside.
 type _ksData struct {
@@ -1689,6 +1737,8 @@ func _ksTypeName(value any) string {
 			return item.name + "<" + strings.Join(item.typeArgs, ", ") + ">"
 		}
 		return item.name
+	case _ksDecimal:
+		return "Decimal"
 	case _ksData:
 		return "Data"
 	case _ksError:
@@ -1961,6 +2011,8 @@ func _ksMatchPattern(value any, expected string, parameters map[string]bool, bin
 		return base == "Bytes"
 	case _ksData:
 		return base == "Data"
+	case _ksDecimal:
+		return base == "Decimal"
 	case _ksSystemCaps:
 		return base == "SystemCaps"
 	case _ksInputRoot:

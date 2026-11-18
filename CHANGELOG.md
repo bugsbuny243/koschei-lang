@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Compile exact decimals into native binaries: `decimal`, `decimal_add`, `decimal_sub`, `decimal_cmp` and `decimal_text` give the values and KS3801–KS3803 messages of the Python core (the legacy Go helper's messages had drifted, so it is not reused).
+- Compile generic structs into native binaries, typestate structs included. An instance carries its type arguments as `ks run` records them, so type contracts (`Settlement<Pending>`), printing, equality and field assignment match. Refused repository programs drop from 8 to 6; what remains is tasks and queues (5) and `PersistCaps` (1).
+
 - Compile Data into native binaries: `parse_json`, `encode_json` and the `json_*` access builtins. `ks build` refused any program that used them (`KS4004`). Binaries embed the audited data-json/v1 Go core and print what `ks run` prints, parse and access errors included; `json_keys` keeps the document's key order. Refused repository programs drop from 11 to 8, and all 20 ceremony benchmark tasks now build.
 - Make the Go data-json/v1 core report errors exactly like the Python one: a duplicate key or unexpected character is quoted the way Python's `repr()` quotes it (it printed `"a"` for `'a'` and broke multi-byte characters), and a bad `\u` escape is located and measured in characters. 11,500 random valid and broken documents now give the same result in both cores.
 - Fix `json_int()` on a number that canonical text keeps in exponent form (`1e400`, `1.5e-7`): `ks run` stopped with an internal error. It now returns `KS3709` (outside the Int range, or not an integer).
