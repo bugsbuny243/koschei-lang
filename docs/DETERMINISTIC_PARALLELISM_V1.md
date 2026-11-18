@@ -29,6 +29,15 @@ workers writing one queue would make arrival order depend on host scheduling. Tu
 that API parallel without a new ordering contract would weaken Koschei's deterministic
 execution model. `task_join_all` therefore remains cooperative in v1.
 
+## `ks build` binaries (MIR-Go)
+
+Binaries built by `ks build` run `parallel_map` workers one after another, in
+input order, on one goroutine. The output is the same as the contract above
+guarantees for any worker count; only the wall-clock gain is missing. The
+MIR-Go runtime keeps per-process call-depth and budget state that is not yet
+safe to share between goroutines, so the worker pool comes after that state is
+made per-worker. The goroutine-pool proof below is for the legacy Go backend.
+
 ## Native runtime proof
 
 The test suite generates the real Go runtime, runs `go test -race`, verifies actual

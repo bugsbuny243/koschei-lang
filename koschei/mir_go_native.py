@@ -80,6 +80,7 @@ from .mir_ir import (
     MirUnreachable,
 )
 from .mir_go_decimal_v1 import DECIMAL_ARITY, DECIMAL_BUILTINS, DECIMAL_RUNTIME
+from .mir_go_tasks_v1 import TASK_ARITY, TASK_BUILTINS, TASK_RUNTIME, WORKER_ARGUMENT
 from .mir_go_json_v1 import JSON_ARITY, JSON_BUILTINS, JSON_IMPORTS, json_runtime
 from .native_broker_v1 import BROKER_IMPORTS, broker_runtime
 from .native_net_v1 import NET_IMPORTS, net_runtime
@@ -119,8 +120,9 @@ _BUILTINS = {
     "sha3_256_bytes": "_ksSha3_256Bytes",
     **JSON_BUILTINS,
     **DECIMAL_BUILTINS,
+    **TASK_BUILTINS,
 }
-_BUILTIN_ARITY = {**JSON_ARITY, **DECIMAL_ARITY}
+_BUILTIN_ARITY = {**JSON_ARITY, **DECIMAL_ARITY, **TASK_ARITY}
 _STRING_METHODS = frozenset({"length", "contains", "trim", "split", "join", "to_int", "to_bytes"})
 _LIST_METHODS = frozenset(
     {
@@ -339,6 +341,7 @@ def generate_go_mir_native(
     uses_digest = SECURE_HASH_NAME in builtins_used or uses_bytes_digest
     uses_json = bool(builtins_used & set(JSON_BUILTINS))
     uses_decimal = bool(builtins_used & set(DECIMAL_BUILTINS))
+    uses_tasks = bool(builtins_used & set(TASK_BUILTINS))
     domains = _used_domains(plans)
     imports = sorted(
         {
@@ -379,6 +382,8 @@ def generate_go_mir_native(
         lines.append(json_runtime())
     if uses_decimal:
         lines.append(DECIMAL_RUNTIME)
+    if uses_tasks:
+        lines.append(TASK_RUNTIME)
     if uses_bytes_digest:
         from .bytes_v1 import SHA3_SIZE_MESSAGE, SHA3_TYPE_MESSAGE
 
@@ -902,6 +907,23 @@ def _use_reasons(instruction: Any, refs: dict[int, _Ref], mir: MirGraph, label: 
                     + ("s" if expected != 1 else "")
                 )
         operands = instruction.arguments
+        worker_at = (
+            WORKER_ARGUMENT.get(callee.name)
+            if callee is not None and callee.kind == "builtin"
+            else None
+        )
+        if worker_at is not None and worker_at < len(operands):
+            # A task or parallel_map worker: a named top-level function of one
+            # parameter, passed and never stored.
+            slot = operands[worker_at]
+            ref = refs.get(slot)
+            if ref is not None and ref.kind == "function":
+                target = next(
+                    item for item in mir.module_of(ref.module_key).functions if item.name == ref.name
+                )
+                if len(target.parameters) != 1:
+                    reasons.append(f"{label}: {callee.name}() worker must take one parameter")
+                operands = tuple(item for index, item in enumerate(operands) if index != worker_at)
         if callee is not None and callee.kind == "member" and callee.name in _CALLBACK_METHODS:
             # The callback may be a named top-level function of one
             # parameter; it is passed, never stored. Anything else fails

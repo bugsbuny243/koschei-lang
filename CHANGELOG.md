@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Compile bounded queues, structured task scopes and `parallel_map` into native binaries: `bounded_queue`, `queue_try_send`, `queue_try_recv`, `queue_len`, `queue_capacity`, `task_scope`, `task_spawn`, `task_join_all`, `task_cancel`, `task_cancel_all`, `task_pending`, `task_capacity`, `task_closed` and `parallel_map`. Task scopes stay cooperative (join runs the non-cancelled tasks in spawn order), so binaries print what `ks run` prints, every KS39xx error included. `parallel_map` runs its workers in input order on one goroutine for now (same output, no parallel speed-up yet; see `docs/DETERMINISTIC_PARALLELISM_V1.md`). Of the repository's programs that `ks build` refused, one is left: it uses `PersistCaps`, which needs the native capability broker.
+
 - Compile exact decimals into native binaries: `decimal`, `decimal_add`, `decimal_sub`, `decimal_cmp` and `decimal_text` give the values and KS3801–KS3803 messages of the Python core (the legacy Go helper's messages had drifted, so it is not reused).
 - Compile generic structs into native binaries, typestate structs included. An instance carries its type arguments as `ks run` records them, so type contracts (`Settlement<Pending>`), printing, equality and field assignment match. Refused repository programs drop from 8 to 6; what remains is tasks and queues (5) and `PersistCaps` (1).
 
