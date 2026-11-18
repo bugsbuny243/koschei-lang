@@ -288,6 +288,18 @@ func _ksToString(value any) string {
 		return "<data>"
 	case _ksDecimal:
 		return _ksDecimalText(item)
+	case *_ksQueue:
+		return "BoundedQueue(len=" + strconv.FormatInt(item.count, 10) + ", capacity=" +
+			strconv.FormatInt(item.capacity, 10) + ")"
+	case *_ksTaskScope:
+		closed := "false"
+		if item.closed {
+			closed = "true"
+		}
+		count := int64(len(item.records))
+		return "TaskScope(tasks=" + strconv.FormatInt(count, 10) + ", pending=" +
+			strconv.FormatInt(count-item.terminal, 10) + ", capacity=" +
+			strconv.FormatInt(item.capacity, 10) + ", closed=" + closed + ")"
 	}
 	_ksAbort("KS5002", "unrenderable runtime value")
 	return ""
@@ -355,6 +367,12 @@ func _ksEqual(left any, right any) bool {
 		return ok && a == b
 	case _ksDecimal:
 		b, ok := right.(_ksDecimal)
+		return ok && a == b
+	case *_ksQueue:
+		b, ok := right.(*_ksQueue)
+		return ok && a == b
+	case *_ksTaskScope:
+		b, ok := right.(*_ksTaskScope)
 		return ok && a == b
 	case []any:
 		b, ok := right.([]any)
@@ -1352,6 +1370,39 @@ func _ksDecimalText(value _ksDecimal) string {
 	return digits
 }
 
+// A fixed-capacity FIFO (bounded_queue.BoundedQueueValue) and a cooperative
+// task scope (structured_tasks.TaskScopeValue): shared, mutable handles.
+type _ksQueue struct {
+	capacity int64
+	itemType string
+	buffer   []any
+	head     int64
+	tail     int64
+	count    int64
+}
+
+const (
+	_ksTaskStatePending = iota
+	_ksTaskStateRunning
+	_ksTaskStateDone
+	_ksTaskStateFailed
+	_ksTaskStateCancelled
+)
+
+type _ksTaskRecord struct {
+	worker   _ksCallback
+	argument any
+	state    int
+}
+
+type _ksTaskScope struct {
+	capacity   int64
+	records    []_ksTaskRecord
+	terminal   int64
+	closed     bool
+	joinResult any
+}
+
 // An opaque Data value (data_language_v1.DataValue) holding a decoded
 // data-json/v1 value; only the json_* builtins look inside.
 type _ksData struct {
@@ -1737,6 +1788,10 @@ func _ksTypeName(value any) string {
 			return item.name + "<" + strings.Join(item.typeArgs, ", ") + ">"
 		}
 		return item.name
+	case *_ksQueue:
+		return "BoundedQueue<" + item.itemType + ">"
+	case *_ksTaskScope:
+		return "TaskScope"
 	case _ksDecimal:
 		return "Decimal"
 	case _ksData:
@@ -1973,6 +2028,13 @@ func _ksMatchPattern(value any, expected string, parameters map[string]bool, bin
 			}
 		}
 		return true
+	}
+	if queue, ok := value.(*_ksQueue); ok {
+		return base == "BoundedQueue" &&
+			(len(arguments) == 0 || (len(arguments) == 1 && _ksMatchTypeName(queue.itemType, arguments[0], parameters, bindings)))
+	}
+	if _, ok := value.(*_ksTaskScope); ok {
+		return base == "TaskScope"
 	}
 	if item, ok := value.(_ksEnumValue); ok && item.owner == base {
 		if len(arguments) == 0 {
