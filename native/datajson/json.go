@@ -35,6 +35,14 @@ func (l Limits) validate() error {
 
 type Number string
 
+// Object is a decoded JSON object: its members and the order their keys
+// appeared in. Encode ignores the order (keys are written sorted); it is
+// there for callers that list keys the way the Python core's dict does.
+type Object struct {
+	Keys   []string
+	Values map[string]any
+}
+
 type Error struct {
 	Code    string
 	Message string
@@ -157,6 +165,44 @@ func CanonicalNumber(text string) (string, error) {
 
 func isDigit(value byte) bool { return value >= '0' && value <= '9' }
 
+// pythonRepr quotes text the way Python's repr() does, so error messages
+// match the Python data-json/v1 core byte for byte.
+func pythonRepr(text string) string {
+	quote := byte('\'')
+	if strings.ContainsRune(text, '\'') && !strings.ContainsRune(text, '"') {
+		quote = '"'
+	}
+	var out strings.Builder
+	out.WriteByte(quote)
+	for _, char := range text {
+		switch {
+		case char == '\\':
+			out.WriteString(`\\`)
+		case char == rune(quote):
+			out.WriteByte('\\')
+			out.WriteRune(char)
+		case char == '\n':
+			out.WriteString(`\n`)
+		case char == '\r':
+			out.WriteString(`\r`)
+		case char == '\t':
+			out.WriteString(`\t`)
+		case char < 0x20 || char == 0x7f:
+			out.WriteString(fmt.Sprintf(`\x%02x`, char))
+		case char < 0x7f || strconv.IsPrint(char):
+			out.WriteRune(char)
+		case char <= 0xff:
+			out.WriteString(fmt.Sprintf(`\x%02x`, char))
+		case char <= 0xffff:
+			out.WriteString(fmt.Sprintf(`\u%04x`, char))
+		default:
+			out.WriteString(fmt.Sprintf(`\U%08x`, char))
+		}
+	}
+	out.WriteByte(quote)
+	return out.String()
+}
+
 type parser struct {
 	text   string
 	limits Limits
@@ -247,7 +293,8 @@ func (p *parser) value(depth int) (any, error) {
 			return p.number()
 		}
 	}
-	return nil, p.fail("KS3605", fmt.Sprintf("unexpected character %q", p.text[p.index]), p.index)
+	char, _ := utf8.DecodeRuneInString(p.text[p.index:])
+	return nil, p.fail("KS3605", "unexpected character "+pythonRepr(string(char)), p.index)
 }
 
 func (p *parser) array(depth int) ([]any, error) {
@@ -280,48 +327,50 @@ func (p *parser) array(depth int) ([]any, error) {
 	}
 }
 
-func (p *parser) object(depth int) (map[string]any, error) {
+func (p *parser) object(depth int) (Object, error) {
 	p.index++
 	result := map[string]any{}
+	keys := []string{}
 	p.skipSpace()
 	if p.index < len(p.text) && p.text[p.index] == '}' {
 		p.index++
-		return result, nil
+		return Object{Keys: keys, Values: result}, nil
 	}
 	for {
 		if p.index >= len(p.text) || p.text[p.index] != '"' {
-			return nil, p.fail("KS3605", "JSON object key must be a string", p.index)
+			return Object{}, p.fail("KS3605", "JSON object key must be a string", p.index)
 		}
 		keyOffset := p.index
 		key, err := p.string()
 		if err != nil {
-			return nil, err
+			return Object{}, err
 		}
 		if _, exists := result[key]; exists {
-			return nil, p.fail("KS3604", fmt.Sprintf("duplicate JSON object key %q", key), keyOffset)
+			return Object{}, p.fail("KS3604", "duplicate JSON object key "+pythonRepr(key), keyOffset)
 		}
 		p.skipSpace()
 		if p.index >= len(p.text) || p.text[p.index] != ':' {
-			return nil, p.fail("KS3605", "expected ':' after JSON object key", p.index)
+			return Object{}, p.fail("KS3605", "expected ':' after JSON object key", p.index)
 		}
 		p.index++
 		p.skipSpace()
 		value, err := p.value(depth + 1)
 		if err != nil {
-			return nil, err
+			return Object{}, err
 		}
 		result[key] = value
+		keys = append(keys, key)
 		p.skipSpace()
 		if p.index >= len(p.text) {
-			return nil, p.fail("KS3605", "unterminated JSON object", p.index)
+			return Object{}, p.fail("KS3605", "unterminated JSON object", p.index)
 		}
 		char := p.text[p.index]
 		p.index++
 		if char == '}' {
-			return result, nil
+			return Object{Keys: keys, Values: result}, nil
 		}
 		if char != ',' {
-			return nil, p.fail("KS3605", "expected ',' or '}' in JSON object", p.index-1)
+			return Object{}, p.fail("KS3605", "expected ',' or '}' in JSON object", p.index-1)
 		}
 		p.skipSpace()
 	}
@@ -344,11 +393,12 @@ func (p *parser) string() (string, error) {
 			if p.index >= len(p.text) {
 				return "", p.fail("KS3605", "unterminated escape in JSON string", p.index)
 			}
-			escape := p.text[p.index]
-			p.index++
+			escapeAt := p.index - 1
+			escape, size := utf8.DecodeRuneInString(p.text[p.index:])
+			p.index += size
 			switch escape {
 			case '"', '\\', '/':
-				builder.WriteByte(escape)
+				builder.WriteRune(escape)
 			case 'b':
 				builder.WriteByte('\b')
 			case 'f':
@@ -366,7 +416,7 @@ func (p *parser) string() (string, error) {
 				}
 				builder.WriteRune(decoded)
 			default:
-				return "", p.fail("KS3605", fmt.Sprintf("invalid JSON escape \\%c", escape), p.index-2)
+				return "", p.fail("KS3605", "invalid JSON escape \\"+string(escape), escapeAt)
 			}
 			start = p.index
 			continue
@@ -380,8 +430,21 @@ func (p *parser) string() (string, error) {
 	return "", p.fail("KS3605", "unterminated JSON string", p.index)
 }
 
+// The Python core measures \u windows in characters, not bytes, and reports
+// a bad window at its start; these helpers do the same.
+func hasRunes(text string, from int, count int) bool {
+	for ; count > 0; count-- {
+		if from >= len(text) {
+			return false
+		}
+		_, size := utf8.DecodeRuneInString(text[from:])
+		from += size
+	}
+	return true
+}
+
 func (p *parser) unicodeEscape() (rune, error) {
-	first, err := p.hex4()
+	first, err := p.hex4("invalid hex digit in \\u escape")
 	if err != nil {
 		return 0, err
 	}
@@ -391,11 +454,11 @@ func (p *parser) unicodeEscape() (rune, error) {
 	if first < 0xD800 || first > 0xDBFF {
 		return rune(first), nil
 	}
-	if p.index+6 > len(p.text) || p.text[p.index:p.index+2] != "\\u" {
+	if !hasRunes(p.text, p.index, 6) || p.text[p.index:p.index+2] != "\\u" {
 		return 0, p.fail("KS3605", "high surrogate requires a low surrogate", p.index-4)
 	}
 	p.index += 2
-	second, err := p.hex4()
+	second, err := p.hex4("invalid low-surrogate escape")
 	if err != nil {
 		return 0, err
 	}
@@ -405,8 +468,8 @@ func (p *parser) unicodeEscape() (rune, error) {
 	return utf16.DecodeRune(rune(first), rune(second)), nil
 }
 
-func (p *parser) hex4() (uint16, error) {
-	if p.index+4 > len(p.text) {
+func (p *parser) hex4(invalid string) (uint16, error) {
+	if !hasRunes(p.text, p.index, 4) {
 		return 0, p.fail("KS3605", "short \\u escape in JSON string", p.index)
 	}
 	value := uint16(0)
@@ -421,7 +484,7 @@ func (p *parser) hex4() (uint16, error) {
 		case char >= 'A' && char <= 'F':
 			value += uint16(char-'A') + 10
 		default:
-			return 0, p.fail("KS3605", "invalid hex digit in \\u escape", p.index+i)
+			return 0, p.fail("KS3605", invalid, p.index)
 		}
 	}
 	p.index += 4
@@ -545,37 +608,44 @@ func (w *writer) value(value any, depth int) error {
 		}
 		return w.add("]")
 	case map[string]any:
-		keys := make([]string, 0, len(typed))
-		for key := range typed {
-			if !utf8.ValidString(key) {
-				return &Error{Code: "KS3608", Message: "JSON object key is not valid UTF-8", Offset: w.size}
-			}
-			keys = append(keys, key)
-		}
-		sort.Strings(keys)
-		if err := w.add("{"); err != nil {
-			return err
-		}
-		for index, key := range keys {
-			if index > 0 {
-				if err := w.add(","); err != nil {
-					return err
-				}
-			}
-			if err := w.string(key); err != nil {
-				return err
-			}
-			if err := w.add(":"); err != nil {
-				return err
-			}
-			if err := w.value(typed[key], depth+1); err != nil {
-				return err
-			}
-		}
-		return w.add("}")
+		return w.object(typed, depth)
+	case Object:
+		return w.object(typed.Values, depth)
 	default:
 		return &Error{Code: "KS3608", Message: fmt.Sprintf("value of type %T is not data/v1 encodable", value), Offset: w.size}
 	}
+}
+
+// object writes members in sorted key order whatever order they arrived in.
+func (w *writer) object(typed map[string]any, depth int) error {
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		if !utf8.ValidString(key) {
+			return &Error{Code: "KS3608", Message: "JSON object key is not valid UTF-8", Offset: w.size}
+		}
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	if err := w.add("{"); err != nil {
+		return err
+	}
+	for index, key := range keys {
+		if index > 0 {
+			if err := w.add(","); err != nil {
+				return err
+			}
+		}
+		if err := w.string(key); err != nil {
+			return err
+		}
+		if err := w.add(":"); err != nil {
+			return err
+		}
+		if err := w.value(typed[key], depth+1); err != nil {
+			return err
+		}
+	}
+	return w.add("}")
 }
 
 func (w *writer) string(value string) error {
