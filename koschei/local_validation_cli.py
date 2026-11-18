@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 from dataclasses import asdict
 import hashlib
 import json
@@ -176,6 +177,10 @@ def _run_step(
     )
 
 
+_FAILURE_MARKER = re.compile(r"^\s*(?:FAIL(?:ED)?\b|ERROR\b|FAIL:|ERROR:)")
+_MAX_MARKERS = 30
+
+
 def _print_failure_tail(evidence_dir: Path, index: int, step_id: str, lines: int = 40) -> None:
     """Show why a step failed where CI logs can see it; the full output stays
     in the evidence directory, and the receipt is unchanged."""
@@ -183,7 +188,18 @@ def _print_failure_tail(evidence_dir: Path, index: int, step_id: str, lines: int
     prefix = f"{index:02d}-{step_id}"
     for stream in ("stdout", "stderr"):
         text = (evidence_dir / f"{prefix}.{stream}.log").read_bytes().decode("utf-8", errors="replace")
-        tail = text.splitlines()[-lines:]
+        all_lines = text.splitlines()
+        tail = all_lines[-lines:]
+        # Failure markers above the tail (a failing unittest or pytest case,
+        # a verify.sh FAIL line) would otherwise be cut off.
+        markers = [
+            line for line in all_lines[: max(len(all_lines) - lines, 0)]
+            if _FAILURE_MARKER.match(line)
+        ][:_MAX_MARKERS]
+        if markers:
+            print(f"    --- failure lines above the tail ({stream}) ---", flush=True)
+            for line in markers:
+                print(f"    | {line}", flush=True)
         if tail:
             print(f"    --- last {len(tail)} {stream} lines ---", flush=True)
             for line in tail:
