@@ -45,6 +45,8 @@
 
 ## Unreleased — Core Library v1
 
+- Name the failing tests when validation fails. `verify.sh` printed only the last 15 lines of a failed `unittest` run and `ks-local-validate` the last 40 lines of a failed step, so a failing case listed earlier never reached the CI log (one intermittent repository-truth failure could not be traced). Both now print the `FAIL:`/`ERROR:` lines first.
+
 - Stop sending koschei.dev visitors to the paused playground: the home page, the agents page and both security guides pointed at `/play`, which answers 503 while hosted execution is off, and the sitemap and `llms.txt` listed it. They now point to `pip install koschei-lang` or the GitHub repository. `/play` itself still serves its "temporarily unavailable" page.
 
 - Compile `List.sort()`, `filter`, `find`, `map` and `any` into native binaries. `ks build` used to refuse any program that called them (`KS4004`), so `examples/daily.ks` ran under `ks run` but did not build. A callback is a top-level function of one parameter or a lambda, the same rule as `ks run`; the binary gives the same results and errors, including the stable sort order and the error for a mixed or non-sortable list. Storing a function value in a variable still fails closed.

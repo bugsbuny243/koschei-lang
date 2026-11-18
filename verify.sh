@@ -61,6 +61,8 @@ if out=$(python3 -m unittest discover -s tests 2>&1); then
   pass "$(printf '%s' "$out" | grep -oE 'Ran [0-9]+ tests' | head -1) — $(printf '%s' "$out" | tail -1)"
 else
   fail "unit tests failed"
+  # Name every failing test first; the tail alone can hide which one it was.
+  printf '%s\n' "$out" | grep -E '^(FAIL|ERROR): ' | head -30 | sed 's/^/        /'
   printf '%s\n' "$out" | tail -15 | sed 's/^/        /'
 fi
 
