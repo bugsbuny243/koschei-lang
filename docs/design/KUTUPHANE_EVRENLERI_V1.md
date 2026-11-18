@@ -364,11 +364,20 @@ gelecek (kuantum sonrası kriptografi) için kullanılır.
   ilkel yazmaz. Girdi 1 MiB UTF-8 ile sınırlıdır.
 - Struct'lar native derlemede de çalışır ve değer semantiğine sahiptir: bir
   alan ataması yalnızca o `let mut` bağlamasını değiştirir.
+- Bayt tipi var (`docs/BYTES_V1.md`): `bytes_from_hex`, `length`, `hex`,
+  `slice`, `get`; `ks run` ve `ks build` ile çalışır. Özetler artık bayt
+  olarak da taşınabilir (`sha3_256_bytes`).
+- Map native derlemede de var; `List` ve `Map` metotlarının çoğu
+  (`sort`, `filter`, `map`, `sum`, `unique`, `scan`, `merge`, …) `ks build`
+  ile aynı sonucu verir (0.16.0 ve sonrası).
 - Kalan engeller:
-  - **Bayt tipi yok.** Özetler hex metin olarak taşınır.
-  - **Bit işlemleri yok** (`&`, `|`, `^`, `<<`): hex/base64 gibi
-    kodlamalar ve bayt düzeyindeki işler için gerekir.
-  - **Map ve generic struct** native derlemede henüz yok.
+  - **Bit işlemleri yok** (`&`, `|`, `^`, `<<`): `KS1001` sözdizimi hatası.
+    Hex/base64 gibi kodlamalar ve bayt düzeyindeki işler için gerekir.
+  - **Generic struct** native derlemede henüz yok (`ks run`'da var).
+  - **Fonksiyonu değer olarak saklamak** native derlemede yok; callback
+    olarak doğrudan geçirmek var.
+  - Yukarıdaki tablolarda "Kod + test" yazan Python modülleri hâlâ host
+    makinesidir; Koschei programı onları `import` edemez.
 
 ## PHP2Shell'den dersler (Ekim 2026)
 
