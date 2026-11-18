@@ -56,9 +56,11 @@ def test_static_responsive_no_tracking_or_fake_live_compiler():
     assert "@media(max-width:640px)" in source
     assert not re.search(r"<(?:img|iframe|embed|object)\b", source, re.I)
     assert "fetch(" not in source
-    # The hero terminal is illustrative; real code runs on the /play playground.
+    # The hero terminal is illustrative. The hosted playground is paused, so
+    # the page sends visitors to a local install, never to a dead /play.
     assert "Illustrative summary of the included fixture" in source
-    assert any(a.get("href") == "/play" for a in p.links)
+    assert not any(a.get("href") == "/play" for a in p.links)
+    assert "pip install koschei-lang" in source
     assert "navigator.clipboard.writeText" in source
 
 
@@ -185,7 +187,7 @@ def test_actual_utility_shop_links_and_honest_preview():
     assert all(f"/tools?tool={tool}" in source for tool in ("quote", "stock", "cash"))
     assert 'Çevrimdışı indirme · 4 USD' in source
     assert 'Windows builds passed 15 native tests' in source
-    assert 'Browser Playground: execution currently paused' in source
+    assert 'Try it on your computer: pip install koschei-lang' in source
     assert 'Try it in your browser' not in source
     assert source.count('class="product-card"') == 3
     assert source.count('class="roadmap-item') == 4
