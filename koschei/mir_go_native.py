@@ -110,15 +110,24 @@ _BUILTINS = {
 }
 _STRING_METHODS = frozenset({"length", "contains", "trim", "split", "join", "to_int", "to_bytes"})
 _LIST_METHODS = frozenset(
-    {"length", "get", "push", "contains", "take", "sort", "filter", "find", "map", "any"}
+    {
+        "length", "get", "push", "contains", "take", "sort", "filter", "find", "map", "any",
+        "partition", "scan", "sum", "min", "max", "unique", "flatten", "chunks", "first_difference",
+    }
 )
-# List methods whose one argument is a named, one-parameter Koschei function.
-_CALLBACK_METHODS = frozenset({"filter", "find", "map", "any"})
+# Map methods other than get/set/keys/contains, which have their own MIR
+# instructions.
+_MAP_METHODS = frozenset({"merge", "add", "keys_sorted_by_value"})
+# List methods whose argument is a top-level Koschei function: the number of
+# parameters it must take (scan's reducer takes the accumulator and the item).
+_CALLBACK_ARITY = {"filter": 1, "find": 1, "map": 1, "any": 1, "partition": 1, "scan": 2}
+_CALLBACK_METHODS = frozenset(_CALLBACK_ARITY)
 _BYTES_METHODS = frozenset({"length", "hex", "to_text", "slice", "get"})
 _RESPONSE_METHODS = frozenset({"text", "status"})
 _REQUEST_METHODS = frozenset({"method", "path", "header", "body", "body_bytes"})
 _VALUE_METHODS = (
-    _STRING_METHODS | _LIST_METHODS | _BYTES_METHODS | _RESPONSE_METHODS | _REQUEST_METHODS
+    _STRING_METHODS | _LIST_METHODS | _MAP_METHODS | _BYTES_METHODS | _RESPONSE_METHODS
+    | _REQUEST_METHODS
 )
 _BUILTIN_VARIANTS = {
     "Option": {"Some": True, "None": False},
@@ -850,8 +859,12 @@ def _use_reasons(instruction: Any, refs: dict[int, _Ref], mir: MirGraph, label: 
                 target = next(
                     item for item in mir.module_of(ref.module_key).functions if item.name == ref.name
                 )
-                if len(target.parameters) != 1:
-                    reasons.append(f"{label}: {callee.name}() callback must take one parameter")
+                expected = _CALLBACK_ARITY[callee.name]
+                if len(target.parameters) != expected:
+                    reasons.append(
+                        f"{label}: {callee.name}() callback must take {expected} parameter"
+                        + ("s" if expected != 1 else "")
+                    )
             operands = tuple(
                 slot for slot in operands if not (slot in refs and refs[slot].kind == "function")
             )
@@ -1236,9 +1249,12 @@ def _emit_instruction(
             ref = refs.get(item)
             if ref is not None and ref.kind == "function":
                 symbol = symbols[(ref.module_key, ref.name)]
-                return f"_ksCallback(func(item any) any {{ return {symbol}(item) }})"
+                if callee_ref.kind == "member" and _CALLBACK_ARITY.get(callee_ref.name) == 2:
+                    return f"_ksCallback(func(items ...any) any {{ return {symbol}(items[0], items[1]) }})"
+                return f"_ksCallback(func(items ...any) any {{ return {symbol}(items[0]) }})"
             return value(item)
 
+        callee_ref = refs[instruction.callee]
         arguments = ", ".join(argument(item) for item in instruction.arguments)
         callee = refs[instruction.callee]
         if callee.kind == "function":
