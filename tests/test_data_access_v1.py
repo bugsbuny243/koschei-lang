@@ -198,14 +198,6 @@ class DataAccessV1Tests(unittest.TestCase):
         code = self.check_error('    let item = json_get(v, "a") or v\n    println(item)')
         self.assertIn(code, {"KS3608", "KS3708"})
 
-    def test_native_builds_still_refuse_data(self) -> None:
-        path = self.write(SURFACE)
-        with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()) as errors:
-            code = cli_main(["build", str(path), "-o", str(path.parent / "app")])
-        self.assertNotEqual(code, 0)
-        self.assertIn("KS4004", errors.getvalue())
-        self.assertFalse((path.parent / "app").exists())
-
     def test_diagnostics_are_registered_in_both_languages(self) -> None:
         for code in ("KS3709", "KS3710"):
             self.assertIn(code, CATALOG)

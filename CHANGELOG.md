@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Compile Data into native binaries: `parse_json`, `encode_json` and the `json_*` access builtins. `ks build` refused any program that used them (`KS4004`). Binaries embed the audited data-json/v1 Go core and print what `ks run` prints, parse and access errors included; `json_keys` keeps the document's key order. Refused repository programs drop from 11 to 8, and all 20 ceremony benchmark tasks now build.
+- Make the Go data-json/v1 core report errors exactly like the Python one: a duplicate key or unexpected character is quoted the way Python's `repr()` quotes it (it printed `"a"` for `'a'` and broke multi-byte characters), and a bad `\u` escape is located and measured in characters. 11,500 random valid and broken documents now give the same result in both cores.
+- Fix `json_int()` on a number that canonical text keeps in exponent form (`1e400`, `1.5e-7`): `ks run` stopped with an internal error. It now returns `KS3709` (outside the Int range, or not an integer).
+
 - Compile more List and Map methods into native binaries: `sum`, `min`, `max`, `unique`, `flatten`, `chunks`, `first_difference`, `partition`, `scan` (its reducer takes the accumulator and the item) and `Map.merge`, `Map.add`, `Map.keys_sorted_by_value`. `ks build` refused any program that called one (`KS4004`); the binary now gives the same values, `Result`/`Option` shapes and error texts as `ks run`. Of the repository's programs that `ks build` refused, 21 drop to 11, and all 20 ceremony benchmark tasks but the JSON one now build.
 
 - Fix the intermittent repository-truth failure: `test_native_serve_v1`'s parity test sent a half-written `/slow` request whose read deadline and the program's `accept()` deadline are both 4 s. On a loaded machine `ks run` could reach `accept()` after the connection arrived, so the two deadline errors came out in the other order and the outputs of `ks run` and the binary differed. The client now connects 1 s after the previous reply, so `accept()` always times out first. The servers were right; the test was not deterministic.

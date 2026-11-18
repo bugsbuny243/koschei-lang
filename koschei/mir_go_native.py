@@ -79,6 +79,7 @@ from .mir_ir import (
     MirUnary,
     MirUnreachable,
 )
+from .mir_go_json_v1 import JSON_ARITY, JSON_BUILTINS, JSON_IMPORTS, json_runtime
 from .native_broker_v1 import BROKER_IMPORTS, broker_runtime
 from .native_net_v1 import NET_IMPORTS, net_runtime
 from .native_serve_v1 import SERVE_IMPORTS, request_runtime, serve_runtime
@@ -107,6 +108,7 @@ _BUILTINS = {
     SECURE_HASH_NAME: "_ksSha3_256",
     "bytes_from_hex": "_ksBytesFromHex",
     "sha3_256_bytes": "_ksSha3_256Bytes",
+    **JSON_BUILTINS,
 }
 _STRING_METHODS = frozenset({"length", "contains", "trim", "split", "join", "to_int", "to_bytes"})
 _LIST_METHODS = frozenset(
@@ -324,11 +326,13 @@ def generate_go_mir_native(
     }
     uses_bytes_digest = "sha3_256_bytes" in builtins_used
     uses_digest = SECURE_HASH_NAME in builtins_used or uses_bytes_digest
+    uses_json = bool(builtins_used & set(JSON_BUILTINS))
     domains = _used_domains(plans)
     imports = sorted(
         {
             *MIR_GO_RUNTIME_V2_IMPORTS,
             *(MIR_GO_SHA3_IMPORTS_V2 if uses_digest else ()),
+            *(JSON_IMPORTS if uses_json else ()),
             *(MIR_GO_INPUT_IMPORTS_V2 if "input" in domains else ()),
             *(MIR_GO_CLOCK_IMPORTS_V2 if "clock" in domains else ()),
             *(MIR_GO_RANDOM_IMPORTS_V2 if "random" in domains else ()),
@@ -359,6 +363,8 @@ def generate_go_mir_native(
     ]
     if uses_digest:
         lines.append(MIR_GO_SHA3_RUNTIME_V2.format(max_bytes=SHA3_256_MAX_INPUT_BYTES))
+    if uses_json:
+        lines.append(json_runtime())
     if uses_bytes_digest:
         from .bytes_v1 import SHA3_SIZE_MESSAGE, SHA3_TYPE_MESSAGE
 
@@ -844,8 +850,13 @@ def _use_reasons(instruction: Any, refs: dict[int, _Ref], mir: MirGraph, label: 
             )
             if len(target.parameters) != len(instruction.arguments):
                 reasons.append(f"{label}: call arity mismatch for {callee.name}")
-        elif callee.kind == "builtin" and len(instruction.arguments) != 1:
-            reasons.append(f"{label}: {callee.name} requires one argument")
+        elif callee.kind == "builtin":
+            expected = JSON_ARITY.get(callee.name, 1)
+            if len(instruction.arguments) != expected:
+                reasons.append(
+                    f"{label}: {callee.name} requires {expected} argument"
+                    + ("s" if expected != 1 else "")
+                )
         operands = instruction.arguments
         if callee is not None and callee.kind == "member" and callee.name in _CALLBACK_METHODS:
             # The callback may be a named top-level function of one

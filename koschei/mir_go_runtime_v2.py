@@ -283,6 +283,8 @@ func _ksToString(value any) string {
 		return "<RandomRoot>"
 	case *_ksRandomCaps:
 		return "<RandomCaps>"
+	case _ksData:
+		return "<data>"
 	}
 	_ksAbort("KS5002", "unrenderable runtime value")
 	return ""
@@ -1302,6 +1304,12 @@ func _ksInvokeMember(callee any, arguments ...any) any {
 // stored in a value, so no other helper ever sees it.
 type _ksCallback func(...any) any
 
+// An opaque Data value (data_language_v1.DataValue) holding a decoded
+// data-json/v1 value; only the json_* builtins look inside.
+type _ksData struct {
+	value any
+}
+
 func _ksResultErr(message string) any {
 	return _ksEnumValue{owner: "Result", variant: "Err", hasPayload: true, payload: _ksError{message: message}}
 }
@@ -1681,6 +1689,8 @@ func _ksTypeName(value any) string {
 			return item.name + "<" + strings.Join(item.typeArgs, ", ") + ">"
 		}
 		return item.name
+	case _ksData:
+		return "Data"
 	case _ksError:
 		return "Error"
 	case []any:
@@ -1949,6 +1959,8 @@ func _ksMatchPattern(value any, expected string, parameters map[string]bool, bin
 		return base == "Map"
 	case _ksBytes:
 		return base == "Bytes"
+	case _ksData:
+		return base == "Data"
 	case _ksSystemCaps:
 		return base == "SystemCaps"
 	case _ksInputRoot:

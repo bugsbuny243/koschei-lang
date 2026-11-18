@@ -144,8 +144,13 @@ def access(name: str, arguments: list[Any] | tuple[Any, ...]) -> Any:
         return _expect(name, value, "bool")
     if name == "json_int":
         text = _expect(name, value, "number").text
-        if "." in text:
+        # Canonical text keeps an exponent only where expanding it would not
+        # be shorter: "e-" is never a whole number, and a positive exponent
+        # is far outside the Int range. int() would raise on either.
+        if "." in text or "e-" in text:
             raise _Failure(f"KS3709: json_int(): {text} is not an integer")
+        if "e" in text:
+            raise _Failure(f"KS3709: json_int(): {text} is outside the Int range")
         number = int(text)
         if not INT_MIN <= number <= INT_MAX:
             raise _Failure(f"KS3709: json_int(): {text} is outside the Int range")

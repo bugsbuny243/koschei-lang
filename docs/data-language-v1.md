@@ -77,10 +77,13 @@ These are ordinary fallible values and use the same `or return`, `or value`, or
 
 ## Interpreter/native parity
 
-Both execution paths consume the `koschei.data-json/v1` contract. Generated
-binaries embed the audited native Go core and do not import a third-party JSON
-library. Shared fixtures and language-level tests require identical canonical
-output and the same KS370x public error class.
+Both execution paths consume the `koschei.data-json/v1` contract. `ks build`
+binaries embed the audited native Go core (`native/datajson/json.go`) and do
+not import a third-party JSON library. They print what `ks run` prints: the
+same canonical output, the same parse errors (`KS3602`–`KS3608`, with the
+same byte offsets and messages) and the same access errors (`KS3709`,
+`KS3710`). `tests/test_mir_go_json_v1.py` checks the binaries against `ks run`
+and the Go core against the Python core on random valid and broken documents.
 
 Run the example with:
 
