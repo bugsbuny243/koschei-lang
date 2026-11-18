@@ -122,7 +122,7 @@ def test_http_site_and_playground_pages(server):
     with urllib.request.urlopen(server + "/", timeout=10) as response:
         body = response.read()
         assert response.status == 200
-        assert b"buy.polar.sh" in body and b'href="/play"' in body
+        assert b"buy.polar.sh" in body and b'href="/play"' not in body
         assert "connect-src 'none'" in response.headers["Content-Security-Policy"]
     with urllib.request.urlopen(server + "/play", timeout=10) as response:
         assert b"Koschei Playground" in response.read()
