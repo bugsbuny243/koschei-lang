@@ -1,8 +1,17 @@
-# Koschei Lang 0.15.0 — Sürüm Notları
+# Koschei Lang 0.16.0 — Sürüm Notları
 
 **Ürün:** Koschei Lang (Koschei Sentinel ve Web3 Hub'dan bağımsız)  
-**Sürüm:** 0.15.0  
+**Sürüm:** 0.16.0  
 **Ürün hattı:** ticari lisanslı, 1.0 öncesi programlama dili ve araç zinciri
+
+## 0.16.0'da yeni
+
+- `ks build`, `List.sort()`, `filter`, `find`, `map` ve `any` kullanan
+  programları derliyor. Bu programlar `ks run` ile çalışıyor ama binary'ye
+  dönmüyordu; artık binary aynı sonuçları ve hataları veriyor. Callback,
+  `ks run`'daki gibi tek parametreli bir üst düzey fonksiyon ya da lambda.
+- Doğrulama başarısız olduğunda çıktı, yalnızca son satırları göstermek
+  yerine düşen testlerin adını yazıyor.
 
 ## 0.15.0'da yeni
 

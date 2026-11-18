@@ -1,8 +1,17 @@
-# Koschei Lang 0.15.0 — Release Notes
+# Koschei Lang 0.16.0 — Release Notes
 
 **Product:** Koschei Lang (independent of Koschei Sentinel and Web3 Hub)  
-**Version:** 0.15.0  
+**Version:** 0.16.0  
 **Release line:** commercially licensed, pre-1.0 language/toolchain
+
+## New in 0.16.0
+
+- `ks build` compiles `List.sort()`, `filter`, `find`, `map` and `any`.
+  Programs that used them ran under `ks run` but did not build; now the
+  binary gives the same results and errors. A callback is a top-level
+  function of one parameter or a lambda, as in `ks run`.
+- When validation fails, its output names the failing tests instead of
+  showing only the last lines.
 
 ## New in 0.15.0
 
