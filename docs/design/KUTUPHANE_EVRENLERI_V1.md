@@ -373,7 +373,6 @@ gelecek (kuantum sonrası kriptografi) için kullanılır.
 - Kalan engeller:
   - **Bit işlemleri yok** (`&`, `|`, `^`, `<<`): `KS1001` sözdizimi hatası.
     Hex/base64 gibi kodlamalar ve bayt düzeyindeki işler için gerekir.
-  - **Generic struct** native derlemede henüz yok (`ks run`'da var).
   - **Fonksiyonu değer olarak saklamak** native derlemede yok; callback
     olarak doğrudan geçirmek var.
   - Yukarıdaki tablolarda "Kod + test" yazan Python modülleri hâlâ host
