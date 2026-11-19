@@ -276,7 +276,7 @@ historical replay, verifying a destination's right to accept a message
 and durably recording transit. Neither a self-consistent digest nor
 `matches` proves these properties.
 
-### Marvel universe: `captain_marvel`, `hela`, `strange`, `wanda`, `xandar`, `morag`
+### Marvel universe: `captain_marvel`, `hela`, `strange`, `wanda`, `vormir`, `xandar`, `morag`
 
 The first library universe modules written in Koschei. The first four port a
 Python guardian and return the same decisions, reasons and error causes.
@@ -291,9 +291,19 @@ mapping, rules and status live in
 | `hela` | `AuthorityTombstone` | `bury`, `remains_dead`, `is_resurrection_attempt`, `is_canonical` |
 | `strange` | `FutureStep`, `FutureVerdict` | `simulate` |
 | `wanda` | `RealityCommitment` | `commit`, `extends`, `detects_fork`, `detects_rollback`, `is_canonical` |
+| `vormir` | `VormirCommitment`, `VormirWitness`, `VormirEpochReceipt` | `commit`, `admits_root`, `is_canonical`, `canonical_witnesses`, `seal`, `seal_problem`, `is_sealed` |
 | `xandar` | `SecurityAdvisory`, `AdvisoryVerdict` | `check`, `feed_digest`, `is_well_formed` |
 | `morag` | `SupportWindow`, `MaintainerBackport`, `SupportVerdict` | `check` |
 
+- **`vormir`** ports the pure part of `vormir_sacrifice_v1.py`: a sacrifice
+  commitment must surrender one authority for a different one and move
+  exactly one epoch forward, and the next epoch's root is admitted only for
+  that artifact once the surrendered authority is revoked. An epoch-sacrifice
+  receipt needs at least two witnesses with distinct domains and distinct
+  evidence. Unlike the other Marvel modules, digests are raw 32-byte `Bytes`
+  and sealed digests are the SHA3-256 of the Python byte layout, so they are
+  identical to the guardian's. Durably tombstoning the old epoch stays in the
+  host (`commit_vormir_epoch_sacrifice_v1`): it needs a durable fence.
 - **`xandar`** refuses an artifact whose content digest appears in an
   advisory feed. Identities are digests, never version labels; a feed with an
   advisory without an id, a duplicate id or an affected entry that is not a
@@ -321,7 +331,8 @@ fn main() {
   answer. A digest is not a signature: it proves that the fields did not
   change, not who issued the record.
 - Digests use `secure.digest` with one context per record kind, so they differ
-  from the Python byte layout by design.
+  from the Python byte layout by design; `vormir` is the exception and keeps
+  the Python layout.
 - Struct names are global within a program: importing one of these modules
   reserves its record names, and a project struct with the same name fails
   closed with `KS1604`.
@@ -334,7 +345,7 @@ fn main() {
 
 - Only the names registered in `CORE_LIBRARY_MODULES_V1` (`captain_marvel`,
   `hela`, `list`, `matrix_horizon`, `matrix_portal`, `morag`, `secure`, `strange`, `text`,
-  `wanda`, `xandar`) are
+  `vormir`, `wanda`, `xandar`) are
   library modules. A stray `.ks` file placed in the library directory is never
   importable by user code.
 - A project file with the same name as a library module (for example a
