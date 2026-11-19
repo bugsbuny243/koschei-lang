@@ -18,6 +18,7 @@ Every module is written in Koschei and compiled with the program that imports it
 | [`strange`](#strange) | 2 | 2 |
 | [`text`](#text) | 13 | 0 |
 | [`time`](#time) | 18 | 1 |
+| [`vormir`](#vormir) | 12 | 3 |
 | [`wanda`](#wanda) | 5 | 1 |
 | [`xandar`](#xandar) | 4 | 2 |
 
@@ -907,6 +908,137 @@ fn hours(count: Int) -> Int or Error
 
 ```ks
 fn days(count: Int) -> Int or Error
+```
+
+## vormir
+
+Sacrifice before rebirth. To come back at the next epoch, an authority must give something up: the commitment names the authority it surrenders and a different one it asks for, and moves exactly one epoch forward. The root of the next epoch is admitted only for that artifact, at that epoch, once the surrendered authority is revoked.
+
+The epoch-sacrifice receipt binds a sacrificed epoch to its successor with at least two independent witnesses (distinct domains, distinct evidence).
+
+Decisions, error causes and digests match the Python guardian `koschei/vormir_sacrifice_v1.py` byte for byte: digests are raw 32-byte `Bytes`, and each sealed digest is the lowercase hex SHA3-256 of the same byte layout. The durable part (tombstoning the old epoch on disk before the successor is accepted, `commit_vormir_epoch_sacrifice_v1`) stays in the host: it needs a durable fence, which a library module cannot hold.
+
+### struct `VormirCommitment`
+
+```ks
+principal_digest: Bytes
+artifact_digest: Bytes
+surrendered_authority: String
+requested_authority: String
+prior_epoch: Int
+next_epoch: Int
+hardware_attestation_digest: Bytes
+verifier_digest: Bytes
+commitment_digest: String
+```
+
+### struct `VormirWitness`
+
+```ks
+domain_digest: Bytes
+evidence_digest: Bytes
+```
+
+### struct `VormirEpochReceipt`
+
+```ks
+activation_plan_digest: String
+sacrificed_epoch: Int
+successor_epoch: Int
+previous_state_digest: String
+fresh_state_digest: String
+rebirth_receipt_digest: String
+tombstone_record_digest: String
+witnesses: List<VormirWitness>
+sacrifice_digest: String
+```
+
+### `vormir.context`
+
+```ks
+fn context() -> Bytes
+```
+
+The context prefix, NUL-terminated as in the Python layout.
+
+### `vormir.nul`
+
+```ks
+fn nul() -> Bytes
+```
+
+### `vormir.is_digest32`
+
+```ks
+fn is_digest32(value: Bytes) -> Bool
+```
+
+### `vormir.commit`
+
+```ks
+fn commit(principal_digest: Bytes, artifact_digest: Bytes, surrendered_authority: String, requested_authority: String, prior_epoch: Int, next_epoch: Int, hardware_attestation_digest: Bytes, verifier_digest: Bytes) -> Result<VormirCommitment, Error>
+```
+
+### `vormir.is_canonical`
+
+```ks
+fn is_canonical(commitment: VormirCommitment) -> Bool
+```
+
+True when `commitment` is exactly what `commit` returns for its fields.
+
+### `vormir.admits_root`
+
+```ks
+fn admits_root(commitment: VormirCommitment, revoked_authority: String, observed_epoch: Int, observed_artifact_digest: Bytes) -> Bool
+```
+
+The commitment-only gate (`admits_vormir_root_v1`): the surrendered authority is the one revoked, the epoch is the committed next epoch and the artifact is the committed one. Fails closed on a malformed artifact digest or a commitment that is not canonical (the Python gate only checks the type; a hand-edited record is refused here).
+
+### `vormir.witness_problem`
+
+```ks
+fn witness_problem(witnesses: List<VormirWitness>) -> String
+```
+
+Why `witnesses` cannot be canonicalized, or "" when they can (`_canonical_epoch_witnesses` and the witness checks of `__post_init__`).
+
+### `vormir.canonical_witnesses`
+
+```ks
+fn canonical_witnesses(witnesses: List<VormirWitness>) -> Result<List<VormirWitness>, Error>
+```
+
+Witnesses in canonical order (`_canonical_epoch_witnesses`): at least two, distinct domains, distinct evidence, sorted by domain then evidence.
+
+### `vormir.sacrifice_digest`
+
+```ks
+fn sacrifice_digest(activation_plan_digest: String, sacrificed_epoch: Int, successor_epoch: Int, previous_state_digest: String, fresh_state_digest: String, rebirth_receipt_digest: String, tombstone_record_digest: String, witnesses: List<VormirWitness>) -> Result<String, Error>
+```
+
+`_epoch_sacrifice_digest`: lowercase hex SHA3-256 of the receipt layout.
+
+### `vormir.seal`
+
+```ks
+fn seal(activation_plan_digest: String, sacrificed_epoch: Int, successor_epoch: Int, previous_state_digest: String, fresh_state_digest: String, rebirth_receipt_digest: String, tombstone_record_digest: String, witnesses: List<VormirWitness>) -> Result<VormirEpochReceipt, Error>
+```
+
+Seals a receipt from fields the durable host step produced.
+
+### `vormir.seal_problem`
+
+```ks
+fn seal_problem(receipt: VormirEpochReceipt) -> String
+```
+
+`assert_sealed`: the reason a receipt is not sealed, or "" when it is.
+
+### `vormir.is_sealed`
+
+```ks
+fn is_sealed(receipt: VormirEpochReceipt) -> Bool
 ```
 
 ## wanda

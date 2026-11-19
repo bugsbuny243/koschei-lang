@@ -164,7 +164,7 @@ gezegenin yetkisini devralmaz.
 
 | Gezegen | Güvenlik görevi | Uygulama | Durum |
 |---|---|---|---|
-| **Vormir** | Kök gerçekliğe giriş. Yüksek değerli yetki ancak gerçek ve geri alınamaz bir yetki azaltma (kurban), taze epoch ve doğrulanabilir kanıtla verilir. Vormir'i bulmak ona girmek demek değildir. | `koschei/vormir_sacrifice_v1.py` | Kod + test |
+| **Vormir** | Kök gerçekliğe giriş. Yüksek değerli yetki ancak gerçek ve geri alınamaz bir yetki azaltma (kurban), taze epoch ve doğrulanabilir kanıtla verilir. Vormir'i bulmak ona girmek demek değildir. | `koschei/vormir_sacrifice_v1.py`, `koschei/core_library/vormir.ks` | Saf kısım Koschei'de (Python'la bayt bayt aynı özet); kalıcı epoch gömme host'ta |
 | Gezegen gerçeklikleri (genel) | Göreve özel dünyalar; her biri yukarıdaki sekiz özelliği taşır ve kendi etki alanıyla sınırlıdır. | `koschei/planetary_console_v1.py` (yalnızca gözlem paneli; yetki üretemez) | Kısmi: gözlem paneli var, gezegen nesnesi yok |
 | Diğer Marvel gezegenleri | Aşağıdaki taramada tek tek ele alındı | — | 6 aday, 11 örtüşen, 6 tanımlanmamış |
 
@@ -469,7 +469,10 @@ gelecek (kuantum sonrası kriptografi) için kullanılır.
       özetine bağlı kabul. Karar mantıkları Koschei kütüphanesinde geldi;
       araç zincirine (kilit, derleme) bağlanmaları sırada.
    3. **Knowhere** ve **Sakaar:** kalıcı işçili serve'den önce.
-   4. **Vormir'in** Koschei'ye taşınması.
+   4. ~~**Vormir'in** Koschei'ye taşınması.~~ **Saf kısım tamamlandı:**
+      `vormir` modülü kurban taahhüdünü, kök kapısını, tanık sıralamasını ve
+      epoch-kurbanı mührünü Python'la bayt bayt aynı özetle verir. Eski
+      epoch'u diske kalıcı olarak gömme adımı host'ta kalır.
 5. **Fizik Çekirdeği** yasalarının Koschei tarafındaki denetimleri.
 
 Her taşıma aynı kurallarla yapılır: modül adı kayıt listesine eklenir ve
