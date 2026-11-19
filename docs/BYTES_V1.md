@@ -35,6 +35,7 @@ fn main() {
 | `==`, `!=`, `<`, … | `Bool` | byte by byte |
 | `bytes_from_hex(text)` | `Bytes or Error` | even length, `0-9a-fA-F` only; `KS3461` otherwise (no spaces) |
 | `sha3_256_bytes(data)` | `String or Error` | kernel digest of the bytes; at most 1 MiB |
+| `sha256_bytes(data)` | `String or Error` | SHA-256 of the bytes (lowercase hex), from the host library; at most 1 MiB. For reproducing records the Python guardians seal with SHA-256; new designs use SHA3 |
 | `secure.hash_bytes(data)` | `Result<String, Error>` | `"sha3-256:" + hex`; equals `secure.hash(text)` for `text.to_bytes()` |
 
 A value renders as `Bytes(hex)`. Mixing `Bytes` and `String` in `+` or `==`

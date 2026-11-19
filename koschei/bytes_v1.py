@@ -40,7 +40,11 @@ from .type_system import ERROR, INT, STRING, NamedType, union_type
 BYTES = NamedType("Bytes")
 FROM_HEX = "bytes_from_hex"
 SHA3_BYTES = "sha3_256_bytes"
-BUILTINS = (FROM_HEX, SHA3_BYTES)
+# SHA-256 beside SHA3-256 (secure.ks: a later algorithm lives beside the first
+# one): the Python guardians seal many records with SHA-256, and a Koschei port
+# can only reproduce those digests with it. Both delegate to the host library.
+SHA256_BYTES = "sha256_bytes"
+BUILTINS = (FROM_HEX, SHA3_BYTES, SHA256_BYTES)
 METHODS = {
     # name: (argument count, legacy result type)
     "length": (0, "Int"),
@@ -63,6 +67,8 @@ GET_MESSAGE = "KS3460: Bytes.get() indeksi aralık dışında: {index} (uzunluk 
 HEX_MESSAGE = "KS3461: bytes_from_hex() çift uzunlukta bir hex metni bekler."
 SHA3_TYPE_MESSAGE = f"{SHA3_BYTES}: input must be Bytes"
 SHA3_SIZE_MESSAGE = f"{SHA3_BYTES}: input exceeds {SHA3_256_MAX_INPUT_BYTES} bytes"
+SHA256_TYPE_MESSAGE = f"{SHA256_BYTES}: input must be Bytes"
+SHA256_SIZE_MESSAGE = f"{SHA256_BYTES}: input exceeds {SHA3_256_MAX_INPUT_BYTES} bytes"
 
 _HEX = re.compile(r"(?:[0-9a-fA-F]{2})*")
 
@@ -112,9 +118,19 @@ def sha3_bytes(value: Any) -> Any:
     return hashlib.sha3_256(bytes(value)).hexdigest()
 
 
+def sha256_bytes(value: Any) -> Any:
+    if not isinstance(value, _runtime.Bytes):
+        return _runtime.KsError(SHA256_TYPE_MESSAGE)
+    if len(value) > SHA3_256_MAX_INPUT_BYTES:
+        return _runtime.KsError(SHA256_SIZE_MESSAGE)
+    return hashlib.sha256(bytes(value)).hexdigest()
+
+
 def _builtin(name: str, arguments: list[Any]) -> Any:
     (argument,) = arguments
-    return from_hex(argument) if name == FROM_HEX else sha3_bytes(argument)
+    if name == FROM_HEX:
+        return from_hex(argument)
+    return sha256_bytes(argument) if name == SHA256_BYTES else sha3_bytes(argument)
 
 
 # ---- legacy checker ---------------------------------------------------------
@@ -355,6 +371,9 @@ __all__ = [
     "HEX_MESSAGE",
     "METHODS",
     "NOT_TEXT_MESSAGE",
+    "SHA256_BYTES",
+    "SHA256_SIZE_MESSAGE",
+    "SHA256_TYPE_MESSAGE",
     "SHA3_BYTES",
     "SHA3_SIZE_MESSAGE",
     "SHA3_TYPE_MESSAGE",

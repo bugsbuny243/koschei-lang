@@ -194,6 +194,19 @@ fn main() {
 }
 ```
 
+### Matrix universe: `matrix_reality` (Matrix/Hara identity and admission)
+
+`import matrix_reality` ports `koschei/matrix_reality_v1.py`. A Matrix is the
+local execution reality inside one Veyra; a Hara is one Aevra's horizon inside
+it. `birth_matrix`, `birth_hara` and `admit` build sealed records;
+`matrix_problem`, `hara_problem` and `admission_problem` give the Python
+guardian's refusal reason (or `""`), and `is_admitted` is true when the
+admission and everything under it is sealed. Seals are SHA-256 over the Python
+byte layout (`sha256_bytes`), so they are identical to the guardian's, and
+digest inputs are normalized the same way (64 non-zero hex characters,
+lowercased). The Veyra and Aevra identities and the MIR fingerprint are sealed
+by the host (`galaxy_identity_v1`) and passed in as a `MatrixHost`.
+
 ### Matrix universe: `matrix_horizon` (pure transition proposal only)
 
 The first Matrix library module is written in Koschei, imported with
@@ -344,7 +357,7 @@ fn main() {
 ## Resolution and security rules
 
 - Only the names registered in `CORE_LIBRARY_MODULES_V1` (`captain_marvel`,
-  `hela`, `list`, `matrix_horizon`, `matrix_portal`, `morag`, `secure`, `strange`, `text`,
+  `hela`, `list`, `matrix_horizon`, `matrix_portal`, `matrix_reality`, `morag`, `secure`, `strange`, `text`,
   `vormir`, `wanda`, `xandar`) are
   library modules. A stray `.ks` file placed in the library directory is never
   importable by user code.
