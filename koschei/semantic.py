@@ -1588,7 +1588,12 @@ class SemanticChecker:
                 location,
             )
 
-        if method_name in GUARDED_METHODS:
+        # A receiver of unknown type (an element from List.get or Map.get: the
+        # legacy checker does not track element types) cannot be a capability:
+        # capability values are refused in Lists and Maps (KS2401/KS2402). A
+        # capability method name there is an ordinary method (Bytes.hex) whose
+        # receiver the typed HIR checks; refusing it was a false KS2401.
+        if method_name in GUARDED_METHODS and receiver_type is not None:
             raise SemanticError(
                 "KS2401",
                 f"'{method_name}' işlemi için gerekli yetki bu scope içinde mevcut değil.",
