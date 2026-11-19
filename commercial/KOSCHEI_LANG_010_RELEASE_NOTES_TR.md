@@ -1,8 +1,28 @@
-# Koschei Lang 0.16.0 — Sürüm Notları
+# Koschei Lang 0.17.0 — Sürüm Notları
 
 **Ürün:** Koschei Lang (Koschei Sentinel ve Web3 Hub'dan bağımsız)  
-**Sürüm:** 0.16.0  
+**Sürüm:** 0.17.0  
 **Ürün hattı:** ticari lisanslı, 1.0 öncesi programlama dili ve araç zinciri
+
+## 0.17.0'da yeni
+
+- `ks build`, `ks run`'ın çalıştırdığı programların neredeyse tamamını
+  derliyor. Native binary'lerde yeni: daha fazla List/Map metodu (`sum`,
+  `min`, `max`, `unique`, `flatten`, `chunks`, `partition`, `scan`, `merge`,
+  `add`, …), Data (`parse_json`, `encode_json`, `json_*`), tam hassasiyetli
+  ondalık sayılar, generic ve typestate struct'lar, sınırlı kuyruklar, görev
+  kapsamları ve `parallel_map`. Çıktılar ve hata mesajları `ks run` ile aynı.
+  Repodaki programlardan yalnızca biri hâlâ `ks run` gerektiriyor
+  (`PersistCaps` kullanıyor).
+- `sha256_bytes(data)`: `sha3_256_bytes`'ın yanında, host kütüphanesinden
+  SHA-256.
+- Python bekçilerini bayt bayt yeniden üreten kütüphane modülleri: `vormir`
+  (yeniden doğuştan önce kurban), `galaxy_identity` (Veyra ve Aevra) ve
+  `matrix_reality` (Matrix, Hara ve kabul). Fark testleri bunları Python
+  modülleriyle hem `ks run` hem binary olarak karşılaştırır.
+- Düzeltmeler: `json_int` çok büyük ya da üslü sayılarda artık `ks run`'ı iç
+  hatayla durdurmuyor; Go ve Python JSON çekirdekleri hataları aynı
+  bildiriyor; List/Map öğelerindeki yanlış `KS2401` giderildi.
 
 ## 0.16.0'da yeni
 

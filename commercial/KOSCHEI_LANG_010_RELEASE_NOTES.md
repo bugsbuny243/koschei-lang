@@ -1,8 +1,27 @@
-# Koschei Lang 0.16.0 — Release Notes
+# Koschei Lang 0.17.0 — Release Notes
 
 **Product:** Koschei Lang (independent of Koschei Sentinel and Web3 Hub)  
-**Version:** 0.16.0  
+**Version:** 0.17.0  
 **Release line:** commercially licensed, pre-1.0 language/toolchain
+
+## New in 0.17.0
+
+- `ks build` compiles almost every program `ks run` runs. New in native
+  binaries: more List/Map methods (`sum`, `min`, `max`, `unique`, `flatten`,
+  `chunks`, `partition`, `scan`, `merge`, `add`, …), Data (`parse_json`,
+  `encode_json`, `json_*`), exact decimals, generic and typestate structs,
+  bounded queues, task scopes and `parallel_map`. Output and error messages
+  match `ks run`. Of the repository's programs, one still needs `ks run`
+  (it uses `PersistCaps`).
+- `sha256_bytes(data)`: SHA-256 beside `sha3_256_bytes`, from the host
+  library.
+- Library modules that reproduce the Python guardians byte for byte:
+  `vormir` (sacrifice before rebirth), `galaxy_identity` (Veyra and Aevra)
+  and `matrix_reality` (Matrix, Hara and admission). Differential tests
+  compare them with the Python modules under `ks run` and as binaries.
+- Fixes: `json_int` on very large or exponent numbers no longer stops
+  `ks run` with an internal error; the Go and Python JSON cores report
+  errors identically; a false `KS2401` on List/Map elements is gone.
 
 ## New in 0.16.0
 
