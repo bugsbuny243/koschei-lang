@@ -13,6 +13,7 @@ Every module is written in Koschei and compiled with the program that imports it
 | [`math`](#math) | 12 | 0 |
 | [`matrix_horizon`](#matrix_horizon) | 5 | 1 |
 | [`matrix_portal`](#matrix_portal) | 3 | 1 |
+| [`matrix_reality`](#matrix_reality) | 14 | 4 |
 | [`morag`](#morag) | 2 | 3 |
 | [`secure`](#secure) | 5 | 0 |
 | [`strange`](#strange) | 2 | 2 |
@@ -548,6 +549,151 @@ fn preview_policy(proof: PortalTransitProposal, source: RealityCommitment, desti
 ```
 
 Preview the caller-provided policy and consumed-proof snapshot. This is NOT an admission or an authority check: the three lists come from untrusted caller-provided VALUES unless an external authenticated policy/ledger supplies them. In particular a stale empty consumed-list can say "true" after the same proof was durably consumed. Only the host's transactional DurablePortalReplayFence has the replay write gate.
+
+## matrix_reality
+
+A Matrix is the local execution reality inside one Veyra; a Hara is the horizon of one Aevra (one program) inside that Matrix. Two programs may share a Matrix and still not share a Hara. An admission binds one Matrix, one Hara, one Aevra, one Veyra, one native MIR fingerprint and one epoch. Nothing here grants authority.
+
+Ports `koschei/matrix_reality_v1.py`: the same checks, the same error messages and byte-identical SHA-256 seals. The Veyra and Aevra identities (and the MIR fingerprint) are sealed by the host (`galaxy_identity_v1`); this module takes them as a `MatrixHost` the caller has already verified.
+
+### struct `MatrixHost`
+
+```ks
+veyra_digest: String
+veyra_birth_epoch: Int
+aevra_digest: String
+aevra_birth_epoch: Int
+mir_fingerprint: String
+```
+
+### struct `MatrixIdentity`
+
+```ks
+veyra_digest: String
+instance_digest: String
+reality_commitment_digest: String
+birth_epoch: Int
+digest: String
+```
+
+### struct `HaraIdentity`
+
+```ks
+matrix_digest: String
+aevra_digest: String
+horizon_commitment_digest: String
+epoch: Int
+digest: String
+```
+
+### struct `MatrixAdmission`
+
+```ks
+matrix_digest: String
+hara_digest: String
+aevra_digest: String
+veyra_digest: String
+native_mir_fingerprint: String
+epoch: Int
+evidence_digest: String
+digest: String
+```
+
+### `matrix_reality.normalized`
+
+```ks
+fn normalized(value: String) -> String
+```
+
+`_digest64`: a 64-character non-zero hex digest, lowercased; "" when the text is not one. bytes_from_hex both checks the alphabet and lowercases.
+
+### `matrix_reality.digest_problem`
+
+```ks
+fn digest_problem(value: String, label: String) -> String
+```
+
+The reason `value` is not a digest, or "".
+
+### `matrix_reality.seal`
+
+```ks
+fn seal(kind: String, rows: List<String>) -> String
+```
+
+`_hash`: SHA-256 of context, kind, NUL and the rows joined by newlines.
+
+### `matrix_reality.matrix_seal`
+
+```ks
+fn matrix_seal(veyra: String, instance: String, reality: String, epoch: Int) -> String
+```
+
+### `matrix_reality.hara_seal`
+
+```ks
+fn hara_seal(matrix: String, aevra: String, horizon: String, epoch: Int) -> String
+```
+
+### `matrix_reality.admission_seal`
+
+```ks
+fn admission_seal(admission: MatrixAdmission) -> String
+```
+
+### `matrix_reality.matrix_problem`
+
+```ks
+fn matrix_problem(matrix: MatrixIdentity, host: MatrixHost) -> String
+```
+
+`MatrixIdentity.assert_sealed`: why `matrix` is not sealed for this host's Veyra, or "".
+
+### `matrix_reality.birth_matrix`
+
+```ks
+fn birth_matrix(host: MatrixHost, instance_digest: String, reality_commitment_digest: String, birth_epoch: Int) -> Result<MatrixIdentity, Error>
+```
+
+### `matrix_reality.later`
+
+```ks
+fn later(left: Int, right: Int) -> Int
+```
+
+### `matrix_reality.hara_problem`
+
+```ks
+fn hara_problem(hara: HaraIdentity, matrix: MatrixIdentity, host: MatrixHost) -> String
+```
+
+`HaraIdentity.assert_sealed`, after the Matrix is sealed.
+
+### `matrix_reality.birth_hara`
+
+```ks
+fn birth_hara(matrix: MatrixIdentity, host: MatrixHost, horizon_commitment_digest: String, epoch: Int) -> Result<HaraIdentity, Error>
+```
+
+### `matrix_reality.admission_problem`
+
+```ks
+fn admission_problem(admission: MatrixAdmission, matrix: MatrixIdentity, hara: HaraIdentity, host: MatrixHost) -> String
+```
+
+`MatrixAdmission.assert_sealed`, after the Matrix and Hara are sealed.
+
+### `matrix_reality.admit`
+
+```ks
+fn admit(matrix: MatrixIdentity, hara: HaraIdentity, host: MatrixHost, evidence_digest: String) -> Result<MatrixAdmission, Error>
+```
+
+### `matrix_reality.is_admitted`
+
+```ks
+fn is_admitted(admission: MatrixAdmission, matrix: MatrixIdentity, hara: HaraIdentity, host: MatrixHost) -> Bool
+```
 
 ## morag
 

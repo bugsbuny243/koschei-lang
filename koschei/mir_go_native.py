@@ -56,6 +56,8 @@ from .mir_go_runtime_v2 import (
     MIR_GO_RUNTIME_V2,
     MIR_GO_RUNTIME_V2_IMPORTS,
     MIR_GO_SHA3_BYTES_RUNTIME_V2,
+    MIR_GO_SHA256_BYTES_RUNTIME_V2,
+    MIR_GO_SHA256_IMPORTS_V2,
     MIR_GO_SHA3_IMPORTS_V2,
     MIR_GO_SHA3_RUNTIME_V2,
     MIR_GO_VALUE_BUDGET_RUNTIME_V2,
@@ -118,6 +120,7 @@ _BUILTINS = {
     SECURE_HASH_NAME: "_ksSha3_256",
     "bytes_from_hex": "_ksBytesFromHex",
     "sha3_256_bytes": "_ksSha3_256Bytes",
+    "sha256_bytes": "_ksSha256Bytes",
     **JSON_BUILTINS,
     **DECIMAL_BUILTINS,
     **TASK_BUILTINS,
@@ -338,6 +341,7 @@ def generate_go_mir_native(
         ref.name for plan in plans for ref in plan.refs.values() if ref.kind == "builtin"
     }
     uses_bytes_digest = "sha3_256_bytes" in builtins_used
+    uses_sha256 = "sha256_bytes" in builtins_used
     uses_digest = SECURE_HASH_NAME in builtins_used or uses_bytes_digest
     uses_json = bool(builtins_used & set(JSON_BUILTINS))
     uses_decimal = bool(builtins_used & set(DECIMAL_BUILTINS))
@@ -348,6 +352,7 @@ def generate_go_mir_native(
             *MIR_GO_RUNTIME_V2_IMPORTS,
             *(MIR_GO_SHA3_IMPORTS_V2 if uses_digest else ()),
             *(JSON_IMPORTS if uses_json else ()),
+            *(MIR_GO_SHA256_IMPORTS_V2 if uses_sha256 else ()),
             *(MIR_GO_INPUT_IMPORTS_V2 if "input" in domains else ()),
             *(MIR_GO_CLOCK_IMPORTS_V2 if "clock" in domains else ()),
             *(MIR_GO_RANDOM_IMPORTS_V2 if "random" in domains else ()),
@@ -378,6 +383,16 @@ def generate_go_mir_native(
     ]
     if uses_digest:
         lines.append(MIR_GO_SHA3_RUNTIME_V2.format(max_bytes=SHA3_256_MAX_INPUT_BYTES))
+    if uses_sha256:
+        from .bytes_v1 import SHA256_SIZE_MESSAGE, SHA256_TYPE_MESSAGE
+
+        lines.append(
+            MIR_GO_SHA256_BYTES_RUNTIME_V2.format(
+                type_message=_go_string(SHA256_TYPE_MESSAGE),
+                size_message=_go_string(SHA256_SIZE_MESSAGE),
+                max_bytes=SHA3_256_MAX_INPUT_BYTES,
+            )
+        )
     if uses_json:
         lines.append(json_runtime())
     if uses_decimal:

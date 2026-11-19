@@ -2533,6 +2533,23 @@ func _ksBytesFromHex(arguments ...any) any {{
 }}
 '''
 
+# Emitted when a program uses sha256_bytes.
+MIR_GO_SHA256_IMPORTS_V2 = ("crypto/sha256", "encoding/hex")
+MIR_GO_SHA256_BYTES_RUNTIME_V2 = r'''
+func _ksSha256Bytes(arguments ...any) any {{
+	_ksArity("sha256_bytes", arguments, 1)
+	data, ok := arguments[0].(_ksBytes)
+	if !ok {{
+		return _ksError{{message: {type_message}}}
+	}}
+	if len(data.data) > {max_bytes} {{
+		return _ksError{{message: {size_message}}}
+	}}
+	sum := sha256.Sum256([]byte(data.data))
+	return hex.EncodeToString(sum[:])
+}}
+'''
+
 # Emitted with the SHA3 runtime when a program digests Bytes.
 MIR_GO_SHA3_BYTES_RUNTIME_V2 = r'''
 func _ksSha3_256Bytes(arguments ...any) any {{

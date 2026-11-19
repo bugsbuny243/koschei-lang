@@ -317,7 +317,7 @@ eder.
 | Öğe | Güvenlik görevi | Uygulama | Durum |
 |---|---|---|---|
 | **Matrix dokusu** | Yalıtılmış gerçeklikler arasında mesaj ve kanıt taşıma. Bağlantı yetki değildir. | `koschei/matrix_portal_transit_v1.py` | Kod + test |
-| **Matrix / Hara** | Matrix, bir Veyra içindeki yerel yürütme gerçekliğidir; Hara o Matrix içindeki programa (Aevra) özel ufuktur. İki program aynı Matrix'i paylaşıp aynı Hara'yı paylaşmayabilir. | `koschei/matrix_reality_v1.py` | Kod + test |
+| **Matrix / Hara** | Matrix, bir Veyra içindeki yerel yürütme gerçekliğidir; Hara o Matrix içindeki programa (Aevra) özel ufuktur. İki program aynı Matrix'i paylaşıp aynı Hara'yı paylaşmayabilir. | `koschei/matrix_reality_v1.py`, `import matrix_reality` | **Koschei'de** (Python'la bayt bayt aynı SHA-256 mühür; Veyra/Aevra mühürleri host'ta) |
 | **Matrix ufuk geçişi — saf karar katmanı** | Veyra/Aevra sabit; yeni Matrix/Hara ve tam bir sonraki epoch. Self-consistent özet kaydı üretir, yetki vermez ve kalıcı durum güncellemez. | `import matrix_horizon` (`koschei/core_library/matrix_horizon.ks`); kalıcı durum hâlâ `matrix_horizon_fence_v1.py` | **Kısmi: Koschei'de** (saf doğrulama; SQLite tombstone değil) |
 | **Portal geçişi** | Gerçeklikler arası içerik bağı, saf politika ön değerlendirmesi ve paylaşılan tek SQLite defterinde atomik tekrar kabul engeli | `import matrix_portal` (`matrix_portal.preview_policy`) + Python `matrix_portal_transit_v1.py`, `matrix_portal_replay_v1.py` | **Kısmi: Koschei'de** (saf politika + host tek-defter replay çiti; imza, kimlik doğrulama ve gerçek yetkili yürütme yok) |
 | **Ufuk çiti** | Yeni bir Matrix/Hara'ya geçince eski Hara mezara konur; eski ufuktan erişim reddedilir | `koschei/matrix_horizon_fence_v1.py` | Kod + test |
