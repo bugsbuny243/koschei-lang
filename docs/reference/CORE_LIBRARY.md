@@ -6,6 +6,7 @@ Every module is written in Koschei and compiled with the program that imports it
 | Module | Functions | Structs |
 |---|---|---|
 | [`captain_marvel`](#captain_marvel) | 3 | 2 |
+| [`galaxy_identity`](#galaxy_identity) | 12 | 4 |
 | [`hela`](#hela) | 4 | 1 |
 | [`http`](#http) | 13 | 0 |
 | [`json`](#json) | 8 | 0 |
@@ -68,6 +69,135 @@ True when `budget` is exactly what `issue_budget` returns for its fields: valid 
 ```ks
 fn evaluate(budget: BlastRadiusBudget, destination: String, hops_used: Int, effects_used: Int) -> Result<PropagationVerdict, Error>
 ```
+
+## galaxy_identity
+
+Veyra is a customer-Galaxy identity commitment; Aevra is a living program identity bound to one Veyra and one compiler product. Neither grants authority. A copy of the bytes is not an Aevra: birth is also bound to a Veyra, to the compiler's native MIR (one of its sigil bindings) and to explicit birth evidence.
+
+Ports `koschei/galaxy_identity_v1.py`: the same checks, the same messages and byte-identical SHA-256 seals. The native MIR is sealed by the compiler (`native_sigil_mir_v1`); it comes in as a `GalaxyMir` the host verified. `matrix_host` turns sealed identities into the `MatrixHost` that `matrix_reality` takes, so the whole Matrix chain can run in Koschei.
+
+### struct `VeyraIdentity`
+
+```ks
+profile_digest: String
+genesis_digest: String
+constitution_digest: String
+instance_digest: String
+birth_epoch: Int
+digest: String
+```
+
+### struct `GalaxyBinding`
+
+```ks
+sigil: String
+subject: String
+```
+
+### struct `GalaxyMir`
+
+```ks
+fingerprint: String
+bindings: List<GalaxyBinding>
+```
+
+### struct `AevraIdentity`
+
+```ks
+veyra_digest: String
+native_mir_fingerprint: String
+sigil: String
+semantic_subject_digest: String
+birth_evidence_digest: String
+birth_epoch: Int
+digest: String
+```
+
+### `galaxy_identity.digest_problem`
+
+```ks
+fn digest_problem(value: String, label: String) -> String
+```
+
+`_require_digest`: why `value` is not a digest, or "".
+
+### `galaxy_identity.lowered`
+
+```ks
+fn lowered(value: String) -> String
+```
+
+The lowercase form of a valid digest.
+
+### `galaxy_identity.seal`
+
+```ks
+fn seal(kind: String, rows: List<String>) -> String
+```
+
+`_hash_rows`: SHA-256 of context, kind, NUL and the rows joined by newlines.
+
+### `galaxy_identity.subject_digest`
+
+```ks
+fn subject_digest(subject: String) -> String
+```
+
+### `galaxy_identity.veyra_seal`
+
+```ks
+fn veyra_seal(profile: String, genesis: String, constitution: String, instance: String, epoch: Int) -> String
+```
+
+### `galaxy_identity.aevra_seal`
+
+```ks
+fn aevra_seal(aevra: AevraIdentity) -> String
+```
+
+### `galaxy_identity.veyra_digest_problem`
+
+```ks
+fn veyra_digest_problem(profile: String, genesis: String, constitution: String, instance: String) -> String
+```
+
+The four Veyra digests in order, with their labels; "" when all are valid.
+
+### `galaxy_identity.veyra_problem`
+
+```ks
+fn veyra_problem(veyra: VeyraIdentity) -> String
+```
+
+`VeyraIdentity.assert_sealed`: why `veyra` is not sealed, or "".
+
+### `galaxy_identity.birth_veyra`
+
+```ks
+fn birth_veyra(profile_digest: String, genesis_digest: String, constitution_digest: String, instance_digest: String, birth_epoch: Int) -> Result<VeyraIdentity, Error>
+```
+
+### `galaxy_identity.aevra_problem`
+
+```ks
+fn aevra_problem(aevra: AevraIdentity, veyra: VeyraIdentity, mir: GalaxyMir) -> String
+```
+
+`AevraIdentity.assert_sealed`, after the Veyra is sealed.
+
+### `galaxy_identity.birth_aevra`
+
+```ks
+fn birth_aevra(veyra: VeyraIdentity, mir: GalaxyMir, sigil: String, subject: String, birth_evidence_digest: String, birth_epoch: Int) -> Result<AevraIdentity, Error>
+```
+
+### `galaxy_identity.matrix_host`
+
+```ks
+fn matrix_host(veyra: VeyraIdentity, aevra: AevraIdentity, mir: GalaxyMir) -> Result<MatrixHost, Error>
+```
+
+The `MatrixHost` for `matrix_reality`, once Veyra and Aevra are sealed.
 
 ## hela
 

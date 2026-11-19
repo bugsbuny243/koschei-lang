@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add the `galaxy_identity` library module: Veyra and Aevra birth and seal checks from `galaxy_identity_v1.py`, with the module's refusal reasons and byte-identical SHA-256 seals; the compiler-sealed native MIR comes in as a `GalaxyMir`. `matrix_host` feeds sealed identities into `matrix_reality`, so the Veyra → Aevra → Matrix → Hara → admission chain runs entirely in Koschei. A differential test runs random chains from the Python modules under `ks run` and as a `ks build` binary.
+
 - Add `sha256_bytes(data)`: SHA-256 of Bytes as lowercase hex, from the host library (Python `hashlib`, Go `crypto/sha256`), beside `sha3_256_bytes`, with the same 1 MiB limit. The Python guardians seal many records with SHA-256; a Koschei port can only reproduce those digests with it. Works under `ks run`, the canonical MIR and `ks build`.
 - Add the `matrix_reality` library module (Matrix universe): Matrix birth, Hara birth and Matrix/Hara admission from `matrix_reality_v1.py`, with its refusal reasons and byte-identical SHA-256 seals. A differential test generates random cases from the Python module and checks them under `ks run` and as a `ks build` binary.
 
