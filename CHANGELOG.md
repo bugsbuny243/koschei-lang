@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.17.0 — 2026-11-19
 
 - Fix a false `KS2401` on an element taken from a List or Map: `.hex()` on, for example, a struct's `Bytes` field read through `items.get(0)` was refused as an unauthorized `RandomCaps.hex`, because the legacy checker does not know element types. Capabilities cannot be stored in a List or Map, so such a value is never a capability; the typed HIR now checks the call, and a wrong method there is still refused (`KS1306`).
 - Add the `galaxy_identity` library module: Veyra and Aevra birth and seal checks from `galaxy_identity_v1.py`, with the module's refusal reasons and byte-identical SHA-256 seals; the compiler-sealed native MIR comes in as a `GalaxyMir`. `matrix_host` feeds sealed identities into `matrix_reality`, so the Veyra → Aevra → Matrix → Hara → admission chain runs entirely in Koschei. A differential test runs random chains from the Python modules under `ks run` and as a `ks build` binary.
