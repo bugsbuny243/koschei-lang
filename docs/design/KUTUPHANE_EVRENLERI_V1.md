@@ -344,8 +344,8 @@ gelecek (kuantum sonrası kriptografi) için kullanılır.
 |---|---|---|---|---|
 | **Skynet** | Terminator | Çalışma zamanı politika gözcüsü, izin denetimi, anomali çevreleme, kanıt üretimi. Kendisi de yetki ve politika sınırlarına tabidir; sınırsız yetkili bir yapay zekâ değildir. | Belge: vizyon raporu | Yalnızca belge |
 | **Khar** | Koschei Galaksisi | Bir uygulamanın Koschei kalabilmesi için uyması gereken açık anayasa yasaları; gizli dosya veya süper kullanıcı değildir | `koschei/khar_constitution_v1.py` | Kod + test |
-| **Veyra** | Koschei Galaksisi | Müşteriye özel yaşayan galaksi geometrisi; iki sistem aynı dili konuşup farklı Veyra'da yaşayabilir | `koschei/galaxy_identity_v1.py` | Kod + test |
-| **Aevra** | Koschei Galaksisi | Kimliği görünür baytlarının kopyasından büyük olan program varlığı: `copy(bytes) != birth(Aevra)` | `koschei/galaxy_identity_v1.py` | Kod + test |
+| **Veyra** | Koschei Galaksisi | Müşteriye özel yaşayan galaksi geometrisi; iki sistem aynı dili konuşup farklı Veyra'da yaşayabilir | `koschei/galaxy_identity_v1.py`, `import galaxy_identity` | **Koschei'de** (Python'la bayt bayt aynı SHA-256 mühür; MIR mührü derleyicide) |
+| **Aevra** | Koschei Galaksisi | Kimliği görünür baytlarının kopyasından büyük olan program varlığı: `copy(bytes) != birth(Aevra)` | `koschei/galaxy_identity_v1.py`, `import galaxy_identity` | **Koschei'de** (Python'la bayt bayt aynı SHA-256 mühür; MIR mührü derleyicide) |
 | **Altı Khar ekseni ve Sathra** | Koschei Galaksisi | `khor` (yer), `sei` (niyet), `rha` (gerçeklik), `vaal` (etki gücü), `teyr` (zaman), `esh` (süreklilik). Kritik işlem altısı aynı olayda birleşmeden olmaz: `5/6 = 0` | `koschei/khar_sathra_v1.py` | Kod + test |
 
 ## Bugünkü gerçek durum

@@ -33,6 +33,7 @@ CORE_LIBRARY_ROOT = (Path(__file__).resolve().parent / "core_library").resolve()
 # dropping a file into the package directory.
 CORE_LIBRARY_MODULES_V1: tuple[str, ...] = (
     "captain_marvel",
+    "galaxy_identity",
     "hela",
     "http",
     "json",

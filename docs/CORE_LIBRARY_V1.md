@@ -194,6 +194,17 @@ fn main() {
 }
 ```
 
+### Galaxy identity: `galaxy_identity` (Veyra and Aevra)
+
+`import galaxy_identity` ports `koschei/galaxy_identity_v1.py`. `birth_veyra`
+seals a customer-Galaxy identity; `birth_aevra` seals a program identity bound
+to one Veyra, one compiler product (`GalaxyMir`: its fingerprint and sigil
+bindings) and explicit birth evidence; `veyra_problem` and `aevra_problem`
+give the Python refusal reason (or `""`). Seals are byte-identical SHA-256.
+The MIR itself is sealed by the compiler and passed in. `matrix_host` turns a
+sealed Veyra and Aevra into the `MatrixHost` that `matrix_reality` takes, so
+the whole Veyra → Aevra → Matrix → Hara → admission chain runs in Koschei.
+
 ### Matrix universe: `matrix_reality` (Matrix/Hara identity and admission)
 
 `import matrix_reality` ports `koschei/matrix_reality_v1.py`. A Matrix is the
@@ -357,7 +368,7 @@ fn main() {
 ## Resolution and security rules
 
 - Only the names registered in `CORE_LIBRARY_MODULES_V1` (`captain_marvel`,
-  `hela`, `list`, `matrix_horizon`, `matrix_portal`, `matrix_reality`, `morag`, `secure`, `strange`, `text`,
+  `galaxy_identity`, `hela`, `list`, `matrix_horizon`, `matrix_portal`, `matrix_reality`, `morag`, `secure`, `strange`, `text`,
   `vormir`, `wanda`, `xandar`) are
   library modules. A stray `.ks` file placed in the library directory is never
   importable by user code.
