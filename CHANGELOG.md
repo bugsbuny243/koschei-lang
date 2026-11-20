@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Pin the Go toolchain's environment in `ks build`. The default native build passed the caller's environment to `go build`, so `GOFLAGS=-toolexec=<program>` (from the environment or a `go env -w` file) ran that program around every compiler step, seven times for a hello-world build, and `GOPROXY`/`GOTOOLCHAIN` could make a build reach the network. Builds now run with `GOFLAGS=""`, `GOENV=off`, `GOPROXY=off`, `GOTOOLCHAIN=local`, `GOWORK=off` and `CGO_ENABLED=0` (workspace builds already pinned most of these and now share the same setting). Generated programs use only the standard library, so nothing else changes.
+
 ## 0.17.0 — 2026-11-19
 
 - Fix a false `KS2401` on an element taken from a List or Map: `.hex()` on, for example, a struct's `Bytes` field read through `items.get(0)` was refused as an unauthorized `RandomCaps.hex`, because the legacy checker does not know element types. Capabilities cannot be stored in a List or Map, so such a value is never a capability; the typed HIR now checks the call, and a wrong method there is still refused (`KS1306`).
