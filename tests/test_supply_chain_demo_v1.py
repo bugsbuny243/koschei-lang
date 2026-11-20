@@ -42,6 +42,31 @@ class SupplyChainDemoTests(unittest.TestCase):
         code, stdout, _ = _with_helper("arrayref_clean", "run")
         self.assertEqual((code, stdout), (0, "true\n"))
 
+    def test_compromised_update_is_refused_by_pkg_sync(self) -> None:
+        from koschei.packages_v1 import SurfaceWidened, sync
+
+        update = DEMO / "update"
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            shutil.copytree(update / "app", base / "app")
+            shutil.copytree(update / "arrayref-0.3.9", base / "arrayref")
+            result = sync(base / "app")
+            self.assertEqual([(c.name, c.surface) for c in result.changes], [("arrayref", ())])
+            shutil.rmtree(base / "arrayref")
+            shutil.copytree(update / "arrayref-0.3.10", base / "arrayref")
+            with self.assertRaises(SurfaceWidened) as caught:
+                sync(base / "app")
+            self.assertEqual(caught.exception.changes[0].added_capabilities, ("disk", "net"))
+            code, stdout, _ = _run_in(base / "app" / "src" / "main.ks")
+            self.assertEqual((code, stdout), (0, "true\n"))
+
+
+def _run_in(path: Path) -> tuple[int, str, str]:
+    out, err = io.StringIO(), io.StringIO()
+    with redirect_stdout(out), redirect_stderr(err):
+        code = cli_main(["run", str(path)])
+    return code, out.getvalue(), err.getvalue()
+
 
 if __name__ == "__main__":
     unittest.main()

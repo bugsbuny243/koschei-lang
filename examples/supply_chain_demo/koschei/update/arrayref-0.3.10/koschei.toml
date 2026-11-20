@@ -1,0 +1,4 @@
+[package]
+name = "arrayref"
+version = "0.3.10"
+entry = "src/lib.ks"
