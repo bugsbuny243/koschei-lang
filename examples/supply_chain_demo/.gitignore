@@ -1,0 +1,4 @@
+rust/app/target/
+rust/app/Cargo.lock
+build_time_payload_ran.txt
+exfiltrated.txt
