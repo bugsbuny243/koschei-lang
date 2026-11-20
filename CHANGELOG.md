@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Add the package registry, phase 2 of `docs/PACKAGES_V1.md`: `ks pkg add name@version`, `ks pkg publish`, `ks pkg yank`, and `{ version = "x.y.z" }` dependencies. The registry is static files served at `https://koschei.dev/registry/` from this repository's `registry/` directory; publishing is a pull request. Clients verify the archive and package digests and recompute the surface, refusing an index that disagrees; versions are immutable, yanked versions stay installable only from a lock, and look-alike names are held for review.
+
 ## 0.18.0 — 2026-11-20
 
 - The supply-chain demo gains a second part: the compromised package arrives as an update. `cargo build` takes it without a question; `ks pkg sync` refuses it because it adds `disk` and `net`.

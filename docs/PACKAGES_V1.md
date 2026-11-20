@@ -1,7 +1,8 @@
 # Koschei Packages v1 — design proposal
 
-Status: **phase 1 implemented** (unreleased, `ks pkg`); phases 2 and 3 are
-proposals. Readiness gate 6 for 1.0.0
+Status: **phase 1 implemented** (0.18.0, `ks pkg`); **phase 2 implemented**
+(unreleased: registry, `ks pkg add`, `publish`, `yank`); phase 3 is a
+proposal. Readiness gate 6 for 1.0.0
 (`docs/RELEASE_PLAN_AFTER_0_14.md`). Once accepted, its user-facing rules join
 `docs/STABILITY_V1.md` before 1.0.0.
 
@@ -152,6 +153,39 @@ ks pkg verify          # lock against koschei.toml and every vendored byte
   are refused because they move. Git runs with hooks and submodules disabled.
 - Phase 1 has no registry, signatures or version ranges. Two packages that
   need the same dependency from different sources are refused.
+
+## Phase 2 in use
+
+```toml
+[dependencies]
+hexfmt = { version = "1.2.0" }      # exact version from the registry
+
+[registry]
+url = "https://koschei.dev/registry"  # the default; file:// for a local one
+```
+
+```sh
+ks pkg add hexfmt@1.2.0                       # edit koschei.toml and sync
+ks pkg publish ./hexfmt --registry registry    # in a checkout of this repo
+ks pkg yank hexfmt@1.2.0 --registry registry
+```
+
+- The registry is the `registry/` directory of this repository, served as
+  static files by koschei.dev. Publishing is a pull request with the two files
+  `ks pkg publish` writes.
+- A client checks the archive's SHA-256 against the index, extracts only
+  regular `.ks` files and `koschei.toml` (no links, no absolute or `..` paths,
+  size limits), checks the package digest, and recomputes the surface. An
+  index entry whose surface differs from the computed one is refused, so a
+  registry that lies about a package cannot get it past the update rule.
+- A yanked version is installed only when the lock already holds it.
+- Registry packages can depend only on registry packages.
+- Names stay flat in phase 2 (`hexfmt`, not `publisher/hexfmt`): imports use
+  the package name, and with one maintainer reviewing every pull request a
+  namespace adds little. A new name one edit away from an existing one
+  (one letter changed, added or removed, two swapped, `-` for `_`) is
+  refused until reviewed with `--allow-similar-name`. Namespaces come back
+  with signatures in phase 3.
 
 ## Phases
 
