@@ -1,6 +1,7 @@
 # Koschei Packages v1 — design proposal
 
-Status: **proposal**, not implemented. Readiness gate 6 for 1.0.0
+Status: **phase 1 implemented** (unreleased, `ks pkg`); phases 2 and 3 are
+proposals. Readiness gate 6 for 1.0.0
 (`docs/RELEASE_PLAN_AFTER_0_14.md`). Once accepted, its user-facing rules join
 `docs/STABILITY_V1.md` before 1.0.0.
 
@@ -116,6 +117,41 @@ deny = ["net", "process"]
 - **Signatures and a public log (phase 3).** Each release is signed with the
   publisher's Ed25519 key, and every publish is appended to a public log, so
   a release that appears without the publisher can be seen.
+
+## Phase 1 in use
+
+```toml
+# koschei.toml of the application
+[dependencies]
+hexfmt = { path = "../hexfmt" }
+fetcher = { git = "https://github.com/acme/fetcher", rev = "<40-hex commit>" }
+
+[policy]
+deny = ["process"]
+```
+
+```sh
+ks pkg sync            # fetch, check, compute surfaces, write the lock
+ks pkg sync --allow net  # accept an update that adds net
+ks pkg list            # name, version, surface
+ks pkg verify          # lock against koschei.toml and every vendored byte
+```
+
+- `ks pkg sync` copies each package's `.ks` files and `koschei.toml`, and
+  nothing else, into `.koschei/packages/<name>-<digest>/`, and writes
+  `koschei.packages.lock.json`. Commit both: builds then need no network.
+- Every `ks check`, `run`, `caps` and `build` in the project verifies the lock
+  and the vendored bytes first. A missing lock, a `koschei.toml` edited after
+  the last sync, a vendored file changed by hand, or an import of a package
+  that is not a direct dependency fails with `KS1606`.
+- A package cannot receive `SystemCaps`; its surface is what its exported
+  functions ask callers for. A package's surface covers the modules it
+  imports, so a dependency it declares but never imports does not widen it;
+  that dependency's own entry in the lock still guards its surface.
+- Git sources take an `https://` URL and a full commit hash; branches and tags
+  are refused because they move. Git runs with hooks and submodules disabled.
+- Phase 1 has no registry, signatures or version ranges. Two packages that
+  need the same dependency from different sources are refused.
 
 ## Phases
 

@@ -31,6 +31,7 @@ from .differential_fuzz_cli import add_differential_fuzz_parser, command_differe
 from .foreign_cli import add_foreign_parser, command_foreign
 from .foundation_export_cli import add_foundation_export_parser, command_foundation_export
 from .lock_cli import add_lock_parser, command_lock
+from .pkg_cli import add_pkg_parser, command_pkg
 from .maturity_attestation_cli import add_maturity_attest_parser, command_maturity_attest
 from .maturity_cli import add_maturity_parser, command_maturity
 from .mir import require_mir
@@ -115,6 +116,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_differential_fuzz_parser(subcommands)
     add_foundation_export_parser(subcommands)
     add_lock_parser(subcommands)
+    add_pkg_parser(subcommands)
     add_build_verify_parser(subcommands)
     add_build_compare_parser(subcommands)
     add_build_compare_verify_parser(subcommands)
@@ -494,6 +496,8 @@ def main(argv: list[str] | None = None) -> int:
         return command_foundation_export(args)
     if args.command == "lock":
         return command_lock(args)
+    if args.command == "pkg":
+        return command_pkg(args)
     if args.command == "build-verify":
         return command_build_verify(args)
     if args.command == "build-compare":
