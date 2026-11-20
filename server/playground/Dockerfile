@@ -16,10 +16,12 @@ RUN pip install --no-cache-dir . && rm -rf /opt/koschei
 COPY server/playground /opt/playground
 # Public product site, served at / by the same process; the playground is /play.
 COPY commercial/lang-site /opt/site
+# Static package registry: index JSON and source archives, served as files.
+COPY registry /opt/registry
 # The web API executes this fixed Koschei program with bounded numeric input.
 # No user-provided source is ever run and the public playground stays disabled.
 COPY products/business_web/engine.ks /opt/business/engine.ks
-ENV KOSCHEI_SITE_DIR=/opt/site KOSCHEI_BUSINESS_ENGINE=/opt/business/engine.ks \
+ENV KOSCHEI_SITE_DIR=/opt/site KOSCHEI_REGISTRY_DIR=/opt/registry KOSCHEI_BUSINESS_ENGINE=/opt/business/engine.ks \
     KOSCHEI_CANONICAL_HOST=koschei.dev \
     KOSCHEI_UNTRUSTED_SANDBOX=bwrap \
     KOSCHEI_REQUIRE_CONTAINER_LIMITS=1

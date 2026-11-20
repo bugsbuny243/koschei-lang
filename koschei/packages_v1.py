@@ -40,6 +40,8 @@ CODE = "KS1606"
 PACKAGE_NAME = re.compile(r"^[a-z][a-z0-9_-]*$")
 COMMIT = re.compile(r"^[0-9a-f]{40}$")
 DIGEST = re.compile(r"^[0-9a-f]{64}$")
+VERSION = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
+DEFAULT_REGISTRY = "https://koschei.dev/registry"
 TREE_CONTEXT = b"koschei.package-tree/v1\x00"
 SURFACE_ORDER = (
     "disk", "net", "env", "process", "serve", "persist", "input", "clock", "random", "db",
@@ -60,10 +62,14 @@ class DependencySpec:
     path: str | None = None
     git: str | None = None
     rev: str | None = None
+    version: str | None = None
+    registry: str | None = None
 
     def source(self) -> dict[str, str]:
         if self.path is not None:
             return {"path": self.path}
+        if self.version is not None:
+            return {"registry": str(self.registry), "version": self.version}
         return {"git": str(self.git), "rev": str(self.rev)}
 
 
@@ -72,6 +78,7 @@ class ProjectPackages:
     root: Path
     dependencies: dict[str, DependencySpec]
     deny: frozenset[str]
+    registry: str = DEFAULT_REGISTRY
 
 
 def _read_toml(manifest: Path) -> dict[str, Any]:
@@ -92,10 +99,17 @@ def parse_dependencies(data: dict[str, Any], where: str) -> dict[str, Dependency
         if not isinstance(value, dict):
             raise PackageError(
                 f"{where}: dependency {name!r} must be a table such as "
-                '{ path = "..." } or { git = "https://...", rev = "<40-hex commit>" }'
+                '{ version = "1.2.0" }, { path = "..." } or '
+                '{ git = "https://...", rev = "<40-hex commit>" }'
             )
         keys = set(value)
-        if keys == {"path"} and isinstance(value["path"], str) and value["path"]:
+        if keys == {"version"}:
+            if not isinstance(value["version"], str) or not VERSION.fullmatch(value["version"]):
+                raise PackageError(
+                    f"{where}: dependency {name!r}: version must be an exact MAJOR.MINOR.PATCH"
+                )
+            result[name] = DependencySpec(name, version=value["version"])
+        elif keys == {"path"} and isinstance(value["path"], str) and value["path"]:
             result[name] = DependencySpec(name, path=value["path"])
         elif keys == {"git", "rev"}:
             git, rev = value["git"], value["rev"]
@@ -109,7 +123,8 @@ def parse_dependencies(data: dict[str, Any], where: str) -> dict[str, Dependency
             result[name] = DependencySpec(name, git=git, rev=rev)
         else:
             raise PackageError(
-                f"{where}: dependency {name!r} needs exactly 'path', or exactly 'git' and 'rev'"
+                f"{where}: dependency {name!r} needs exactly 'version', exactly 'path', "
+                "or exactly 'git' and 'rev'"
             )
     return result
 
@@ -123,7 +138,24 @@ def load_project_packages(root: Path) -> ProjectPackages:
     deny = policy.get("deny", [])
     if not isinstance(deny, list) or any(item not in SURFACE_ORDER for item in deny):
         raise PackageError(f"policy.deny must list capabilities from: {', '.join(SURFACE_ORDER)}")
-    return ProjectPackages(root, parse_dependencies(data, MANIFEST_NAME), frozenset(deny))
+    registry_table = data.get("registry", {})
+    if not isinstance(registry_table, dict) or set(registry_table) - {"url"}:
+        raise PackageError("[registry] may only set url")
+    registry = registry_table.get("url") or os.environ.get("KOSCHEI_REGISTRY") or DEFAULT_REGISTRY
+    if not isinstance(registry, str) or not registry.startswith(("https://", "file://")):
+        raise PackageError("registry url must start with https:// or file://")
+    registry = registry.rstrip("/")
+    dependencies = {
+        name: _with_registry(spec, registry)
+        for name, spec in parse_dependencies(data, MANIFEST_NAME).items()
+    }
+    return ProjectPackages(root, dependencies, frozenset(deny), registry)
+
+
+def _with_registry(spec: DependencySpec, registry: str) -> DependencySpec:
+    if spec.version is None:
+        return spec
+    return DependencySpec(spec.name, version=spec.version, registry=registry)
 
 
 # --- package trees ----------------------------------------------------------
@@ -370,9 +402,10 @@ def sync(project_root: str | Path, *, allow: frozenset[str] = frozenset()) -> Sy
     staging = Path(tempfile.mkdtemp(prefix=".pkg-sync-", dir=root))
     try:
         fetched: dict[str, tuple[DependencySpec, Path]] = {}
+        registry_entries: dict[str, dict[str, Any]] = {}
         pending = list(project.dependencies.values())
         while pending:
-            spec = pending.pop(0)
+            spec = _with_registry(pending.pop(0), project.registry)
             if spec.name in fetched:
                 if fetched[spec.name][0].source() != spec.source():
                     raise PackageError(
@@ -380,7 +413,17 @@ def sync(project_root: str | Path, *, allow: frozenset[str] = frozenset()) -> Sy
                     )
                 continue
             raw = staging / "raw" / spec.name
-            if spec.path is not None:
+            if spec.version is not None:
+                from .registry_v1 import fetch_package
+
+                old = previous.packages.get(spec.name)
+                locked = old["digest"] if old and old["source"] == spec.source() else None
+                raw.mkdir(parents=True)
+                registry_entries[spec.name] = fetch_package(
+                    str(spec.registry), spec.name, spec.version, raw, locked_digest=locked
+                )
+                source_dir = raw
+            elif spec.path is not None:
                 source_dir = (root / spec.path).resolve()
                 if not source_dir.is_dir():
                     raise PackageError(f"dependency {spec.name!r}: {spec.path} is not a directory")
@@ -394,6 +437,10 @@ def sync(project_root: str | Path, *, allow: frozenset[str] = frozenset()) -> Sy
             _copy_package(source_dir, clean)
             fetched[spec.name] = (spec, clean)
             _, _, _, nested, _ = _package_manifest(clean, spec.name)
+            if spec.version is not None and any(dep.version is None for dep in nested.values()):
+                raise PackageError(
+                    f"registry package {spec.name!r} has non-registry dependencies"
+                )
             if spec.git is not None and any(dep.path is not None for dep in nested.values()):
                 raise PackageError(
                     f"git package {spec.name!r} has path dependencies; a fetched package "
@@ -450,6 +497,12 @@ def sync(project_root: str | Path, *, allow: frozenset[str] = frozenset()) -> Sy
                     f"{list(surface)}"
                 )
             lock.packages[name]["surface"] = list(surface)
+            listed = registry_entries.get(name)
+            if listed is not None and tuple(listed["surface"]) != surface:
+                raise PackageError(
+                    f"registry lists {name} {package.version} with surface {listed['surface']}, "
+                    f"but the compiler computes {list(surface)}; refusing it"
+                )
 
         denied = [
             f"{name}: {', '.join(sorted(set(entry['surface']) & project.deny))}"
@@ -640,3 +693,19 @@ def package_resolver_for(source: Path):
         return verify_project(project_root)
     except PackageError as error:
         raise ModuleError(CODE, str(error), _ORIGIN) from error
+
+
+def inspect_standalone(package_root: Path, name: str, *, registry_url: str) -> tuple[tuple[str, ...], str]:
+    """Surface and digest of one package, with its registry dependencies fetched."""
+
+    with tempfile.TemporaryDirectory(prefix="koschei-publish-") as directory:
+        project = Path(directory)
+        (project / MANIFEST_NAME).write_text(
+            '[package]\nname = "publish-check"\nversion = "0.0.0"\n\n'
+            f"[registry]\nurl = {json.dumps(registry_url)}\n\n"
+            f"[dependencies]\n{name} = {{ path = {json.dumps(str(package_root))} }}\n",
+            encoding="utf-8",
+        )
+        result = sync(project)
+        entry = result.lock.packages[name]
+        return tuple(entry["surface"]), entry["digest"]

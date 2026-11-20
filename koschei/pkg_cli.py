@@ -45,6 +45,22 @@ def add_pkg_parser(subcommands: argparse._SubParsersAction) -> None:
     verify_parser.add_argument("project", nargs="?", default=".")
     verify_parser.add_argument("--json", action="store_true")
 
+    add_parser = commands.add_parser("add", help="Add a registry dependency (name@version) and sync")
+    add_parser.add_argument("spec", help="name@version, for example hexfmt@1.2.0")
+    add_parser.add_argument("project", nargs="?", default=".")
+
+    publish_parser = commands.add_parser(
+        "publish", help="Check a package and add it to a registry checkout"
+    )
+    publish_parser.add_argument("package", nargs="?", default=".", help="Package directory")
+    publish_parser.add_argument("--registry", required=True, help="Registry checkout directory")
+    publish_parser.add_argument("--allow-similar-name", action="store_true")
+
+    yank_parser = commands.add_parser("yank", help="Hide a published version from new installs")
+    yank_parser.add_argument("spec", help="name@version")
+    yank_parser.add_argument("--registry", required=True)
+    yank_parser.add_argument("--undo", action="store_true")
+
     list_parser = commands.add_parser("list", help="Show locked packages and their surfaces")
     list_parser.add_argument("project", nargs="?", default=".")
     list_parser.add_argument("--json", action="store_true")
@@ -54,8 +70,31 @@ def _surface_text(surface) -> str:
     return ", ".join(surface) if surface else "pure"
 
 
+def _split_spec(text: str) -> tuple[str, str]:
+    from .packages_v1 import PACKAGE_NAME, VERSION
+
+    name, _, version = text.partition("@")
+    if not PACKAGE_NAME.fullmatch(name) or not VERSION.fullmatch(version):
+        raise PackageError(f"expected name@MAJOR.MINOR.PATCH, got {text!r}")
+    return name, version
+
+
+def _add_dependency(manifest: str, name: str, version: str) -> str:
+    import re
+    import tomllib
+
+    existing = tomllib.loads(manifest).get("dependencies", {})
+    if name in existing:
+        raise PackageError(f"{name!r} is already a dependency; edit koschei.toml to change it")
+    line = f'{name} = {{ version = "{version}" }}\n'
+    header = re.search(r"^\[dependencies\][ \t]*\r?\n", manifest, flags=re.M)
+    if header:
+        return manifest[: header.end()] + line + manifest[header.end():]
+    return manifest.rstrip("\n") + "\n\n[dependencies]\n" + line
+
+
 def command_pkg(args: argparse.Namespace) -> int:
-    project = Path(args.project)
+    project = Path(getattr(args, "project", "."))
     try:
         if args.pkg_command == "sync":
             result = sync(project, allow=frozenset(args.allow))
@@ -81,6 +120,35 @@ def command_pkg(args: argparse.Namespace) -> int:
                     print(line)
                 if not result.changes:
                     print("no dependencies")
+            return 0
+        if args.pkg_command == "add":
+            name, version = _split_spec(args.spec)
+            manifest = project / "koschei.toml"
+            original = manifest.read_text(encoding="utf-8")
+            manifest.write_text(_add_dependency(original, name, version), encoding="utf-8")
+            try:
+                result = sync(project)
+            except BaseException:
+                manifest.write_text(original, encoding="utf-8")
+                raise
+            for change in result.changes:
+                if change.kind != "unchanged":
+                    print(f"{change.kind:<9} {change.name} {change.version}: {_surface_text(change.surface)}")
+            return 0
+        if args.pkg_command == "publish":
+            from .registry_v1 import publish
+
+            published = publish(args.package, args.registry, allow_similar_name=args.allow_similar_name)
+            print(f"published {published.name} {published.version}: {_surface_text(published.surface)}")
+            for path in published.files:
+                print(f"  wrote {path}")
+            return 0
+        if args.pkg_command == "yank":
+            from .registry_v1 import yank
+
+            name, version = _split_spec(args.spec)
+            yank(args.registry, name, version, undo=args.undo)
+            print(f"{'unyanked' if args.undo else 'yanked'} {name} {version}")
             return 0
         if args.pkg_command == "verify":
             resolver = verify_project(project)

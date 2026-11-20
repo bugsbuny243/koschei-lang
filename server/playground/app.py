@@ -38,6 +38,11 @@ INDEX_HTML = HERE / "index.html"
 # The public product site (commercial/lang-site) is served from the same
 # process so one service hosts both the landing page and /play.
 SITE_DIR = Path(os.environ.get("KOSCHEI_SITE_DIR", HERE.parent.parent / "commercial" / "lang-site"))
+# Static package registry (docs/PACKAGES_V1.md, phase 2): plain files, no code.
+REGISTRY_DIR = Path(os.environ.get("KOSCHEI_REGISTRY_DIR", HERE.parent.parent / "registry"))
+REGISTRY_PATH = re.compile(
+    r"^/registry/(index/[a-z][a-z0-9_-]*\.json|archives/([a-z][a-z0-9_-]*)/\2-\d+\.\d+\.\d+\.tar)$"
+)
 SITE_FILES = {
     "/": ("index.html", "text/html; charset=utf-8"),
     "/index.html": ("index.html", "text/html; charset=utf-8"),
@@ -302,6 +307,23 @@ class Handler(BaseHTTPRequestHandler):
             return
         self._send(HTTPStatus.OK, INDEX_HTML.read_bytes(), "text/html; charset=utf-8", PLAY_CSP)
 
+    def _registry_file(self, path: str) -> None:
+        relative = path[len("/registry/"):]
+        file = REGISTRY_DIR / relative
+        if not file.is_file():
+            self._json(HTTPStatus.NOT_FOUND, {"error": "not_found"})
+            return
+        body = file.read_bytes()
+        is_index = relative.startswith("index/")
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "application/json" if is_index else "application/x-tar")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("X-Content-Type-Options", "nosniff")
+        # Archives never change once published; an index gains versions.
+        self.send_header("Cache-Control", "public, max-age=300" if is_index else "public, max-age=31536000, immutable")
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_GET(self) -> None:  # noqa: N802
         path = self.path.split("?", 1)[0]
         host = self.headers.get("Host", "").split(":")[0].lower()
@@ -330,6 +352,8 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
         elif path in ("/play", "/play/"):
             self._playground_page()
+        elif REGISTRY_PATH.fullmatch(path):
+            self._registry_file(path)
         elif site and (SITE_DIR / site[0]).is_file():
             self._send(HTTPStatus.OK, (SITE_DIR / site[0]).read_bytes(), site[1], BUSINESS_CSP if path == "/tools" else SITE_CSP)
         elif path in ("/", "/index.html"):
