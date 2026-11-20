@@ -54,7 +54,7 @@ The image holds only the binary (distroless, non-root).
 Without Docker (Python 3.12+ and Go 1.24+ to build, nothing to run):
 
 ```sh
-pip install koschei-lang==0.17.0
+pip install koschei-lang==0.18.0
 CGO_ENABLED=0 ks build main.ks -o koschei-forms
 sudo mkdir -p /data/koschei-forms && sudo chown "$USER" /data/koschei-forms
 KOSCHEI_FORMS_PASSWORD='a long passphrase' ./koschei-forms
