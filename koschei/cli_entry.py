@@ -19,6 +19,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+from .go_build_env_v1 import go_build_environment
 from . import cli as _cli
 from .build_manifest import (
     BuildManifestError,
@@ -268,9 +269,9 @@ def _compile_mir_go(go_source: str, target: Path, locale: str) -> int:
             cwd=directory,
             capture_output=True,
             text=True,
-            # Without cgo the binary is static: it starts on any linux/amd64
-            # host, glibc or musl, and links no C resolver into the broker.
-            env=dict(os.environ, CGO_ENABLED="0"),
+            # Static (no cgo), offline and immune to GOFLAGS/go env injection:
+            # see go_build_env_v1.
+            env=go_build_environment(),
         )
     if completed.returncode != 0:
         message = (

@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .go_build_env_v1 import go_build_environment
 from .workspace import WorkspaceError
 
 CACHE_SCHEMA = "koschei.workspace-native-cache.v1"
@@ -266,12 +267,7 @@ def publish_cached_artifact(source: Path, target: Path) -> None:
 
 
 def _go_environment() -> dict[str, str]:
-    environment = dict(os.environ)
-    environment["CGO_ENABLED"] = "0"
-    environment["GOFLAGS"] = ""
-    environment["GOENV"] = "off"
-    environment["GOTOOLCHAIN"] = "local"
-    return environment
+    return go_build_environment()
 
 
 def _copy_create_only(source: Path, destination: Path, *, mode: int) -> None:
