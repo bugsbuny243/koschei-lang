@@ -318,7 +318,17 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             return
         site = SITE_FILES.get(path)
-        if path in ("/play", "/play/"):
+        home = SITE_FILES.get("/")
+        if path in ("/play", "/play/") and PLAYGROUND_MODE != "enabled" and home and (SITE_DIR / home[0]).is_file():
+            # Execution is paused: send old links and crawlers to the local
+            # install section instead of an error page. 302, not 301: the
+            # playground comes back when the sandbox does.
+            self.send_response(HTTPStatus.FOUND)
+            self.send_header("Location", "/#start")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+        elif path in ("/play", "/play/"):
             self._playground_page()
         elif site and (SITE_DIR / site[0]).is_file():
             self._send(HTTPStatus.OK, (SITE_DIR / site[0]).read_bytes(), site[1], BUSINESS_CSP if path == "/tools" else SITE_CSP)
