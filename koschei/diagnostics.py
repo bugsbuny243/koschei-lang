@@ -254,6 +254,25 @@ CATALOG: dict[str, Diagnostic] = {
         ),
         example="import risk\nlet etiket = risk.label(62)",
     ),
+    "KS1606": Diagnostic(
+        code="KS1606",
+        title="Paket bağımlılığı reddedildi",
+        summary=(
+            "koschei.toml'daki bir bağımlılık, koschei.packages.lock.json veya "
+            ".koschei/packages altındaki bir paket kabul edilemedi."
+        ),
+        why=(
+            "Paketler kilitli SHA-256 özetleri ve derleyicinin hesapladığı yetki "
+            "yüzeyiyle derlenir. Kilitlendikten sonra değişen, kilitte olmayan, "
+            "politika ile yasaklanan veya doğrudan bağımlılık olarak ilan edilmemiş "
+            "bir paket derlenmez."
+        ),
+        fix=(
+            "'ks pkg sync' çalıştırın. Bir güncelleme yeni yetki ekliyorsa çıktıyı "
+            "okuyun ve kabul ediyorsanız '--allow <yetki>' ile tekrar çalıştırın."
+        ),
+        example='[dependencies]\nhexfmt = { path = "../hexfmt" }',
+    ),
     "KS1701": Diagnostic(
         code="KS1701",
         title="Enum veya varyant sözleşmesi hatası",
@@ -927,6 +946,12 @@ ENGLISH_TEXT: dict[str, tuple[str, str, str, str]] = {
         "Module boundaries are validated during compilation.",
         "Check the member name and the declarations exposed by the imported module.",
     ),
+    "KS1606": (
+        "Package dependency refused",
+        "A dependency in koschei.toml, koschei.packages.lock.json or a package under .koschei/packages was not accepted.",
+        "Packages compile only from locked SHA-256 digests with the capability surface the compiler computed; a package that changed after locking, is not locked, is denied by policy or is not a direct dependency does not compile.",
+        "Run 'ks pkg sync'. If an update adds a capability, read the output and rerun with '--allow <capability>' to accept it.",
+    ),
     "KS1701": (
         "Invalid enum or variant contract",
         "The enum declaration or variant constructor call does not match its declared payload contract.",
@@ -1268,6 +1293,11 @@ def lookup(code: str, locale: str = "tr") -> Diagnostic | None:
     return catalog(locale).get(match.group(0))
 
 
+# Codes whose catalog summary is followed by the specific reason: the summary
+# alone does not say which package failed or what to run.
+DETAILED_CODES = frozenset({"KS1606"})
+
+
 def diagnostic_payload(
     message: str,
     *,
@@ -1297,6 +1327,10 @@ def diagnostic_payload(
     else:
         title = diagnostic.title
         summary = diagnostic.summary
+        if diagnostic.code in DETAILED_CODES:
+            detail = re.sub(r"^.*?KS\d{4}(?: \[[^\]]*\])?: ", "", message, count=1, flags=re.S)
+            if detail:
+                summary = f"{summary} {detail}"
 
     return {
         "ok": False,

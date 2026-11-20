@@ -107,7 +107,12 @@ def load_graph(
     """
 
     root = Path(root_path).resolve()
-    resolver = import_resolver or _resolve_sibling_import
+    resolver = import_resolver
+    if resolver is None and source_reader is None:
+        from .packages_v1 import package_resolver_for
+
+        resolver = package_resolver_for(root)
+    resolver = resolver or _resolve_sibling_import
     modules: dict[str, Module] = {}
     loading: list[str] = []
 
