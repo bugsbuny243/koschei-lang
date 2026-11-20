@@ -1,6 +1,6 @@
 # Koschei Stability Policy v1
 
-Status: **proposed for 1.0 — awaiting the owner's approval** (readiness gate G5)
+Status: **approved by the owner on 2026-11-20; takes effect with 1.0.0** (readiness gate G5)
 
 This policy says which parts of Koschei a user may build on, which may still
 change, and how a change reaches users. It takes effect for a release when
@@ -47,7 +47,9 @@ A program using only these keeps its meaning across 1.x:
 May change in a minor release, with a changelog entry:
 
 - Library universe modules: `captain_marvel`, `hela`, `strange`, `wanda`,
-  `xandar`, `morag`.
+  `xandar`, `morag`, `vormir`, `matrix_reality`, `matrix_horizon`,
+  `matrix_portal`, `galaxy_identity`.
+- Core Library modules `json`, `http`, `math`, `time`.
 - `caps.serve`, `caps.persist`, `caps.process`.
 - Bounded queues, structured tasks, deterministic parallel map, decimal.
 - The text of diagnostic and runtime messages (codes stay stable).
@@ -64,6 +66,13 @@ No compatibility promise; not for users:
   every installer.
 - Research and architecture documents (`KOSCHEI_*_V1.md` other than this
   policy and the readiness plan).
+
+## Dependencies
+
+There is no package registry yet; imports are local files. The rules for
+published packages (declared capabilities, signatures, what an update may
+change) are added to this policy before 1.0.0 and are part of what 1.0.0
+promises.
 
 ## Deprecation
 
