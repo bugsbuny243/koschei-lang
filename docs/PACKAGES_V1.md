@@ -1,0 +1,151 @@
+# Koschei Packages v1 — design proposal
+
+Status: **proposal**, not implemented. Readiness gate 6 for 1.0.0
+(`docs/RELEASE_PLAN_AFTER_0_14.md`). Once accepted, its user-facing rules join
+`docs/STABILITY_V1.md` before 1.0.0.
+
+## The promise
+
+**Installing or updating a package can never give it new authority without
+the application's author seeing it and agreeing to it.**
+
+In Rust, Go, npm or PyPI, a package update can start reading files, calling
+the network or running code at build time, and nothing in the update shows
+it. In August 2026 three crates.io packages were changed to pull in a
+dependency whose build script started a backdoor on every machine that built
+them. Koschei Packages are designed so that an update like that is refused
+before it is installed.
+
+## What the language already guarantees
+
+These hold today for local imports and stay true for packages:
+
+- **No ambient I/O.** There is no global `read_file` or `http_post`. A library
+  function can touch the disk or the network only through a capability token
+  it receives as a parameter (`KS1101` otherwise).
+- **Capabilities come from `main`.** Only `main(caps: SystemCaps)` receives
+  authority, and a caller passes it on explicitly. A function that asks for
+  a token the caller does not pass does not compile (`KS1301`).
+- **No code runs while compiling.** No build scripts, macros, install hooks or
+  compile-time evaluation.
+- **Tokens cannot hide.** They cannot be stored in a List or Map, compared, or
+  printed as anything but their type.
+- **`ks caps`** reports what a program can reach, and `ks caps --deny net`
+  fails if it can reach that capability.
+
+So a package update that starts using the network has to add a token to a
+function's parameters. The application then no longer compiles until its
+author passes that token. Packages v1 turns this from a compile error that
+someone might "just fix" into a decision that is shown and recorded.
+
+## Capability surface: computed, not declared
+
+Every package has a **capability surface**: the set of capability kinds
+(`disk`, `net`, `env`, `process`, `serve`, `persist`, `input`, `clock`,
+`random`, `db`) that appear in the parameters of its exported functions,
+directly or through the types they take. A package with an empty surface is
+**pure**: no version of it can touch anything outside its arguments.
+
+The compiler computes the surface from the source. The manifest may state it,
+but `ks publish` refuses a package whose stated surface differs from the
+computed one. A declaration is never trusted on its own.
+
+## Package format
+
+A package is a directory with a `koschei.toml`:
+
+```toml
+[package]
+name = "onur/arrayref"      # publisher/name; no bare names
+version = "0.3.10"
+surface = []                # optional; must equal the computed surface
+
+[dependencies]
+"acme/hexfmt" = "1.2.0"     # exact versions only in v1
+```
+
+The published artifact is the source files and the manifest, nothing else:
+no binaries, no scripts. It is identified by the SHA-256 of a canonical
+archive.
+
+## Installing
+
+`ks add onur/arrayref@0.3.10`:
+
+1. downloads the archive and checks its SHA-256 against the registry index;
+2. checks the publisher's signature (phase 3);
+3. type-checks the package and computes its surface;
+4. shows the surface, for example `onur/arrayref 0.3.10: pure`, or
+   `acme/fetcher 2.0.0: net`;
+5. writes the digest **and the surface** into `koschei.lock.json`.
+
+`ks build --locked` already refuses any source byte that differs from the
+lock (`docs/MODULE_LOCK.md`); the lock now also covers package archives.
+
+## Updating
+
+`ks update` compares each new version's computed surface with the locked one:
+
+- same or smaller surface: updated, and the change is listed;
+- **larger surface: refused.** The output names the package, the versions and
+  the new capabilities, for example
+  `acme/hexfmt 1.2.0 → 1.2.1 adds: net`. Accepting it takes
+  `ks update acme/hexfmt --allow net`, and the lock records that the author
+  allowed it.
+
+This applies to transitive dependencies too: a pure package whose new version
+pulls in a dependency with `net` widens its own surface and is refused the
+same way.
+
+A project can also set a ceiling that no update may pass:
+
+```toml
+[policy]
+deny = ["net", "process"]
+```
+
+## Registry rules
+
+- **Immutable versions.** A published version is never replaced or deleted.
+  It can be yanked (hidden from new installs, still installable from a lock).
+- **Namespaced names.** `publisher/name`. A new name close to a popular one
+  (edit distance 1, swapped characters, look-alike Unicode) is held for
+  review.
+- **Static index.** The registry serves files: an index and archives. It runs
+  no package code, ever.
+- **Signatures and a public log (phase 3).** Each release is signed with the
+  publisher's Ed25519 key, and every publish is appended to a public log, so
+  a release that appears without the publisher can be seen.
+
+## Phases
+
+1. **Pinned sources, no server.** Dependencies by URL or git commit plus
+   SHA-256 in `koschei.toml`; surface computation, the lock and the update
+   rule. This proves the model before running a service.
+2. **Read-only registry.** A static index and archive host, `ks add`,
+   `ks update`, `ks publish`, name rules, yanking.
+3. **Signatures and the public log.**
+
+## What this does not claim
+
+- A package given `net` on purpose can misuse it. Koschei shows and records
+  the grant; it does not judge what the package does with it.
+- A pure package can still return wrong data (for example a wrong address to
+  a signing function). The surface makes theft impossible, not deception;
+  the code that receives the data must check it.
+- A compromised publisher key or registry host is out of scope until phase 3,
+  and phase 3 makes such an attack visible, not impossible.
+- The Go toolchain used by `ks build` stays part of the trusted base.
+
+## Open questions
+
+1. A capability token can be a struct field today (`struct Holder { disk:
+   DiskCaps }` checks), and `ks caps` already reports such a package as
+   needing `disk` from its caller. The surface computation must follow
+   struct types transitively the same way; phase 1 needs tests for nested
+   and generic structs.
+2. Should a narrowed token (for example disk access to one directory) show in
+   the surface as `disk` or as `disk:<path>`?
+3. Version ranges: exact versions only in v1, or allow patch ranges once the
+   surface rule is in place?
+4. Who reviews held look-alike names while the project has one maintainer?
