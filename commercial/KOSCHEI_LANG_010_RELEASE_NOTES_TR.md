@@ -1,8 +1,27 @@
-# Koschei Lang 0.17.0 — Sürüm Notları
+# Koschei Lang 0.18.0 — Sürüm Notları
 
 **Ürün:** Koschei Lang (Koschei Sentinel ve Web3 Hub'dan bağımsız)  
-**Sürüm:** 0.17.0  
+**Sürüm:** 0.18.0  
 **Ürün hattı:** ticari lisanslı, 1.0 öncesi programlama dili ve araç zinciri
+
+## 0.18.0'da yeni
+
+- **Yetki yüzeyi kilitlenen paket bağımlılıkları** (`ks pkg sync`,
+  `ks pkg list`, `ks pkg verify`). Bağımlılıklar bir klasörden veya bir git
+  commit'inden gelir. Derleyici her paketin yüzeyini (disk, ağ, ortam vb.
+  hangilerini çağırandan istediğini) hesaplar ve paketin SHA-256 özetiyle
+  birlikte kilitler. Yeni yetki ekleyen bir güncelleme `--allow <yetki>`
+  verilmeden reddedilir; `[policy] deny` bir yetkiyi tamamen yasaklar;
+  kilitlendikten sonra değişen bir paket derlenmez (`KS1606`). Henüz merkezi
+  depo yok: bu, `docs/PACKAGES_V1.md` planının 1. aşaması.
+- **Tedarik zinciri demosu** (`examples/supply_chain_demo`): aynı zararlı
+  bağımlılık Rust'ta ve Koschei'de; `cargo build`'in sorgusuz kabul ettiği,
+  `ks pkg sync`'in reddettiği bir güncelleme dahil.
+- **Kararlılık politikası onaylandı** (`docs/STABILITY_V1.md`); 1.0.0 ile
+  yürürlüğe girer.
+- **Sertleştirilmiş native derleme:** `ks build` Go ortamını sabitler
+  (`GOFLAGS`, `GOENV`, `GOPROXY`, `GOTOOLCHAIN`, `GOWORK`, `CGO_ENABLED`);
+  kötü niyetli bir ortam `-toolexec` kancası ekleyemez veya modül indiremez.
 
 ## 0.17.0'da yeni
 
