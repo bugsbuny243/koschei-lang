@@ -303,11 +303,18 @@ def test_site_only_preserves_site_and_reports_execution_unavailable(server, monk
         assert response.status == 200 and b"buy.polar.sh" in response.read()
     with urllib.request.urlopen(server + "/health") as response:
         assert json.load(response) == {"ok": True, "evaluation_enabled": False}
+    # Old /play links land on the install section, not on an error page.
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, *args, **kwargs):
+            return None
+    opener = urllib.request.build_opener(NoRedirect)
     for path in ("/play", "/play/"):
         with pytest.raises(urllib.error.HTTPError) as caught:
-            urllib.request.urlopen(server + path)
-        assert caught.value.code == 503
-        assert b"Online code execution is paused" in caught.value.read()
+            opener.open(server + path)
+        assert caught.value.code == 302
+        assert caught.value.headers["Location"] == "/#start"
+    with urllib.request.urlopen(server + "/play") as response:
+        assert response.status == 200 and b"buy.polar.sh" in response.read()
 
 
 def test_site_only_direct_evaluate_is_also_blocked(monkeypatch):

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- koschei.dev: while online execution is paused, `/play` redirects (302) to the home page's install section instead of answering 503. Sitemap and page links were removed earlier, but old links and crawlers still asked for `/play` several times a night and got an error page. Without a bundled product site, `/play` still serves the unavailable page.
 - Pin the Go toolchain's environment in `ks build`. The default native build passed the caller's environment to `go build`, so `GOFLAGS=-toolexec=<program>` (from the environment or a `go env -w` file) ran that program around every compiler step, seven times for a hello-world build, and `GOPROXY`/`GOTOOLCHAIN` could make a build reach the network. Builds now run with `GOFLAGS=""`, `GOENV=off`, `GOPROXY=off`, `GOTOOLCHAIN=local`, `GOWORK=off` and `CGO_ENABLED=0` (workspace builds already pinned most of these and now share the same setting). Generated programs use only the standard library, so nothing else changes.
 
 ## 0.17.0 — 2026-11-19
