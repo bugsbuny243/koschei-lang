@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- koschei.dev: while online execution is paused, `/play` redirects (302) to the home page's install section instead of answering 503. Sitemap and page links were removed earlier, but old links and crawlers still asked for `/play` several times a night and got an error page. Without a bundled product site, `/play` still serves the unavailable page.
+
 ## 0.17.0 — 2026-11-19
 
 - Fix a false `KS2401` on an element taken from a List or Map: `.hex()` on, for example, a struct's `Bytes` field read through `items.get(0)` was refused as an unauthorized `RandomCaps.hex`, because the legacy checker does not know element types. Capabilities cannot be stored in a List or Map, so such a value is never a capability; the typed HIR now checks the call, and a wrong method there is still refused (`KS1306`).
