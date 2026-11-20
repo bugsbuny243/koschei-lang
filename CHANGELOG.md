@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The supply-chain demo gains a second part: the compromised package arrives as an update. `cargo build` takes it without a question; `ks pkg sync` refuses it because it adds `disk` and `net`.
 - Add package dependencies, phase 1 of `docs/PACKAGES_V1.md`: `ks pkg sync`, `ks pkg list`, `ks pkg verify`. Dependencies come from a path or a git commit; each package's capability surface is computed by the compiler and locked with its SHA-256 in `koschei.packages.lock.json`. A sync that would give a package a new capability is refused until `--allow <capability>` is passed, `[policy] deny` refuses a capability outright, and a vendored package that changes after locking does not compile (`KS1606`).
 - Add `docs/PACKAGES_V1.md`, the design proposal for packages (1.0 gate 6): a package's capability surface is computed by the compiler, and an update that widens it is refused until the application's author allows it.
 - The stability policy (`docs/STABILITY_V1.md`) is approved and takes effect with 1.0.0. The new universe modules and `json`, `http`, `math`, `time` are listed as experimental, and the policy notes that the rules for published packages are added before 1.0.0.
