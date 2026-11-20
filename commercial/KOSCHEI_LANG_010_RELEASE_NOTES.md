@@ -1,8 +1,27 @@
-# Koschei Lang 0.17.0 — Release Notes
+# Koschei Lang 0.18.0 — Release Notes
 
 **Product:** Koschei Lang (independent of Koschei Sentinel and Web3 Hub)  
-**Version:** 0.17.0  
+**Version:** 0.18.0  
 **Release line:** commercially licensed, pre-1.0 language/toolchain
+
+## New in 0.18.0
+
+- **Package dependencies with locked capability surfaces** (`ks pkg sync`,
+  `ks pkg list`, `ks pkg verify`). Dependencies come from a path or a git
+  commit. The compiler computes each package's surface (which of disk, net,
+  env, … its functions ask callers for) and locks it with the package's
+  SHA-256. An update that adds a capability is refused until you pass
+  `--allow <capability>`; `[policy] deny` refuses a capability outright; a
+  vendored package changed after locking does not compile (`KS1606`). No
+  registry yet: this is phase 1 of `docs/PACKAGES_V1.md`.
+- **Supply-chain demo** (`examples/supply_chain_demo`): the same compromised
+  dependency in Rust and Koschei, including an update that `cargo build`
+  takes without a question and `ks pkg sync` refuses.
+- **Stability policy approved** (`docs/STABILITY_V1.md`); it takes effect
+  with 1.0.0.
+- **Hardened native builds:** `ks build` pins Go's environment
+  (`GOFLAGS`, `GOENV`, `GOPROXY`, `GOTOOLCHAIN`, `GOWORK`, `CGO_ENABLED`), so
+  a hostile environment cannot inject a `-toolexec` hook or fetch modules.
 
 ## New in 0.17.0
 
