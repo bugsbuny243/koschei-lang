@@ -168,7 +168,7 @@ def test_localized_technical_article_and_structured_product_metadata():
     schema = json.loads(match.group(1))
     assert schema["@type"] == "SoftwareApplication"
     assert schema["name"] == "Koschei Lang"
-    assert schema["softwareVersion"] == "0.18.0"
+    assert schema["softwareVersion"] == "0.19.0"
     assert schema["applicationCategory"] == "DeveloperApplication"
     assert schema["offers"]["price"] == "49.00"
     assert schema["offers"]["priceCurrency"] == "USD"
@@ -201,5 +201,5 @@ def test_release_roadmap_does_not_promise_unreleased_features():
     assert 'TARGET · 1.0 GATES' in source
     assert 'not announced releases or promised dates' in source
     assert 'Not yet achieved' in source
-    assert '0.19.0 are proposals, not shipping promises' in source
+    assert '0.20.0 are proposals, not shipping promises' in source
     assert 'generic structs, remain interpreter-only' in source

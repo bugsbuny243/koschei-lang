@@ -1,8 +1,26 @@
-# Koschei Lang 0.18.0 — Sürüm Notları
+# Koschei Lang 0.19.0 — Sürüm Notları
 
 **Ürün:** Koschei Lang (Koschei Sentinel ve Web3 Hub'dan bağımsız)  
-**Sürüm:** 0.18.0  
+**Sürüm:** 0.19.0  
 **Ürün hattı:** ticari lisanslı, 1.0 öncesi programlama dili ve araç zinciri
+
+## 0.19.0'da yeni
+
+- **Paket deposu** (`ks pkg add ad@sürüm`, `ks pkg publish`, `ks pkg yank`
+  ve `{ version = "x.y.z" }` bağımlılıkları). Depo,
+  `https://koschei.dev/registry/` adresindeki düz dosyalardır; yayın bir pull
+  request'tir. İstemci arşiv ve paket özetlerini doğrular, yalnızca `.ks`
+  kaynaklarını çıkarır ve her paketin yetki yüzeyini kendisi yeniden
+  hesaplar; indeksle uyuşmayan paketi reddeder. Sürümler değiştirilemez,
+  geri çekilen sürümler yalnızca mevcut bir kilitten kurulur, benzer isimler
+  incelemeye takılır.
+- **İlk paketler**, hepsi saf: `hexfmt` 1.0.0, `base64` 1.0.0, `semver`
+  1.0.0. Deneyin: `ks pkg add base64@1.0.0`.
+- **`KS1402`:** Sonucu atılan bir List, Map, String veya Bytes metodu
+  (tek başına `items.push(x)`) artık derlenmez. Bu değerler değiştirilemez;
+  o satır hiçbir şey yapmıyordu.
+- `"x".bytes()` artık `KS1306` yerine bilinmeyen metot (`KS1502`,
+  `to_bytes` önerisiyle) bildirir.
 
 ## 0.18.0'da yeni
 

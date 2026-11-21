@@ -1,8 +1,25 @@
-# Koschei Lang 0.18.0 — Release Notes
+# Koschei Lang 0.19.0 — Release Notes
 
 **Product:** Koschei Lang (independent of Koschei Sentinel and Web3 Hub)  
-**Version:** 0.18.0  
+**Version:** 0.19.0  
 **Release line:** commercially licensed, pre-1.0 language/toolchain
+
+## New in 0.19.0
+
+- **Package registry** (`ks pkg add name@version`, `ks pkg publish`,
+  `ks pkg yank`, and `{ version = "x.y.z" }` dependencies). The registry is
+  static files at `https://koschei.dev/registry/`; publishing is a pull
+  request. The client checks the archive and package digests, extracts only
+  `.ks` sources, and recomputes each package's capability surface, refusing
+  an index that disagrees. Versions are immutable, yanked versions install
+  only from an existing lock, and look-alike names are held for review.
+- **First packages**, all pure: `hexfmt` 1.0.0, `base64` 1.0.0, `semver`
+  1.0.0. Try `ks pkg add base64@1.0.0`.
+- **`KS1402`:** a List, Map, String or Bytes method whose result is thrown
+  away (`items.push(x)` on its own line) no longer compiles. These values are
+  immutable, so the line did nothing.
+- `"x".bytes()` now reports an unknown method (`KS1502`, suggesting
+  `to_bytes`) instead of `KS1306`.
 
 ## New in 0.18.0
 
