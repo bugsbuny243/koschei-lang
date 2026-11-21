@@ -1,0 +1,15 @@
+{
+  "name": "base64",
+  "schema": "koschei.registry-index/v1",
+  "versions": [
+    {
+      "archive_sha256": "8c444c0d6fab1800ccb05e0175c8c2655b00fb25dd8470cb7e07de559272df0f",
+      "dependencies": {},
+      "digest": "d5dc9f9f1b2430da065948134260cb24e3f1f9311e4a99103ac83d50c5860d00",
+      "published": "2026-11-21T10:12:11Z",
+      "surface": [],
+      "version": "1.0.0",
+      "yanked": false
+    }
+  ]
+}

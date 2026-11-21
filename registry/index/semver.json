@@ -1,0 +1,15 @@
+{
+  "name": "semver",
+  "schema": "koschei.registry-index/v1",
+  "versions": [
+    {
+      "archive_sha256": "fd1e1873bee0877bc465b06c2cd907e8e290735ff5dad52f9eede662f3ceda20",
+      "dependencies": {},
+      "digest": "9ff6d135b634603f5c17fab01b2fffd340db947ba4c68ee1265c02d9f14c00d7",
+      "published": "2026-11-21T10:12:11Z",
+      "surface": [],
+      "version": "1.0.0",
+      "yanked": false
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "name": "hexfmt",
+  "schema": "koschei.registry-index/v1",
+  "versions": [
+    {
+      "archive_sha256": "3f566cd57ee2106ae1ff6dbfb6a4da7d6994676055bc186fdf45f2771cc4de9e",
+      "dependencies": {},
+      "digest": "1197d0c8babb5ad3ff2e05668b9cbccd54e822e9e4f33ccb767dffd78f076ea4",
+      "published": "2026-11-21T10:12:11Z",
+      "surface": [],
+      "version": "1.0.0",
+      "yanked": false
+    }
+  ]
+}

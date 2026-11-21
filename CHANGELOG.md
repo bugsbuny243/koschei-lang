@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The registry has its first packages, all pure: `hexfmt` 1.0.0, `base64` 1.0.0 and `semver` 1.0.0. A new test checks on every pull request that each archive matches its index entry and each listed surface is the computed one.
 - Add the package registry, phase 2 of `docs/PACKAGES_V1.md`: `ks pkg add name@version`, `ks pkg publish`, `ks pkg yank`, and `{ version = "x.y.z" }` dependencies. The registry is static files served at `https://koschei.dev/registry/` from this repository's `registry/` directory; publishing is a pull request. Clients verify the archive and package digests and recompute the surface, refusing an index that disagrees; versions are immutable, yanked versions stay installable only from a lock, and look-alike names are held for review.
 
 ## 0.18.0 — 2026-11-20
