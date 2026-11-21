@@ -28,8 +28,22 @@ from pathlib import Path
 
 MAX_SOURCE_BYTES = 16 * 1024
 MAX_OUTPUT_BYTES = 16 * 1024
-WALL_TIMEOUT_SECONDS = 10
-CPU_SECONDS = 5
+
+
+def _bounded_seconds(name: str, default: int, ceiling: int) -> int:
+    """An operator override for a time limit: a whole number of seconds in
+    1..ceiling. Anything else stops startup instead of silently changing the
+    limit (a slower host, such as an emulated test VM, needs a larger value)."""
+    raw = os.environ.get(name, "")
+    if raw == "":
+        return default
+    if not raw.isdecimal() or not 1 <= int(raw) <= ceiling:
+        raise ValueError(f"{name} must be a whole number of seconds from 1 to {ceiling}")
+    return int(raw)
+
+
+WALL_TIMEOUT_SECONDS = _bounded_seconds("KOSCHEI_UNTRUSTED_WALL_SECONDS", 10, 180)
+CPU_SECONDS = _bounded_seconds("KOSCHEI_UNTRUSTED_CPU_SECONDS", 5, 120)
 MEMORY_BYTES = 512 * 1024 * 1024
 MAX_STEPS = 200_000
 
@@ -72,7 +86,16 @@ def _sandbox_command(command: list[str], workdir: str) -> list[str]:
         return command
     if mode != "bwrap":
         raise SandboxUnavailable("Unsupported untrusted sandbox mode")
-    binary = shutil.which("bwrap")
+    # A VM worker runs a dedicated copy of bubblewrap that only the worker's
+    # account may execute and that carries the host's AppArmor userns grant
+    # (server/playground/vm). It must be an absolute, existing executable.
+    explicit = os.environ.get("KOSCHEI_BWRAP", "")
+    if explicit:
+        if not os.path.isabs(explicit) or not os.path.isfile(explicit) or not os.access(explicit, os.X_OK):
+            raise SandboxUnavailable("Configured bubblewrap binary is unavailable")
+        binary = explicit
+    else:
+        binary = shutil.which("bwrap")
     if binary is None:
         raise SandboxUnavailable("Required bubblewrap sandbox is unavailable")
 
@@ -91,6 +114,13 @@ def _sandbox_command(command: list[str], workdir: str) -> list[str]:
             args += ["--symlink", os.readlink(system_path), system_path]
         elif os.path.isdir(system_path):
             args += ["--ro-bind", system_path, system_path]
+
+    # A virtual environment outside /usr (the VM worker's /opt/.../venv) holds
+    # the interpreter link and the koschei package; bind it read-only at the
+    # same path. It contains code only: no credentials, no worker sources.
+    prefix = os.path.realpath(sys.prefix)
+    if prefix != "/usr" and not prefix.startswith("/usr/"):
+        args += ["--ro-bind", sys.prefix, sys.prefix]
 
     args += [
         "--dev", "/dev",
@@ -114,16 +144,49 @@ MAX_SERVICE_PIDS = 128
 MAX_SERVICE_CPU_CORES = 2
 
 
+def own_cgroup_dir(
+    *,
+    proc_cgroup: Path = Path("/proc/self/cgroup"),
+    cgroup_root: Path = Path("/sys/fs/cgroup"),
+) -> Path:
+    """The cgroup-v2 directory this process belongs to.
+
+    In a container with a private cgroup namespace /proc/self/cgroup reads
+    ``0::/`` and the answer is the mount root. On a VM, a systemd service sits
+    in a child such as ``/system.slice/koschei-worker.service``; its limits
+    are there, not at the root. Only the unified (v2) hierarchy counts: a
+    hybrid or v1 host has no single place where all three limits apply.
+    """
+    lines = proc_cgroup.read_text(encoding="ascii").splitlines()
+    unified = [line[3:] for line in lines if line.startswith("0::")]
+    if len(unified) != 1 or not (cgroup_root / "cgroup.controllers").is_file():
+        raise ValueError("process is not in exactly one cgroup-v2 hierarchy")
+    relative = unified[0]
+    if not relative.startswith("/") or "\x00" in relative or any(
+        part in ("..", ".") for part in relative.split("/")
+    ):
+        raise ValueError("unsafe cgroup path")
+    root = cgroup_root.resolve()
+    directory = (root / relative.lstrip("/")).resolve()
+    if directory != root and root not in directory.parents:
+        raise ValueError("cgroup path escapes the cgroup mount")
+    if not directory.is_dir():
+        raise ValueError("own cgroup directory is missing")
+    return directory
+
+
 def require_container_limits(
     *,
     status_path: Path = Path("/proc/self/status"),
     cgroup_root: Path = Path("/sys/fs/cgroup"),
+    proc_cgroup: Path = Path("/proc/self/cgroup"),
 ) -> None:
     """Require an actually confined service when the hosted mode is enabled.
 
-    Docker/Compose settings are declarations, not proof that the host applied
-    them. Refuse to serve if the live process lacks syscall filtering,
-    no-new-privileges, or finite cgroup-v2 CPU/memory/PID ceilings.
+    Docker/Compose or systemd settings are declarations, not proof that the
+    host applied them. Refuse to serve if the live process lacks syscall
+    filtering, no-new-privileges, or finite cgroup-v2 CPU/memory/PID ceilings
+    on the cgroup it actually runs in (see ``own_cgroup_dir``).
     """
     mode = os.environ.get("KOSCHEI_REQUIRE_CONTAINER_LIMITS", "0")
     if mode == "0":
@@ -141,9 +204,10 @@ def require_container_limits(
             raise ValueError("seccomp filter is inactive")
         if entries["NoNewPrivs"].strip() != "1":
             raise ValueError("no_new_privs is inactive")
+        group = own_cgroup_dir(proc_cgroup=proc_cgroup, cgroup_root=cgroup_root)
 
         def positive_bounded(path: str, maximum: int) -> int:
-            value = (cgroup_root / path).read_text(encoding="ascii").strip()
+            value = (group / path).read_text(encoding="ascii").strip()
             if not value.isdecimal():
                 raise ValueError(f"{path} must be a finite integer")
             parsed = int(value)
@@ -153,7 +217,7 @@ def require_container_limits(
 
         positive_bounded("memory.max", MAX_SERVICE_MEMORY_BYTES)
         positive_bounded("pids.max", MAX_SERVICE_PIDS)
-        cpu = (cgroup_root / "cpu.max").read_text(encoding="ascii").split()
+        cpu = (group / "cpu.max").read_text(encoding="ascii").split()
         if len(cpu) != 2 or not all(part.isdecimal() for part in cpu):
             raise ValueError("cpu.max must contain a finite quota and period")
         quota, period = (int(item) for item in cpu)

@@ -1,0 +1,27 @@
+# Listening socket for the Koschei Playground worker.
+#
+# systemd creates this socket in the socket unit's cgroup, and every accepted
+# connection inherits that cgroup. The IP filter below therefore governs only
+# the frontend's inbound connections (ingress and their replies), while the
+# service keeps IPAddressDeny=any for anything the worker process itself
+# opens. Allowing many peers here never gives the worker outbound access.
+#
+# Railway's outbound address is not fixed (static egress IPs need a paid
+# plan), so install.sh defaults the ingress allowlist to any address;
+# authentication is then the TLS certificate pinned by the frontend plus the
+# 256-bit token. With known frontend addresses, pass them to install.sh.
+[Unit]
+Description=Koschei Playground worker socket
+
+[Socket]
+ListenStream=8443
+Accept=no
+FreeBind=yes
+NoDelay=yes
+Backlog=64
+IPAddressDeny=any
+# install.sh writes IPAddressAllow= (frontend ingress) and ListenStream= in
+# /etc/systemd/system/koschei-worker.socket.d/ingress.conf.
+
+[Install]
+WantedBy=sockets.target

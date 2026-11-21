@@ -1,11 +1,20 @@
 name: Playground Live Isolation Acceptance
 
+# The worker runs as a systemd service directly on a Linux VM. A GitHub-hosted
+# Ubuntu 24.04 runner is such a VM (systemd, cgroup v2, AppArmor with
+# kernel.apparmor_restrict_unprivileged_userns=1), so this job installs the
+# real unit and proves isolation on real hardware. Docker is not used:
+# bubblewrap cannot create its namespaces under Docker's default seccomp
+# profile and masked /proc without weakening the container (see
+# server/playground/README.md, "Why not Docker").
+
 on:
   push:
     branches:
       - 'security/playground-*'
     paths:
       - 'koschei/untrusted.py'
+      - 'koschei/playground_remote.py'
       - 'server/playground/**'
       - '.github/workflows/playground-live-security.yml'
   workflow_dispatch:
@@ -14,69 +23,48 @@ permissions:
   contents: read
 
 jobs:
-  live-isolation:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+  vm-worker:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - name: Checkout candidate
         uses: actions/checkout@v4
 
-      - name: Build hardened container
-        run: docker compose -f server/playground/compose.security.yaml build
-
-      - name: Prove real Linux namespace and cgroup isolation
+      - name: Record host security state
         run: |
-          docker compose -f server/playground/compose.security.yaml \
-            run --rm --no-deps -T playground \
-            python /opt/playground/runtime_security_probe.py
+          uname -r
+          cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns
+          test -f /sys/fs/cgroup/cgroup.controllers && echo "cgroup v2"
 
-      - name: Start hardened HTTP server
-        run: docker compose -f server/playground/compose.security.yaml up -d --no-build
-
-      - name: Verify HTTP health and sandboxed Koschei execution
+      - name: Install the worker unit (fails if the isolation probe fails)
         run: |
-          python - <<'PY'
-          import json
-          import time
-          import urllib.request
-          from urllib.error import URLError
+          sudo apt-get update -q
+          sudo sh server/playground/vm/install.sh "$GITHUB_WORKSPACE" localhost,worker.koschei.test \
+            0.0.0.0:8443 127.0.0.1/32 10.77.0.2/32
+          systemctl is-active koschei-worker.socket koschei-worker.service
+          systemctl show -p IPAddressAllow -p IPAddressDeny koschei-worker.service koschei-worker.socket
 
-          base = "http://127.0.0.1:8080"
-          deadline = time.monotonic() + 25
-          while True:
-              try:
-                  with urllib.request.urlopen(base + "/health", timeout=2) as response:
-                      assert response.status == 200
-                      assert json.load(response)["ok"] is True
-                  break
-              except (URLError, TimeoutError, ConnectionError):
-                  if time.monotonic() >= deadline:
-                      raise
-                  time.sleep(1)
+      - name: Black-box acceptance over TLS
+        run: sudo /opt/koschei-worker/venv/bin/python server/playground/vm/test/acceptance.py https://localhost:8443
 
-          payload = json.dumps({
-              "action": "run",
-              "source": 'fn main() { println("live-container-ok") }\n',
-          }).encode("utf-8")
-          request = urllib.request.Request(
-              base + "/api/evaluate", data=payload,
-              headers={"Content-Type": "application/json"},
-          )
-          with urllib.request.urlopen(request, timeout=30) as response:
-              result = json.load(response)
-          assert result["stage"] == "run", result
-          assert result["ran"] is True, result
-          assert result["run"]["exit_code"] == 0, result
-          assert result["run"]["stdout"].strip() == "live-container-ok", result
-          print("LIVE_PLAYGROUND_HTTP_PASS")
-          PY
+      - name: Weakened isolation must stop the worker
+        run: sudo sh server/playground/vm/test/degrade.sh
 
-      - name: Preserve container diagnostics
+      - name: Frontend to worker over a real network path, and isolation
+        run: |
+          sudo python3 server/playground/vm/test/connectivity.py "$GITHUB_WORKSPACE" | tee connectivity.jsonl
+          grep -q '"result": "PASS"' connectivity.jsonl
+
+      - name: Save worker journal
         if: always()
-        run: |
-          docker compose -f server/playground/compose.security.yaml ps -a || true
-          docker compose -f server/playground/compose.security.yaml logs --no-color --tail=200 || true
-          docker compose -f server/playground/compose.security.yaml down --remove-orphans || true
+        run: sudo journalctl -u koschei-worker.socket -u koschei-worker --no-pager -o cat > worker-journal.log || true
 
-# No elevated Docker privileges, seccomp relaxation, or skipped namespace
-# checks. Incompatible CI hosts fail the job and block promotion.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playground-vm-worker-${{ github.sha }}
+          path: |
+            worker-journal.log
+            connectivity.jsonl
+          if-no-files-found: warn
+          retention-days: 14
