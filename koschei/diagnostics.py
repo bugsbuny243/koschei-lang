@@ -141,6 +141,18 @@ CATALOG: dict[str, Diagnostic] = {
             "disk.read(path) or { println(\"config yok, varsayılanla devam\") }"
         ),
     ),
+    "KS1402": Diagnostic(
+        code="KS1402",
+        title="Değer metodunun sonucu atılıyor",
+        summary="List, Map, String veya Bytes üzerindeki bir metodun sonucu tek başına bir satırda kullanılmadan bırakıldı.",
+        why=(
+            "Bu tipler değiştirilemez değerlerdir: 'items.push(x)' yeni bir liste "
+            "döndürür, 'items' aynı kalır. Sonuç atılırsa satır hiçbir şey yapmaz; "
+            "bu sessiz bir mantık hatasıdır."
+        ),
+        fix="Sonucu atayın: 'items = items.push(x)' veya 'let next = items.push(x)'.",
+        example="let mut items = [1]\nitems = items.push(2)",
+    ),
     "KS1501": Diagnostic(
         code="KS1501",
         title="Yapısal literal alan/anahtar hatası",
@@ -903,6 +915,12 @@ ENGLISH_TEXT: dict[str, tuple[str, str, str, str]] = {
         "A fallible result was neither bound nor handled with 'or'.",
         "Errors are values in Koschei; silently discarding one would let the program continue in an invalid state.",
         "Bind the result, use 'or return', provide a fallback with 'or value', or handle it in an 'or { ... }' block.",
+    ),
+    "KS1402": (
+        "Value method result discarded",
+        "The result of a method on a List, Map, String or Bytes value is written as a statement on its own and never used.",
+        "These types are immutable values: 'items.push(x)' returns a new list and leaves 'items' unchanged. A discarded result means the line does nothing, a silent logic error.",
+        "Use the result: 'items = items.push(x)' or 'let next = items.push(x)'.",
     ),
     "KS1501": (
         "Invalid structural literal",

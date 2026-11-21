@@ -202,6 +202,9 @@ class SemanticChecker:
     ) -> None:
         self.program = program
         self.imports = imports or {}
+        # Receiver type of each checked method call, keyed by node identity,
+        # so a statement can tell a discarded value-method result (KS1402).
+        self._method_receivers: dict[int, str | None] = {}
         self.functions = {declaration.name: declaration for declaration in program.declarations}
         self.structs = {
             declaration.name: declaration for declaration in program.structs
@@ -467,6 +470,7 @@ class SemanticChecker:
                     "veya 'or { ... }' kullanın).",
                     statement.location,
                 )
+            self._reject_discarded_value(statement.expression)
             return
 
         if isinstance(statement, IfStatement):
@@ -672,6 +676,7 @@ class SemanticChecker:
 
             if isinstance(expression.callee, MemberExpression):
                 receiver_type = self._check_expression(expression.callee.object)
+                self._method_receivers[id(expression)] = receiver_type
                 return self._check_method_call(
                     receiver_type,
                     expression.callee.member,
@@ -1354,6 +1359,29 @@ class SemanticChecker:
                 location,
             )
 
+    def _reject_discarded_value(self, expression: Expression) -> None:
+        """A value method's result used as a statement is always a mistake.
+
+        List, Map, String and Bytes are immutable values: ``items.push(x)``
+        returns a new list and leaves ``items`` unchanged. Written alone, the
+        call does nothing, so it is refused instead of silently ignored.
+        """
+
+        if not isinstance(expression, CallExpression) or not isinstance(
+            expression.callee, MemberExpression
+        ):
+            return
+        receiver = self._method_receivers.get(id(expression))
+        if not isinstance(receiver, str):
+            return
+        if receiver in {"String", "Bytes", "List", "Map"} or receiver.startswith(("List<", "Map<")):
+            name = expression.callee.member
+            hint = (
+                f"'{name}' yeni bir değer döndürür; alıcıyı değiştirmez. "
+                f"Sonucu kullanın, örneğin 'x = x.{name}(...)' veya 'let y = x.{name}(...)'."
+            )
+            raise SemanticError("KS1402", f"{receiver}.{name}() sonucu atılıyor. {hint}", expression.location)
+
     def _check_method_call(
         self,
         receiver_type: str | None,
@@ -1394,7 +1422,8 @@ class SemanticChecker:
                 raise SemanticError(
                     "KS1502",
                     f"String üzerinde '{method_name}' metodu yok. "
-                    f"Kullanılabilir: {', '.join(sorted(STRING_METHODS))}.",
+                    # to_bytes is handled by bytes_v1 before this check.
+                    f"Kullanılabilir: {', '.join(sorted(STRING_METHODS | {'to_bytes'}))}.",
                     location,
                 )
             values = argument_types or []

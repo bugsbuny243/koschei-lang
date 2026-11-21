@@ -84,6 +84,14 @@ def method_type(
         }.get(method)
         if result is not None:
             return result
+        # Bytes conversion is added by bytes_v1 ahead of this function, so a
+        # String method that reaches here is unknown: say which ones exist.
+        known = sorted({*expected_arity, "to_bytes"})
+        raise SemanticError(
+            "KS1502",
+            f"String üzerinde '{method}' metodu yok. Kullanılabilir: {', '.join(known)}.",
+            location,
+        )
 
     if isinstance(receiver, GenericType) and receiver.name == "List":
         item = receiver.arguments[0] if receiver.arguments else UNKNOWN
