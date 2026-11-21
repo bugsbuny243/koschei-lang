@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.19.0 — 2026-11-21
 
 - New `KS1402`: the result of a List, Map, String or Bytes method written alone on a line is refused. These values are immutable, so `items.push(x)` on its own does nothing; it now fails to compile instead of being silently ignored. Write `items = items.push(x)`.
 - An unknown String method such as `"x".bytes()` now reports `KS1502` (unknown method, listing `to_bytes`) instead of the misleading `KS1306`.
