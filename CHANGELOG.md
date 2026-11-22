@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- The 1.0 release plan now tracks the status of all seven gates. Gate 3 is closed by scoping: self-hosting is not a 1.0 goal (owner decision), with the reasons and what 1.0 promises instead.
+
+## Unreleased
+
 - `tools/fuzz/capability_fuzz.py`: 15 kinds of capability misuse embedded at random depth in random code and helper chains must all be refused by `ks check`; granted disk access passed through helpers must refuse every `..`, absolute-path and symlink escape and behave the same natively. 700 attacks and 160 access programs (60 native): no findings. A small batch runs on every pull request.
 
 ## Unreleased
