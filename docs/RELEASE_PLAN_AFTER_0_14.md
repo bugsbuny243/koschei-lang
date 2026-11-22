@@ -67,6 +67,43 @@ Acceptance gates:
 6. Signed/capability-declared dependency model and supply-chain verification.
 7. Platform validation, security fuzzing and independent security review.
 
+### Status of the gates (2026-11-22)
+
+| Gate | Status | Where |
+|---|---|---|
+| 1. Semantics and compatibility | **Closed:** stability policy approved by the owner on 2026-11-20, in force from 1.0.0 | `docs/STABILITY_V1.md` |
+| 2. Executor equivalence | Nearly closed: one repository program (`PersistCaps`) is still refused by `ks build`; differential fuzzing finds no divergence | `tests/test_mir_go_native_v2_parity.py`, `tools/fuzz/` |
+| 3. Bootstrap / self-hosting | **Closed by scoping (owner decision, 2026-11-22):** self-hosting is not a 1.0 goal; see below | this section |
+| 4. Ownership / region model | Open | — |
+| 5. Bounded standard library | Mostly met; limits are documented and tested per module | `docs/reference/CORE_LIBRARY.md` |
+| 6. Signed, capability-declared dependencies | Capability-declared dependencies and a verifying registry are done; publisher signatures and a public log (phase 3) are open | `docs/PACKAGES_V1.md` |
+| 7. Fuzzing and independent review | Fuzzing done and running per PR; review brief ready; independent review requested (OSTIF, 2026-11-22), not yet done | `docs/AUDIT_SCOPE_V1.md`, `tools/fuzz/` |
+
+#### Gate 3: why self-hosting is out of scope for 1.0
+
+Koschei 1.0 is not self-hosting: the compiler is written in Python and the
+native backend emits Go. This is a deliberate scope, not a gap to be quietly
+filled later:
+
+- **It does not strengthen the security claims.** Koschei's guarantees are
+  about what a program and its dependencies can reach. A compiler written in
+  Koschei would still be trusted the same way, and "trusting trust" attacks
+  are answered by reproducible builds and diverse double-compiling, not by
+  the implementation language.
+- **The trusted base is already stated and checked.** CPython and the Go
+  toolchain are in the threat model's trusted base; the Go build
+  environment is pinned (`koschei/go_build_env_v1.py`), and releases have
+  build manifests and reproducibility checks (`docs/REPRODUCIBLE_BUILDS.md`).
+- **The cost is large and lands elsewhere.** A self-hosted compiler needs
+  features (a richer standard library, mutation-heavy data structures,
+  performance work) that would delay the gates that do carry security weight:
+  publisher signatures, the ownership model and the independent review.
+
+What 1.0 does promise instead: the compiler's own inputs (sources, locks,
+manifests, archives) are fuzzed, the build environment is pinned, and the
+release is reproducible from a tagged commit. Self-hosting may come back
+after 1.0 as its own proposal, and Koschei will not claim it before then.
+
 ## Release protocol for any 0.x milestone
 
 1. Freeze scope and list unsupported features.
