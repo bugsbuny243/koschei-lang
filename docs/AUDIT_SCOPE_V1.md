@@ -101,12 +101,15 @@ python3 tools/fuzz/package_format_fuzz.py 1 50000
 | `source_fuzz.py` (check) | 7,000 | none |
 | `source_fuzz.py` (run) | 2,000 | none |
 | `native_diff_fuzz.py` | 240 mutated programs, 44 passing check | none (26 identical, 18 refused by `ks build`) |
+| `typed_program_fuzz.py` (check + run) | 1,260 generated well-typed programs | none |
+| `typed_program_fuzz.py --native` | 350 generated programs, run against native binaries | none: identical output and exit status in all 350, including negative division and modulo, Unicode string lengths, `to_int` and integer overflow |
 | `package_bytes_fuzz.py` | 21,000 | none |
 | `package_format_fuzz.py` | 60,000 | **2, fixed**: a lock whose `dependencies` held a list or object raised `TypeError`; lock fields of the wrong type were accepted, and a lock `entry` could point outside its package. Every lock field is now validated, and the lock's version and entry must match the vendored `koschei.toml`. |
 
-Most mutated programs stop at the parser (`KS1002`), so the source fuzzer
-mainly exercises error paths; a generator of well-typed programs is the next
-step and a good place for a reviewer to add depth.
+Most mutated programs stop at the parser (`KS1002`), so `source_fuzz.py`
+mainly exercises error paths; `typed_program_fuzz.py` covers the accepted
+side. It does not yet generate capabilities, closures, generics, maps or
+modules, which is where a reviewer could add the most depth.
 
 ## What we ask for
 

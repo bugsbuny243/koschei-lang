@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- `tools/fuzz/typed_program_fuzz.py` generates well-typed programs (struct, enum with payloads, `match`, functions, loops, lists, Unicode strings, `to_int`, integer overflow) and compares `ks run` with native binaries. 1,260 programs interpreted and 350 native: no findings. A small batch runs on every pull request.
+
+## Unreleased
+
 - Fuzzers in `tools/fuzz/` for source, native-vs-interpreter output, and package archives, locks, manifests and index JSON, with a per-PR smoke test and a manual `Koschei Fuzz` workflow. They found two bugs, now fixed: a lock whose `dependencies` held a list or object crashed with `TypeError`, and lock fields of the wrong type were accepted, including an `entry` pointing outside its package. Every lock and index field is validated, and the lock's version and entry must match the vendored `koschei.toml`.
 - `docs/AUDIT_SCOPE_V1.md`: the brief for an independent security review (1.0 gate 7). The threat model now covers packages, the registry, typosquatting, the Go build environment and malformed toolchain input.
 
