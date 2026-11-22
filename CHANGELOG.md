@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- `tools/fuzz/capability_fuzz.py`: 15 kinds of capability misuse embedded at random depth in random code and helper chains must all be refused by `ks check`; granted disk access passed through helpers must refuse every `..`, absolute-path and symlink escape and behave the same natively. 700 attacks and 160 access programs (60 native): no findings. A small batch runs on every pull request.
+
+## Unreleased
+
 - `tools/fuzz/typed_program_fuzz.py` generates well-typed programs (struct, enum with payloads, `match`, functions, loops, lists, Unicode strings, `to_int`, integer overflow) and compares `ks run` with native binaries. 1,260 programs interpreted and 350 native: no findings. A small batch runs on every pull request.
 
 ## Unreleased
