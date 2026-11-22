@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Fuzzers in `tools/fuzz/` for source, native-vs-interpreter output, and package archives, locks, manifests and index JSON, with a per-PR smoke test and a manual `Koschei Fuzz` workflow. They found two bugs, now fixed: a lock whose `dependencies` held a list or object crashed with `TypeError`, and lock fields of the wrong type were accepted, including an `entry` pointing outside its package. Every lock and index field is validated, and the lock's version and entry must match the vendored `koschei.toml`.
+- `docs/AUDIT_SCOPE_V1.md`: the brief for an independent security review (1.0 gate 7). The threat model now covers packages, the registry, typosquatting, the Go build environment and malformed toolchain input.
+
 ## 0.19.0 — 2026-11-21
 
 - New `KS1402`: the result of a List, Map, String or Bytes method written alone on a line is refused. These values are immutable, so `items.push(x)` on its own does nothing; it now fails to compile instead of being silently ignored. Write `items = items.push(x)`.

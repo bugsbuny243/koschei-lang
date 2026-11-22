@@ -1,0 +1,52 @@
+name: Koschei Fuzz
+
+# Larger fuzz batches than the per-PR smoke test (tests/test_fuzz_smoke_v1.py).
+# Manual only, so it does not spend Actions minutes on a schedule; run it
+# before a release from Actions -> Koschei Fuzz -> Run workflow.
+on:
+  workflow_dispatch:
+    inputs:
+      seed:
+        description: "Seed (deterministic)"
+        default: "1"
+      scale:
+        description: "Cases multiplier"
+        default: "1"
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      FUZZ_OUT: fuzz-findings
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+      - name: Install
+        run: python -m pip install -e .
+      - name: Fuzz
+        run: |
+          mkdir -p "$FUZZ_OUT"
+          seed="${{ inputs.seed }}"; scale="${{ inputs.scale }}"
+          status=0
+          python tools/fuzz/source_fuzz.py "$seed" $((5000 * scale)) check || status=1
+          python tools/fuzz/source_fuzz.py "$((seed + 1))" $((3000 * scale)) run || status=1
+          python tools/fuzz/package_bytes_fuzz.py "$seed" $((50000 * scale)) || status=1
+          python tools/fuzz/package_format_fuzz.py "$seed" $((50000 * scale)) || status=1
+          python tools/fuzz/native_diff_fuzz.py "$seed" $((100 * scale)) || status=1
+          exit $status
+      - name: Upload findings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: koschei-fuzz-findings
+          path: fuzz-findings
+          if-no-files-found: ignore

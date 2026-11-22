@@ -45,6 +45,15 @@ the separate Koschei Sentinel product.
    `docs/SERVE_KNOWHERE_V1.md`). Processes, `persist` and `serve.exchange`
    are refused at build time (`KS4004`).
 
+5. **Package → project.** A dependency is source code fetched from a path,
+   a git commit or the registry. Nothing of it runs while it is fetched or
+   compiled; its capability surface is computed by the compiler and locked
+   with its digest, and every compile verifies the lock and the vendored
+   bytes (`docs/PACKAGES_V1.md`).
+6. **Registry → client.** The registry is static files. The client trusts
+   neither its surface nor its archive: it checks both digests, extracts
+   only package sources, and recomputes the surface.
+
 ## Threats and controls
 
 | # | Threat | Control | Evidence |
@@ -59,6 +68,11 @@ the separate Koschei Sentinel product.
 | T8 | Timing side channels through a precise clock | Clock resolution is part of the capability | `docs/CLOCK_RANDOM_V1.md` |
 | T9 | Home-made cryptography | None: digests delegate to audited host SHA3-256 | `koschei/secure_hash_v1.py`, `tests/test_secure_library_v1.py` |
 | T10 | A dependency or build input is substituted | Module lock, build manifest, hash-locked tooling, digest-pinned containers, SBOM | `docs/MODULE_LOCK.md`, `docs/REPRODUCIBLE_BUILDS.md` |
+| T11 | A package update quietly gains authority (the August 2026 crates.io pattern) | Surface computed from source and locked; a wider surface is refused without `--allow`; `[policy] deny`; no build-time code | `tests/test_packages_v1.py`, `tests/test_supply_chain_demo_v1.py` |
+| T12 | The registry or a mirror serves a different package or lies about its surface | Archive SHA-256 and package digest checked against the index; surface recomputed and compared; safe extraction (no links, absolute or `..` paths, size limits); immutable versions | `tests/test_registry_v1.py`, `tests/test_registry_contents_v1.py` |
+| T13 | Typosquatting | New names one edit from an existing one are held for maintainer review | `tests/test_registry_v1.py` |
+| T14 | `ks build` is steered by the host's Go environment (`GOFLAGS=-toolexec`, proxies, toolchains) | Pinned Go environment for every build | `tests/test_go_build_env_v1.py` |
+| T15 | Malformed input to the toolchain itself (source, locks, manifests, archives) crashes it or is half-accepted | Every outcome is success or a coded diagnostic; checked by mutation, structure-aware and differential fuzzers | `tools/fuzz/`, `tests/test_fuzz_smoke_v1.py` |
 
 ## Residual risks
 
@@ -80,7 +94,11 @@ These are known and not closed by the code:
 5. **Release signing and protected branches** are owner actions not yet
    evidenced (`KOSCHEI_ACQUISITION_READINESS_V1.md`).
 6. **No independent audit yet.** This model and the tests are the
-   maintainers' own evidence.
+   maintainers' own evidence. `docs/AUDIT_SCOPE_V1.md` is the brief for an
+   external reviewer.
+7. **Registry publisher identity.** Until phase 3 of `docs/PACKAGES_V1.md`
+   (signatures and a public log), a package's author is whoever opened the
+   merged pull request; a compromised maintainer account can publish.
 
 ## Reporting
 
