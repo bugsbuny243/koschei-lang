@@ -43,6 +43,7 @@ jobs:
           python tools/fuzz/package_format_fuzz.py "$seed" $((50000 * scale)) || status=1
           python tools/fuzz/native_diff_fuzz.py "$seed" $((100 * scale)) || status=1
           python tools/fuzz/typed_program_fuzz.py "$seed" $((300 * scale)) --native || status=1
+          python tools/fuzz/capability_fuzz.py "$seed" $((800 * scale)) --native || status=1
           exit $status
       - name: Upload findings
         if: always()
