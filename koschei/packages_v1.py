@@ -319,6 +319,28 @@ def vendor_dir(project_root: Path, name: str, digest: str) -> Path:
     return _vendor_root(project_root) / f"{name}-{digest[:16]}"
 
 
+def _safe_entry(value: Any) -> bool:
+    if not isinstance(value, str) or not value.endswith(".ks"):
+        return False
+    path = Path(value)
+    return not path.is_absolute() and ".." not in path.parts and "\\" not in value
+
+
+def _valid_source(value: Any) -> bool:
+    if not isinstance(value, dict) or not all(
+        isinstance(key, str) and isinstance(item, str) for key, item in value.items()
+    ):
+        return False
+    keys = set(value)
+    if keys == {"path"}:
+        return bool(value["path"])
+    if keys == {"git", "rev"}:
+        return value["git"].startswith("https://") and bool(COMMIT.fullmatch(value["rev"]))
+    if keys == {"registry", "version"}:
+        return value["registry"].startswith(("https://", "file://")) and bool(VERSION.fullmatch(value["version"]))
+    return False
+
+
 def load_lock(project_root: Path) -> PackageLock | None:
     path = project_root / LOCK_NAME
     if not path.exists():
@@ -336,6 +358,16 @@ def load_lock(project_root: Path) -> PackageLock | None:
     for name, entry in packages.items():
         if not PACKAGE_NAME.fullmatch(name) or not isinstance(entry, dict) or set(entry) != required:
             raise PackageError(f"{LOCK_NAME}: entry {name!r} is malformed")
+        if not isinstance(entry["version"], str) or not entry["version"]:
+            raise PackageError(f"{LOCK_NAME}: entry {name!r} has a malformed version")
+        if not _safe_entry(entry["entry"]):
+            raise PackageError(f"{LOCK_NAME}: entry {name!r} has an unsafe entry path")
+        if not _valid_source(entry["source"]):
+            raise PackageError(f"{LOCK_NAME}: entry {name!r} has a malformed source")
+        if not isinstance(entry["dependencies"], list) or not all(
+            isinstance(dep, str) for dep in entry["dependencies"]
+        ):
+            raise PackageError(f"{LOCK_NAME}: entry {name!r} has malformed dependencies")
         if not isinstance(entry["digest"], str) or not DIGEST.fullmatch(entry["digest"]):
             raise PackageError(f"{LOCK_NAME}: entry {name!r} has a malformed digest")
         if not isinstance(entry["surface"], list) or any(item not in SURFACE_ORDER for item in entry["surface"]):
@@ -667,6 +699,11 @@ def verify_project(project_root: Path) -> PackageImportResolver:
             raise PackageError(
                 f"package {name!r} changed after it was locked (sha256 {actual[:16]}… "
                 f"is not {entry['digest'][:16]}…); refusing to compile it"
+            )
+        _, version, manifest_entry, _, _ = _package_manifest(package_root, name)
+        if (version, manifest_entry) != (entry["version"], entry["entry"]):
+            raise PackageError(
+                f"{LOCK_NAME} entry {name!r} does not match its vendored koschei.toml; run 'ks pkg sync'"
             )
         if set(project.deny) & set(entry["surface"]):
             raise PackageError(f"package {name!r} is refused by [policy] deny")

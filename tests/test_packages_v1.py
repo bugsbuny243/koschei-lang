@@ -164,6 +164,24 @@ class PackagesTests(unittest.TestCase):
         self.assertNotEqual(code, 0)
         self.assertIn("KS1606", err)
 
+    def test_lock_entry_must_match_the_vendored_manifest(self) -> None:
+        sync(self.app)
+        vendored = next((self.app / ".koschei" / "packages").glob("hexfmt-*"))
+        (vendored / "src" / "other.ks").write_text("fn x() -> Int {\n    return 1\n}\n")
+        lock_path = self.app / LOCK_NAME
+        lock = json.loads(lock_path.read_text())
+        lock["packages"]["hexfmt"]["entry"] = "src/other.ks"
+        # Re-lock the digest too, as an attacker editing both files would.
+        from koschei.packages_v1 import tree_digest
+
+        digest = tree_digest(vendored)
+        lock["packages"]["hexfmt"]["digest"] = digest
+        vendored.rename(vendored.with_name(f"hexfmt-{digest[:16]}"))
+        lock_path.write_text(json.dumps(lock))
+        code, _, err = self.run_app()
+        self.assertNotEqual(code, 0)
+        self.assertIn("does not match its vendored koschei.toml", err)
+
     def test_manifest_edit_without_sync_is_refused(self) -> None:
         sync(self.app)
         manifest = self.app / "koschei.toml"

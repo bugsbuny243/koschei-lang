@@ -141,6 +141,11 @@ def validate_index(payload: Any, name: str) -> dict[str, Any]:
             or not isinstance(entry.get("surface"), list)
             or any(item not in SURFACE_ORDER for item in entry["surface"])
             or not isinstance(entry.get("dependencies"), dict)
+            or not all(
+                isinstance(dep, str) and PACKAGE_NAME.fullmatch(dep)
+                and isinstance(ver, str) and VERSION.fullmatch(ver)
+                for dep, ver in entry["dependencies"].items()
+            )
             or not isinstance(entry.get("yanked"), bool)
         ):
             raise PackageError(f"registry index for {name!r} has a malformed version entry")
