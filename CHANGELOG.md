@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.21.0 — 2026-11-23
 
 - **Security fix:** `ks workspace build` produced native binaries with the legacy AST-Go backend, which runs disk, network, serve and persistence effects inside the program's own process. `ks build` already refused that backend (`KS4004`). Workspace builds now use the same confined MIR-Go backend, whose effects cross the capability broker under seccomp, and fail closed with `KS4004` otherwise.
 - Native binaries support `PersistCaps` (`caps.persist.allow`, `load`, `commit`) and `ServeCaps.exchange` through the broker, with the interpreter's error texts. Every repository program and every workspace `main` now builds natively, which closes 1.0 gate 2.
