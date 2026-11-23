@@ -1,8 +1,22 @@
-# Koschei Lang 0.21.0 — Sürüm Notları
+# Koschei Lang 0.22.0 — Sürüm Notları
 
 **Ürün:** Koschei Lang (Koschei Sentinel ve Web3 Hub'dan bağımsız)  
-**Sürüm:** 0.21.0  
+**Sürüm:** 0.22.0  
 **Ürün hattı:** ticari lisanslı, 1.0 öncesi programlama dili ve araç zinciri
+
+## 0.22.0'da yeni
+
+- **Güvenlik düzeltmesi: disk, ortam değişkeni, ağ veya sunucu kullanan native
+  binary üretiyorsanız güncelleyin.** Yetki aracısı (broker), worker'dan gelen
+  disk ve ortam değişkeni isteklerine koşulsuz cevap veriyordu. Ele geçirilmiş
+  bir worker, yalnızca dosya okuyan ya da yalnızca ağ kullanan bir programda
+  bile yazılabilir dizin ve ortam değişkenleri isteyebiliyordu; bunlara gizli
+  bilgiler de dahildi. Seccomp yine devredeydi. Artık broker yalnızca
+  derleyicinin programda gördüğü yetkilere hizmet ediyor, gerisinde bağlantıyı
+  kesiyor. Açığı bir formal model (TLA+) buldu.
+- **Formal modeller.** `formal/tla` altında paket güncelleme kuralının ve broker
+  kısıtının TLC ile denetlenen modelleri var. Her modelde koddaki her kontrolün
+  gerekli olduğu gösteriliyor: kontrol kapatılınca karşı örnek çıkıyor.
 
 ## 0.21.0'da yeni
 
