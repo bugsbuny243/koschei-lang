@@ -36,6 +36,12 @@ BROKER_CHECKS = {
     "CheckWritable": ("NoWriteThroughReadOnly", '{"disk_read", "disk_write"}', "!scopes[index].writable"),
     "CheckLive": ("NoStaleScope", '{"disk_read", "disk_write", "env"}', "scopes[index] == nil"),
 }
+# Registry log model switches.
+LOG_CHECKS = {
+    "CheckPinned": ("HistoryMonotonic", "refusing to trust the registry"),
+    "CheckLogMatch": ("LockedIsLogged", "index and public log disagree on {key}"),
+    "CheckYank": ("NoHiddenYank", "index and public log disagree on yanked"),
+}
 GRANT_SETS = ('{}', '{"disk_read"}', '{"env"}', '{"disk_read", "env"}', '{"disk_read", "disk_write", "env"}')
 
 
@@ -57,6 +63,13 @@ class ModelLinkTest(unittest.TestCase):
         for switch, (_, path, needle) in PACKAGE_CHECKS.items():
             self.assertIn(f"{switch} = TRUE", cfg)
             self.assertIn(needle, (ROOT / path).read_text(encoding="utf-8"), f"{switch}: {path}")
+
+    def test_registry_keeps_modelled_log_checks(self) -> None:
+        cfg = (TLA / "RegistryLog.cfg").read_text(encoding="utf-8")
+        registry = (ROOT / "koschei" / "registry_v1.py").read_text(encoding="utf-8")
+        for switch, (_, needle) in LOG_CHECKS.items():
+            self.assertIn(f"{switch} = TRUE", cfg)
+            self.assertIn(needle, registry, switch)
 
     def test_broker_keeps_modelled_checks(self) -> None:
         cfg = (TLA / "BrokerConfinement.cfg").read_text(encoding="utf-8")
@@ -106,6 +119,21 @@ class BrokerConfinementModelTest(unittest.TestCase):
                 cfg = self.with_grants(grants, self.cfg.replace(f"{switch} = TRUE", f"{switch} = FALSE"))
                 out = run_tlc("BrokerConfinement", cfg)
                 self.assertRegex(out, rf"Invariant {re.escape(prop)} is violated", out[-3000:])
+
+
+@unittest.skipUnless(JAR and Path(JAR).is_file() and shutil.which("java"), "set KOSCHEI_TLA2TOOLS")
+class RegistryLogModelTest(unittest.TestCase):
+    cfg = (TLA / "RegistryLog.cfg").read_text(encoding="utf-8")
+
+    def test_shipped_rule_holds(self) -> None:
+        out = run_tlc("RegistryLog", self.cfg)
+        self.assertIn("No error has been found", out, out[-3000:])
+
+    def test_every_check_is_load_bearing(self) -> None:
+        for switch, (prop, _) in LOG_CHECKS.items():
+            with self.subTest(switch=switch):
+                out = run_tlc("RegistryLog", self.cfg.replace(f"{switch} = TRUE", f"{switch} = FALSE"))
+                self.assertRegex(out, rf"(Invariant|Action property) {re.escape(prop)} is violated", out[-3000:])
 
 
 if __name__ == "__main__":
