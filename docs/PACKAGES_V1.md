@@ -220,8 +220,8 @@ require_signed = true    # refuse unsigned registry packages
   public keys are refused. Signing is not constant-time; run it on your own
   machine, not on a shared server.
 - **Versions published before phase 3** (`hexfmt`, `base64`, `semver`
-  1.0.0) are unsigned until an owner runs `ks pkg sign`. They install unless
-  `require_signed` is set.
+  1.0.0) were signed afterwards with `ks pkg sign` by the owner key
+  `ed25519:7aa3c035…7fbdae` (full key in `registry/README.md`).
 
 What phase 3 does not do: there is no independent log witness yet, so a
 project that has never synced cannot tell a rewritten log from the original;

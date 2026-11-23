@@ -1,5 +1,8 @@
 {
   "name": "hexfmt",
+  "owners": [
+    "ed25519:7aa3c03584eb31da4ff497c3d927f2be972a53bd9b1406ddeab5dda6767fbdae"
+  ],
   "schema": "koschei.registry-index/v1",
   "versions": [
     {
@@ -7,6 +10,8 @@
       "dependencies": {},
       "digest": "1197d0c8babb5ad3ff2e05668b9cbccd54e822e9e4f33ccb767dffd78f076ea4",
       "published": "2026-11-21T10:12:11Z",
+      "signature": "88edf589107efe58c7f96509c379b304718638f22b460396a1070e77f532e4e3713b5fd1644d2027385df5b83bf074594672b027e6fb1f15ad1c222248905b09",
+      "signer": "ed25519:7aa3c03584eb31da4ff497c3d927f2be972a53bd9b1406ddeab5dda6767fbdae",
       "surface": [],
       "version": "1.0.0",
       "yanked": false
