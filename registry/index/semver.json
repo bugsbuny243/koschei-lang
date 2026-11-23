@@ -1,5 +1,8 @@
 {
   "name": "semver",
+  "owners": [
+    "ed25519:7aa3c03584eb31da4ff497c3d927f2be972a53bd9b1406ddeab5dda6767fbdae"
+  ],
   "schema": "koschei.registry-index/v1",
   "versions": [
     {
@@ -7,6 +10,8 @@
       "dependencies": {},
       "digest": "9ff6d135b634603f5c17fab01b2fffd340db947ba4c68ee1265c02d9f14c00d7",
       "published": "2026-11-21T10:12:11Z",
+      "signature": "5a20794c2982826d40450db824ce45f4af9733a55a373a317df37d697913be789289eee7921ce2405489ab9ec3097f9f18c10ecee7ec796edff7dccd913e840e",
+      "signer": "ed25519:7aa3c03584eb31da4ff497c3d927f2be972a53bd9b1406ddeab5dda6767fbdae",
       "surface": [],
       "version": "1.0.0",
       "yanked": false

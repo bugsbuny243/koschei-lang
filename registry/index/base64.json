@@ -1,5 +1,8 @@
 {
   "name": "base64",
+  "owners": [
+    "ed25519:7aa3c03584eb31da4ff497c3d927f2be972a53bd9b1406ddeab5dda6767fbdae"
+  ],
   "schema": "koschei.registry-index/v1",
   "versions": [
     {
@@ -7,6 +10,8 @@
       "dependencies": {},
       "digest": "d5dc9f9f1b2430da065948134260cb24e3f1f9311e4a99103ac83d50c5860d00",
       "published": "2026-11-21T10:12:11Z",
+      "signature": "2d640a9dcdaa9a401e318f2e63a1eca6332124fc3493216ca820865891366c1be4de9d42a735ee5ae4b022859eb4ffc39d1d344c7ac24cb82e6cf3579c59b408",
+      "signer": "ed25519:7aa3c03584eb31da4ff497c3d927f2be972a53bd9b1406ddeab5dda6767fbdae",
       "surface": [],
       "version": "1.0.0",
       "yanked": false
