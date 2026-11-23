@@ -70,6 +70,7 @@ the separate Koschei Sentinel product.
 | T10 | A dependency or build input is substituted | Module lock, build manifest, hash-locked tooling, digest-pinned containers, SBOM | `docs/MODULE_LOCK.md`, `docs/REPRODUCIBLE_BUILDS.md` |
 | T11 | A package update quietly gains authority (the August 2026 crates.io pattern) | Surface computed from source and locked; a wider surface is refused without `--allow`; `[policy] deny`; no build-time code | `tests/test_packages_v1.py`, `tests/test_supply_chain_demo_v1.py` |
 | T12 | The registry or a mirror serves a different package or lies about its surface | Archive SHA-256 and package digest checked against the index; surface recomputed and compared; safe extraction (no links, absolute or `..` paths, size limits); immutable versions | `tests/test_registry_v1.py`, `tests/test_registry_contents_v1.py` |
+| T16 | A registry or stolen account swaps who signs a package, or rewrites its history | Ed25519 signatures by package owners; signer pinned in the lock (`--allow-new-signer` to change); hash-chained public log with the head pinned in the lock | `tests/test_registry_v1.py`, `tests/test_ed25519_v1.py` |
 | T13 | Typosquatting | New names one edit from an existing one are held for maintainer review | `tests/test_registry_v1.py` |
 | T14 | `ks build` is steered by the host's Go environment (`GOFLAGS=-toolexec`, proxies, toolchains) | Pinned Go environment for every build | `tests/test_go_build_env_v1.py` |
 | T15 | Malformed input to the toolchain itself (source, locks, manifests, archives) crashes it or is half-accepted | Every outcome is success or a coded diagnostic; checked by mutation, structure-aware and differential fuzzers | `tools/fuzz/`, `tests/test_fuzz_smoke_v1.py` |
@@ -96,9 +97,12 @@ These are known and not closed by the code:
 6. **No independent audit yet.** This model and the tests are the
    maintainers' own evidence. `docs/AUDIT_SCOPE_V1.md` is the brief for an
    external reviewer.
-7. **Registry publisher identity.** Until phase 3 of `docs/PACKAGES_V1.md`
-   (signatures and a public log), a package's author is whoever opened the
-   merged pull request; a compromised maintainer account can publish.
+7. **Registry publisher identity.** Signatures bind versions to owner keys,
+   but a first install trusts whichever owner the index names, there is no
+   independent log witness, and a stolen publisher key can sign until the
+   owners change. Ed25519 is a dependency-free implementation of RFC 8032
+   (`koschei/ed25519_v1.py`) checked against OpenSSL; its signing path is not
+   constant-time.
 
 ## Reporting
 

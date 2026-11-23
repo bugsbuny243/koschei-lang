@@ -23,8 +23,10 @@ them is a critical finding.
    the application author passes `--allow`; `[policy] deny` refuses outright;
    a vendored package changed after locking does not compile.
 5. **The registry is untrusted.** A client accepts a registry package only if
-   the archive and package digests match the index and the surface it computes
-   equals the listed one.
+   the archive and package digests match the index, the surface it computes
+   equals the listed one, an owner's signature verifies (the signer is pinned
+   after the first install), and the public log holds the entry and extends
+   the history the project saw.
 6. **Executors agree.** `ks run` and a native `ks build` binary give the same
    output for the same program and input, or `ks build` refuses (`KS40xx`).
 7. **Malformed input is never half-accepted.** Every outcome of the toolchain
@@ -42,7 +44,8 @@ them is a critical finding.
 | Interpreter host effects | `koschei/interpreter.py` | 2,200 | 1, 2 |
 | Native code generation and runtime | `koschei/mir_go_native.py`, `koschei/mir_go_runtime_v2.py`, `koschei/mir_go_*_v1.py` | 4,500 | 6 |
 | Native broker and seccomp worker | `native/`, `docs/NATIVE_BROKER_V1.md`, `docs/NET_V1.md` | — | 1 |
-| Packages and registry | `koschei/packages_v1.py`, `koschei/registry_v1.py`, `koschei/pkg_cli.py`, `docs/PACKAGES_V1.md` | 1,300 | 3, 4, 5, 7 |
+| Packages and registry | `koschei/packages_v1.py`, `koschei/registry_v1.py`, `koschei/pkg_cli.py`, `docs/PACKAGES_V1.md` | 1,600 | 3, 4, 5, 7 |
+| Ed25519 (dependency-free RFC 8032) | `koschei/ed25519_v1.py` | 190 | 5 |
 | Native build environment | `koschei/go_build_env_v1.py` | 30 | 3 |
 
 ## Out of scope
@@ -53,7 +56,6 @@ them is a critical finding.
   process, not process isolation.
 - The commercial products in `commercial/` and `products/`, the website, and
   the `KOSCHEI_*` contract documents at the repository root.
-- Publisher identity in the registry (phase 3 of `docs/PACKAGES_V1.md`).
 
 ## Getting started
 
@@ -82,6 +84,8 @@ python3 tools/fuzz/package_format_fuzz.py 1 50000
 - The broker protocol and the seccomp allow list on linux/amd64 (claim 1).
 - Package resolution: import shadowing, transitive dependencies, lock and
   manifest edits between `sync` and `build`, archive extraction (claims 3–5).
+- The Ed25519 implementation: encodings, small-order points, malleability,
+  and the signed message's canonical form (claim 5).
 - Budgets: step, call depth and value size under `ks run`; native binaries are
   not metered (threat model residual risk 3).
 

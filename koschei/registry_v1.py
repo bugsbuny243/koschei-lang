@@ -47,6 +47,12 @@ from .packages_v1 import (
 
 INDEX_SCHEMA = "koschei.registry-index/v1"
 
+SIGNER = re.compile(r"^ed25519:[0-9a-f]{64}$")
+SIGNATURE = re.compile(r"^[0-9a-f]{128}$")
+SIGNATURE_CONTEXT = b"koschei-package-signature/v1\n"
+LOG_NAME = "log.jsonl"
+GENESIS = "0" * 64
+MAX_LOG_BYTES = 50 * 1024 * 1024
 MAX_ARCHIVE_BYTES = 5 * 1024 * 1024
 MAX_INDEX_BYTES = 1024 * 1024
 MAX_FILES = 1000
@@ -147,10 +153,176 @@ def validate_index(payload: Any, name: str) -> dict[str, Any]:
                 for dep, ver in entry["dependencies"].items()
             )
             or not isinstance(entry.get("yanked"), bool)
+            or ("signer" in entry) != ("signature" in entry)
+            or ("signer" in entry and not _valid_signer(entry["signer"]))
+            or ("signature" in entry and not (
+                isinstance(entry["signature"], str) and SIGNATURE.fullmatch(entry["signature"])
+            ))
         ):
             raise PackageError(f"registry index for {name!r} has a malformed version entry")
         seen.add(entry["version"])
+    owners = payload.get("owners", [])
+    if not isinstance(owners, list) or not all(_valid_signer(owner) for owner in owners):
+        raise PackageError(f"registry index for {name!r} has malformed owners")
     return payload
+
+
+# --- signatures -------------------------------------------------------------
+
+
+def _valid_signer(value: Any) -> bool:
+    return isinstance(value, str) and bool(SIGNER.fullmatch(value))
+
+
+def signed_message(name: str, entry: dict[str, Any]) -> bytes:
+    """The bytes a publisher signs: everything that identifies the release."""
+
+    payload = {
+        "name": name,
+        "version": entry["version"],
+        "digest": entry["digest"],
+        "archive_sha256": entry["archive_sha256"],
+        "surface": entry["surface"],
+        "dependencies": entry["dependencies"],
+    }
+    return SIGNATURE_CONTEXT + json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+
+
+def check_signature(name: str, entry: dict[str, Any], owners: list[str]) -> str | None:
+    """Return the entry's signer after verifying it, or None if unsigned."""
+
+    from .ed25519_v1 import verify
+
+    signer = entry.get("signer")
+    if signer is None:
+        return None
+    if owners and signer not in owners:
+        raise PackageError(f"{name} {entry['version']} is signed by {signer[:24]}…, not by an owner")
+    public = bytes.fromhex(signer.split(":", 1)[1])
+    if not verify(public, signed_message(name, entry), bytes.fromhex(entry["signature"])):
+        raise PackageError(f"{name} {entry['version']}: the signature does not verify")
+    return signer
+
+
+def load_key(path: str | Path) -> tuple[bytes, str]:
+    """Read a key file written by ``ks pkg keygen``: (seed, "ed25519:<public>")."""
+
+    from .ed25519_v1 import public_key
+
+    try:
+        text = Path(path).read_text(encoding="utf-8").strip()
+    except OSError as error:
+        raise PackageError(f"cannot read key file: {error}") from error
+    match = re.fullmatch(r"koschei-ed25519-secret:([0-9a-f]{64})", text)
+    if not match:
+        raise PackageError("not a Koschei key file (expected koschei-ed25519-secret:<64 hex>)")
+    seed = bytes.fromhex(match.group(1))
+    return seed, "ed25519:" + public_key(seed).hex()
+
+
+def keygen(path: str | Path) -> str:
+    from .ed25519_v1 import new_seed, public_key
+
+    target = Path(path)
+    if target.exists():
+        raise PackageError(f"{target} already exists; refusing to overwrite a key")
+    seed = new_seed()
+    descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+        handle.write(f"koschei-ed25519-secret:{seed.hex()}\n")
+    return "ed25519:" + public_key(seed).hex()
+
+
+def _sign_entry(name: str, entry: dict[str, Any], seed: bytes, signer: str) -> None:
+    from .ed25519_v1 import sign
+
+    entry["signer"] = signer
+    entry["signature"] = sign(seed, signed_message(name, entry)).hex()
+
+
+# --- public log ---------------------------------------------------------------
+#
+# registry/log.jsonl is append-only: each line records one publish, sign or
+# yank and carries the SHA-256 of the line before it, so rewriting history
+# changes every later hash. Clients pin the head they have seen.
+
+
+def _line_hash(line: bytes) -> str:
+    return hashlib.sha256(line).hexdigest()
+
+
+def parse_log(data: bytes) -> list[dict[str, Any]]:
+    if data and not data.endswith(b"\n"):
+        raise PackageError("registry log is truncated")
+    events: list[dict[str, Any]] = []
+    previous = GENESIS
+    for number, line in enumerate(data.splitlines(keepends=True)):
+        try:
+            event = json.loads(line)
+        except (UnicodeError, json.JSONDecodeError) as error:
+            raise PackageError(f"registry log line {number + 1} is not JSON") from error
+        if (
+            not isinstance(event, dict)
+            or type(event.get("seq")) is not int
+            or event.get("seq") != number
+            or event.get("prev") != previous
+            or event.get("event") not in {"publish", "sign", "yank", "unyank"}
+            or not isinstance(event.get("name"), str)
+            or not isinstance(event.get("version"), str)
+        ):
+            raise PackageError(f"registry log line {number + 1} breaks the chain")
+        event["_hash"] = _line_hash(line)
+        events.append(event)
+        previous = event["_hash"]
+    return events
+
+
+def _append_log(registry_dir: Path, event: dict[str, Any]) -> None:
+    path = registry_dir / LOG_NAME
+    data = path.read_bytes() if path.exists() else b""
+    events = parse_log(data)
+    record = {
+        "seq": len(events),
+        "prev": events[-1]["_hash"] if events else GENESIS,
+        **event,
+    }
+    line = json.dumps(record, sort_keys=True, separators=(",", ":")).encode() + b"\n"
+    with path.open("ab") as handle:
+        handle.write(line)
+
+
+def _log_event(event: str, name: str, entry: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "event": event,
+        "name": name,
+        "version": entry["version"],
+        "digest": entry["digest"],
+        "archive_sha256": entry["archive_sha256"],
+        "signer": entry.get("signer"),
+        "signature": entry.get("signature"),
+    }
+
+
+def check_log(events: list[dict[str, Any]], name: str, entry: dict[str, Any], pinned: dict[str, Any] | None) -> dict[str, Any]:
+    """The entry must match the log's latest record of it; history must extend ``pinned``."""
+
+    if pinned is not None:
+        seq, expected = pinned["seq"], pinned["hash"]
+        if seq >= len(events) or events[seq]["_hash"] != expected:
+            raise PackageError(
+                "the registry log no longer contains the history this project saw "
+                f"(entry {seq}); refusing to trust the registry"
+            )
+    latest = None
+    for event in events:
+        if event["name"] == name and event["version"] == entry["version"] and event["event"] in {"publish", "sign"}:
+            latest = event
+    if latest is None:
+        raise PackageError(f"{name} {entry['version']} is not in the registry's public log")
+    for key in ("digest", "archive_sha256", "signer", "signature"):
+        if latest.get(key) != entry.get(key):
+            raise PackageError(f"{name} {entry['version']}: index and public log disagree on {key}")
+    return {"seq": len(events) - 1, "hash": events[-1]["_hash"]}
 
 
 # --- fetching ---------------------------------------------------------------
@@ -198,6 +370,10 @@ def fetch_index(url: str, name: str) -> dict[str, Any]:
     return validate_index(payload, name)
 
 
+def fetch_log(url: str) -> list[dict[str, Any]]:
+    return parse_log(_get(url, LOG_NAME, MAX_LOG_BYTES))
+
+
 def fetch_package(url: str, name: str, version: str, destination: Path, *, locked_digest: str | None) -> dict[str, Any]:
     """Download, check and extract one version; return its index entry.
 
@@ -218,7 +394,7 @@ def fetch_package(url: str, name: str, version: str, destination: Path, *, locke
     digest = tree_digest(destination)
     if digest != entry["digest"]:
         raise PackageError(f"{name} {version}: package digest does not match the index")
-    return entry
+    return dict(entry, _owners=list(index.get("owners", [])))
 
 
 # --- publishing -------------------------------------------------------------
@@ -252,8 +428,14 @@ class Published:
     files: tuple[str, ...]
 
 
-def publish(package_root: str | Path, registry_dir: str | Path, *, allow_similar_name: bool = False) -> Published:
-    """Check a package and add it to a registry checkout. Never overwrites."""
+def publish(
+    package_root: str | Path,
+    registry_dir: str | Path,
+    *,
+    key: str | Path,
+    allow_similar_name: bool = False,
+) -> Published:
+    """Check, sign and add a package to a registry checkout. Never overwrites."""
 
     from .packages_v1 import _package_manifest, inspect_standalone
 
@@ -284,6 +466,13 @@ def publish(package_root: str | Path, registry_dir: str | Path, *, allow_similar
             )
     if any(entry["version"] == version for entry in index["versions"]):
         raise PackageError(f"{name} {version} is already published; versions are immutable")
+    seed, signer = load_key(key)
+    owners = index.setdefault("owners", [])
+    if owners and signer not in owners:
+        raise PackageError(
+            f"{signer[:24]}… is not an owner of {name}; an owner must add the key to "
+            "the index's owners in a reviewed pull request"
+        )
 
     surface, digest = inspect_standalone(package_root, name, registry_url=f"file://{registry_dir}")
     archive = build_archive(package_root)
@@ -296,13 +485,49 @@ def publish(package_root: str | Path, registry_dir: str | Path, *, allow_similar
         "yanked": False,
         "published": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
+    _sign_entry(name, entry, seed, signer)
+    if not owners:
+        owners.append(signer)
     target = registry_dir / archive_path(name, version)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(archive)
     index["versions"].append(entry)
     index_dir.mkdir(parents=True, exist_ok=True)
     _write_json(index_file, index)
-    return Published(name, version, surface, digest, (archive_path(name, version), f"index/{name}.json"))
+    _append_log(registry_dir, _log_event("publish", name, entry))
+    return Published(
+        name, version, surface, digest,
+        (archive_path(name, version), f"index/{name}.json", LOG_NAME),
+    )
+
+
+def sign_existing(registry_dir: str | Path, name: str, version: str, *, key: str | Path) -> str:
+    """Sign a version published before signatures existed. A signature is never replaced."""
+
+    registry_dir = Path(registry_dir).resolve()
+    index_file = registry_dir / "index" / f"{name}.json"
+    if not index_file.is_file():
+        raise PackageError(f"registry has no package {name!r}")
+    index = validate_index(json.loads(index_file.read_text(encoding="utf-8")), name)
+    seed, signer = load_key(key)
+    owners = index.setdefault("owners", [])
+    if owners and signer not in owners:
+        raise PackageError(f"{signer[:24]}… is not an owner of {name}")
+    for entry in index["versions"]:
+        if entry["version"] == version:
+            if "signature" in entry:
+                raise PackageError(f"{name} {version} is already signed; signatures are never replaced")
+            # Sign what the archive actually holds, not only what the index says.
+            data = (registry_dir / archive_path(name, version)).read_bytes()
+            if hashlib.sha256(data).hexdigest() != entry["archive_sha256"]:
+                raise PackageError(f"{name} {version}: archive does not match the index; not signing")
+            _sign_entry(name, entry, seed, signer)
+            if not owners:
+                owners.append(signer)
+            _write_json(index_file, index)
+            _append_log(registry_dir, _log_event("sign", name, entry))
+            return signer
+    raise PackageError(f"registry has no {name} {version}")
 
 
 def yank(registry_dir: str | Path, name: str, version: str, *, undo: bool = False) -> None:
@@ -314,6 +539,7 @@ def yank(registry_dir: str | Path, name: str, version: str, *, undo: bool = Fals
         if entry["version"] == version:
             entry["yanked"] = not undo
             _write_json(index_file, index)
+            _append_log(Path(registry_dir), _log_event("unyank" if undo else "yank", name, entry))
             return
     raise PackageError(f"registry has no {name} {version}")
 
