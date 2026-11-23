@@ -1,5 +1,13 @@
 # Bounded Persistence — Linux Native Go v1
 
+> **Update (2026-11-23):** native binaries now run this protocol in the
+> confined capability broker (`koschei/native_persist_v1.py`): the worker
+> asks the broker to narrow, load and commit, and the broker executes the Go
+> code below, taken verbatim from the reviewed AST-Go runtime. Parent-anchor
+> failures and symlinked targets report the interpreter's exact texts.
+> `tests/test_native_persist_v1.py` checks output, exit status and persisted
+> bytes against `ks run`.
+
 ## Purpose
 
 This slice carries the exact-object persistence contract from the interpreter into the Linux native-Go backend. It does not broaden `PersistCaps`, turn it into `DiskCaps`, or promote the stdlib operation to `supported` beyond the guarantees actually executed.

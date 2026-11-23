@@ -101,6 +101,14 @@ type _ksDiskCaps struct {
 
 type _ksEnvRoot struct{}
 
+// Exact-object persistence tokens (native_persist_v1); load and commit go
+// through the broker.
+type _ksPersistRoot struct{}
+
+type _ksPersistCaps struct {
+	handle string
+}
+
 type _ksEnvCaps struct {
 	name string
 }
@@ -274,6 +282,10 @@ func _ksToString(value any) string {
 		return "<ServeRoot>"
 	case *_ksServeCaps:
 		return "<ServeCaps>"
+	case _ksPersistRoot:
+		return "<PersistRoot>"
+	case *_ksPersistCaps:
+		return "<PersistCaps>"
 	case _ksHttpRequest:
 		return "HttpRequest(" + item.method + " " + item.path + ")"
 	case _ksClockRoot:
@@ -1870,6 +1882,10 @@ func _ksTypeName(value any) string {
 		return "ServeRoot"
 	case *_ksServeCaps:
 		return "ServeCaps"
+	case _ksPersistRoot:
+		return "PersistRoot"
+	case *_ksPersistCaps:
+		return "PersistCaps"
 	case _ksHttpRequest:
 		return "HttpRequest"
 	case _ksClockRoot:
@@ -2101,6 +2117,10 @@ func _ksMatchPattern(value any, expected string, parameters map[string]bool, bin
 		return base == "ServeRoot"
 	case *_ksServeCaps:
 		return base == "ServeCaps"
+	case _ksPersistRoot:
+		return base == "PersistRoot"
+	case *_ksPersistCaps:
+		return base == "PersistCaps"
 	case _ksHttpRequest:
 		return base == "HttpRequest"
 	case _ksClockRoot:

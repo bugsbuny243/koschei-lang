@@ -23,7 +23,9 @@ refused (``KS3405``), errors name the errno symbolically, a file holds at most
 16 MiB, text must be UTF-8 and directory names must be UTF-8.
 
 Confinement is implemented for ``linux/amd64``; any other target refuses to
-build such a program. Disk writes and the network stay closed (``KS4004``).
+build such a program. Disk writes, the network (``native_net_v1``), the
+loopback server (``native_serve_v1``) and exact-object persistence
+(``native_persist_v1``) are broker requests too.
 """
 
 from __future__ import annotations
@@ -217,6 +219,9 @@ var _ksBrokerNet func([]string) ([]string, bool)
 
 // Set by native_serve_v1 when the program serves requests.
 var _ksBrokerServers func([]string) ([]string, bool)
+
+// Set by native_persist_v1 when the program uses PersistCaps.
+var _ksBrokerPersist func([]string) ([]string, bool)
 
 // Entry: the process the user started becomes the broker; the worker runs
 // the program confined.
@@ -726,6 +731,9 @@ func _ksBrokerLoop(channel *os.File) {{
 			}}
 			if !served && _ksBrokerServers != nil {{
 				answer, served = _ksBrokerServers(request)
+			}}
+			if !served && _ksBrokerPersist != nil {{
+				answer, served = _ksBrokerPersist(request)
 			}}
 			if !served {{
 				return
