@@ -79,6 +79,7 @@ class ProjectPackages:
     dependencies: dict[str, DependencySpec]
     deny: frozenset[str]
     registry: str = DEFAULT_REGISTRY
+    require_signed: bool = False
 
 
 def _read_toml(manifest: Path) -> dict[str, Any]:
@@ -135,6 +136,11 @@ def load_project_packages(root: Path) -> ProjectPackages:
     policy = data.get("policy", {})
     if not isinstance(policy, dict):
         raise PackageError("[policy] must be a table")
+    if set(policy) - {"deny", "require_signed"}:
+        raise PackageError("[policy] may set deny and require_signed")
+    require_signed = policy.get("require_signed", False)
+    if not isinstance(require_signed, bool):
+        raise PackageError("policy.require_signed must be true or false")
     deny = policy.get("deny", [])
     if not isinstance(deny, list) or any(item not in SURFACE_ORDER for item in deny):
         raise PackageError(f"policy.deny must list capabilities from: {', '.join(SURFACE_ORDER)}")
@@ -149,7 +155,7 @@ def load_project_packages(root: Path) -> ProjectPackages:
         name: _with_registry(spec, registry)
         for name, spec in parse_dependencies(data, MANIFEST_NAME).items()
     }
-    return ProjectPackages(root, dependencies, frozenset(deny), registry)
+    return ProjectPackages(root, dependencies, frozenset(deny), registry, require_signed)
 
 
 def _with_registry(spec: DependencySpec, registry: str) -> DependencySpec:
@@ -305,9 +311,13 @@ def compute_surface(graph) -> tuple[str, ...]:
 @dataclass(slots=True)
 class PackageLock:
     packages: dict[str, dict[str, Any]] = field(default_factory=dict)
+    # Registry URL -> {"seq", "hash"}: the public-log head this project saw.
+    registry_log: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     def to_json(self) -> str:
-        payload = {"schema": LOCK_SCHEMA, "packages": self.packages}
+        payload: dict[str, Any] = {"schema": LOCK_SCHEMA, "packages": self.packages}
+        if self.registry_log:
+            payload["registry_log"] = self.registry_log
         return json.dumps(payload, indent=2, sort_keys=True) + "\n"
 
 
@@ -349,15 +359,36 @@ def load_lock(project_root: Path) -> PackageLock | None:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as error:
         raise PackageError(f"{LOCK_NAME} is not valid JSON: {error}") from error
-    if not isinstance(payload, dict) or set(payload) != {"schema", "packages"} or payload["schema"] != LOCK_SCHEMA:
+    if (
+        not isinstance(payload, dict)
+        or not {"schema", "packages"} <= set(payload) <= {"schema", "packages", "registry_log"}
+        or payload["schema"] != LOCK_SCHEMA
+    ):
         raise PackageError(f"{LOCK_NAME} has an unknown format")
+    registry_log = payload.get("registry_log", {})
+    if not isinstance(registry_log, dict) or not all(
+        isinstance(url, str)
+        and isinstance(head, dict)
+        and set(head) == {"seq", "hash"}
+        and isinstance(head["seq"], int) and not isinstance(head["seq"], bool) and head["seq"] >= 0
+        and isinstance(head["hash"], str) and DIGEST.fullmatch(head["hash"])
+        for url, head in registry_log.items()
+    ):
+        raise PackageError(f"{LOCK_NAME}: registry_log is malformed")
     packages = payload["packages"]
     if not isinstance(packages, dict):
         raise PackageError(f"{LOCK_NAME}: packages must be an object")
     required = {"version", "entry", "source", "digest", "surface", "dependencies"}
     for name, entry in packages.items():
-        if not PACKAGE_NAME.fullmatch(name) or not isinstance(entry, dict) or set(entry) != required:
+        if (
+            not PACKAGE_NAME.fullmatch(name)
+            or not isinstance(entry, dict)
+            or not required <= set(entry) <= required | {"signer"}
+        ):
             raise PackageError(f"{LOCK_NAME}: entry {name!r} is malformed")
+        signer = entry.get("signer")
+        if signer is not None and not (isinstance(signer, str) and re.fullmatch(r"ed25519:[0-9a-f]{64}", signer)):
+            raise PackageError(f"{LOCK_NAME}: entry {name!r} has a malformed signer")
         if not isinstance(entry["version"], str) or not entry["version"]:
             raise PackageError(f"{LOCK_NAME}: entry {name!r} has a malformed version")
         if not _safe_entry(entry["entry"]):
@@ -374,7 +405,7 @@ def load_lock(project_root: Path) -> PackageLock | None:
             raise PackageError(f"{LOCK_NAME}: entry {name!r} has a malformed surface")
         if not isinstance(entry["dependencies"], list) or any(dep not in packages for dep in entry["dependencies"]):
             raise PackageError(f"{LOCK_NAME}: entry {name!r} names an unlocked dependency")
-    return PackageLock(dict(packages))
+    return PackageLock(dict(packages), dict(registry_log))
 
 
 # --- sync -------------------------------------------------------------------
@@ -419,7 +450,16 @@ class PolicyDenied(PackageError):
     pass
 
 
-def sync(project_root: str | Path, *, allow: frozenset[str] = frozenset()) -> SyncResult:
+class SignerChanged(PackageError):
+    pass
+
+
+def sync(
+    project_root: str | Path,
+    *,
+    allow: frozenset[str] = frozenset(),
+    allow_new_signer: frozenset[str] = frozenset(),
+) -> SyncResult:
     """Fetch, inspect and lock every dependency; refuse a widened surface.
 
     Nothing is written unless every package is accepted.
@@ -435,6 +475,8 @@ def sync(project_root: str | Path, *, allow: frozenset[str] = frozenset()) -> Sy
     try:
         fetched: dict[str, tuple[DependencySpec, Path]] = {}
         registry_entries: dict[str, dict[str, Any]] = {}
+        log_events: dict[str, list[dict[str, Any]]] = {}
+        log_heads: dict[str, dict[str, Any]] = {}
         pending = list(project.dependencies.values())
         while pending:
             spec = _with_registry(pending.pop(0), project.registry)
@@ -451,9 +493,32 @@ def sync(project_root: str | Path, *, allow: frozenset[str] = frozenset()) -> Sy
                 old = previous.packages.get(spec.name)
                 locked = old["digest"] if old and old["source"] == spec.source() else None
                 raw.mkdir(parents=True)
-                registry_entries[spec.name] = fetch_package(
+                from .registry_v1 import check_log, check_signature, fetch_log
+
+                listed = fetch_package(
                     str(spec.registry), spec.name, spec.version, raw, locked_digest=locked
                 )
+                signer = check_signature(spec.name, listed, listed["_owners"])
+                if signer is None and project.require_signed:
+                    raise PackageError(
+                        f"{spec.name} {spec.version} is unsigned and [policy] require_signed is set"
+                    )
+                pinned_signer = old.get("signer") if old else None
+                if pinned_signer is not None and signer != pinned_signer and spec.name not in allow_new_signer:
+                    raise SignerChanged(
+                        f"{spec.name} {spec.version} is signed by "
+                        f"{(signer or 'nobody')[:24]}…, but this project trusted "
+                        f"{pinned_signer[:24]}…; to accept, run again with "
+                        f"--allow-new-signer {spec.name}"
+                    )
+                url = str(spec.registry)
+                if url not in log_events:
+                    log_events[url] = fetch_log(url)
+                log_heads[url] = check_log(
+                    log_events[url], spec.name, listed, previous.registry_log.get(url)
+                )
+                listed["_signer"] = signer
+                registry_entries[spec.name] = listed
                 source_dir = raw
             elif spec.path is not None:
                 source_dir = (root / spec.path).resolve()
@@ -508,6 +573,11 @@ def sync(project_root: str | Path, *, allow: frozenset[str] = frozenset()) -> Sy
             }
             for name, package in inspected.items()
         })
+
+        for name, listed in registry_entries.items():
+            lock.packages[name]["signer"] = listed["_signer"]
+        lock.registry_log = dict(previous.registry_log)
+        lock.registry_log.update(log_heads)
 
         # Surfaces need the import resolver over the staged vendor tree.
         resolver = PackageImportResolver(staged_vendor, lock, direct={}, project_root=None)

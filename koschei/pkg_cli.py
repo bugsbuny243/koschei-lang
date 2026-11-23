@@ -37,6 +37,13 @@ def add_pkg_parser(subcommands: argparse._SubParsersAction) -> None:
         default=[],
         help="Accept an update that adds this capability (repeatable)",
     )
+    sync_parser.add_argument(
+        "--allow-new-signer",
+        action="append",
+        default=[],
+        metavar="PACKAGE",
+        help="Accept a registry package signed by a different key than before (repeatable)",
+    )
     sync_parser.add_argument("--json", action="store_true", help="Emit JSON")
 
     verify_parser = commands.add_parser(
@@ -54,7 +61,16 @@ def add_pkg_parser(subcommands: argparse._SubParsersAction) -> None:
     )
     publish_parser.add_argument("package", nargs="?", default=".", help="Package directory")
     publish_parser.add_argument("--registry", required=True, help="Registry checkout directory")
+    publish_parser.add_argument("--key", required=True, help="Key file from 'ks pkg keygen'")
     publish_parser.add_argument("--allow-similar-name", action="store_true")
+
+    keygen_parser = commands.add_parser("keygen", help="Create a publisher signing key")
+    keygen_parser.add_argument("path", help="Where to write the secret key file (mode 0600)")
+
+    sign_parser = commands.add_parser("sign", help="Sign a version published before signatures")
+    sign_parser.add_argument("spec", help="name@version")
+    sign_parser.add_argument("--registry", required=True)
+    sign_parser.add_argument("--key", required=True)
 
     yank_parser = commands.add_parser("yank", help="Hide a published version from new installs")
     yank_parser.add_argument("spec", help="name@version")
@@ -97,7 +113,9 @@ def command_pkg(args: argparse.Namespace) -> int:
     project = Path(getattr(args, "project", "."))
     try:
         if args.pkg_command == "sync":
-            result = sync(project, allow=frozenset(args.allow))
+            result = sync(
+                project, allow=frozenset(args.allow), allow_new_signer=frozenset(args.allow_new_signer)
+            )
             if args.json:
                 print(json.dumps({
                     "ok": True,
@@ -138,10 +156,26 @@ def command_pkg(args: argparse.Namespace) -> int:
         if args.pkg_command == "publish":
             from .registry_v1 import publish
 
-            published = publish(args.package, args.registry, allow_similar_name=args.allow_similar_name)
+            published = publish(
+                args.package, args.registry, key=args.key, allow_similar_name=args.allow_similar_name
+            )
             print(f"published {published.name} {published.version}: {_surface_text(published.surface)}")
             for path in published.files:
                 print(f"  wrote {path}")
+            return 0
+        if args.pkg_command == "keygen":
+            from .registry_v1 import keygen
+
+            public = keygen(args.path)
+            print(f"wrote secret key to {args.path} (keep it private)")
+            print(f"public key: {public}")
+            return 0
+        if args.pkg_command == "sign":
+            from .registry_v1 import sign_existing
+
+            name, version = _split_spec(args.spec)
+            signer = sign_existing(args.registry, name, version, key=args.key)
+            print(f"signed {name} {version} with {signer}")
             return 0
         if args.pkg_command == "yank":
             from .registry_v1 import yank

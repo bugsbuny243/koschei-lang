@@ -1,8 +1,8 @@
 # Koschei Packages v1 — design proposal
 
 Status: **phase 1 implemented** (0.18.0, `ks pkg`); **phase 2 implemented**
-(unreleased: registry, `ks pkg add`, `publish`, `yank`); phase 3 is a
-proposal. Readiness gate 6 for 1.0.0
+(0.19.0: registry, `ks pkg add`, `publish`, `yank`); **phase 3
+implemented** (unreleased: signatures, owners, the public log). Readiness gate 6 for 1.0.0
 (`docs/RELEASE_PLAN_AFTER_0_14.md`). Once accepted, its user-facing rules join
 `docs/STABILITY_V1.md` before 1.0.0.
 
@@ -186,6 +186,46 @@ ks pkg yank hexfmt@1.2.0 --registry registry
   (one letter changed, added or removed, two swapped, `-` for `_`) is
   refused until reviewed with `--allow-similar-name`. Namespaces come back
   with signatures in phase 3.
+
+## Phase 3 in use
+
+```sh
+ks pkg keygen ~/.koschei/publisher.key        # once; keep the file private
+ks pkg publish ./hexfmt --registry registry --key ~/.koschei/publisher.key
+ks pkg sign hexfmt@1.0.0 --registry registry --key ~/.koschei/publisher.key   # versions from before signatures
+```
+
+```toml
+[policy]
+require_signed = true    # refuse unsigned registry packages
+```
+
+- **Signatures.** Every new version is signed with the publisher's Ed25519
+  key over its name, version, digests, surface and dependencies. The first
+  signed version sets the package's `owners`; later versions must be signed
+  by an owner. Adding an owner is an edit to the index that a maintainer
+  reviews. A signature is never replaced.
+- **Signer pinning.** The lock records which key signed each registry
+  package. A later sync where a different key (or no key) signed it is
+  refused until `--allow-new-signer <package>`: a registry that adds its own
+  key as owner cannot slip a version past an existing project.
+- **Public log.** `registry/log.jsonl` records every publish, sign and yank;
+  each line carries the SHA-256 of the line before it. The client checks the
+  chain, requires the index entry to match the log's latest record of it, and
+  pins the log head it saw in the lock. A registry that rewrites or drops
+  history is refused on the next sync.
+- **No dependency.** Ed25519 is implemented in `koschei/ed25519_v1.py` from
+  RFC 8032's reference code, checked against the RFC's vectors and OpenSSL
+  (`tests/test_ed25519_v1.py`). It is stricter than OpenSSL: small-order
+  public keys are refused. Signing is not constant-time; run it on your own
+  machine, not on a shared server.
+- **Versions published before phase 3** (`hexfmt`, `base64`, `semver`
+  1.0.0) are unsigned until an owner runs `ks pkg sign`. They install unless
+  `require_signed` is set.
+
+What phase 3 does not do: there is no independent log witness yet, so a
+project that has never synced cannot tell a rewritten log from the original;
+and a stolen publisher key can sign until the owner list is changed.
 
 ## Phases
 

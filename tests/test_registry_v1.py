@@ -12,7 +12,26 @@ import unittest
 
 from koschei.cli_entry import main as cli_main
 from koschei.packages_v1 import PackageError, SurfaceWidened, sync
-from koschei.registry_v1 import _similar, build_archive, extract_archive, publish, yank
+from koschei.registry_v1 import _similar, build_archive, extract_archive, keygen
+from koschei.registry_v1 import publish as _publish
+from koschei.packages_v1 import SignerChanged
+from koschei.registry_v1 import _append_log, _log_event, load_key, parse_log, sign_existing, yank
+
+_KEYS: dict[str, Path] = {}
+
+
+def publish(root, registry, **options):
+    """Publish with a per-registry test key unless a key is given."""
+
+    if "key" not in options:
+        key = _KEYS.get(str(registry))
+        if key is None:
+            key = Path(registry).parent / "test.key"
+            if not key.exists():
+                keygen(key)
+            _KEYS[str(registry)] = key
+        options["key"] = key
+    return _publish(root, registry, **options)
 
 PURE = """fn pad(text: String, width: Int) -> String {
     let mut out = text
@@ -98,7 +117,8 @@ class RegistryTests(unittest.TestCase):
         index["versions"][0]["surface"] = []
         (self.registry / "index" / "hexfmt.json").write_text(json.dumps(index))
         self.depend("1.2.1")
-        with self.assertRaisesRegex(PackageError, "compiler computes"):
+        # The signature covers the surface, so the edit is caught there first.
+        with self.assertRaisesRegex(PackageError, "signature does not verify|compiler computes"):
             sync(self.app)
 
     def test_swapped_archive_is_refused(self) -> None:
@@ -173,6 +193,144 @@ class RegistryTests(unittest.TestCase):
         )
 
 
+class SignatureAndLogTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._dir = tempfile.TemporaryDirectory()
+        self.base = Path(self._dir.name)
+        self.registry = self.base / "registry"
+        self.key_a = self.base / "a.key"
+        self.key_b = self.base / "b.key"
+        self.signer_a = keygen(self.key_a)
+        self.signer_b = keygen(self.key_b)
+        self.app = self.base / "app"
+        (self.app / "src").mkdir(parents=True)
+        (self.app / "src" / "main.ks").write_text(
+            'import hexfmt\n\nfn main() {\n    println(hexfmt.pad("ff", 4))\n}\n'
+        )
+        self.manifest("1.0.0")
+
+    def tearDown(self) -> None:
+        self._dir.cleanup()
+
+    def manifest(self, version: str, extra: str = "") -> None:
+        (self.app / "koschei.toml").write_text(
+            '[package]\nname = "app"\nversion = "0.1.0"\n\n'
+            f'[registry]\nurl = "file://{self.registry}"\n\n{extra}'
+            f'[dependencies]\nhexfmt = {{ version = "{version}" }}\n'
+        )
+
+    def package(self, version: str) -> Path:
+        root = self.base / "src" / version
+        (root / "src").mkdir(parents=True, exist_ok=True)
+        (root / "koschei.toml").write_text(
+            f'[package]\nname = "hexfmt"\nversion = "{version}"\nentry = "src/lib.ks"\n'
+        )
+        (root / "src" / "lib.ks").write_text(PURE)
+        return root
+
+    def index(self) -> dict:
+        return json.loads((self.registry / "index" / "hexfmt.json").read_text())
+
+    def write_index(self, index: dict) -> None:
+        (self.registry / "index" / "hexfmt.json").write_text(json.dumps(index))
+
+    def test_publish_signs_sets_owner_and_logs(self) -> None:
+        _publish(self.package("1.0.0"), self.registry, key=self.key_a)
+        index = self.index()
+        self.assertEqual(index["owners"], [self.signer_a])
+        self.assertEqual(index["versions"][0]["signer"], self.signer_a)
+        events = parse_log((self.registry / "log.jsonl").read_bytes())
+        self.assertEqual([(e["event"], e["name"], e["version"]) for e in events], [("publish", "hexfmt", "1.0.0")])
+        result = sync(self.app)
+        self.assertEqual(result.lock.packages["hexfmt"]["signer"], self.signer_a)
+        self.assertEqual(result.lock.registry_log[f"file://{self.registry}"]["seq"], 0)
+
+    def test_non_owner_cannot_publish(self) -> None:
+        _publish(self.package("1.0.0"), self.registry, key=self.key_a)
+        with self.assertRaisesRegex(PackageError, "not an owner"):
+            _publish(self.package("1.0.1"), self.registry, key=self.key_b)
+
+    def test_forged_signature_is_refused(self) -> None:
+        _publish(self.package("1.0.0"), self.registry, key=self.key_a)
+        index = self.index()
+        signature = index["versions"][0]["signature"]
+        index["versions"][0]["signature"] = ("0" if signature[0] != "0" else "1") + signature[1:]
+        self.write_index(index)
+        with self.assertRaisesRegex(PackageError, "signature does not verify"):
+            sync(self.app)
+
+    def test_signer_change_is_refused_until_allowed(self) -> None:
+        _publish(self.package("1.0.0"), self.registry, key=self.key_a)
+        sync(self.app)
+        # A compromised registry adds its own key as owner and signs a new version.
+        index = self.index()
+        index["owners"] = [self.signer_b]
+        self.write_index(index)
+        _publish(self.package("1.0.1"), self.registry, key=self.key_b)
+        self.manifest("1.0.1")
+        with self.assertRaises(SignerChanged):
+            sync(self.app)
+        result = sync(self.app, allow_new_signer=frozenset({"hexfmt"}))
+        self.assertEqual(result.lock.packages["hexfmt"]["signer"], self.signer_b)
+
+    def test_rewritten_log_is_refused(self) -> None:
+        _publish(self.package("1.0.0"), self.registry, key=self.key_a)
+        _publish(self.package("1.0.1"), self.registry, key=self.key_a)
+        self.manifest("1.0.1")
+        sync(self.app)
+        # Rewrite history: drop the first event and rebuild the chain.
+        log = self.registry / "log.jsonl"
+        events = parse_log(log.read_bytes())
+        log.unlink()
+        for event in events[1:]:
+            _append_log(self.registry, {k: v for k, v in event.items() if k not in {"seq", "prev", "_hash"}})
+        with self.assertRaisesRegex(PackageError, "no longer contains the history"):
+            sync(self.app)
+
+    def test_entry_missing_from_log_is_refused(self) -> None:
+        _publish(self.package("1.0.0"), self.registry, key=self.key_a)
+        (self.registry / "log.jsonl").write_bytes(b"")
+        with self.assertRaisesRegex(PackageError, "not in the registry's public log"):
+            sync(self.app)
+
+    def test_broken_chain_is_refused(self) -> None:
+        _publish(self.package("1.0.0"), self.registry, key=self.key_a)
+        _publish(self.package("1.0.1"), self.registry, key=self.key_a)
+        log = self.registry / "log.jsonl"
+        lines = log.read_bytes().splitlines(keepends=True)
+        log.write_bytes(lines[1] + lines[0])
+        with self.assertRaisesRegex(PackageError, "breaks the chain"):
+            sync(self.app)
+
+    def test_unsigned_legacy_entry_and_require_signed(self) -> None:
+        _publish(self.package("1.0.0"), self.registry, key=self.key_a)
+        index = self.index()
+        entry = index["versions"][0]
+        del entry["signer"], entry["signature"]
+        index["owners"] = []
+        self.write_index(index)
+        log = self.registry / "log.jsonl"
+        log.unlink()
+        _append_log(self.registry, _log_event("publish", "hexfmt", entry))
+        self.assertIsNone(sync(self.app).lock.packages["hexfmt"]["signer"])
+        (self.app / "koschei.packages.lock.json").unlink()
+        self.manifest("1.0.0", "[policy]\nrequire_signed = true\n\n")
+        with self.assertRaisesRegex(PackageError, "unsigned"):
+            sync(self.app)
+        sign_existing(self.registry, "hexfmt", "1.0.0", key=self.key_a)
+        self.assertEqual(sync(self.app).lock.packages["hexfmt"]["signer"], self.signer_a)
+        with self.assertRaisesRegex(PackageError, "never replaced"):
+            sign_existing(self.registry, "hexfmt", "1.0.0", key=self.key_a)
+
+    def test_keygen_writes_a_private_file_and_never_overwrites(self) -> None:
+        self.assertEqual(self.key_a.stat().st_mode & 0o777, 0o600)
+        self.assertTrue(self.signer_a.startswith("ed25519:"))
+        with self.assertRaisesRegex(PackageError, "already exists"):
+            keygen(self.key_a)
+        seed, signer = load_key(self.key_a)
+        self.assertEqual(signer, self.signer_a)
+
+
 class RegistryServerTests(unittest.TestCase):
     def test_registry_paths_are_strict(self) -> None:
         import importlib.util
@@ -185,6 +343,7 @@ class RegistryServerTests(unittest.TestCase):
         spec.loader.exec_module(module)
         pattern = module.REGISTRY_PATH
         self.assertTrue(pattern.fullmatch("/registry/index/hexfmt.json"))
+        self.assertTrue(pattern.fullmatch("/registry/log.jsonl"))
         self.assertTrue(pattern.fullmatch("/registry/archives/hexfmt/hexfmt-1.2.0.tar"))
         for bad in (
             "/registry/index/../app.py",

@@ -41,7 +41,7 @@ SITE_DIR = Path(os.environ.get("KOSCHEI_SITE_DIR", HERE.parent.parent / "commerc
 # Static package registry (docs/PACKAGES_V1.md, phase 2): plain files, no code.
 REGISTRY_DIR = Path(os.environ.get("KOSCHEI_REGISTRY_DIR", HERE.parent.parent / "registry"))
 REGISTRY_PATH = re.compile(
-    r"^/registry/(index/[a-z][a-z0-9_-]*\.json|archives/([a-z][a-z0-9_-]*)/\2-\d+\.\d+\.\d+\.tar)$"
+    r"^/registry/(log\.jsonl|index/[a-z][a-z0-9_-]*\.json|archives/([a-z][a-z0-9_-]*)/\2-\d+\.\d+\.\d+\.tar)$"
 )
 SITE_FILES = {
     "/": ("index.html", "text/html; charset=utf-8"),
@@ -314,9 +314,14 @@ class Handler(BaseHTTPRequestHandler):
             self._json(HTTPStatus.NOT_FOUND, {"error": "not_found"})
             return
         body = file.read_bytes()
-        is_index = relative.startswith("index/")
+        is_index = relative.startswith("index/") or relative == "log.jsonl"
         self.send_response(HTTPStatus.OK)
-        self.send_header("Content-Type", "application/json" if is_index else "application/x-tar")
+        content_type = "application/x-tar"
+        if relative.startswith("index/"):
+            content_type = "application/json"
+        elif relative == "log.jsonl":
+            content_type = "application/jsonl"
+        self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("X-Content-Type-Options", "nosniff")
         # Archives never change once published; an index gains versions.

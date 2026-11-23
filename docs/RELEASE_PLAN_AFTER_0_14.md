@@ -76,7 +76,7 @@ Acceptance gates:
 | 3. Bootstrap / self-hosting | **Closed by scoping (owner decision, 2026-11-22):** self-hosting is not a 1.0 goal; see below | this section |
 | 4. Ownership / region model | Open | — |
 | 5. Bounded standard library | Mostly met; limits are documented and tested per module | `docs/reference/CORE_LIBRARY.md` |
-| 6. Signed, capability-declared dependencies | Capability-declared dependencies and a verifying registry are done; publisher signatures and a public log (phase 3) are open | `docs/PACKAGES_V1.md` |
+| 6. Signed, capability-declared dependencies | **Closed in code:** capability-declared dependencies, a verifying registry, owner signatures, signer pinning and a hash-chained public log; the three pre-signature packages still need an owner's signature | `docs/PACKAGES_V1.md` |
 | 7. Fuzzing and independent review | Fuzzing done and running per PR; review brief ready; independent review requested (OSTIF, 2026-11-22), not yet done | `docs/AUDIT_SCOPE_V1.md`, `tools/fuzz/` |
 
 #### Gate 3: why self-hosting is out of scope for 1.0

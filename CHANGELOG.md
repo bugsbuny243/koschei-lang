@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Package signatures and a public log, phase 3 of `docs/PACKAGES_V1.md`: `ks pkg keygen`, `ks pkg publish --key`, `ks pkg sign`, `ks pkg sync --allow-new-signer`, and `[policy] require_signed`. Versions are signed with Ed25519 by the package's owners; the lock pins the signer and refuses a change; `registry/log.jsonl` is a hash-chained record of every publish, sign and yank whose head the lock pins, so rewritten history is refused. Ed25519 is a dependency-free RFC 8032 implementation (`koschei/ed25519_v1.py`), checked against the RFC vectors and OpenSSL and stricter about small-order keys. Koschei still has no runtime dependencies.
+
+## Unreleased
+
 - The 1.0 release plan now tracks the status of all seven gates. Gate 3 is closed by scoping: self-hosting is not a 1.0 goal (owner decision), with the reasons and what 1.0 promises instead.
 
 ## Unreleased
