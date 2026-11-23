@@ -74,6 +74,7 @@ the separate Koschei Sentinel product.
 | T13 | Typosquatting | New names one edit from an existing one are held for maintainer review | `tests/test_registry_v1.py` |
 | T14 | `ks build` is steered by the host's Go environment (`GOFLAGS=-toolexec`, proxies, toolchains) | Pinned Go environment for every build | `tests/test_go_build_env_v1.py` |
 | T15 | Malformed input to the toolchain itself (source, locks, manifests, archives) crashes it or is half-accepted | Every outcome is success or a coded diagnostic; checked by mutation, structure-aware and differential fuzzers | `tools/fuzz/`, `tests/test_fuzz_smoke_v1.py` |
+| T16b | A compromised worker (seccomp still on) asks the broker for authority the program never had: a writable scope in a read-only program, or an environment variable | The broker serves only the disk-read, disk-write and environment authority the compiler saw the program create; anything else ends the conversation. Model-checked for every grant set | `formal/tla/BrokerConfinement.tla`, `tests/test_broker_grants_v1.py` |
 
 ## Residual risks
 

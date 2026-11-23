@@ -29,6 +29,16 @@ PACKAGE_CHECKS = {
 }
 
 
+# Broker model switches: property that must break, the grants that expose it,
+# and the check in the broker's Go source.
+BROKER_CHECKS = {
+    "CheckGrants": ("Confinement", '{"disk_read"}', "!_ksGrantDiskRead"),
+    "CheckWritable": ("NoWriteThroughReadOnly", '{"disk_read", "disk_write"}', "!scopes[index].writable"),
+    "CheckLive": ("NoStaleScope", '{"disk_read", "disk_write", "env"}', "scopes[index] == nil"),
+}
+GRANT_SETS = ('{}', '{"disk_read"}', '{"env"}', '{"disk_read", "env"}', '{"disk_read", "disk_write", "env"}')
+
+
 def run_tlc(spec: str, cfg_text: str) -> str:
     with tempfile.TemporaryDirectory() as tmp:
         shutil.copy(TLA / f"{spec}.tla", tmp)
@@ -47,6 +57,14 @@ class ModelLinkTest(unittest.TestCase):
         for switch, (_, path, needle) in PACKAGE_CHECKS.items():
             self.assertIn(f"{switch} = TRUE", cfg)
             self.assertIn(needle, (ROOT / path).read_text(encoding="utf-8"), f"{switch}: {path}")
+
+    def test_broker_keeps_modelled_checks(self) -> None:
+        cfg = (TLA / "BrokerConfinement.cfg").read_text(encoding="utf-8")
+        broker = (ROOT / "koschei" / "native_broker_v1.py").read_text(encoding="utf-8")
+        self.assertIn("Compromised = TRUE", cfg)
+        for switch, (_, _, needle) in BROKER_CHECKS.items():
+            self.assertIn(f"{switch} = TRUE", cfg)
+            self.assertIn(needle, broker, switch)
 
 
 @unittest.skipUnless(JAR and Path(JAR).is_file() and shutil.which("java"), "set KOSCHEI_TLA2TOOLS")
@@ -67,6 +85,27 @@ class PackageUpdateModelTest(unittest.TestCase):
             with self.subTest(switch=switch):
                 out = run_tlc("PackageUpdate", self.cfg.replace(f"{switch} = TRUE", f"{switch} = FALSE"))
                 self.assertRegex(out, rf"(Invariant|Action property) {re.escape(prop)} is violated", out[-3000:])
+
+
+@unittest.skipUnless(JAR and Path(JAR).is_file() and shutil.which("java"), "set KOSCHEI_TLA2TOOLS")
+class BrokerConfinementModelTest(unittest.TestCase):
+    cfg = (TLA / "BrokerConfinement.cfg").read_text(encoding="utf-8")
+
+    def with_grants(self, grants: str, cfg: str | None = None) -> str:
+        return re.sub(r"^  Grants = .*$", f"  Grants = {grants}", cfg or self.cfg, flags=re.MULTILINE)
+
+    def test_compromised_worker_stays_confined_for_every_grant_set(self) -> None:
+        for grants in GRANT_SETS:
+            with self.subTest(grants=grants):
+                out = run_tlc("BrokerConfinement", self.with_grants(grants))
+                self.assertIn("No error has been found", out, out[-3000:])
+
+    def test_every_check_is_load_bearing(self) -> None:
+        for switch, (prop, grants, _) in BROKER_CHECKS.items():
+            with self.subTest(switch=switch):
+                cfg = self.with_grants(grants, self.cfg.replace(f"{switch} = TRUE", f"{switch} = FALSE"))
+                out = run_tlc("BrokerConfinement", cfg)
+                self.assertRegex(out, rf"Invariant {re.escape(prop)} is violated", out[-3000:])
 
 
 if __name__ == "__main__":

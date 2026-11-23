@@ -7,6 +7,8 @@ on:
       - "formal/**"
       - "koschei/packages_v1.py"
       - "koschei/registry_v1.py"
+      - "koschei/native_broker_v1.py"
+      - "koschei/mir_go_native.py"
       - "tests/test_formal_models_v1.py"
 
 permissions:
