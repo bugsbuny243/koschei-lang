@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.22.0 — 2026-11-23
+
+- **Security fix:** the native capability broker served disk and environment requests to any worker. A compromised worker (still under seccomp) of a program with no such authority could obtain a writable scope or read environment variables. The compiler now passes the program's broker grants (`DiskReadCaps` → disk read, `DiskCaps` → disk read and write, `EnvCaps` → environment), and the broker ends the conversation on any other request. Found by `formal/tla/BrokerConfinement.tla`; reproduced on a real binary in `tests/test_broker_grants_v1.py`.
+- Formal models: `formal/tla/PackageUpdate.tla` (package update rule against a hostile registry) and `formal/tla/BrokerConfinement.tla`, checked by TLC in the `formal` workflow; every modelled check is shown to be load-bearing.
+
 ## 0.21.0 — 2026-11-23
 
 - **Security fix:** `ks workspace build` produced native binaries with the legacy AST-Go backend, which runs disk, network, serve and persistence effects inside the program's own process. `ks build` already refused that backend (`KS4004`). Workspace builds now use the same confined MIR-Go backend, whose effects cross the capability broker under seccomp, and fail closed with `KS4004` otherwise.

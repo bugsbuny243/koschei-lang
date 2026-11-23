@@ -1,8 +1,22 @@
-# Koschei Lang 0.21.0 — Release Notes
+# Koschei Lang 0.22.0 — Release Notes
 
 **Product:** Koschei Lang (independent of Koschei Sentinel and Web3 Hub)  
-**Version:** 0.21.0  
+**Version:** 0.22.0  
 **Release line:** commercially licensed, pre-1.0 language/toolchain
+
+## New in 0.22.0
+
+- **Security fix: please upgrade if you build native binaries that use the
+  disk, the environment, the network or the server.** The capability broker
+  served disk and environment requests to any worker. A worker that was
+  compromised could ask for a writable directory, or read environment
+  variables, secrets included, even in a program that only read files or only
+  used the network. Seccomp still applied. The broker now serves only the
+  authority the compiler saw the program create, and ends the conversation on
+  anything else. A formal model (TLA+) found this gap.
+- **Formal models.** `formal/tla` holds TLC-checked models of the package
+  update rule and of broker confinement. For each model, every check in the
+  code is shown to be necessary: switching it off gives a counterexample.
 
 ## New in 0.21.0
 
