@@ -155,7 +155,15 @@ def _go(value: str) -> str:
     return _go_string(value)
 
 
-def broker_runtime() -> str:
+ALL_GRANTS = frozenset({"disk_read", "disk_write", "env"})
+
+
+def broker_runtime(grants: frozenset[str] = ALL_GRANTS) -> str:
+    """The broker serves only ``grants``: a subset of :data:`ALL_GRANTS`."""
+
+    unknown = set(grants) - ALL_GRANTS
+    if unknown:
+        raise ValueError(f"unknown broker grants: {sorted(unknown)}")
     errnos = "\n".join(
         f"\tsyscall.Errno({code}): {_go(name)}," for code, name in sorted(DISK_ERRNO_NAMES.items())
     )
@@ -185,6 +193,9 @@ def broker_runtime() -> str:
         env_missing=_go(ENV_MISSING_PREFIX),
         env_not_text=_go(ENV_NOT_TEXT_PREFIX),
         max_content_type=net_v1.CONTENT_TYPE_MAX_BYTES,
+        grant_disk_read="true" if "disk_read" in grants else "false",
+        grant_disk_write="true" if "disk_write" in grants else "false",
+        grant_env="true" if "env" in grants else "false",
     )
 
 
@@ -657,6 +668,13 @@ func _ksBrokerServe() {{
 	os.Exit(0)
 }}
 
+// Broker authority the compiled program uses (native_broker_v1.BrokerGrants).
+const (
+	_ksGrantDiskRead  = {grant_disk_read}
+	_ksGrantDiskWrite = {grant_disk_write}
+	_ksGrantEnv       = {grant_env}
+)
+
 func _ksBrokerLoop(channel *os.File) {{
 	// Any malformed request ends the conversation: the worker sees the
 	// channel close and stops instead of waiting.
@@ -672,6 +690,11 @@ func _ksBrokerLoop(channel *os.File) {{
 		}}
 		var answer []string
 		switch {{
+		case (request[0] == "scope" && !_ksGrantDiskRead) || (request[0] == "scope_rw" && !_ksGrantDiskWrite) || (request[0] == "env" && !_ksGrantEnv):
+			// The compiler saw no such authority in the program, so its
+			// worker never asks for it: a worker that does is not running
+			// the compiled program (formal/tla/BrokerConfinement.tla).
+			return
 		case (request[0] == "scope" || request[0] == "scope_rw") && len(request) == 3 && (request[2] == "retry" || request[2] == "final"):
 			if request[2] == "retry" && _ksScopesNearLimit(scopes) {{
 				// Scope descriptors are close to the limit, leaving too few

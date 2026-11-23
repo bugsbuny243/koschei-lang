@@ -44,7 +44,12 @@ user ──▶ broker (holds the environment, the cwd, the right to open files)
 3. Every `DiskReadCaps` and `DiskCaps` operation, every `EnvCaps.get`,
    every `NetCaps.get`/`post` and every `ServeCaps.accept`/`reply`/`reply_as` is a request on the
    socket; the broker answers with the value or the Error text. A malformed
-   request ends the conversation and the worker stops.
+   request ends the conversation and the worker stops. The broker serves
+   only the authority the compiler saw the program create (`DiskReadCaps`
+   → disk read, `DiskCaps` → disk read and write, `EnvCaps` → environment);
+   a request for anything else also ends the conversation, so even a worker
+   that sends arbitrary frames gets no more than the program had
+   (`formal/tla/BrokerConfinement.tla`).
 4. The broker exits with the worker's status.
 
 ## Same answers as `ks run`

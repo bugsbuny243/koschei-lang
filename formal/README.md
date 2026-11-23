@@ -7,7 +7,7 @@ TLC (tla2tools 1.8.0, sha256 pinned in `.github/workflows/formal.yml`).
 |---|---|---|
 | `tla/PackageUpdate.tla` | `ks pkg sync` update rule | checked |
 | registry log hash chain | `registry_v1.check_log` | planned |
-| broker confinement | native broker / `_ksAsk` protocol | planned |
+| `tla/BrokerConfinement.tla` | native broker request loop | checked; found a gap, fixed |
 
 ## PackageUpdate
 
@@ -42,6 +42,35 @@ all of this. It also fails in normal CI if the code drops a modelled check.
   computation itself are trusted, not modelled.
 - `IndexTruthful` is defence in depth. The lock always stores the compiler's
   surface, whatever the index says.
+
+## BrokerConfinement
+
+The worker is honest or compromised. A compromised worker is still under seccomp,
+but it can send any frame on its broker socket. The model covers the scope
+table, reference-counted release, read-only scopes and which requests the broker
+serves.
+
+Properties checked:
+
+1. **Confinement**: the broker performs only effects the compiled program was
+   granted.
+2. **NoWriteThroughReadOnly**: nothing is written through a read-only scope.
+3. **NoStaleScope**: a released scope is never used again.
+
+**What it found:** before this model the broker served disk and environment
+requests to any worker that had a broker at all. A compromised worker of a
+read-only, or even a network-only, program could ask for a writable scope or
+read any environment variable, secrets included. TLC gave the counterexample.
+`tests/test_broker_grants_v1.py` reproduced it on a real binary, and both tests
+failed before the fix. The broker now serves only the authority the compiler saw
+the program create (`mir_go_native._broker_grants`). TLC finds no error for any
+grant set, and switching any one of the three checks off gives a counterexample.
+
+Limits: seccomp, Go memory safety and the path rules inside a scope
+(`O_NOFOLLOW`, `..`) are trusted, not modelled. Scope *prefixes* are not limited.
+A program holding `DiskRoot` may narrow to any directory, as in `ks run`. The
+bounds are 2 scopes and 6 requests. The net, serve and persist hooks are not in
+the model yet.
 
 Run locally:
 

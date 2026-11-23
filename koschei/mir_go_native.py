@@ -425,7 +425,7 @@ def generate_go_mir_native(
     if "random" in domains:
         lines.append(_random_runtime())
     if "broker" in domains:
-        lines.append(broker_runtime())
+        lines.append(broker_runtime(_broker_grants(plans)))
     if "net" in domains:
         lines.append(net_runtime())
     if "serve" in domains:
@@ -468,6 +468,31 @@ def _bytes_runtime() -> str:
         get_middle=_go_string(get_middle),
         get_suffix=_go_string(get_suffix),
     )
+
+
+# What the broker may serve, from the capability values a program creates.
+_BROKER_GRANTS = {
+    "DiskReadCaps": ("disk_read",),
+    "DiskCaps": ("disk_read", "disk_write"),
+    "EnvCaps": ("env",),
+}
+
+
+def _broker_grants(plans: list["_FunctionPlan"]) -> frozenset[str]:
+    """Broker authority the program uses; the broker refuses everything else."""
+
+    grants: set[str] = set()
+    for plan in plans:
+        for block in plan.function.blocks:
+            for instruction in block.instructions:
+                if isinstance(instruction, MirCapabilityCall):
+                    produced = instruction.capability_type
+                elif isinstance(instruction, MirMember):
+                    produced = _capability_member_type(instruction)
+                else:
+                    continue
+                grants.update(_BROKER_GRANTS.get(produced or "", ()))
+    return frozenset(grants)
 
 
 def _used_domains(plans: list["_FunctionPlan"]) -> set[str]:
