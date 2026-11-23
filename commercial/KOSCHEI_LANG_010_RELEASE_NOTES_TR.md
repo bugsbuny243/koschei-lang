@@ -1,8 +1,30 @@
-# Koschei Lang 0.19.0 — Sürüm Notları
+# Koschei Lang 0.20.0 — Sürüm Notları
 
 **Ürün:** Koschei Lang (Koschei Sentinel ve Web3 Hub'dan bağımsız)  
-**Sürüm:** 0.19.0  
+**Sürüm:** 0.20.0  
 **Ürün hattı:** ticari lisanslı, 1.0 öncesi programlama dili ve araç zinciri
+
+## 0.20.0'da yeni
+
+- **İmzalı paketler ve herkese açık kayıt.** `ks pkg keygen`, `ks pkg
+  publish --key`, `ks pkg sign`. Sürümler paket sahiplerinin Ed25519
+  anahtarıyla imzalanır. Kilit dosyanız her paketi kimin imzaladığını
+  hatırlar: başka biri tarafından imzalanmış bir sürüm
+  `--allow-new-signer <paket>` verilmeden reddedilir. `registry/log.jsonl`
+  her yayını, imzayı ve geri çekmeyi zincirleme kaydeder; kilidiniz
+  gördüğünüz kısmı sabitler, geçmişi yeniden yazan bir depo reddedilir.
+  `[policy] require_signed = true` imzasız paketleri reddeder. Ed25519
+  bağımlılıksız yazıldı (RFC 8032, OpenSSL ile karşılaştırıldı); Koschei
+  hâlâ başka hiçbir şey kurmaz.
+- **Fuzzing.** `tools/fuzz/` derleyiciyi bozulmuş ve üretilmiş programlarla,
+  rastgele derinlikte yetki kötüye kullanımıyla, disk kaçış denemeleriyle ve
+  bozuk paket dosyalarıyla dener. Bulduğu iki kilit dosyası hatası
+  düzeltildi. Her pull request'te küçük bir tur çalışır.
+- **Denetim belgesi.** `docs/AUDIT_SCOPE_V1.md`, bağımsız bir denetçinin
+  kırmaya çalışması gereken yedi iddiayı listeler; tehdit modeli paketleri,
+  depoyu ve imzaları kapsar.
+- **1.0 kapıları** `docs/RELEASE_PLAN_AFTER_0_14.md`'de izlenir; kendi
+  kendini derleme 1.0'ın kapsamı dışındadır.
 
 ## 0.19.0'da yeni
 

@@ -1,23 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.20.0 — 2026-11-23
 
 - Package signatures and a public log, phase 3 of `docs/PACKAGES_V1.md`: `ks pkg keygen`, `ks pkg publish --key`, `ks pkg sign`, `ks pkg sync --allow-new-signer`, and `[policy] require_signed`. Versions are signed with Ed25519 by the package's owners; the lock pins the signer and refuses a change; `registry/log.jsonl` is a hash-chained record of every publish, sign and yank whose head the lock pins, so rewritten history is refused. Ed25519 is a dependency-free RFC 8032 implementation (`koschei/ed25519_v1.py`), checked against the RFC vectors and OpenSSL and stricter about small-order keys. Koschei still has no runtime dependencies.
-
-## Unreleased
-
 - The 1.0 release plan now tracks the status of all seven gates. Gate 3 is closed by scoping: self-hosting is not a 1.0 goal (owner decision), with the reasons and what 1.0 promises instead.
-
-## Unreleased
-
 - `tools/fuzz/capability_fuzz.py`: 15 kinds of capability misuse embedded at random depth in random code and helper chains must all be refused by `ks check`; granted disk access passed through helpers must refuse every `..`, absolute-path and symlink escape and behave the same natively. 700 attacks and 160 access programs (60 native): no findings. A small batch runs on every pull request.
-
-## Unreleased
-
 - `tools/fuzz/typed_program_fuzz.py` generates well-typed programs (struct, enum with payloads, `match`, functions, loops, lists, Unicode strings, `to_int`, integer overflow) and compares `ks run` with native binaries. 1,260 programs interpreted and 350 native: no findings. A small batch runs on every pull request.
-
-## Unreleased
-
 - Fuzzers in `tools/fuzz/` for source, native-vs-interpreter output, and package archives, locks, manifests and index JSON, with a per-PR smoke test and a manual `Koschei Fuzz` workflow. They found two bugs, now fixed: a lock whose `dependencies` held a list or object crashed with `TypeError`, and lock fields of the wrong type were accepted, including an `entry` pointing outside its package. Every lock and index field is validated, and the lock's version and entry must match the vendored `koschei.toml`.
 - `docs/AUDIT_SCOPE_V1.md`: the brief for an independent security review (1.0 gate 7). The threat model now covers packages, the registry, typosquatting, the Go build environment and malformed toolchain input.
 

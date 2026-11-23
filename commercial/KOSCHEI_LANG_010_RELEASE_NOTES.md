@@ -1,8 +1,29 @@
-# Koschei Lang 0.19.0 — Release Notes
+# Koschei Lang 0.20.0 — Release Notes
 
 **Product:** Koschei Lang (independent of Koschei Sentinel and Web3 Hub)  
-**Version:** 0.19.0  
+**Version:** 0.20.0  
 **Release line:** commercially licensed, pre-1.0 language/toolchain
+
+## New in 0.20.0
+
+- **Signed packages and a public log.** `ks pkg keygen`, `ks pkg publish
+  --key`, `ks pkg sign`. Versions are signed with Ed25519 by the package's
+  owners. Your lock remembers who signed each package: a version signed by
+  someone else is refused until you pass `--allow-new-signer <package>`.
+  `registry/log.jsonl` is a hash-chained record of every publish, sign and
+  yank; your lock pins the part you have seen, so a registry that rewrites
+  history is refused. `[policy] require_signed = true` refuses unsigned
+  packages. Ed25519 is implemented without dependencies (RFC 8032, checked
+  against OpenSSL); Koschei still installs nothing else.
+- **Fuzzing.** `tools/fuzz/` attacks the toolchain with mutated and generated
+  programs, capability misuse at random depth, disk escape attempts, and
+  malformed package files. Two package-lock bugs it found are fixed. A small
+  batch runs on every pull request.
+- **Audit brief.** `docs/AUDIT_SCOPE_V1.md` lists the seven claims an
+  independent reviewer should try to break; the threat model covers
+  packages, the registry and signatures.
+- **1.0 gates** are tracked in `docs/RELEASE_PLAN_AFTER_0_14.md`;
+  self-hosting is scoped out of 1.0.
 
 ## New in 0.19.0
 
