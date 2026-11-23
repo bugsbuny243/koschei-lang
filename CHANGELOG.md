@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Security fix:** a registry could hide a yank. The client read yank state only from the index, so an index rolled back after a yank served the yanked version to new installs even though the public log recorded it. The client now derives yank state from the log and refuses an index that disagrees (`formal/tla/RegistryLog.tla`).
+
 ## 0.22.0 — 2026-11-23
 
 - **Security fix:** the native capability broker served disk and environment requests to any worker. A compromised worker (still under seccomp) of a program with no such authority could obtain a writable scope or read environment variables. The compiler now passes the program's broker grants (`DiskReadCaps` → disk read, `DiskCaps` → disk read and write, `EnvCaps` → environment), and the broker ends the conversation on any other request. Found by `formal/tla/BrokerConfinement.tla`; reproduced on a real binary in `tests/test_broker_grants_v1.py`.

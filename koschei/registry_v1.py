@@ -322,6 +322,15 @@ def check_log(events: list[dict[str, Any]], name: str, entry: dict[str, Any], pi
     for key in ("digest", "archive_sha256", "signer", "signature"):
         if latest.get(key) != entry.get(key):
             raise PackageError(f"{name} {entry['version']}: index and public log disagree on {key}")
+    # The log is the record of yanks: an index that hides one (or invents one)
+    # is refused, so a yanked version cannot be served as fresh
+    # (formal/tla/RegistryLog.tla, NoHiddenYank).
+    yanked = False
+    for event in events:
+        if event["name"] == name and event["version"] == entry["version"] and event["event"] in {"yank", "unyank"}:
+            yanked = event["event"] == "yank"
+    if bool(entry.get("yanked")) != yanked:
+        raise PackageError(f"{name} {entry['version']}: index and public log disagree on yanked")
     return {"seq": len(events) - 1, "hash": events[-1]["_hash"]}
 
 

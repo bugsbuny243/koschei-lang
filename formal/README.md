@@ -6,7 +6,7 @@ TLC (tla2tools 1.8.0, sha256 pinned in `.github/workflows/formal.yml`).
 | Model | Rule | Status |
 |---|---|---|
 | `tla/PackageUpdate.tla` | `ks pkg sync` update rule | checked |
-| registry log hash chain | `registry_v1.check_log` | planned |
+| `tla/RegistryLog.tla` | `registry_v1.fetch_package` + `check_log` | checked; found a gap, fixed |
 | `tla/BrokerConfinement.tla` | native broker request loop | checked; found a gap, fixed |
 
 ## PackageUpdate
@@ -71,6 +71,30 @@ Limits: seccomp, Go memory safety and the path rules inside a scope
 A program holding `DiskRoot` may narrow to any directory, as in `ks run`. The
 bounds are 2 scopes and 6 requests. The net, serve and persist hooks are not in
 the model yet.
+
+## RegistryLog
+
+The registry serves any log and any index entry. The hash chain (`parse_log`)
+makes "the hash at the pinned position matches" equivalent to "the log extends
+the pinned prefix", provided SHA-256 is collision resistant. So the model
+compares prefixes directly.
+
+Properties checked:
+
+1. **NoHiddenYank**: a version the public log records as yanked is never newly
+   installed. A lock that already holds it keeps it, as documented.
+2. **LockedIsLogged**: what a client locks is the last version the public log
+   records as published.
+3. **HistoryMonotonic**: a log that drops or rewrites the pinned history is
+   refused.
+
+**What it found:** the client read yanks only from the index, never from the
+log. A registry could therefore hide a yank. For example, after an owner yanked
+a compromised release, an index rolled back to before the yank still served
+that release as fresh to new installs, although the log recorded the yank. The
+client now derives yank state from the log and refuses an index that disagrees
+with it in either direction. `tests/test_registry_v1.py` reproduces both cases
+and failed before the fix.
 
 Run locally:
 

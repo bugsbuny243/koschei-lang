@@ -287,6 +287,35 @@ class SignatureAndLogTests(unittest.TestCase):
         with self.assertRaisesRegex(PackageError, "no longer contains the history"):
             sync(self.app)
 
+    def test_index_that_hides_a_logged_yank_is_refused(self) -> None:
+        _publish(self.package("1.0.0"), self.registry, key=self.key_a)
+        yank(self.registry, "hexfmt", "1.0.0")
+        index = self.index()
+        for entry in index["versions"]:
+            entry["yanked"] = False
+        self.write_index(index)
+        with self.assertRaisesRegex(PackageError, "disagree on yanked"):
+            sync(self.app)
+
+    def test_index_that_invents_a_yank_is_refused(self) -> None:
+        _publish(self.package("1.0.0"), self.registry, key=self.key_a)
+        sync(self.app)
+        index = self.index()
+        for entry in index["versions"]:
+            entry["yanked"] = True
+        self.write_index(index)
+        with self.assertRaisesRegex(PackageError, "disagree on yanked"):
+            sync(self.app)
+
+    def test_honest_yank_keeps_the_locked_version(self) -> None:
+        _publish(self.package("1.0.0"), self.registry, key=self.key_a)
+        sync(self.app)
+        yank(self.registry, "hexfmt", "1.0.0")
+        sync(self.app)
+        (self.app / "koschei.packages.lock.json").unlink()
+        with self.assertRaisesRegex(PackageError, "is yanked"):
+            sync(self.app)
+
     def test_entry_missing_from_log_is_refused(self) -> None:
         _publish(self.package("1.0.0"), self.registry, key=self.key_a)
         (self.registry / "log.jsonl").write_bytes(b"")
