@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from . import serve_knowhere_v1 as _serve
 
-SERVE_IMPORTS = ("errors", "io", "net", "sync", "time")
+SERVE_IMPORTS = ("errors", "io", "net", "sync", "time", "unicode/utf8")
 
 
 def _go(value: str) -> str:
@@ -180,6 +180,21 @@ func _ksServeAccept(receiver any) any {{
 
 func _ksServeReply(receiver any, status any, body any) any {{
 	return _ksServeRespond(receiver, status, []string{{"Content-Type", {plain_text}}}, body)
+}}
+
+// ServeCaps.exchange (serve_loopback_exchange_v1): one connection, one
+// request, one fixed 200 text/plain reply; returns the request body.
+func _ksServeExchange(receiver any, response any) any {{
+	text, ok := response.(string)
+	if !ok {{
+		return _ksError{{message: _ksProtocolError("ServeCaps.exchange() response must be String")}}
+	}}
+	done, answer := _ksAsk("serve_exchange", _ksServeScopeOf(receiver), text)
+	runtime.KeepAlive(receiver)
+	if !done {{
+		return _ksError{{message: answer[0]}}
+	}}
+	return answer[0]
 }}
 
 func _ksServeReplyAs(receiver any, status any, contentType any, body any) any {{
@@ -941,6 +956,132 @@ func _ksServeReplyBroker(scope *_ksServeScope, statusText string, kind string, b
 	return []string{{"ok"}}
 }}
 
+// serve_loopback_exchange_v1._exchange on the broker, with its order of
+// checks and its Error texts. The listener lives only for this call.
+func _ksServeExchangeBroker(scope *_ksServeScope, responseBody string) []string {{
+	fail := func(message string) []string {{ return []string{{"err", message}} }}
+	expired := func() bool {{ return false }}
+	payload := []byte(responseBody)
+	wire := "HTTP/1.1 200 OK\r\n" +
+		"Content-Type: text/plain; charset=utf-8\r\n" +
+		"Content-Length: " + strconv.Itoa(len(payload)) + "\r\n" +
+		"Connection: close\r\n" +
+		"\r\n" + responseBody
+	if len(wire) > scope.responseBytes {{
+		return fail(_ksProtocolError("response exceeds max_response_bytes"))
+	}}
+	deadline := time.Now().Add(scope.deadline)
+	expired = func() bool {{ return !time.Now().Before(deadline) }}
+	if expired() {{
+		return fail(_ksIOError("I/O deadline expired"))
+	}}
+	listening := &_ksServeScope{{host: scope.host, port: scope.port, connections: scope.connections}}
+	if err := _ksServeListen(listening); err != nil {{
+		return fail(_ksIOError("listener failed: " + _ksSocketCode(err)))
+	}}
+	listener := listening.listener
+	defer listener.Close()
+	if expired() {{
+		return fail(_ksIOError("I/O deadline expired"))
+	}}
+	if tcp, ok := listener.(*net.TCPListener); ok {{
+		tcp.SetDeadline(deadline)
+	}}
+	conn, err := listener.Accept()
+	if err != nil {{
+		if errors.Is(err, os.ErrDeadlineExceeded) {{
+			return fail(_ksIOError("accept exceeded the I/O deadline"))
+		}}
+		return fail(_ksIOError("listener failed: " + _ksSocketCode(err)))
+	}}
+	defer conn.Close()
+
+	buffer := make([]byte, 0, 4096)
+	chunk := make([]byte, 4096)
+	headerLimit := scope.requestBytes
+	if headerLimit > {max_header} {{
+		headerLimit = {max_header}
+	}}
+	receive := func(limit int, stage string) (int, string) {{
+		if expired() {{
+			return 0, _ksIOError("I/O deadline expired")
+		}}
+		conn.SetReadDeadline(deadline)
+		if limit > 4096 {{
+			limit = 4096
+		}}
+		count, err := conn.Read(chunk[:limit])
+		if count > 0 {{
+			buffer = append(buffer, chunk[:count]...)
+			return count, ""
+		}}
+		if err == nil || errors.Is(err, io.EOF) {{
+			return 0, ""
+		}}
+		if errors.Is(err, os.ErrDeadlineExceeded) {{
+			return 0, _ksIOError("request " + stage + " read exceeded the I/O deadline")
+		}}
+		return 0, _ksIOError("request " + stage + " read failed: " + _ksSocketCode(err))
+	}}
+	bodyStart, length := -1, 0
+	for bodyStart < 0 {{
+		if len(buffer) >= headerLimit {{
+			return fail(_ksProtocolError("HTTP headers exceed the configured request budget"))
+		}}
+		count, failure := receive(headerLimit-len(buffer)+1, "header")
+		if failure != "" {{
+			return fail(failure)
+		}}
+		if count == 0 {{
+			return fail(_ksProtocolError("connection closed before HTTP headers completed"))
+		}}
+		if len(buffer) > scope.requestBytes {{
+			return fail(_ksProtocolError("request exceeds max_request_bytes"))
+		}}
+		if strings.Contains(string(buffer), "\r\n\r\n") {{
+			start, declared, failure := _ksParseRequestHead(string(buffer))
+			if failure != "" {{
+				return fail(failure)
+			}}
+			bodyStart, length = start, declared
+		}}
+	}}
+	expected := bodyStart + length
+	if expected > scope.requestBytes {{
+		return fail(_ksProtocolError("request body exceeds max_request_bytes"))
+	}}
+	if len(buffer) > expected {{
+		return fail(_ksProtocolError("HTTP pipelining or bytes beyond Content-Length are rejected"))
+	}}
+	for len(buffer) < expected {{
+		count, failure := receive(expected-len(buffer)+1, "body")
+		if failure != "" {{
+			return fail(failure)
+		}}
+		if count == 0 {{
+			return fail(_ksProtocolError("connection closed before request body completed"))
+		}}
+		if len(buffer) > expected {{
+			return fail(_ksProtocolError("bytes beyond declared Content-Length are rejected"))
+		}}
+	}}
+	body := buffer[bodyStart:expected]
+	if !utf8.Valid(body) {{
+		return fail(_ksProtocolError("exchange v1 request body must be valid UTF-8"))
+	}}
+	if expired() {{
+		return fail(_ksIOError("I/O deadline expired"))
+	}}
+	conn.SetWriteDeadline(deadline)
+	if _, err := io.WriteString(conn, wire); err != nil {{
+		if errors.Is(err, os.ErrDeadlineExceeded) {{
+			return fail(_ksIOError("response write exceeded the I/O deadline"))
+		}}
+		return fail(_ksIOError("response write failed: " + _ksSocketCode(err)))
+	}}
+	return []string{{"ok", string(body)}}
+}}
+
 func _ksBrokerServeServe(request []string) ([]string, bool) {{
 	switch {{
 	case request[0] == "serve_scope" && len(request) == 6:
@@ -948,7 +1089,8 @@ func _ksBrokerServeServe(request []string) ([]string, bool) {{
 		return answer, answer != nil
 	case (request[0] == "serve_accept" && len(request) == 3 && (request[2] == "retry" || request[2] == "final")) ||
 		(request[0] == "serve_reply" && len(request) >= 5 && (len(request)-5)%2 == 0 && (len(request)-5)/2 <= {max_headers}+1) ||
-		(request[0] == "serve_release" && len(request) == 2):
+		(request[0] == "serve_release" && len(request) == 2) ||
+		(request[0] == "serve_exchange" && len(request) == 3):
 		index, err := strconv.Atoi(request[1])
 		// A released server is never addressed again.
 		if err != nil || index < 1 || index >= len(_ksServeScopes) || _ksServeScopes[index] == nil {{
@@ -961,6 +1103,8 @@ func _ksBrokerServeServe(request []string) ([]string, bool) {{
 			answer = _ksServeAcceptBroker(scope, request[2] == "retry")
 		case "serve_reply":
 			answer = _ksServeReplyBroker(scope, request[2], request[3], request[4], request[5:])
+		case "serve_exchange":
+			answer = _ksServeExchangeBroker(scope, request[2])
 		default:
 			// serve_knowhere_v1: a dropped server's sockets close, the
 			// listener first (_Server's slot order); an unanswered client

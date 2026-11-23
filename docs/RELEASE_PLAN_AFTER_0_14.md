@@ -72,7 +72,7 @@ Acceptance gates:
 | Gate | Status | Where |
 |---|---|---|
 | 1. Semantics and compatibility | **Closed:** stability policy approved by the owner on 2026-11-20, in force from 1.0.0 | `docs/STABILITY_V1.md` |
-| 2. Executor equivalence | Nearly closed: one repository program (`PersistCaps`) is still refused by `ks build`; differential fuzzing finds no divergence | `tests/test_mir_go_native_v2_parity.py`, `tools/fuzz/` |
+| 2. Executor equivalence | **Closed:** every repository program and every workspace `main` builds natively through the confined broker (PersistCaps and ServeCaps.exchange added 2026-11-23); differential fuzzing finds no divergence | `tests/test_mir_go_native_v2_parity.py`, `tests/test_native_persist_v1.py`, `tools/fuzz/` |
 | 3. Bootstrap / self-hosting | **Closed by scoping (owner decision, 2026-11-22):** self-hosting is not a 1.0 goal; see below | this section |
 | 4. Ownership / region model | Open | — |
 | 5. Bounded standard library | Mostly met; limits are documented and tested per module | `docs/reference/CORE_LIBRARY.md` |

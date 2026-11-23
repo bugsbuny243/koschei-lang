@@ -85,6 +85,7 @@ from .mir_go_decimal_v1 import DECIMAL_ARITY, DECIMAL_BUILTINS, DECIMAL_RUNTIME
 from .mir_go_tasks_v1 import TASK_ARITY, TASK_BUILTINS, TASK_RUNTIME, WORKER_ARGUMENT
 from .mir_go_json_v1 import JSON_ARITY, JSON_BUILTINS, JSON_IMPORTS, json_runtime
 from .native_broker_v1 import BROKER_IMPORTS, broker_runtime
+from .native_persist_v1 import PERSIST_IMPORTS, persist_runtime
 from .native_net_v1 import NET_IMPORTS, net_runtime
 from .native_serve_v1 import SERVE_IMPORTS, request_runtime, serve_runtime
 from .mir_variant_runtime_v1 import MirVariantRuntimeError, split_canonical_variant_v1
@@ -200,6 +201,9 @@ _NATIVE_CAPABILITY_DOMAINS = {
     "DiskCaps": "broker",
     "EnvRoot": "broker",
     "EnvCaps": "broker",
+    # Exact-object persistence runs in the broker too (native_persist_v1).
+    "PersistRoot": "persist",
+    "PersistCaps": "persist",
 }
 _NATIVE_CAPABILITY_TYPES = frozenset(_NATIVE_CAPABILITY_DOMAINS)
 _NATIVE_CAPABILITY_MEMBERS = {
@@ -210,6 +214,7 @@ _NATIVE_CAPABILITY_MEMBERS = {
     ("EnvRoot", "env"): "_ksCapsEnv",
     ("NetRoot", "net"): "_ksCapsNet",
     ("ServeRoot", "serve"): "_ksCapsServe",
+    ("PersistRoot", "persist"): "_ksCapsPersist",
 }
 _NATIVE_CAPABILITY_CALLS = {
     ("InputRoot", "allow"): ("_ksInputAllow", 1),
@@ -246,6 +251,10 @@ _NATIVE_CAPABILITY_CALLS = {
     ("ServeCaps", "reply"): ("_ksServeReply", 2),
     ("ServeCaps", "reply_as"): ("_ksServeReplyAs", 3),
     ("ServeCaps", "reply_with"): ("_ksServeReplyWith", 3),
+    ("ServeCaps", "exchange"): ("_ksServeExchange", 1),
+    ("PersistRoot", "allow"): ("_ksPersistAllow", 3),
+    ("PersistCaps", "load"): ("_ksPersistLoad", 0),
+    ("PersistCaps", "commit"): ("_ksPersistCommit", 1),
 }
 _ADMITTED_INSTRUCTIONS = (
     MirConst,
@@ -359,6 +368,7 @@ def generate_go_mir_native(
             *(BROKER_IMPORTS if "broker" in domains else ()),
             *(NET_IMPORTS if "net" in domains else ()),
             *(SERVE_IMPORTS if "serve" in domains else ()),
+            *(PERSIST_IMPORTS if "persist" in domains else ()),
         }
     )
 
@@ -420,6 +430,8 @@ def generate_go_mir_native(
         lines.append(net_runtime())
     if "serve" in domains:
         lines.append(serve_runtime())
+    if "persist" in domains:
+        lines.append(persist_runtime())
     for plan in plans:
         lines.extend(
             _emit_function(
@@ -474,7 +486,7 @@ def _used_domains(plans: list["_FunctionPlan"]) -> set[str]:
                 domain = _NATIVE_CAPABILITY_DOMAINS.get(produced or "")
                 if domain is not None:
                     domains.add(domain)
-    if "net" in domains or "serve" in domains:
+    if "net" in domains or "serve" in domains or "persist" in domains:
         domains.add("broker")
     return domains
 

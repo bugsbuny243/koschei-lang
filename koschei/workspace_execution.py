@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from .codegen_go import generate_go_mir
+from .mir_go_native import generate_go_mir_native, inspect_mir_go_support
 from .interpreter import run_mir as interpret_mir
 from .mir import require_mir
 from .modules import ModuleGraph, check_graph
@@ -246,7 +246,17 @@ def _analyze_workspace_package(
     graph = load_workspace_member_graph(workspace, package)
     check_graph(graph)
     mir = require_mir(graph)
-    return generate_go_mir(mir), mir.version, mir.fingerprint
+    # Same custody rule as `ks build`: only the strict MIR-Go backend, whose
+    # disk, network, serve and persistence effects cross the confined broker.
+    # The legacy AST-Go backend runs those effects inside the program's own
+    # process, so it is never used for a native artifact.
+    support = inspect_mir_go_support(mir)
+    if not support.supported:
+        raise WorkspaceError(
+            "KS4004: native workspace build failed closed: "
+            + "; ".join(support.reasons[:3])
+        )
+    return generate_go_mir_native(mir), mir.version, mir.fingerprint
 
 
 def verify_workspace_build(result: WorkspaceBuildResult) -> None:

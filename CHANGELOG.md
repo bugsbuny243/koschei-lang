@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- **Security fix:** `ks workspace build` produced native binaries with the legacy AST-Go backend, which runs disk, network, serve and persistence effects inside the program's own process. `ks build` already refused that backend (`KS4004`). Workspace builds now use the same confined MIR-Go backend, whose effects cross the capability broker under seccomp, and fail closed with `KS4004` otherwise.
+- Native binaries support `PersistCaps` (`caps.persist.allow`, `load`, `commit`) and `ServeCaps.exchange` through the broker, with the interpreter's error texts. Every repository program and every workspace `main` now builds natively, which closes 1.0 gate 2.
+
 ## 0.20.0 — 2026-11-23
 
 - Package signatures and a public log, phase 3 of `docs/PACKAGES_V1.md`: `ks pkg keygen`, `ks pkg publish --key`, `ks pkg sign`, `ks pkg sync --allow-new-signer`, and `[policy] require_signed`. Versions are signed with Ed25519 by the package's owners; the lock pins the signer and refuses a change; `registry/log.jsonl` is a hash-chained record of every publish, sign and yank whose head the lock pins, so rewritten history is refused. Ed25519 is a dependency-free RFC 8032 implementation (`koschei/ed25519_v1.py`), checked against the RFC vectors and OpenSSL and stricter about small-order keys. Koschei still has no runtime dependencies.
