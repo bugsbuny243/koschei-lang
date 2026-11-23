@@ -1,8 +1,24 @@
-# Koschei Lang 0.20.0 — Release Notes
+# Koschei Lang 0.21.0 — Release Notes
 
 **Product:** Koschei Lang (independent of Koschei Sentinel and Web3 Hub)  
-**Version:** 0.20.0  
+**Version:** 0.21.0  
 **Release line:** commercially licensed, pre-1.0 language/toolchain
+
+## New in 0.21.0
+
+- **Security fix — please upgrade if you use `ks workspace build`.** Native
+  binaries built from a workspace used the legacy backend, which runs disk,
+  network, server and persistence effects inside the program's own process,
+  without the capability broker and seccomp confinement that `ks build`
+  enforces. Workspace builds now use the confined backend and refuse
+  (`KS4004`) anything it cannot confine. Single-file `ks build` was not
+  affected.
+- **Persistence and one-shot serving in native binaries.** `PersistCaps`
+  (`caps.persist.allow`, `load`, `commit`) and `ServeCaps.exchange` now run
+  through the broker with the interpreter's exact behaviour and error texts.
+  Every program in the repository and every workspace `main` builds
+  natively; 1.0 gate 2 is closed.
+- The three registry packages are signed by their owner.
 
 ## New in 0.20.0
 

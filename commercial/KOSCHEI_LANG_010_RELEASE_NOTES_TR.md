@@ -1,8 +1,24 @@
-# Koschei Lang 0.20.0 — Sürüm Notları
+# Koschei Lang 0.21.0 — Sürüm Notları
 
 **Ürün:** Koschei Lang (Koschei Sentinel ve Web3 Hub'dan bağımsız)  
-**Sürüm:** 0.20.0  
+**Sürüm:** 0.21.0  
 **Ürün hattı:** ticari lisanslı, 1.0 öncesi programlama dili ve araç zinciri
+
+## 0.21.0'da yeni
+
+- **Güvenlik düzeltmesi — `ks workspace build` kullanıyorsanız
+  güncelleyin.** Workspace'ten derlenen native binary'ler eski backend'i
+  kullanıyordu; bu backend disk, ağ, sunucu ve kalıcı kayıt işlemlerini
+  programın kendi sürecinde, `ks build`'in zorunlu tuttuğu yetki broker'ı ve
+  seccomp koruması olmadan çalıştırıyordu. Workspace derlemeleri artık
+  korumalı backend'i kullanır ve koruyamadığı her şeyi reddeder (`KS4004`).
+  Tek dosyalı `ks build` etkilenmedi.
+- **Native binary'lerde kalıcı kayıt ve tek seferlik sunucu.** `PersistCaps`
+  (`caps.persist.allow`, `load`, `commit`) ve `ServeCaps.exchange` artık
+  broker üzerinden, yorumlayıcıyla birebir aynı davranış ve hata
+  metinleriyle çalışır. Repodaki her program ve her workspace `main`'i native
+  derlenir; 1.0'ın 2. kapısı kapandı.
+- Depodaki üç paket sahibi tarafından imzalandı.
 
 ## 0.20.0'da yeni
 
