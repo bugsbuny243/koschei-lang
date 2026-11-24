@@ -1,8 +1,19 @@
-# Koschei Lang 0.24.0 — Sürüm Notları
+# Koschei Lang 0.25.0 — Sürüm Notları
 
 **Ürün:** Koschei Lang (Koschei Sentinel ve Web3 Hub'dan bağımsız)  
-**Sürüm:** 0.24.0  
+**Sürüm:** 0.25.0  
 **Ürün hattı:** ticari lisanslı, 1.0 öncesi programlama dili ve araç zinciri
+
+## 0.25.0'da yeni
+
+- **Sağlamlaştırma: sabit kapsamlar kilitleniyor.** Program disk dizinlerini,
+  ortam değişkenlerini ya da ağ adreslerini sabit metinle yazıyorsa, native
+  broker bunların dışındakileri reddediyor. Ele geçirilmiş bir worker
+  kaynak kodda yazılanın dışına çıkamaz. Çalışma anında hesaplanan önekler
+  kilitlenmiyor.
+- **Düzeltme:** 0.22.0'dan beri disk token'ı oluşturup hiç kullanmayan
+  native bir program `KS5002` ile düşüyordu, `ks run` ise çalıştırıyordu.
+  Düzeltildi.
 
 ## 0.24.0'da yeni
 

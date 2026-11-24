@@ -1,8 +1,18 @@
-# Koschei Lang 0.24.0 — Release Notes
+# Koschei Lang 0.25.0 — Release Notes
 
 **Product:** Koschei Lang (independent of Koschei Sentinel and Web3 Hub)  
-**Version:** 0.24.0  
+**Version:** 0.25.0  
 **Release line:** commercially licensed, pre-1.0 language/toolchain
+
+## New in 0.25.0
+
+- **Hardening: literal scopes are pinned.** When a program names its disk
+  directories, environment variables or network origins with string literals,
+  the native broker refuses every other one. A compromised worker cannot
+  reach outside what the source names. Prefixes computed at run time are not
+  pinned.
+- **Fix:** since 0.22.0 a native program that created a disk token and never
+  used it failed with `KS5002`, while `ks run` accepted it. Fixed.
 
 ## New in 0.24.0
 
