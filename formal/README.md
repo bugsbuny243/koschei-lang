@@ -67,8 +67,10 @@ the program create (`mir_go_native._broker_grants`). TLC finds no error for any
 grant set, and switching any one of the three checks off gives a counterexample.
 
 Limits: seccomp, Go memory safety and the path rules inside a scope
-(`O_NOFOLLOW`, `..`) are trusted, not modelled. Scope *prefixes* are not limited.
-A program holding `DiskRoot` may narrow to any directory, as in `ks run`. The
+(`O_NOFOLLOW`, `..`) are trusted, not modelled. Scope *prefixes* are pinned to
+the program's string literals where every request of a kind uses one
+(`tests/test_broker_grants_v1.py`). This is tested, not modelled. A prefix
+computed at run time is not pinned. The
 bounds are 2 scopes and 6 requests. The net, serve and persist hooks are not in
 the model yet.
 

@@ -64,23 +64,23 @@ class BrokerGrantSourceTests(unittest.TestCase):
 
 @unittest.skipUnless(SUPPORTED, "broker confinement is linux/amd64")
 class BrokerGrantRuntimeTests(unittest.TestCase):
-    def run_program(self, patch=None) -> subprocess.CompletedProcess:
+    def run_program(self, patch=None, program: str = READ_ONLY) -> subprocess.CompletedProcess:
         real = mir_go_native.broker_runtime
 
-        def patched(grants):
-            source = real(grants)
+        def patched(grants, pins=None):
+            source = real(grants, pins)
             return patch(source) if patch else source
 
         with tempfile.TemporaryDirectory(prefix="koschei-grants-") as directory:
             base = Path(directory)
             (base / "root").mkdir()
             (base / "root" / "a.txt").write_text("merhaba", encoding="utf-8")
-            (base / "main.ks").write_text(READ_ONLY, encoding="utf-8")
+            (base / "main.ks").write_text(program, encoding="utf-8")
             binary = base / "app"
             with mock.patch.object(mir_go_native, "broker_runtime", patched):
                 with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()) as errors:
                     self.assertEqual(cli_main(["build", str(base / "main.ks"), "-o", str(binary)]), 0, errors.getvalue())
-            env = dict(os.environ, KS_TEST_SECRET=SECRET, PYTHONPATH=str(ROOT))
+            env = dict(os.environ, KS_TEST_SECRET=SECRET, KS_PUBLIC="public", PYTHONPATH=str(ROOT))
             return subprocess.run([str(binary)], cwd=base, env=env, capture_output=True, text=True, timeout=60, check=False)
 
     def test_honest_worker_runs(self) -> None:
@@ -97,6 +97,54 @@ class BrokerGrantRuntimeTests(unittest.TestCase):
         result = self.run_program(_ask_env)
         self.assertNotEqual(result.returncode, 0)
         self.assertNotIn(SECRET, result.stdout + result.stderr)
+
+    # ---- scope pinning ---------------------------------------------------
+
+    def test_token_created_but_never_used_runs(self) -> None:
+        # Regression: grants once came only from token use, so a program that
+        # narrowed the disk and never used the token was refused by the broker.
+        program = 'fn main(caps: SystemCaps) {\n    let disk = caps.disk.allow_read_only("root")\n    println("done")\n}\n'
+        result = self.run_program(program=program)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "done\n")
+
+    def test_literal_disk_prefix_is_pinned(self) -> None:
+        def widen(source: str) -> str:
+            patched = source.replace('_ksOpenDiskScope("scope", text)', '_ksOpenDiskScope("scope", text+"/..")')
+            assert patched != source
+            return patched
+
+        result = self.run_program(widen)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn("merhaba", result.stdout)
+
+    def test_literal_env_name_is_pinned(self) -> None:
+        program = 'fn main(caps: SystemCaps) {\n    let name = caps.env.allow("KS_PUBLIC")\n    println(name.get() or "missing")\n}\n'
+        self.assertEqual(self.run_program(program=program).stdout, "public\n")
+
+        def other(source: str) -> str:
+            patched = source.replace('_ksAsk("env", env.name)', '_ksAsk("env", "KS_TEST_SECRET"+env.name[:0])')
+            assert patched != source
+            return patched
+
+        result = self.run_program(other, program=program)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn(SECRET, result.stdout + result.stderr)
+
+    def test_computed_prefix_is_not_pinned(self) -> None:
+        program = 'fn main(caps: SystemCaps) {\n    let where = "ro" + "ot"\n    let disk = caps.disk.allow_read_only(where)\n    println(disk.read("root/a.txt") or "fail")\n}\n'
+        result = self.run_program(program=program)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "merhaba\n")
+
+
+class BrokerPinSourceTests(unittest.TestCase):
+    def test_pins_are_rendered(self) -> None:
+        source = broker_runtime(ALL_GRANTS, {"env": frozenset({"HOME"}), "scope": frozenset()})
+        self.assertIn('case "env":\n\t\treturn text == "HOME"', source)
+        self.assertIn('case "scope":\n\t\treturn false', source)
+        with self.assertRaises(ValueError):
+            broker_runtime(ALL_GRANTS, {"persist_open": frozenset()})
 
 
 if __name__ == "__main__":

@@ -49,7 +49,11 @@ user ──▶ broker (holds the environment, the cwd, the right to open files)
    → disk read, `DiskCaps` → disk read and write, `EnvCaps` → environment);
    a request for anything else also ends the conversation, so even a worker
    that sends arbitrary frames gets no more than the program had
-   (`formal/tla/BrokerConfinement.tla`).
+   (`formal/tla/BrokerConfinement.tla`). Where every disk, environment or
+   network request of a kind takes a string literal, the compiler also pins
+   that kind to those exact texts: the broker refuses any other directory,
+   variable name or origin. A prefix computed at run time leaves its kind
+   unpinned.
 4. The broker exits with the worker's status.
 
 ## Same answers as `ks run`
