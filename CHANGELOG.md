@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.25.0 — 2026-11-24
 
 - **Fix:** since 0.22.0 a native program that created a disk token and never used it was refused by the broker (`KS5002`), while `ks run` accepted it. Broker grants now count tokens a program creates, not only tokens it uses.
 - **Hardening:** the broker pins disk prefixes, environment names and network origins to the program's string literals. Where every request of a kind takes a literal, a compromised worker cannot open any other directory, read any other variable or reach any other origin. Prefixes computed at run time are not pinned.
