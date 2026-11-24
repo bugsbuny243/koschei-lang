@@ -1,8 +1,21 @@
-# Koschei Lang 0.23.0 — Sürüm Notları
+# Koschei Lang 0.24.0 — Sürüm Notları
 
 **Ürün:** Koschei Lang (Koschei Sentinel ve Web3 Hub'dan bağımsız)  
-**Sürüm:** 0.23.0  
+**Sürüm:** 0.24.0  
 **Ürün hattı:** ticari lisanslı, 1.0 öncesi programlama dili ve araç zinciri
+
+## 0.24.0'da yeni
+
+- **Güvenlik düzeltmesi: sahiplik denetleyicisi.** `while` koşulundaki bir
+  move, koşul tek sefer çalışıyormuş gibi denetleniyordu; bu yüzden
+  `while n < 2 && takes(tok)` aynı yetki token'ını her turda yeniden
+  verebiliyordu. Artık `KS3932` ile reddediliyor. Açığı sahiplik
+  sağlamlık fuzzer'ı buldu.
+- **Sahiplik modeli tanımlandı (1.0'ın 4. kapısı kapandı).**
+  `docs/OWNERSHIP_MODEL_V1.md` kuralı tanımlıyor. `tools/fuzz/affine_fuzz.py`
+  denetleyiciyi her PR'da ve her gece, tüm yolları tek tek yürüten bağımsız
+  bir hakeme karşı test ediyor. 1.0'ın yedi kapısından altısı kapalı;
+  geriye bağımsız denetim kaldı.
 
 ## 0.23.0'da yeni
 

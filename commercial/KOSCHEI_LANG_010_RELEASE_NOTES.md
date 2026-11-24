@@ -1,8 +1,20 @@
-# Koschei Lang 0.23.0 — Release Notes
+# Koschei Lang 0.24.0 — Release Notes
 
 **Product:** Koschei Lang (independent of Koschei Sentinel and Web3 Hub)  
-**Version:** 0.23.0  
+**Version:** 0.24.0  
 **Release line:** commercially licensed, pre-1.0 language/toolchain
+
+## New in 0.24.0
+
+- **Security fix: the ownership checker.** A move in a `while` condition was
+  checked as if the condition ran once, so `while n < 2 && takes(tok)` could
+  hand the same capability token out on every iteration. Such a move is now
+  refused with `KS3932`. An ownership soundness fuzzer found this.
+- **Ownership model specified (1.0 gate 4 closed).**
+  `docs/OWNERSHIP_MODEL_V1.md` states the rule. `tools/fuzz/affine_fuzz.py`
+  checks the checker against an independent path-exhaustive oracle on every
+  pull request and nightly. Six of the seven 1.0 gates are now closed; the
+  independent review remains.
 
 ## New in 0.23.0
 
