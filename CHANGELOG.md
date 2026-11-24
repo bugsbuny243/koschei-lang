@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.24.0 — 2026-11-24
 
 - **Security fix:** the ownership checker evaluated a `while` condition as if it ran once, so `while n < 2 && takes(tok)` could hand the same capability token out on every iteration. Moves in a `while` condition are now checked as part of the loop (`KS3932`). Found by the new ownership soundness fuzzer.
 - `docs/OWNERSHIP_MODEL_V1.md` specifies the ownership rule; `tools/fuzz/affine_fuzz.py` checks the checker against a path-exhaustive oracle on every pull request and nightly. 1.0 gate 4 is closed.
