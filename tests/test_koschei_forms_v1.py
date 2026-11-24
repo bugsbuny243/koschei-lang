@@ -224,7 +224,14 @@ class KoscheiFormsNativeTests(KoscheiFormsTests):
     def test_worker_is_confined(self) -> None:
         # The process the test started is the broker; its child runs the
         # program under seccomp with no_new_privs and an empty environment.
-        children = Path(f"/proc/{self.process.pid}/task/{self.process.pid}/children").read_text().split()
+        # The broker starts its worker right after it starts listening, so
+        # give the worker a moment to appear instead of racing it.
+        listing = Path(f"/proc/{self.process.pid}/task/{self.process.pid}/children")
+        deadline = time.monotonic() + 10
+        children = listing.read_text().split()
+        while not children and time.monotonic() < deadline:
+            time.sleep(0.05)
+            children = listing.read_text().split()
         self.assertEqual(len(children), 1)
         status = Path(f"/proc/{children[0]}/status").read_text()
         self.assertIn("Seccomp:\t2", status)
