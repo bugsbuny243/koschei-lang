@@ -38,12 +38,13 @@ them is a critical finding.
 | Component | Files | Lines (approx.) | Claims |
 |---|---|---|---|
 | Lexer, parser | `koschei/lexer.py`, `koschei/parser.py` | 760 | 7 |
-| Checker (types, capability flow, purity, affine use) | `koschei/semantic.py`, `koschei/_typed_ops.py`, `koschei/capabilities.py` | 2,600 | 1, 2, 7 |
+| Checker (types, capability flow, purity, affine use) | `koschei/semantic.py`, `koschei/_typed_ops.py`, `koschei/capabilities.py`, `koschei/affine_resources_v1.py`, `docs/OWNERSHIP_MODEL_V1.md` | 3,100 | 1, 2, 7 |
 | Modules and imports | `koschei/modules.py` | 380 | 1, 4 |
 | Sealed MIR and its executor | `koschei/mir.py`, `koschei/mir_canonical_lowering_v1.py`, `koschei/mir_executor_v1.py`, `docs/mir-v5.md` | 1,300 | 1, 6 |
 | Interpreter host effects | `koschei/interpreter.py` | 2,200 | 1, 2 |
 | Native code generation and runtime | `koschei/mir_go_native.py`, `koschei/mir_go_runtime_v2.py`, `koschei/mir_go_*_v1.py` | 4,500 | 6 |
-| Native broker and seccomp worker | `native/`, `docs/NATIVE_BROKER_V1.md`, `docs/NET_V1.md` | — | 1 |
+| Native broker and seccomp worker | `native/`, `koschei/native_broker_v1.py`, `koschei/native_net_v1.py`, `koschei/native_serve_v1.py`, `koschei/native_persist_v1.py`, `docs/NATIVE_BROKER_V1.md`, `docs/NET_V1.md` | — | 1 |
+| Formal models | `formal/tla/*.tla`, `formal/README.md`, `tests/test_formal_models_v1.py` | 300 | 1, 3, 5 |
 | Packages and registry | `koschei/packages_v1.py`, `koschei/registry_v1.py`, `koschei/pkg_cli.py`, `docs/PACKAGES_V1.md` | 1,600 | 3, 4, 5, 7 |
 | Ed25519 (dependency-free RFC 8032) | `koschei/ed25519_v1.py` | 190 | 5 |
 | Native build environment | `koschei/go_build_env_v1.py` | 30 | 3 |
@@ -82,6 +83,12 @@ python3 tools/fuzz/package_format_fuzz.py 1 50000
 - Differences between the checker's view of a program and what the MIR
   executor or the Go runtime does with it (claims 1, 6).
 - The broker protocol and the seccomp allow list on linux/amd64 (claim 1).
+  The broker serves only the domains and the disk/environment authority the
+  compiler saw the program use. Within a domain it does not pin scope
+  prefixes: a compromised worker of a network program may open any URL
+  prefix, as the program's `SystemCaps` could.
+- The gap between the formal models and the code: the models are bounded
+  and the link tests only check that each modelled check is still present.
 - Package resolution: import shadowing, transitive dependencies, lock and
   manifest edits between `sync` and `build`, archive extraction (claims 3–5).
 - The Ed25519 implementation: encodings, small-order points, malleability,
@@ -96,7 +103,22 @@ python3 tools/fuzz/package_format_fuzz.py 1 50000
 | Unit and contract tests | `tests/` (≈ 3,000 tests) | each control in the threat model's table |
 | Adversarial lab | `tools/run_adversarial_lab.py` | attack programs that must be refused |
 | Differential tests | `tests/test_mir_go_native_v2_parity.py`, `tests/test_differential_fuzz.py` | executor agreement |
+| Formal models (TLA+, TLC) | `formal/` | the package update rule, broker confinement and the registry log hold against an attacker that controls the registry or the worker; each check in the code is shown to be needed |
 | Fuzzing | `tools/fuzz/`, `tests/test_fuzz_smoke_v1.py` | about 9,000 mutated programs (7,000 checked, 2,000 run) and 80,000 malformed package inputs with no internal errors after the two fixes below |
+
+### Formal models and soundness fuzzing (2026-11-24)
+
+Three findings, all fixed and released, with regression tests:
+
+| Found by | Finding | Fixed in |
+|---|---|---|
+| `formal/tla/BrokerConfinement.tla` | The broker served disk-write and environment requests to any worker, so a compromised worker of a read-only or network-only program could write files or read secrets | 0.22.0 |
+| `formal/tla/RegistryLog.tla` | Yank state came only from the index; a rolled-back index could serve a yanked release although the public log recorded the yank | 0.23.0 |
+| `tools/fuzz/affine_fuzz.py` | A move in a `while` condition was checked once, so a token could be handed out on every iteration | 0.24.0 |
+
+`formal/tla/PackageUpdate.tla` found nothing. `affine_fuzz.py` has since
+judged 12,000 generated programs against its path-exhaustive oracle with no
+unsound acceptance.
 
 ### Fuzzing results so far (2026-11-22)
 
