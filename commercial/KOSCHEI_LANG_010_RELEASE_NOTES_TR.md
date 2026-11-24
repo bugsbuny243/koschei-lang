@@ -1,8 +1,20 @@
-# Koschei Lang 0.22.0 — Sürüm Notları
+# Koschei Lang 0.23.0 — Sürüm Notları
 
 **Ürün:** Koschei Lang (Koschei Sentinel ve Web3 Hub'dan bağımsız)  
-**Sürüm:** 0.22.0  
+**Sürüm:** 0.23.0  
 **Ürün hattı:** ticari lisanslı, 1.0 öncesi programlama dili ve araç zinciri
+
+## 0.23.0'da yeni
+
+- **Güvenlik düzeltmesi: registry'den paket kuruyorsanız güncelleyin.** İstemci
+  bir sürümün geri çekilme (yank) durumunu yalnızca registry index'inden
+  okuyordu. Sahibi kötü bir sürümü geri çektikten sonra index'ini eski haline
+  döndüren bir registry, açık log geri çekmeyi kaydetmiş olsa bile o sürümü
+  yeni kurulumlara verebiliyordu. Artık istemci geri çekilme durumunu hash
+  zincirli log'dan okuyor, uyuşmayan index'i reddediyor. Açığı bir formal
+  model (TLA+) buldu.
+- **Formal modeller tamam.** Paket güncelleme kuralı, broker kısıtı ve
+  registry log'u TLC ile denetleniyor (`formal/tla`).
 
 ## 0.22.0'da yeni
 

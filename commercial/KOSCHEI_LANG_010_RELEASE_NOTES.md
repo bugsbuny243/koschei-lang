@@ -1,8 +1,19 @@
-# Koschei Lang 0.22.0 — Release Notes
+# Koschei Lang 0.23.0 — Release Notes
 
 **Product:** Koschei Lang (independent of Koschei Sentinel and Web3 Hub)  
-**Version:** 0.22.0  
+**Version:** 0.23.0  
 **Release line:** commercially licensed, pre-1.0 language/toolchain
+
+## New in 0.23.0
+
+- **Security fix: upgrade if you install packages from a registry.** The
+  client read a version's yank state only from the registry index. A registry
+  that rolled its index back after an owner yanked a bad release could serve
+  that release to new installs, although the public log recorded the yank. The
+  client now reads yank state from the hash-chained log and refuses an index
+  that disagrees. A formal model (TLA+) found this gap.
+- **Formal models complete.** The package update rule, broker confinement
+  and the registry log are all model-checked with TLC (`formal/tla`).
 
 ## New in 0.22.0
 

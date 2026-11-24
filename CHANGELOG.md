@@ -1,8 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.23.0 — 2026-11-24
 
 - **Security fix:** a registry could hide a yank. The client read yank state only from the index, so an index rolled back after a yank served the yanked version to new installs even though the public log recorded it. The client now derives yank state from the log and refuses an index that disagrees (`formal/tla/RegistryLog.tla`).
+- Formal models complete: package update rule, broker confinement and registry log, all checked by TLC.
 
 ## 0.22.0 — 2026-11-23
 
