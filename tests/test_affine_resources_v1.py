@@ -181,6 +181,27 @@ fn main(caps: SystemCaps) {
         with self.assertRaisesRegex(SemanticError, "KS3932"):
             self._check(source)
 
+    def test_move_in_while_condition_is_rejected(self) -> None:
+        # The condition runs before every iteration: moving a token there
+        # handed the same authority out repeatedly (found by affine_fuzz).
+        for condition in ("takes(authority)", "n < 2 && takes(authority)"):
+            with self.subTest(condition=condition):
+                source = f"""
+fn takes(authority: NetCaps) -> Bool {{
+    return true
+}}
+
+fn main(caps: SystemCaps) {{
+    let authority = caps.net.allow("https://example.com")
+    let mut n = 0
+    while {condition} {{
+        n = n + 1
+    }}
+}}
+"""
+                with self.assertRaisesRegex(SemanticError, "KS3932"):
+                    self._check(source)
+
     def test_system_caps_member_projection_does_not_consume_whole_root(self) -> None:
         self._check(
             """
