@@ -41,6 +41,10 @@ class FuzzSmokeTests(unittest.TestCase):
         result = run("capability_fuzz.py", "11", "60")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_affine_fuzz(self) -> None:
+        result = run("affine_fuzz.py", "11", "400")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_package_bytes_fuzz(self) -> None:
         result = run("package_bytes_fuzz.py", "11", "3000")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

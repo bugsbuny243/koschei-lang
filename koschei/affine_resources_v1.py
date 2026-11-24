@@ -223,8 +223,11 @@ class AffineResourceChecker:
             return
 
         if isinstance(statement, WhileStatement):
-            self._check_expression(statement.condition, _BORROW)
-            self._check_repeating_block(statement.body, statement.location)
+            # The condition runs before every iteration, so a move in it
+            # repeats like a move in the body (found by tools/fuzz/affine_fuzz.py).
+            self._check_repeating_block(
+                statement.body, statement.location, condition=statement.condition
+            )
             return
 
         if isinstance(statement, ForStatement):
@@ -312,11 +315,19 @@ class AffineResourceChecker:
         self.moved = joined
         self.move_locations = locations
 
-    def _check_repeating_block(self, block: Block, location: SourceLocation) -> None:
+    def _check_repeating_block(
+        self,
+        block: Block,
+        location: SourceLocation,
+        *,
+        condition: Expression | None = None,
+    ) -> None:
         outer_ids = self._outer_binding_ids()
         before = set(self.moved)
         before_locations = dict(self.move_locations)
         try:
+            if condition is not None:
+                self._check_expression(condition, _BORROW)
             self._check_block(block)
             newly_moved = (self.moved - before) & outer_ids
             if newly_moved:

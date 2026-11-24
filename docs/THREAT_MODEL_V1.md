@@ -76,6 +76,7 @@ the separate Koschei Sentinel product.
 | T15 | Malformed input to the toolchain itself (source, locks, manifests, archives) crashes it or is half-accepted | Every outcome is success or a coded diagnostic; checked by mutation, structure-aware and differential fuzzers | `tools/fuzz/`, `tests/test_fuzz_smoke_v1.py` |
 | T16b | A compromised worker (seccomp still on) asks the broker for authority the program never had: a writable scope in a read-only program, or an environment variable | The broker serves only the disk-read, disk-write and environment authority the compiler saw the program create; anything else ends the conversation. Model-checked for every grant set | `formal/tla/BrokerConfinement.tla`, `tests/test_broker_grants_v1.py` |
 | T16c | The registry hides a yank (index rolled back after the owner yanked a bad release) or invents one | The client reads yank state from the public log and refuses an index that disagrees | `formal/tla/RegistryLog.tla`, `tests/test_registry_v1.py` |
+| T16d | A program duplicates authority by moving a token where the checker under-counts executions (a loop condition, a branch join) | The ownership rule is specified, and every accepted generated program is checked against a path-exhaustive oracle; a `while`-condition double move found this way is fixed | `docs/OWNERSHIP_MODEL_V1.md`, `tools/fuzz/affine_fuzz.py` |
 
 ## Residual risks
 
