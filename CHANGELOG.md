@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- **Fix:** since 0.22.0 a native program that created a disk token and never used it was refused by the broker (`KS5002`), while `ks run` accepted it. Broker grants now count tokens a program creates, not only tokens it uses.
+- **Hardening:** the broker pins disk prefixes, environment names and network origins to the program's string literals. Where every request of a kind takes a literal, a compromised worker cannot open any other directory, read any other variable or reach any other origin. Prefixes computed at run time are not pinned.
+
 ## 0.24.0 — 2026-11-24
 
 - **Security fix:** the ownership checker evaluated a `while` condition as if it ran once, so `while n < 2 && takes(tok)` could hand the same capability token out on every iteration. Moves in a `while` condition are now checked as part of the loop (`KS3932`). Found by the new ownership soundness fuzzer.

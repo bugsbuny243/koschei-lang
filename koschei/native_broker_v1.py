@@ -158,12 +158,38 @@ def _go(value: str) -> str:
 ALL_GRANTS = frozenset({"disk_read", "disk_write", "env"})
 
 
-def broker_runtime(grants: frozenset[str] = ALL_GRANTS) -> str:
-    """The broker serves only ``grants``: a subset of :data:`ALL_GRANTS`."""
+PIN_KINDS = frozenset({"scope", "scope_rw", "env", "net_scope"})
+
+
+def _pins_source(pins: dict[str, frozenset[str]]) -> str:
+    """Go cases for :func:`broker_runtime`'s pinned scope requests."""
+
+    lines = []
+    for kind in sorted(pins):
+        allowed = " || ".join(f"text == {_go(text)}" for text in sorted(pins[kind])) or "false"
+        lines.append(f"\tcase {_go(kind)}:\n\t\treturn {allowed}")
+    return "\n".join(lines)
+
+
+def broker_runtime(
+    grants: frozenset[str] = ALL_GRANTS,
+    pins: dict[str, frozenset[str]] | None = None,
+) -> str:
+    """The broker serves only ``grants``: a subset of :data:`ALL_GRANTS`.
+
+    ``pins`` maps a scope request kind (``scope``, ``scope_rw``, ``env``,
+    ``net_scope``) to the exact texts the program asks for. The compiler pins a
+    kind when every call that makes such a request takes a string literal; the
+    broker then refuses any other text for that kind. Kinds left out are not
+    pinned.
+    """
 
     unknown = set(grants) - ALL_GRANTS
     if unknown:
         raise ValueError(f"unknown broker grants: {sorted(unknown)}")
+    pins = pins or {}
+    if set(pins) - PIN_KINDS:
+        raise ValueError(f"unknown pinned requests: {sorted(set(pins) - PIN_KINDS)}")
     errnos = "\n".join(
         f"\tsyscall.Errno({code}): {_go(name)}," for code, name in sorted(DISK_ERRNO_NAMES.items())
     )
@@ -196,6 +222,7 @@ def broker_runtime(grants: frozenset[str] = ALL_GRANTS) -> str:
         grant_disk_read="true" if "disk_read" in grants else "false",
         grant_disk_write="true" if "disk_write" in grants else "false",
         grant_env="true" if "env" in grants else "false",
+        pins=_pins_source(pins),
     )
 
 
@@ -675,6 +702,15 @@ const (
 	_ksGrantEnv       = {grant_env}
 )
 
+// Scope texts the compiled program asks for, where every such request in
+// the program takes a string literal (native_broker_v1.broker_runtime pins).
+func _ksPinned(kind string, text string) bool {{
+	switch kind {{
+{pins}
+	}}
+	return true
+}}
+
 func _ksBrokerLoop(channel *os.File) {{
 	// Any malformed request ends the conversation: the worker sees the
 	// channel close and stops instead of waiting.
@@ -694,6 +730,10 @@ func _ksBrokerLoop(channel *os.File) {{
 			// The compiler saw no such authority in the program, so its
 			// worker never asks for it: a worker that does is not running
 			// the compiled program (formal/tla/BrokerConfinement.tla).
+			return
+		case len(request) >= 2 && !_ksPinned(request[0], request[1]):
+			// The program names this scope only with literals, and this is
+			// not one of them: the worker is not running the compiled program.
 			return
 		case (request[0] == "scope" || request[0] == "scope_rw") && len(request) == 3 && (request[2] == "retry" || request[2] == "final"):
 			if request[2] == "retry" && _ksScopesNearLimit(scopes) {{

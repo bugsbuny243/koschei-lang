@@ -425,7 +425,7 @@ def generate_go_mir_native(
     if "random" in domains:
         lines.append(_random_runtime())
     if "broker" in domains:
-        lines.append(broker_runtime(_broker_grants(plans)))
+        lines.append(broker_runtime(_broker_grants(plans), _broker_pins(plans)))
     if "net" in domains:
         lines.append(net_runtime())
     if "serve" in domains:
@@ -486,13 +486,61 @@ def _broker_grants(plans: list["_FunctionPlan"]) -> frozenset[str]:
         for block in plan.function.blocks:
             for instruction in block.instructions:
                 if isinstance(instruction, MirCapabilityCall):
-                    produced = instruction.capability_type
+                    # Both the receiver (a token being used) and the result
+                    # (a token being created, even one never used) count.
+                    names = [instruction.capability_type, *_runtime_names(instruction.type)]
                 elif isinstance(instruction, MirMember):
-                    produced = _capability_member_type(instruction)
+                    names = [_capability_member_type(instruction) or ""]
                 else:
                     continue
-                grants.update(_BROKER_GRANTS.get(produced or "", ()))
+                for name in names:
+                    grants.update(_BROKER_GRANTS.get(name, ()))
     return frozenset(grants)
+
+
+# Root calls whose argument becomes a broker scope request, by request kind.
+_PINNED_CALLS = {
+    ("DiskRoot", "allow_read_only"): "scope",
+    ("DiskRoot", "allow"): "scope_rw",
+    ("EnvRoot", "allow"): "env",
+    ("NetRoot", "allow"): "net_scope",
+}
+
+
+def _broker_pins(plans: list["_FunctionPlan"]) -> dict[str, frozenset[str]]:
+    """Scope texts the program asks the broker for, per request kind.
+
+    A kind is pinned only when every call that makes such a request takes a
+    string literal defined once in its function. Otherwise the kind is left
+    unpinned and the broker accepts any text for it, as before.
+    """
+
+    texts: dict[str, set[str]] = {}
+    unpinned: set[str] = set()
+    for plan in plans:
+        definitions: dict[int, list[object]] = {}
+        for block in plan.function.blocks:
+            for instruction in block.instructions:
+                target = getattr(instruction, "target", None)
+                if isinstance(target, int):
+                    definitions.setdefault(target, []).append(instruction)
+        for block in plan.function.blocks:
+            for instruction in block.instructions:
+                if not isinstance(instruction, MirCapabilityCall):
+                    continue
+                kind = _PINNED_CALLS.get((instruction.capability_type, instruction.method))
+                if kind is None:
+                    continue
+                sources = definitions.get(instruction.arguments[0], []) if instruction.arguments else []
+                if (
+                    len(sources) == 1
+                    and isinstance(sources[0], MirConst)
+                    and isinstance(sources[0].value, str)
+                ):
+                    texts.setdefault(kind, set()).add(sources[0].value)
+                else:
+                    unpinned.add(kind)
+    return {kind: frozenset(values) for kind, values in texts.items() if kind not in unpinned}
 
 
 def _used_domains(plans: list["_FunctionPlan"]) -> set[str]:

@@ -84,9 +84,11 @@ python3 tools/fuzz/package_format_fuzz.py 1 50000
   executor or the Go runtime does with it (claims 1, 6).
 - The broker protocol and the seccomp allow list on linux/amd64 (claim 1).
   The broker serves only the domains and the disk/environment authority the
-  compiler saw the program use. Within a domain it does not pin scope
-  prefixes: a compromised worker of a network program may open any URL
-  prefix, as the program's `SystemCaps` could.
+  compiler saw the program use. Within a domain it pins disk prefixes,
+  environment names and network origins to the program's string literals.
+  Where a program computes one at run time, that kind is not pinned and a
+  compromised worker may open any prefix of it, as the program's `SystemCaps`
+  could. Persistence paths and server addresses are not pinned yet.
 - The gap between the formal models and the code: the models are bounded
   and the link tests only check that each modelled check is still present.
 - Package resolution: import shadowing, transitive dependencies, lock and
