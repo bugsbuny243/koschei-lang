@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 import platform
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -64,12 +65,24 @@ class BrokerGrantSourceTests(unittest.TestCase):
 
 @unittest.skipUnless(SUPPORTED, "broker confinement is linux/amd64")
 class BrokerGrantRuntimeTests(unittest.TestCase):
-    def run_program(self, patch=None, program: str = READ_ONLY) -> subprocess.CompletedProcess:
+    def run_program(
+        self, patch=None, program: str = READ_ONLY, serve_patch=None, persist_patch=None
+    ) -> subprocess.CompletedProcess:
         real = mir_go_native.broker_runtime
+        real_serve = mir_go_native.serve_runtime
+        real_persist = mir_go_native.persist_runtime
+
+        def patched_persist():
+            source = real_persist()
+            return persist_patch(source) if persist_patch else source
 
         def patched(grants, pins=None):
             source = real(grants, pins)
             return patch(source) if patch else source
+
+        def patched_serve():
+            source = real_serve()
+            return serve_patch(source) if serve_patch else source
 
         with tempfile.TemporaryDirectory(prefix="koschei-grants-") as directory:
             base = Path(directory)
@@ -77,7 +90,9 @@ class BrokerGrantRuntimeTests(unittest.TestCase):
             (base / "root" / "a.txt").write_text("merhaba", encoding="utf-8")
             (base / "main.ks").write_text(program, encoding="utf-8")
             binary = base / "app"
-            with mock.patch.object(mir_go_native, "broker_runtime", patched):
+            with mock.patch.object(mir_go_native, "broker_runtime", patched), mock.patch.object(
+                mir_go_native, "serve_runtime", patched_serve
+            ), mock.patch.object(mir_go_native, "persist_runtime", patched_persist):
                 with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()) as errors:
                     self.assertEqual(cli_main(["build", str(base / "main.ks"), "-o", str(binary)]), 0, errors.getvalue())
             env = dict(os.environ, KS_TEST_SECRET=SECRET, KS_PUBLIC="public", PYTHONPATH=str(ROOT))
@@ -137,6 +152,51 @@ class BrokerGrantRuntimeTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, "merhaba\n")
 
+    def test_literal_persist_path_is_pinned(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="koschei-pin-persist-") as directory:
+            state = Path(directory)
+            program = (
+                "fn main(caps: SystemCaps) {\n"
+                f'    let store = caps.persist.allow("{state}/data.txt", 64, 5000)\n'
+                '    println(store.commit("kept"))\n'
+                "}\n"
+            )
+            result = self.run_program(program=program)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual((state / "data.txt").read_text(encoding="utf-8"), "kept")
+
+            def elsewhere(source: str) -> str:
+                old = '_ksAsk("persist_open", canonical,'
+                assert old in source
+                return source.replace(old, '_ksAsk("persist_open", canonical+".other",')
+
+            result = self.run_program(program=program, persist_patch=elsewhere)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse((state / "data.txt.other").exists())
+
+    def test_literal_serve_bind_is_pinned(self) -> None:
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            port = probe.getsockname()[1]
+        program = (
+            "fn main(caps: SystemCaps) {\n"
+            f'    let server = caps.serve.allow("127.0.0.1:{port}", 1, 1024, 1024, 100)\n'
+            '    println("bound")\n'
+            "}\n"
+        )
+        result = self.run_program(program=program)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "bound\n")
+
+        def other_port(source: str) -> str:
+            old = '_ksAsk("serve_scope", text,'
+            assert old in source
+            return source.replace(old, '_ksAsk("serve_scope", text+"1",')
+
+        result = self.run_program(program=program, serve_patch=other_port)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn("bound", result.stdout)
+
 
 class BrokerPinSourceTests(unittest.TestCase):
     def test_pins_are_rendered(self) -> None:
@@ -144,7 +204,7 @@ class BrokerPinSourceTests(unittest.TestCase):
         self.assertIn('case "env":\n\t\treturn text == "HOME"', source)
         self.assertIn('case "scope":\n\t\treturn false', source)
         with self.assertRaises(ValueError):
-            broker_runtime(ALL_GRANTS, {"persist_open": frozenset()})
+            broker_runtime(ALL_GRANTS, {"persist_load": frozenset()})
 
 
 if __name__ == "__main__":

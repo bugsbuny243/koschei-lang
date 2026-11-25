@@ -158,7 +158,7 @@ def _go(value: str) -> str:
 ALL_GRANTS = frozenset({"disk_read", "disk_write", "env"})
 
 
-PIN_KINDS = frozenset({"scope", "scope_rw", "env", "net_scope"})
+PIN_KINDS = frozenset({"scope", "scope_rw", "env", "net_scope", "serve_scope", "persist_open"})
 
 
 def _pins_source(pins: dict[str, frozenset[str]]) -> str:
@@ -166,6 +166,17 @@ def _pins_source(pins: dict[str, frozenset[str]]) -> str:
 
     lines = []
     for kind in sorted(pins):
+        if kind == "persist_open":
+            # The worker sends the canonical path; compare against the
+            # canonical form of each literal, computed the same way.
+            raws = ", ".join(_go(text) for text in sorted(pins[kind]))
+            lines.append(
+                f"\tcase {_go(kind)}:\n"
+                f"\t\tfor _, raw := range []string{{{raws}}} {{\n"
+                "\t\t\tif canonical, ok := ksPersistCanonicalPath(raw); ok && canonical == text {\n"
+                "\t\t\t\treturn true\n\t\t\t}\n\t\t}\n\t\treturn false"
+            )
+            continue
         allowed = " || ".join(f"text == {_go(text)}" for text in sorted(pins[kind])) or "false"
         lines.append(f"\tcase {_go(kind)}:\n\t\treturn {allowed}")
     return "\n".join(lines)
@@ -178,7 +189,7 @@ def broker_runtime(
     """The broker serves only ``grants``: a subset of :data:`ALL_GRANTS`.
 
     ``pins`` maps a scope request kind (``scope``, ``scope_rw``, ``env``,
-    ``net_scope``) to the exact texts the program asks for. The compiler pins a
+    ``net_scope``, ``serve_scope``, ``persist_open``) to the exact texts the program asks for. The compiler pins a
     kind when every call that makes such a request takes a string literal; the
     broker then refuses any other text for that kind. Kinds left out are not
     pinned.

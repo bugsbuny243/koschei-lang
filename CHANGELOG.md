@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Hardening:** literal scope pinning now covers server bind addresses (`ServeRoot.allow`) and persistence files (`PersistRoot.allow`, compared in canonical form), so every broker domain is pinned where the program uses literals.
+
 ## 0.25.0 — 2026-11-24
 
 - **Fix:** since 0.22.0 a native program that created a disk token and never used it was refused by the broker (`KS5002`), while `ks run` accepted it. Broker grants now count tokens a program creates, not only tokens it uses.
