@@ -504,6 +504,8 @@ _PINNED_CALLS = {
     ("DiskRoot", "allow"): "scope_rw",
     ("EnvRoot", "allow"): "env",
     ("NetRoot", "allow"): "net_scope",
+    ("ServeRoot", "allow"): "serve_scope",
+    ("PersistRoot", "allow"): "persist_open",
 }
 
 
