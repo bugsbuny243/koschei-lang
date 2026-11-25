@@ -77,7 +77,7 @@ Acceptance gates:
 | 4. Ownership / region model | **Closed (2026-11-24):** memory safety comes from the Go backend (no pointers, FFI or `unsafe` in user code). Authority safety is the affine rule, now specified and checked for soundness against a path-exhaustive oracle; the first run found and fixed a while-condition double move | `docs/OWNERSHIP_MODEL_V1.md`, `tools/fuzz/affine_fuzz.py` |
 | 5. Bounded standard library | Mostly met; limits are documented and tested per module | `docs/reference/CORE_LIBRARY.md` |
 | 6. Signed, capability-declared dependencies | **Closed in code:** capability-declared dependencies, a verifying registry, owner signatures, signer pinning and a hash-chained public log; every registry package is signed | `docs/PACKAGES_V1.md` |
-| 7. Fuzzing and independent review | Fuzzing done and running per PR; review brief ready; independent review requested (OSTIF, 2026-11-22), not yet done | `docs/AUDIT_SCOPE_V1.md`, `tools/fuzz/` |
+| 7. Fuzzing and independent review | Fuzzing done and running per PR; review brief ready; independent review not yet requested | `docs/AUDIT_SCOPE_V1.md`, `tools/fuzz/` |
 
 #### Gate 3: why self-hosting is out of scope for 1.0
 
