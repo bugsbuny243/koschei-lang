@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.26.0 — 2026-11-26
 
 - **Hardening:** literal scope pinning now covers server bind addresses (`ServeRoot.allow`) and persistence files (`PersistRoot.allow`, compared in canonical form), so every broker domain is pinned where the program uses literals.
 

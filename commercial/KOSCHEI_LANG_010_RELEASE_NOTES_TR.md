@@ -1,8 +1,16 @@
-# Koschei Lang 0.25.0 — Sürüm Notları
+# Koschei Lang 0.26.0 — Sürüm Notları
 
 **Ürün:** Koschei Lang (Koschei Sentinel ve Web3 Hub'dan bağımsız)  
-**Sürüm:** 0.25.0  
+**Sürüm:** 0.26.0  
 **Ürün hattı:** ticari lisanslı, 1.0 öncesi programlama dili ve araç zinciri
+
+## 0.26.0'da yeni
+
+- **Sağlamlaştırma: broker'ın tüm alanları kilitli.** Disk dizinleri, ortam
+  değişkenleri ve ağ adreslerine artık sunucu bağlanma adresleri ve kalıcı
+  veri dosyaları da ekleniyor: program bunları sabit metinle yazıyorsa
+  native broker başkasını reddediyor. Kalıcı veri dosyaları kanonik
+  biçimleriyle karşılaştırılıyor.
 
 ## 0.25.0'da yeni
 
