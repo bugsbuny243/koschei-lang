@@ -1,8 +1,16 @@
-# Koschei Lang 0.25.0 — Release Notes
+# Koschei Lang 0.26.0 — Release Notes
 
 **Product:** Koschei Lang (independent of Koschei Sentinel and Web3 Hub)  
-**Version:** 0.25.0  
+**Version:** 0.26.0  
 **Release line:** commercially licensed, pre-1.0 language/toolchain
+
+## New in 0.26.0
+
+- **Hardening: every broker domain is pinned.** Server bind addresses and
+  persistence files now join disk directories, environment variables and
+  network origins. When the program names them with string literals, the
+  native broker refuses any other. Persistence files are compared in
+  canonical form.
 
 ## New in 0.25.0
 
