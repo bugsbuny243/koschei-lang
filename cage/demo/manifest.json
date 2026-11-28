@@ -1,0 +1,6 @@
+{
+  "read": ["agent.py", "data"],
+  "write": ["out"],
+  "env": ["SSL_CERT_FILE"],
+  "net": ["pypi.org:443"]
+}
